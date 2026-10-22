@@ -189,7 +189,9 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
         return Vec::new();
     };
     let pt = end.point(w);
-    let dir = wall_dir(w);
+    let Some(dir) = wall_dir(w) else {
+        return Vec::new();
+    };
 
     let mut neighbours = Vec::new();
     for (nid, nend) in cluster {
@@ -199,7 +201,9 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
         let Some(nw) = model.walls.iter().find(|w| w.id == *nid) else {
             continue;
         };
-        let ndir = wall_dir(nw);
+        let Some(ndir) = wall_dir(nw) else {
+            continue;
+        };
         let cross = dir.cross(ndir);
 
         // Collinear: parallel and on the same line.
@@ -249,7 +253,9 @@ fn plan_end(w: &Wall, end: End, raw: (Vec2, Vec2), g: &WallGraph, model: &cadcra
         let pt = end.point(w);
         let nend = if nw.start.dist(pt) < ENDPOINT_TOL { End::Start } else { End::End };
         let other_pt = nend.other().point(nw);
-        let ndir = wall_dir(nw);
+        let Some(ndir) = wall_dir(nw) else {
+            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+        };
         let perp = Vec2::new(-ndir.y, ndir.x);
         let half = nw.thickness / 2.0;
         let left = other_pt + perp * half;
@@ -263,7 +269,9 @@ fn plan_end(w: &Wall, end: End, raw: (Vec2, Vec2), g: &WallGraph, model: &cadcra
             return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
         };
         let pt = end.point(w);
-        let ndir = wall_dir(nw);
+        let Some(ndir) = wall_dir(nw) else {
+            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+        };
         let perp = Vec2::new(-ndir.y, ndir.x);
         let half = nw.thickness / 2.0;
         let side = (pt - nw.start).dot(perp);
@@ -272,7 +280,9 @@ fn plan_end(w: &Wall, end: End, raw: (Vec2, Vec2), g: &WallGraph, model: &cadcra
         } else {
             nw.start + ndir * ((pt - nw.start).dot(ndir)) - perp * half
         };
-        let wdir = wall_dir(w);
+        let Some(wdir) = wall_dir(w) else {
+            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+        };
         let wperp = Vec2::new(-wdir.y, wdir.x);
         let whalf = w.thickness / 2.0;
         let left = face_pt + wperp * whalf;
@@ -289,13 +299,17 @@ fn plan_end(w: &Wall, end: End, raw: (Vec2, Vec2), g: &WallGraph, model: &cadcra
             return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
         };
         let pt = end.point(w);
-        let ndir = wall_dir(nw);
+        let Some(ndir) = wall_dir(nw) else {
+            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+        };
         let nperp = Vec2::new(-ndir.y, ndir.x);
         let nside = (pt - nw.start).dot(nperp);
         let n_left = if nside > 0.0 { nface[0] } else { nface[1] };
         let n_right = if nside > 0.0 { nface[1] } else { nface[0] };
 
-        let wdir = wall_dir(w);
+        let Some(wdir) = wall_dir(w) else {
+            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+        };
         let left = line_line_infinite(raw.0, raw.0 + wdir * 1000.0, n_left.0, n_left.1).unwrap_or(raw.0);
         let right = line_line_infinite(raw.1, raw.1 + wdir * 1000.0, n_right.0, n_right.1).unwrap_or(raw.1);
         return Ok(EndPlan { left, right, join: Some(Join::L(end)) });
