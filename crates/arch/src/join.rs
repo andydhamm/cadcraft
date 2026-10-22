@@ -310,8 +310,8 @@ fn plan_end(w: &Wall, end: End, raw: (Vec2, Vec2), g: &WallGraph, model: &cadcra
         let Some(wdir) = wall_dir(w) else {
             return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
         };
-        let left = line_line_infinite(raw.0, raw.0 + wdir * 1000.0, n_left.0, n_left.1).unwrap_or(raw.0);
-        let right = line_line_infinite(raw.1, raw.1 + wdir * 1000.0, n_right.0, n_right.1).unwrap_or(raw.1);
+        let left = line_line_infinite(raw.0, raw.0 + wdir * 1000.0, n_left.0, n_left.1).map(|(p, _, _)| p).unwrap_or(raw.0);
+        let right = line_line_infinite(raw.1, raw.1 + wdir * 1000.0, n_right.0, n_right.1).map(|(p, _, _)| p).unwrap_or(raw.1);
         return Ok(EndPlan { left, right, join: Some(Join::L(end)) });
     }
 
@@ -335,9 +335,15 @@ pub fn solve_joins(model: &cadcraft_doc::ArchModel) -> Vec<WallShape> {
         let (rs, re) = face[1];
 
         // Start end.
-        let plan_s = plan_end(w, End::Start, (ls, rs), graph, model, w.id)?;
+        let plan_s = match plan_end(w, End::Start, (ls, rs), &graph, model, w.id) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
         // End end.
-        let plan_e = plan_end(w, End::End, (le, re), graph, model, w.id)?;
+        let plan_e = match plan_end(w, End::End, (le, re), &graph, model, w.id) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
 
         let corners = ring_from_corners(plan_s.left, plan_s.right, plan_e.left, plan_e.right);
         let mut ring = match corners {
@@ -723,7 +729,7 @@ mod tests {
         assert!(s1.joins.iter().any(|j| matches!(j, Join::L(End::Start))));
 
         // The bisector direction is at 120 degrees from the x-axis.
-        let bisector_dir = Vec2::new(-0.5, std::f64::consts::SQRT_3 / 2.0);
+        let bisector_dir = Vec2::new(-0.5, 3.0_f64.sqrt() / 2.0);
         let corner = Vec2::new(10.0, 0.0);
 
         // Both shared mitre corners should lie on the bisector line.
