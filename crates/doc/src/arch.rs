@@ -13,6 +13,39 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ArchId(pub u32);
 
+impl ArchId {
+    /// Build an [`ArchId`] from a raw number.
+    pub fn wall(n: u32) -> Self {
+        ArchId(n)
+    }
+}
+
+impl std::fmt::Display for ArchId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "w{}", self.0)
+    }
+}
+
+impl std::str::FromStr for ArchId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        let digits = if s.starts_with('w') || s.starts_with('W') { &s[1..] } else { s };
+        let n = u32::from_str_radix(digits, 10).map_err(|_| format!("invalid arch id `{s}`"))?;
+        Ok(ArchId(n))
+    }
+}
+
+/// Maximum number of walls in a drawing (caps join-stretch BFS and allocations).
+pub const MAX_WALLS: usize = 4096;
+
+/// Minimum wall thickness, in metres.
+pub const MIN_WALL_THICKNESS: f64 = 1e-4;
+
+/// Minimum wall length, in metres.
+pub const MIN_WALL_LENGTH: f64 = 1e-6;
+
 /// A wall: centre-line segment, thickness, height, and layer bands.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Wall {
