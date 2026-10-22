@@ -1066,14 +1066,14 @@ mod tests {
         let c0 = s0.polygon.iter().filter(|p| (p.x - 5.0).abs() < 1e-9).cloned().collect::<Vec<_>>();
         assert_eq!(c0.len(), 2, "wall 0 should have 2 corners at x=5");
         for p in &c0 {
-            assert!((p.y - 5.0).abs() < 1e-9, "wall 0 corner {:?} not at y=5±0.5", p);
+            assert!((p.y - 5.5).abs() < 1e-9 || (p.y - 4.5).abs() < 1e-9, "wall 0 corner {:?} not at y=5±0.5", p,);
         }
 
         // Wall 1 (vertical) end face centred on (5,5): corners (5±0.5, 5).
         let c1 = s1.polygon.iter().filter(|p| (p.y - 5.0).abs() < 1e-9).cloned().collect::<Vec<_>>();
         assert_eq!(c1.len(), 2, "wall 1 should have 2 corners at y=5");
         for p in &c1 {
-            assert!((p.x - 5.0).abs() < 1e-9, "wall 1 corner {:?} not at x=5±0.5", p);
+            assert!((p.x - 5.5).abs() < 1e-9 || (p.x - 4.5).abs() < 1e-9, "wall 1 corner {:?} not at x=5±0.5", p,);
         }
     }
 
