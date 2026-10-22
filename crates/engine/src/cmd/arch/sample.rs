@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn arch_sample_clamps_a_hostile_wall_count() {
         let mut s = fresh_session();
-        let r = s.execute("arch.sample", &json!({ "walls": 999999999999 })).unwrap();
+        let r = s.execute("arch.sample", &json!({ "walls": 999999999999i64 })).unwrap();
         assert_eq!(r["walls"].as_u64(), Some(crate::cmd::arch::MAX_WALLS as u64));
     }
 
