@@ -10,7 +10,7 @@
 //! successful run.  Update it if the geometry changes intentionally.
 
 use cadcraft_arch3d::Scene3d;
-use cadcraft_arch3d::builder::{build, build_dirty};
+use cadcraft_arch3d::{build, build_dirty};
 use cadcraft_doc::geom::Vec2;
 use cadcraft_doc::{ArchModel, Wall};
 
@@ -33,16 +33,14 @@ fn scene_bytes(scene: &Scene3d) -> Vec<u8> {
         buf.extend_from_slice(&mesh.object.0.to_le_bytes());
         // per-vertex: position (3 × f32)
         for p in &mesh.positions {
-            buf.extend_from_slice(&p[0].to_f32().to_le_bytes());
-            buf.extend_from_slice(&p[1].to_f32().to_le_bytes());
-            buf.extend_from_slice(&p[2].to_f32().to_le_bytes());
+            buf.extend_from_slice(&p[0].to_le_bytes());
+            buf.extend_from_slice(&p[1].to_le_bytes());
+            buf.extend_from_slice(&p[2].to_le_bytes());
         }
-        // per-vertex UVs if present
-        if let Some(uvs) = &mesh.uvs {
-            for uv in uvs {
-                buf.extend_from_slice(&uv[0].to_f32().to_le_bytes());
-                buf.extend_from_slice(&uv[1].to_f32().to_le_bytes());
-            }
+        // per-vertex UVs
+        for uv in &mesh.uvs {
+            buf.extend_from_slice(&uv[0].to_le_bytes());
+            buf.extend_from_slice(&uv[1].to_le_bytes());
         }
         // index count
         buf.extend_from_slice(&mesh.indices.len().to_le_bytes());
@@ -55,7 +53,7 @@ fn scene_bytes(scene: &Scene3d) -> Vec<u8> {
 
 /// Build the 10×8 m demo house model programmatically (matches the fixture JSON).
 fn load_fixture() -> ArchModel {
-    let mut model = ArchModel::new();
+    let mut model = ArchModel::default();
 
     // Exterior walls: 4 walls forming a 10×8 m rectangle
     let exterior_walls = [
@@ -66,16 +64,18 @@ fn load_fixture() -> ArchModel {
     ];
     for (start, end) in exterior_walls {
         model.add_wall(Wall {
+            id: 0,
             start,
             end,
             thickness: 0.3,
             height: 2.7,
-            base_level: 0.0,
+            base_level: 0,
             to_ceiling: true,
             exterior: true,
-            wall_type: Default::default(),
+            wall_type: "Default".to_string(),
             join_start: Default::default(),
             join_end: Default::default(),
+            layers: Vec::new(),
         });
     }
 
@@ -83,16 +83,18 @@ fn load_fixture() -> ArchModel {
     let interior_walls = [(Vec2::new(0.0, 4.0), Vec2::new(10.0, 4.0)), (Vec2::new(5.0, 0.0), Vec2::new(5.0, 8.0))];
     for (start, end) in interior_walls {
         model.add_wall(Wall {
+            id: 0,
             start,
             end,
             thickness: 0.15,
             height: 2.7,
-            base_level: 0.0,
+            base_level: 0,
             to_ceiling: true,
             exterior: false,
-            wall_type: Default::default(),
+            wall_type: "Default".to_string(),
             join_start: Default::default(),
             join_end: Default::default(),
+            layers: Vec::new(),
         });
     }
 

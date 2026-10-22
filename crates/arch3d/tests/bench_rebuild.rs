@@ -19,7 +19,7 @@ fn build_300_wall_grid() -> ArchModel {
     let thickness = 0.15f64;
     let height = 2.7f64;
 
-    let mut model = ArchModel::new();
+    let mut model = ArchModel::default();
     let mut count = 0u32;
 
     // Horizontal walls: one per row (cols walls).
@@ -29,16 +29,18 @@ fn build_300_wall_grid() -> ArchModel {
             let x1 = (c + 1) as f64 * cell_w;
             let y = (r as f64) * cell_h;
             model.add_wall(Wall {
+                id: 0,
                 start: Vec2::new(x0, y),
                 end: Vec2::new(x1, y),
                 thickness,
                 height,
-                base_level: 0.0,
+                base_level: 0,
                 to_ceiling: true,
                 exterior: r == 0 || r == rows - 1 || c == 0 || c == cols - 1,
-                wall_type: Default::default(),
+                wall_type: "Default".to_string(),
                 join_start: Default::default(),
                 join_end: Default::default(),
+                layers: Vec::new(),
             });
             count += 1;
         }
@@ -55,16 +57,18 @@ fn build_300_wall_grid() -> ArchModel {
         let y0 = (r as f64) * cell_h;
         let y1 = (r + 1) as f64 * cell_h;
         model.add_wall(Wall {
+            id: 0,
             start: Vec2::new(x, y0),
             end: Vec2::new(x, y1),
             thickness,
             height,
-            base_level: 0.0,
+            base_level: 0,
             to_ceiling: true,
             exterior: false,
-            wall_type: Default::default(),
+            wall_type: "Default".to_string(),
             join_start: Default::default(),
             join_end: Default::default(),
+            layers: Vec::new(),
         });
         count += 1;
     }
@@ -88,7 +92,7 @@ fn three_hundred_walls_rebuild_under_50ms() {
 
     // --- full build ---
     let t0 = Instant::now();
-    let scene = cadcraft_arch3d::builder::build(&model);
+    let scene = cadcraft_arch3d::build(&model);
     let full_ms = t0.elapsed().as_millis() as f64 / 1_000.0;
     println!(
         "full build (300 walls): {:.1} ms, meshes: {}, tris: {}",
@@ -105,7 +109,7 @@ fn three_hundred_walls_rebuild_under_50ms() {
     dirty.insert(first_id);
 
     let t1 = Instant::now();
-    let _ = cadcraft_arch3d::builder::build_dirty(&model, &dirty, &scene);
+    let _ = cadcraft_arch3d::build_dirty(&model, &dirty, &scene);
     let dirty_ms = t1.elapsed().as_millis() as f64 / 1_000.0;
     println!("build_dirty (1 wall):  {:.1} ms", dirty_ms);
 

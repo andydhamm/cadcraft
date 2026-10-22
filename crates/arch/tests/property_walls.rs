@@ -49,7 +49,7 @@ impl Xorshift64 {
 /// exercise the collinear/overlap join paths.
 fn build_random_model(seed: u64, num_walls: usize) -> (ArchModel, Vec<ArchId>) {
     let mut rng = Xorshift64::new(seed);
-    let mut model = ArchModel::new();
+    let mut model = ArchModel::default();
     let mut ids = Vec::with_capacity(num_walls);
 
     for _ in 0..num_walls {
@@ -94,16 +94,18 @@ fn build_random_model(seed: u64, num_walls: usize) -> (ArchModel, Vec<ArchId>) {
         };
 
         let wall = Wall {
+            id: 0,
             start: Vec2::new(x1, y1),
             end: Vec2::new(ex, ey),
             thickness,
             height,
-            base_level: 0.0,
+            base_level: 0,
             to_ceiling: true,
             exterior,
-            wall_type: WallType::default(),
+            wall_type: "Default".to_string(),
             join_start: JoinKind::default(),
             join_end: JoinKind::default(),
+            layers: Vec::new(),
         };
 
         let id = model.add_wall(wall);
