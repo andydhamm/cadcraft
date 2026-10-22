@@ -48,12 +48,4 @@ pub fn specs() -> Vec<CommandSpec> {
     v.extend(wall::specs());
     v
 }
-```
-
-**`crates/engine/src/cmd/arch/wall.rs`** — the `wall` command implementation + tests:
-
-```
-crates/engine/src/cmd/arch/wall.rs
-```
-```rust
 <<<<<<< SEARCH
