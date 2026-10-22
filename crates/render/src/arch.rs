@@ -101,7 +101,7 @@ mod tests {
         assert!(tris_prim.len >= 3);
 
         let poly_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.kind == Kind::Polyline).collect();
-        assert_eq!(poly_prims.len, 1);
+        assert_eq!(poly_prims.len(), 1);
         let poly = &poly_prims[0];
         assert_eq!(poly.len, 5);
 
@@ -148,7 +148,7 @@ mod tests {
         d.touch_arch();
         let list = build_arch(&d, &Options::default());
         for p in &list.prims {
-            assert_eq!(p.color, Rgb::new(0, 255, 255));
+            assert_eq!(p.color, Rgb::from_u32(0x00ffff));
             assert!(!p.aci7);
         }
 
