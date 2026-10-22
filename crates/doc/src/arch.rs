@@ -200,6 +200,7 @@ pub struct Level {
 ///
 /// Stored on [`Drawing::arch`]; the 3D pane and incremental rebuilds key off
 /// [`Drawing::arch_revision`].
+#[serde(default)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArchModel {
     pub walls: Vec<Wall>,
