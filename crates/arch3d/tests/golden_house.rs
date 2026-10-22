@@ -140,8 +140,9 @@ fn golden_house_scene_hash() {
     let hash = fnv1a_hash(&scene_bytes(&scene));
     println!("golden hash = {hash:016x} (meshes={}, tris={})", mesh_count, tri_count);
 
-    // TODO: after first run, paste the hash here:
-    const GOLDEN_HASH: u64 = 0x0000_0000_0000_0000;
+    // Golden value recorded on the first successful build; update this if the
+    // geometry changes intentionally.
+    const GOLDEN_HASH: u64 = 0xcc91_3625_55fc_5450;
     assert_eq!(hash, GOLDEN_HASH, "scene hash drift: {hash:016x} != GOLDEN_HASH");
 }
 
