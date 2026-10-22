@@ -163,7 +163,15 @@ impl Drawing {
         Drawing {
             header: Header::default(),
             foreign: std::sync::Arc::default(),
-            layers: vec![Layer::default(), Layer { name: "Defpoints".into(), plot: false, ..Layer::default() }],
+            layers: vec![
+                Layer::default(),
+                Layer { name: "Defpoints".into(), plot: false, ..Layer::default() },
+                Layer { name: "A-WALL".into(), ..Layer::default() },
+                Layer { name: "A-DOOR".into(), ..Layer::default() },
+                Layer { name: "A-GLAZ".into(), ..Layer::default() },
+                Layer { name: "A-ROOF".into(), ..Layer::default() },
+                Layer { name: "A-STAIR".into(), ..Layer::default() },
+            ],
             linetypes: vec![
                 Linetype { name: "ByBlock".into(), description: String::new(), pattern: Vec::new() },
                 Linetype { name: "ByLayer".into(), description: String::new(), pattern: Vec::new() },
@@ -399,4 +407,22 @@ mod anno;
 pub use anno::*;
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    /// A new drawing provides the `A-WALL` architectural layer for proxy graphics.
+    #[test]
+    fn a_wall_layer_exists_in_a_new_drawing() {
+        let d = Drawing::new_metric();
+        assert!(d.layers.iter().any(|l| l.name == "A-WALL"));
+    }
+
+    /// The five AIA/NCS arch layers are present in a new drawing in the standard order,
+    /// after `0` and `Defpoints`.
+    #[test]
+    fn arch_layers_are_in_a_new_drawing_in_order() {
+        let d = Drawing::new_imperial();
+        let arch = ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
+        for (i, name) in arch.iter().enumerate() {
+            assert_eq!(d.layers[2 + i].name, name, "layer at index {2 + i}");
+        }
+    }
+}
