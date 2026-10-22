@@ -20,6 +20,7 @@ cadcraft-doc = { path = "crates/doc" }
 cadcraft-arch = { path = "crates/arch" }
 cadcraft-arch3d = { path = "crates/arch3d" }
 cadcraft-constraints = { path = "crates/constraints" }
+cadcraft-render3d = { path = "crates/render3d" }
 cadcraft-fonts = { path = "crates/fonts" }
 cadcraft-render = { path = "crates/render" }
 cadcraft-io = { path = "crates/io" }
@@ -38,6 +39,7 @@ rayon = "1"
 
 # rendering / formats
 tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd", "png-format"] }
+wgpu = "29"
 lyon_tessellation = "1.0.22"
 skrifa = "0.47"
 # Text shaping (OpenType GSUB/GPOS, HarfBuzz port on read-fonts; the version egui's epaint uses)
