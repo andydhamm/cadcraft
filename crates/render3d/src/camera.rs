@@ -182,12 +182,12 @@ mod tests {
                 let v = o.view();
                 let p = o.proj(1.5);
                 for x in v.m.iter() {
-                    if !x.is_finite() {
+                    if !x.iter().all(|v| v.is_finite()) {
                         bad = true;
                     }
                 }
                 for x in p.m.iter() {
-                    if !x.is_finite() {
+                    if !x.iter().all(|v| v.is_finite()) {
                         bad = true;
                     }
                 }

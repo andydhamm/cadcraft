@@ -25,8 +25,7 @@ impl Offscreen {
             .await
             .map_err(|e| Render3dError::Wgpu(e.to_string()))?;
 
-        let (device, queue) =
-            adapter.request_device(&wgpu::DeviceDescriptor::default(), None).await.map_err(|e| Render3dError::Wgpu(e.to_string()))?;
+        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor::default()).await.map_err(|e| Render3dError::Wgpu(e.to_string()))?;
 
         let (width, height) = size;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -79,7 +78,7 @@ impl Offscreen {
             let _ = tx.send(result);
         });
 
-        self.device.poll(wgpu::PollType::Wait { submission_index: 0, timeout: std::time::Duration::from_secs(5) });
+        self.device.poll(wgpu::PollType::Wait { submission_index: Some(0), timeout: Some(std::time::Duration::from_secs(5)) });
         rx.await.map_err(|e| Render3dError::Wgpu(format!("channel error: {e}")))?.map_err(|e| Render3dError::Wgpu(e.to_string()))?;
 
         let data = slice.get_mapped_range();
@@ -98,7 +97,7 @@ impl Offscreen {
 
 /// Render a scene headlessly and return a PNG. Returns `Render3dError::NoAdapter` if no GPU is available.
 pub async fn headless_png(scene: &Scene3d, camera: &Camera, size: (u32, u32)) -> Result<Vec<u8>, Render3dError> {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::new_without_display_handle());
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let offscreen = Offscreen::new(&instance, size).await?;
     offscreen.render(scene, camera, size);
     offscreen.read_png().await

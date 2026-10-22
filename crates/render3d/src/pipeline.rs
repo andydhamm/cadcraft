@@ -86,11 +86,11 @@ mod tests {
             bounds: cadcraft_arch3d::mesh::Bounds3::empty(),
         };
 
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions::default()).now_or_never().flatten();
 
         if let Some(adapter) = adapter {
-            let (device, _queue) = adapter.request_device(&wgpu::DeviceDescriptor::default(), None).now_or_never().flatten().expect("device");
+            let (device, _queue) = adapter.request_device(&wgpu::DeviceDescriptor::default()).now_or_never().flatten().expect("device");
             let meshes = upload(&device, &scene);
             assert_eq!(meshes.vertex_count, 3);
             assert_eq!(meshes.index_count, 3);
