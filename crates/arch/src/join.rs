@@ -407,8 +407,8 @@ fn plan_end(
         };
         let wperp = Vec2::new(-wdir.y, wdir.x);
         let whalf = w.thickness / 2.0;
-        let left = pt + wperp * whalf;
-        let right = pt - wperp * whalf;
+        let left = *pt + wperp * whalf;
+        let right = *pt - wperp * whalf;
         return Ok(EndPlan { left, right, join: Some(Join::X(end)) });
     }
 
