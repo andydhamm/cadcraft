@@ -40,7 +40,7 @@ impl End {
 }
 
 use crate::wall::{wall_dir, wall_polygon};
-use cadcraft_geom::intersect::line_line_infinite;
+use cadcraft_geom::line_line_infinite;
 
 pub use cadcraft_doc::JoinKind;
 
@@ -154,6 +154,154 @@ pub fn solve_bounds(shapes: &[WallShape]) -> Bounds2 {
         all_points.extend(shape.polygon.iter().cloned());
     }
     Bounds2::from_points(all_points)
+}
+
+/// The planned corners and join at one end of a wall after solving.
+struct EndPlan {
+    left: Vec2,
+    right: Vec2,
+    join: Option<Join>,
+}
+
+/// A neighbour wall relevant to a join at one end.
+enum Neighbour {
+    /// Another wall's end meets this wall's end at the same point.
+    EndToEnd { id: ArchId, end: End },
+    /// Another wall's centre line passes through this wall's end (T-junction).
+    Mid { id: ArchId, end: End },
+    /// A collinear wall that this wall should butt against.
+    Collinear { id: ArchId },
+    /// More than MAX_JOIN_FAN walls meet here; treat as no join.
+    Fan { count: usize },
+}
+
+/// Classify the neighbours at one end of a wall.
+fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End) -> Vec<Neighbour> {
+    let Some(cluster_idx) = g.cluster_of(id, end) else {
+        return Vec::new();
+    };
+    let cluster = g.cluster(cluster_idx);
+    if cluster.len() > MAX_JOIN_FAN {
+        return vec![Neighbour::Fan { count: cluster.len() }];
+    }
+
+    let Some(w) = model.walls.iter().find(|w| w.id == id) else {
+        return Vec::new();
+    };
+    let pt = end.point(w);
+    let dir = wall_dir(w);
+
+    let mut neighbours = Vec::new();
+    for (nid, nend) in cluster {
+        if *nid == id {
+            continue;
+        }
+        let Some(nw) = model.walls.iter().find(|w| w.id == *nid) else {
+            continue;
+        };
+        let ndir = wall_dir(nw);
+        let cross = dir.cross(ndir);
+
+        // Collinear: parallel and on the same line.
+        if cross.abs() < PARALLEL_EPS {
+            let d = (pt - nw.start).cross(ndir);
+            if d.abs() < ENDPOINT_TOL {
+                neighbours.push(Neighbour::Collinear { id: *nid });
+            }
+            continue;
+        }
+
+        // EndToEnd: the neighbour's end is also at this point.
+        if nend.point(nw).dist(pt) < ENDPOINT_TOL {
+            neighbours.push(Neighbour::EndToEnd { id: *nid, end: *nend });
+        } else {
+            // Mid: the neighbour's centre line passes through this point.
+            let d = (pt - nw.start).cross(ndir);
+            let t = (pt - nw.start).dot(ndir);
+            let nw_len = nw.start.dist(nw.end);
+            if d.abs() < ENDPOINT_TOL && t > ENDPOINT_TOL && t < nw_len - ENDPOINT_TOL {
+                neighbours.push(Neighbour::Mid { id: *nid, end: *nend });
+            }
+        }
+    }
+
+    neighbours
+}
+
+/// Plan the corners and join at one end of a wall.
+fn plan_end(w: &Wall, end: End, raw: (Vec2, Vec2), g: &WallGraph, model: &cadcraft_doc::ArchModel, id: ArchId) -> Result<EndPlan, ArchError> {
+    let nbrs = classify(model, g, id, end);
+
+    if nbrs.is_empty() {
+        return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+    }
+
+    // Fan: no join, keep raw corners.
+    if nbrs.iter().any(|n| matches!(n, Neighbour::Fan { .. })) {
+        return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+    }
+
+    // Collinear: butt.
+    if let Some(Neighbour::Collinear { id: nid }) = nbrs.iter().find(|n| matches!(n, Neighbour::Collinear { .. })) {
+        let Some(nw) = model.walls.iter().find(|w| w.id == *nid) else {
+            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+        };
+        let pt = end.point(w);
+        let nend = if nw.start.dist(pt) < ENDPOINT_TOL { End::Start } else { End::End };
+        let other_pt = nend.other().point(nw);
+        let ndir = wall_dir(nw);
+        let perp = Vec2::new(-ndir.y, ndir.x);
+        let half = nw.thickness / 2.0;
+        let left = other_pt + perp * half;
+        let right = other_pt - perp * half;
+        return Ok(EndPlan { left, right, join: Some(Join::Butt(end)) });
+    }
+
+    // Mid (T-junction): trim to the host's face.
+    if let Some(Neighbour::Mid { id: nid, .. }) = nbrs.iter().find(|n| matches!(n, Neighbour::Mid { .. })) {
+        let Some(nw) = model.walls.iter().find(|w| w.id == *nid) else {
+            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+        };
+        let pt = end.point(w);
+        let ndir = wall_dir(nw);
+        let perp = Vec2::new(-ndir.y, ndir.x);
+        let half = nw.thickness / 2.0;
+        let side = (pt - nw.start).dot(perp);
+        let face_pt = if side > 0.0 {
+            nw.start + ndir * ((pt - nw.start).dot(ndir)) + perp * half
+        } else {
+            nw.start + ndir * ((pt - nw.start).dot(ndir)) - perp * half
+        };
+        let wdir = wall_dir(w);
+        let wperp = Vec2::new(-wdir.y, wdir.x);
+        let whalf = w.thickness / 2.0;
+        let left = face_pt + wperp * whalf;
+        let right = face_pt - wperp * whalf;
+        return Ok(EndPlan { left, right, join: Some(Join::T(end)) });
+    }
+
+    // EndToEnd (L or angled): mitre.
+    if let Some(Neighbour::EndToEnd { id: nid, .. }) = nbrs.iter().find(|n| matches!(n, Neighbour::EndToEnd { .. })) {
+        let Some(nw) = model.walls.iter().find(|w| w.id == *nid) else {
+            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+        };
+        let Some(nface) = face_lines(nw) else {
+            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+        };
+        let pt = end.point(w);
+        let ndir = wall_dir(nw);
+        let nperp = Vec2::new(-ndir.y, ndir.x);
+        let nside = (pt - nw.start).dot(nperp);
+        let n_left = if nside > 0.0 { nface[0] } else { nface[1] };
+        let n_right = if nside > 0.0 { nface[1] } else { nface[0] };
+
+        let wdir = wall_dir(w);
+        let left = line_line_infinite(raw.0, raw.0 + wdir * 1000.0, n_left.0, n_left.1).unwrap_or(raw.0);
+        let right = line_line_infinite(raw.1, raw.1 + wdir * 1000.0, n_right.0, n_right.1).unwrap_or(raw.1);
+        return Ok(EndPlan { left, right, join: Some(Join::L(end)) });
+    }
+
+    Ok(EndPlan { left: raw.0, right: raw.1, join: None })
 }
 
 /// Solve every wall's poché ring. Output order == `model.walls` order; degenerate
