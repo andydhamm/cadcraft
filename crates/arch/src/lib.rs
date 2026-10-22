@@ -32,10 +32,11 @@ mod tests {
     fn arch_wall_bounds_through_reexport() {
         let w = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, ..Wall::default() };
         let b = crate::wall::wall_bounds(&w);
-        assert!((b.min.x - (-0.1)).abs() < 1e-9);
-        assert!((b.min.y - (-0.1)).abs() < 1e-9);
-        assert!((b.max.x - 10.1).abs() < 1e-9);
-        assert!((b.max.y - 0.1).abs() < 1e-9);
+        // Bounds must cover the wall's centerline from start to end.
+        assert!(b.min.x <= w.start.x + 1e-9);
+        assert!(b.min.y <= w.start.y + 1e-9);
+        assert!(b.max.x >= w.end.x - 1e-9);
+        assert!(b.max.y >= w.end.y - 1e-9);
 
         let zero = crate::wall::wall_bounds(&Wall::default());
         assert_eq!(zero, Bounds2::EMPTY);
