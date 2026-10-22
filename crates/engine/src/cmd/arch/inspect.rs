@@ -167,7 +167,8 @@ mod tests {
             }),
         );
         let v = exec(&mut s, "arch.inspect", &json!({}));
-        let bounds = v["bounds"].as_array().expect("bounds should be an array");
+        let empty: Vec<Value> = Vec::new();
+        let bounds = v["bounds"].as_array().unwrap_or(&empty);
         assert_eq!(bounds.len(), 2, "bounds should be [[min],[max]]");
         assert!(v["levels"].is_array(), "levels should be an array");
     }
