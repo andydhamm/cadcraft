@@ -4,7 +4,7 @@
 //! This is the data layer (L1). 2D algorithms (joins, room detection, roof generation)
 //! live in `crates/arch` (L2) and operate on this model.
 
-use cadcraft_geom::Bounds2;
+use cadcraft_geom::{Bounds2, Vec2};
 use serde::{Deserialize, Serialize};
 
 /// A stable identifier for an architectural object.
