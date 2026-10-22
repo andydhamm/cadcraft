@@ -122,16 +122,16 @@ fn drawing_layers_become_pdf_layers() {
         assert!(cat.contains(&format!("{id} 0 R")));
     }
     // The page maps its marks to the groups, and the marked sections are balanced.
-    // Marks are named after each plotted layer's place in the plotted-layer order (the
-    // A-Arch table layers don't plot here, so Walls is the 2nd and Doors the 5th).
+    // Marks are named after the layer's place in the layer table: the five A-arch layers
+    // sit between Defpoints and the user layers, so Walls is at index 7 and Doors at 10.
     let page = &pages(&objs)[0];
-    for i in [0, 2, 5] {
+    for i in [0, 7, 10] {
         let id = reference(page, &format!("/L{i}"));
         assert!(ocgs.contains(&id));
     }
     let c = &contents(&objs)[0];
     assert_eq!(c.matches(" BDC\n").count(), c.matches("EMC\n").count());
-    assert!(c.contains("/OC /L2 BDC\n1 0 0 RG"), "the red wall line is on Walls: {c}");
+    assert!(c.contains("/OC /L7 BDC\n1 0 0 RG"), "the red wall line is on Walls: {c}");
     let (q, bdc, emc) = (c.find("re W n").unwrap(), c.find("BDC").unwrap(), c.rfind("EMC").unwrap());
     assert!(q < bdc && emc < c.rfind("Q\n").unwrap(), "marked content inside the clip's q/Q");
 }
