@@ -195,20 +195,20 @@ mod tests {
             "points": [[0.0, 0.0], [1.0, 0.0]],
             "thickness": 0.0,
         });
-        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ }))));
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg:_ })));
 
         // thickness: -1
         let p = json!({
             "points": [[0.0, 0.0], [1.0, 0.0]],
             "thickness": -1.0,
         });
-        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ }))));
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
 
         // short segment (below MIN_WALL_LENGTH)
         let p = json!({
             "points": [[0.0, 0.0], [0.0000001, 0.0]],
         });
-        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ }))));
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
 
         // height: very negative (non-positive, rejected by size_param)
         let p = json!({
