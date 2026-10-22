@@ -43,8 +43,8 @@ fn stretch(s: &mut Session, cmd: &str, p: &Value) -> Result<Value> {
     let to = point_req(cmd, p, "to")?;
     if let Some(id) = crate::grips::arch_id_from_handle(h) {
         let end = if i == 0 { "start" } else { "end" };
-        return super::arch::stretch::run_stretch(
-            s,
+        return s.execute(
+            "arch.wall.stretch",
             &json!({
                 "wall": format!("w{}", id.0),
                 "end": end,

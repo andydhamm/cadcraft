@@ -41,7 +41,7 @@ fn translated(k: &EntityKind, d: Vec2) -> EntityKind {
 
 /// Derive the [`ArchId`] from an arch proxy handle, or `None` for normal entity handles.
 pub(crate) fn arch_id_from_handle(h: Handle) -> Option<ArchId> {
-    is_arch_handle(h.0).then(|| ArchId((h.0 - ARCH_HANDLE_BASE) as u32))
+    is_arch_handle(h).then(|| ArchId((h.0 - ARCH_HANDLE_BASE) as u32))
 }
 
 /// What a polyline grip index refers to (matches the order of `EntityKind::grips`).
