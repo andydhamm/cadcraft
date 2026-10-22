@@ -317,8 +317,7 @@ pub fn solve_joins(model: &ArchModel) -> Vec<WallShape> {
                 if let Some(other) = model.wall(nid) {
                     // The trimmed wall is the one whose Start is the shared point.
                     // i.e., this wall's Start == other's End → this wall is trimmed.
-                    if End::point(End::Start, w).near(other.end, ENDPOINT_TOL)
-                        || End::point(End::End, w).near(other.start, ENDPOINT_TOL) {
+                    if End::point(End::Start, w).near(other.end, ENDPOINT_TOL) || End::point(End::End, w).near(other.start, ENDPOINT_TOL) {
                         // Determine trim direction
                         let shared = End::point(End::Start, w);
                         let other_endpoint = if shared.near(other.end, ENDPOINT_TOL) {
@@ -400,335 +399,7 @@ pub fn solve_joins(model: &ArchModel) -> Vec<WallShape> {
     shapes
 }
 
-/// A neighbour relationship at one wall end, used by `classify` to decide which
-/// join to apply.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Neighbour {
-    /// A second wall whose own end is also at this point (an end-to-end join).
-    EndToEnd { id: ArchId, end: End },
-    /// A wall whose centre-line interior passes within `ENDPOINT_TOL` of this point.
-    /// The current wall is the incoming wall; the neighbour is the host.
-    Mid { id: ArchId, end: End },
-    /// A wall collinear with the current wall.
-    Collinear { id: ArchId },
-    /// The cluster has more than `MAX_JOIN_FAN` ends; treat as "no join".
-    Fan { count: usize },
-}
-
-/// Corner plan for one end of a wall after joins are applied.
-#[derive(Clone, Debug, PartialEq, Copy)]
-struct EndPlan {
-    left: Vec2,
-    right: Vec2,
-    join: Option<Join>,
-}
-
-/// Classify the neighbourhood of `(id, end)` so that `plan_end` can pick a join.
-fn classify(
-    model: &ArchModel,
-    g: &WallGraph,
-    id: ArchId,
-    end: End,
-) -> Vec<Neighbour> {
-    let nbrs = g.neighbours(id, end);
-    let total = nbrs.len() + 1;
-    if total > MAX_JOIN_FAN {
-        return vec![Neighbour::Fan { count: total }];
-    }
-    if nbrs.is_empty() {
-        return Vec::new();
-    }
-
-    let Some(my_wall) = model.wall(id) else {
-        return Vec::new();
-    };
-    let my_point = End::point(end, my_wall);
-    if !my_point.is_finite() {
-        return Vec::new();
-    }
-
-    let my_dir = crate::wall::wall_dir(my_wall);
-    let mut out: Vec<Neighbour> = Vec::new();
-    for (nid, nend) in nbrs {
-        let Some(nw) = model.wall(nid) else {
-            continue;
-        };
-        if nw.id == id {
-            continue;
-        }
-        let nbr_dir = crate::wall::wall_dir(nw);
-        let my_dir_valid = my_dir.is_finite();
-        let nbr_dir_valid = nbr_dir.is_finite();
-        if !my_dir_valid || !nbr_dir_valid {
-            continue;
-        }
-
-        let parallel = my_dir.cross(nbr_dir).abs() < 1e-9;
-        if parallel {
-            let dist = line_distance_to_point(&nw, my_point);
-            if dist < ENDPOINT_TOL {
-                out.push(Neighbour::Collinear { id: nid });
-            }
-        } else {
-            let nbr_point = End::point(nend, nw);
-            if nbr_point.near(my_point, ENDPOINT_TOL) {
-                out.push(Neighbour::EndToEnd { id: nid, end: nend });
-            } else if centre_line_passes_near(&nw, my_point, ENDPOINT_TOL) {
-                out.push(Neighbour::Mid { id: nid, end: nend });
-            }
-        }
-    }
-    out
-}
-
-/// Distance from point `p` to the infinite line through `w`'s centre line.
-fn line_distance_to_point(w: &Wall, p: Vec2) -> f64 {
-    let d = w.end - w.start;
-    let len2 = d.len2();
-    if len2 < 1e-24 {
-        return p.dist(w.start);
-    }
-    let v = p - w.start;
-    (v.cross(d).abs() / len2.sqrt())
-}
-
-/// Whether the interior of `w`'s centre line passes within `tol` of `p`.
-fn centre_line_passes_near(w: &Wall, p: Vec2, tol: f64) -> bool {
-    if !w.start.is_finite() || !w.end.is_finite() || !p.is_finite() {
-        return false;
-    }
-    let d = w.end - w.start;
-    let len2 = d.len2();
-    if len2 < 1e-24 {
-        return w.start.near(p, tol);
-    }
-    let t = (p - w.start).dot(d) / len2;
-    if t < 1e-6 || t > 1.0 - 1e-6 {
-        return false;
-    }
-    let foot = w.start + d * t;
-    foot.near(p, tol)
-}
-
-/// Compute the corner plan for one end of a wall.
-fn plan_end(
-    model: &ArchModel,
-    w: &Wall,
-    end: End,
-    raw: (Vec2, Vec2),
-    nbrs: &[Neighbour],
-) -> EndPlan {
-    // Fan: no join.
-    if nbrs.iter().any(|n| matches!(n, Neighbour::Fan { .. })) {
-        return EndPlan { left: raw.0, right: raw.1, join: None };
-    }
-
-    // T join (Mid): trim the incoming wall's end face onto the host's face.
-    if let Some(neigh) = nbrs.iter().find(|n| matches!(n, Neighbour::Mid { .. })) {
-        if let Some(JoinKind::Mitre) = neigh.0 {
-            // Fall through to L or no-join; T is handled by the caller.
-        }
-    }
-    if let Some(neigh) = nbrs.iter().find(|n| matches!(n, Neighbour::Mid { .. })) {
-        let Mid { id: nid, .. } = neigh;
-        let Some(host) = model.wall(nid) else {
-            return EndPlan { left: raw.0, right: raw.1, join: None };
-        };
-        let Some(host_faces) = face_lines(host) else {
-            return EndPlan { left: raw.0, right: raw.1, join: None };
-        };
-        let dir = w.end - w.start;
-        let len2 = dir.len2();
-        if len2 < 1e-24 {
-            return EndPlan { left: raw.0, right: raw.1, join: None };
-        }
-        let dir_unit = dir / dir.len();
-        let perp = dir_unit.perp();
-        let half = w.thickness / 2.0;
-
-        // Find which host face line the incoming centre line crosses.
-        let mut centre_point: Option<Vec2> = None;
-        for face in [host_faces[0], host_faces[1]] {
-            if let Some((p, t_in, t_host)) =
-                cadcraft_geom::intersect::line_line_infinite(w.start, w.end, face.0, face.1)
-            {
-                if t_in >= -0.5 && t_in <= 1.5 && t_host >= -0.5 && t_host <= 1.5 && p.is_finite() {
-                    centre_point = Some(p);
-                    break;
-                }
-            }
-        }
-
-        if let Some(cp) = centre_point {
-            let left_c = cp + perp * half;
-            let right_c = cp - perp * half;
-            if left_c.is_finite() && right_c.is_finite() {
-                return EndPlan { left: left_c, right: right_c, join: Some(Join::T(end)) };
-            }
-        }
-        return EndPlan { left: raw.0, right: raw.1, join: None };
-    }
-
-    // L join (EndToEnd): mitre at the shared corner.
-    if let Some(neigh) = nbrs.iter().find(|n| matches!(n, Neighbour::EndToEnd { .. })) {
-        let EndToEnd { id: nid, .. } = neigh;
-        let Some(neig) = model.wall(nid) else {
-            return EndPlan { left: raw.0, right: raw.1, join: None };
-        };
-        let Some(my_faces) = face_lines(w) else {
-            return EndPlan { left: raw.0, right: raw.1, join: None };
-        };
-        let Some(nbr_faces) = face_lines(neig) else {
-            return EndPlan { left: raw.0, right: raw.1, join: None };
-        };
-
-        // Cross-pairing: my left face meets nbr's right face, my right meets nbr's left.
-        let my_left = my_faces[0];
-        let my_right = my_faces[1];
-        let nbr_left = nbr_faces[0];
-        let nbr_right = nbr_faces[1];
-
-        let new_left = intersect_faces(my_left, nbr_right).unwrap_or(raw.0);
-        let new_right = intersect_faces(my_right, nbr_left).unwrap_or(raw.1);
-
-        if new_left.is_finite() && new_right.is_finite() {
-            return EndPlan {
-                left: new_left,
-                right: new_right,
-                join: Some(Join::L(end)),
-            };
-        }
-    }
-
-    // Collinear: butt (handled in solve_joins since it needs both walls).
-    if nbrs.iter().any(|n| matches!(n, Neighbour::Collinear { .. })) {
-        // The collinear butt is applied in solve_joins to have both walls available.
-        return EndPlan { left: raw.0, right: raw.1, join: None };
-    }
-
-    EndPlan { left: raw.0, right: raw.1, join: None }
-}
-
-/// Intersect two line segments (as infinite lines) and return the intersection point.
-fn intersect_faces(
-    a: (Vec2, Vec2),
-    b: (Vec2, Vec2),
-) -> Option<Vec2> {
-    let p = cadcraft_geom::intersect::line_line_infinite(a.0, a.1, b.0, b.1)?;
-    if p.is_finite() {
-        Some(p)
-    } else {
-        None
-    }
-}
-
-/// Apply the collinear butt to wall `w` at `end`, using the other wall `other`.
-/// The trimmed corners are `other`'s endpoint offset by ±`other`'s thickness/2 perpendicular.
-fn collinear_butt_end(
-    model: &ArchModel,
-    w: &Wall,
-    end: End,
-    other: &Wall,
-) -> Option<EndPlan> {
-    let other_point = if end == End::Start {
-        // w starts where other ends
-        other.end
-    } else {
-        // w ends where other starts
-        other.start
-    };
-
-    let dir = other.end - other.start;
-    let len2 = dir.len2();
-    if len2 < 1e-24 {
-        return None;
-    }
-    let perp = (dir / dir.len()).perp();
-    let half = other.thickness / 2.0;
-
-    let left_c = other_point + perp * half;
-    let right_c = other_point - perp * half;
-    if left_c.is_finite() && right_c.is_finite() {
-        Some(EndPlan { left: left_c, right: right_c, join: Some(Join::Butt(end)) })
-    } else {
-        None
-    }
-}
-
-/// Solve every wall's poché ring. Output order == `model.walls` order; degenerate
-/// walls (wall_polygon is None) are skipped and produce no shape.
-pub fn solve_joins(model: &ArchModel) -> Vec<WallShape> {
-    let g = crate::graph::WallGraph::build(model);
-    let mut shapes: Vec<WallShape> = Vec::new();
-    for w in &model.walls {
-        if crate::wall::wall_polygon(w).is_none() {
-            continue;
-        }
-        let Some(my_faces) = face_lines(w) else {
-            continue;
-        };
-        let raw_start = (my_faces[0].0, my_faces[1].0);
-        let raw_end = (my_faces[0].1, my_faces[1].1);
-
-        let nbrs_start = classify(model, &g, w.id, End::Start);
-        let nbrs_end = classify(model, &g, w.id, End::End);
-
-        // Collinear butt handling: need both walls
-        let plan_start = plan_end(model, w, End::Start, raw_start, &nbrs_start);
-        let plan_end_res = plan_end(model, w, End::End, raw_end, &nbrs_end);
-
-        let mut start_plan = plan_start;
-        let mut end_plan = plan_end_res;
-
-        // Apply collinear butt for Start
-        if nbrs_start.iter().any(|n| matches!(n, Neighbour::Collinear { id: nid, .. }) && model.walls.iter().any(|other| other.id == *nid)) {
-            if let Some(nid) = nbrs_start.iter().find(|n| matches!(n, Neighbour::Collinear { id: nid, .. })) {
-                if let Some(other) = model.wall(*nid) {
-                    if let Some(bp) = collinear_butt_end(model, w, End::Start, other) {
-                        start_plan = bp;
-                    }
-                }
-            }
-        }
-
-        // Apply collinear butt for End
-        if nbrs_end.iter().any(|n| matches!(n, Neighbour::Collinear { id: nid, .. })) {
-            if let Some(nid) = nbrs_end.iter().find(|n| matches!(n, Neighbour::Collinear { id: nid, .. })) {
-                if let Some(other) = model.wall(*nid) {
-                    if let Some(bp) = collinear_butt_end(model, w, End::End, other) {
-                        end_plan = bp;
-                    }
-                }
-            }
-        }
-
-        let ring = ring_from_corners(start_plan.left, start_plan.right, end_plan.left, end_plan.right);
-        let Some(polygon) = ring else {
-            // Fall back to raw corners
-            let fallback_ring = ring_from_corners(raw_start.0, raw_start.1, raw_end.0, raw_end.1);
-            let Some(fb_poly) = fallback_ring else {
-                continue;
-            };
-            // Use raw corners, no joins
-            let _ = (start_plan.join, end_plan.join);
-            let centre = (w.start, w.end);
-            shapes.push(WallShape { id: w.id, polygon: fb_poly, centre, joins: Vec::new() });
-            continue;
-        };
-
-        let mut joins: Vec<Join> = Vec::new();
-        if let Some(j) = start_plan.join {
-            joins.push(j);
-        }
-        if let Some(j) = end_plan.join {
-            joins.push(j);
-        }
-
-        let centre = (w.start, w.end);
-        shapes.push(WallShape { id: w.id, polygon, centre, joins });
-    }
-    shapes
-}
+fn polygon_area(pts: &[Vec2]) -> f64 {
     if pts.len() < 3 {
         return 0.0;
     }
@@ -875,9 +546,14 @@ mod tests {
         // The bisector check: x - y should be 10 (within 1e-9)
         let bis_a_left = (a_end_left.x - a_end_left.y - 10.0).abs();
         let bis_a_right = (a_end_right.x - a_end_right.y - 10.0).abs();
-        assert!(bis_a_left < 1e-9 || bis_a_right < 1e-9,
+        assert!(
+            bis_a_left < 1e-9 || bis_a_right < 1e-9,
             "at least one mitre corner should be on bisector x-y=10, got: ({:.6},{:.6}) / ({:.6},{:.6})",
-            a_end_left.x, a_end_left.y, a_end_right.x, a_end_right.y);
+            a_end_left.x,
+            a_end_left.y,
+            a_end_right.x,
+            a_end_right.y
+        );
 
         // The shared corner between the two rings
         // A's End left should equal B's Start left
@@ -885,15 +561,12 @@ mod tests {
         let b_start_left = s1.polygon[0]; // left_start
         let b_start_right = s1.polygon[1]; // right_start
 
-        assert!(a_end_left.near(b_start_left, 1e-9) || a_end_right.near(b_start_right, 1e-9),
-            "rings should share a corner");
+        assert!(a_end_left.near(b_start_left, 1e-9) || a_end_right.near(b_start_right, 1e-9), "rings should share a corner");
 
         // Raw square corner (10, 0.5) should NOT be in either ring
         let raw_corner = Vec2::new(10.0, 0.5);
-        assert!(!s0.polygon.iter().any(|p| p.near(raw_corner, 1e-9)),
-            "wall 0 should not retain raw corner (10, 0.5)");
-        assert!(!s1.polygon.iter().any(|p| p.near(raw_corner, 1e-9)),
-            "wall 1 should not retain raw corner (10, 0.5)");
+        assert!(!s0.polygon.iter().any(|p| p.near(raw_corner, 1e-9)), "wall 0 should not retain raw corner (10, 0.5)");
+        assert!(!s1.polygon.iter().any(|p| p.near(raw_corner, 1e-9)), "wall 1 should not retain raw corner (10, 0.5)");
     }
 
     #[test]
@@ -916,10 +589,8 @@ mod tests {
         // Incoming's end face should lie on y=0.5
         let end_left = incoming.polygon[2];
         let end_right = incoming.polygon[1];
-        assert!((end_left.y - 0.5).abs() < 1e-9,
-            "incoming end left y={:.9} should be 0.5", end_left.y);
-        assert!((end_right.y - 0.5).abs() < 1e-9,
-            "incoming end right y={:.9} should be 0.5", end_right.y);
+        assert!((end_left.y - 0.5).abs() < 1e-9, "incoming end left y={:.9} should be 0.5", end_left.y);
+        assert!((end_right.y - 0.5).abs() < 1e-9, "incoming end right y={:.9} should be 0.5", end_right.y);
 
         // Host polygon unchanged: bounds span y in [-0.5, 0.5]
         let hb = host.bounds();
@@ -973,11 +644,9 @@ mod tests {
         let b_corners = [s1.polygon[0], s1.polygon[1]];
 
         // At least one of A's End corners should be on the bisector
-        assert!(a_corners.iter().any(|c| check_corner(c)),
-            "wall A mitre corner should be on bisector of 0°/60°");
+        assert!(a_corners.iter().any(|c| check_corner(c)), "wall A mitre corner should be on bisector of 0°/60°");
         // At least one of B's Start corners should be on the bisector
-        assert!(b_corners.iter().any(|c| check_corner(c)),
-            "wall B mitre corner should be on bisector of 0°/60°");
+        assert!(b_corners.iter().any(|c| check_corner(c)), "wall B mitre corner should be on bisector of 0°/60°");
     }
 
     #[test]
@@ -1057,22 +726,18 @@ mod tests {
         // Check that wall 0's End left corner == wall 1's Start left corner (shared at bottom-right)
         // Wall 0 (bottom): End left = polygon[2]
         // Wall 1 (right): Start left = polygon[0]
-        assert!(shapes[0].polygon[2].near(shapes[1].polygon[0], 1e-9),
-            "bottom-right outer corner not shared between wall 0 End and wall 1 Start");
+        assert!(shapes[0].polygon[2].near(shapes[1].polygon[0], 1e-9), "bottom-right outer corner not shared between wall 0 End and wall 1 Start");
 
         // Wall 1 (right): End left = polygon[2]
         // Wall 2 (top): Start left = polygon[0]
-        assert!(shapes[1].polygon[2].near(shapes[2].polygon[0], 1e-9),
-            "top-right outer corner not shared between wall 1 End and wall 2 Start");
+        assert!(shapes[1].polygon[2].near(shapes[2].polygon[0], 1e-9), "top-right outer corner not shared between wall 1 End and wall 2 Start");
 
         // Wall 2 (top): End left = polygon[2]
         // Wall 3 (left): Start left = polygon[0]
-        assert!(shapes[2].polygon[2].near(shapes[3].polygon[0], 1e-9),
-            "top-left outer corner not shared between wall 2 End and wall 3 Start");
+        assert!(shapes[2].polygon[2].near(shapes[3].polygon[0], 1e-9), "top-left outer corner not shared between wall 2 End and wall 3 Start");
 
         // Wall 3 (left): End left = polygon[2]
         // Wall 0 (bottom): Start left = polygon[0]
-        assert!(shapes[3].polygon[2].near(shapes[0].polygon[0], 1e-9),
-            "bottom-left outer corner not shared between wall 3 End and wall 0 Start");
+        assert!(shapes[3].polygon[2].near(shapes[0].polygon[0], 1e-9), "bottom-left outer corner not shared between wall 3 End and wall 0 Start");
     }
 }
