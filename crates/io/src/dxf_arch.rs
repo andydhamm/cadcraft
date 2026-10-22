@@ -74,7 +74,7 @@ mod tests {
         let m = one_wall_model();
         let chunks = match arch_chunks(&m) {
             Some(c) => c,
-            None => assert!(false, "a one-wall model must write an XRECORD"),
+            None => Vec::new(),
         };
         assert!(!chunks.is_empty(), "a one-wall model must write a non-empty XRECORD");
         let text = chunks.join("");
@@ -103,7 +103,7 @@ mod tests {
         let m = one_wall_model();
         let mut obj: serde_json::Value = match serde_json::to_value(&m) {
             Ok(v) => v,
-            Err(e) => assert!(false, "own model must serialise: {e}"),
+            Err(_) => serde_json::Value::Null,
         };
         if let Some(map) = obj.as_object_mut() {
             map.remove("next_id");
@@ -112,8 +112,9 @@ mod tests {
         }
         let text: String = match serde_json::to_string(&serde_json::json!({ "version": 1, "model": obj.clone() })) {
             Ok(t) => t,
-            Err(e) => assert!(false, "own model must serialise: {e}"),
+            Err(_) => String::new(),
         };
+        assert!(!text.is_empty());
         assert!(parse_arch(&text).is_some());
     }
 
