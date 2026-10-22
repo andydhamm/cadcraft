@@ -110,9 +110,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     };
 
     // --- Build wall objects ---
-    let base_level_idx = level
-        .map(|l| d.arch.levels.iter().position(|lv| lv.name == l.name))
-        .unwrap_or(0) as u32;
+    let base_level_idx = level.map(|l| d.arch.levels.iter().position(|lv| lv.name == l.name)).unwrap_or(0) as u32;
     let layers = super::wall_layers(exterior);
     let mut new_walls: Vec<Wall> = Vec::with_capacity(pts.len().saturating_sub(1));
     for i in 0..pts.len().saturating_sub(1) {
@@ -195,7 +193,7 @@ mod tests {
             "points": [[0.0, 0.0], [1.0, 0.0]],
             "thickness": 0.0,
         });
-        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg:_ })));
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
 
         // thickness: -1
         let p = json!({
@@ -215,7 +213,7 @@ mod tests {
             "points": [[0.0, 0.0], [1.0, 0.0]],
             "height": -1.0,
         });
-        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ }))));
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
     }
 
     #[test]
