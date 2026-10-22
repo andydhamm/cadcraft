@@ -20,6 +20,7 @@ use cadcraft_geom::Vec2;
 use serde_json::{Value, json};
 
 use crate::cmd::{CommandSpec, bad, bool_or, distinct_points, points_param, size_param, str_param};
+use crate::prompt::{Accept, Input, Interactive, Prompt, Step};
 use crate::{EngineError, Result, Session};
 
 /// Command specs for the wall module.
@@ -28,8 +29,170 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("wall", "Wall", run_wall)
             .menu(&["Architecture", "Wall"])
             .alias(&["wal"])
-            .params("{points: [[x,y],...], thickness?, height?, exterior?, closed?, level?, type?}"),
+            .params("{points: [[x,y],...], thickness?, height?, exterior?, closed?, level?, type?}")
+            .interactive(|_| Ok(Box::new(WallM::default()))),
     ]
+}
+
+/// Which dimension the machine is currently prompting for a number entry.
+#[derive(Clone, Copy, PartialEq)]
+enum NumTarget {
+    Thickness,
+    Height,
+}
+
+/// Interactive `WALL` machine: collects points for wall segments with
+/// `Type`/`Thickness`/`Height` keyword support.
+///
+/// The machine delegates to the JSON `wall` command on finish so there is
+/// exactly one implementation path and one undo step.
+pub struct WallM {
+    pts: Vec<Vec2>,
+    base: Option<Vec2>,
+    thickness: Option<f64>,
+    height: Option<f64>,
+    exterior: bool,
+    closed: bool,
+    num_target: Option<NumTarget>,
+}
+
+impl Default for WallM {
+    fn default() -> Self {
+        Self { pts: Vec::new(), base: None, thickness: None, height: None, exterior: true, closed: false, num_target: None }
+    }
+}
+
+impl Interactive for WallM {
+    fn name(&self) -> &'static str {
+        "wall"
+    }
+
+    fn prompt(&self, _s: &Session) -> Prompt {
+        if let Some(target) = self.num_target {
+            let msg = match target {
+                NumTarget::Thickness => "Specify thickness:".to_string(),
+                NumTarget::Height => "Specify height:".to_string(),
+            };
+            return Prompt {
+                message: msg,
+                keywords: Vec::new(),
+                default: None,
+                accept: Accept::TEXT,
+                base: None,
+                corner: false,
+                grip: None,
+                picker: None,
+                distance: false,
+                deferred: false,
+                raw: false,
+            };
+        }
+
+        let (message, keywords) = if self.pts.is_empty() {
+            ("Specify start point:".to_string(), Vec::new())
+        } else {
+            ("Specify next point or [Type/Thickness/Height]:".to_string(), vec!["Type".to_string(), "Thickness".to_string(), "Height".to_string()])
+        };
+
+        Prompt {
+            message,
+            keywords,
+            default: None,
+            accept: Accept::POINT,
+            base: self.base,
+            corner: false,
+            grip: None,
+            picker: None,
+            distance: false,
+            deferred: false,
+            raw: false,
+        }
+    }
+
+    fn input(&mut self, s: &mut Session, i: Input) -> Result<Step> {
+        match i {
+            Input::Point(pt) => {
+                if self.num_target.is_some() {
+                    // A point is not a number; re-prompt for the value.
+                    return Ok(Step::Continue);
+                }
+                if !pt.is_finite() {
+                    return Ok(Step::Continue);
+                }
+                if self.pts.len() < super::MAX_WALLS {
+                    self.pts.push(pt);
+                }
+                self.base = Some(pt);
+                Ok(Step::Continue)
+            }
+            Input::Text(txt) => {
+                if self.num_target.is_some() {
+                    return self.parse_number(&txt);
+                }
+                if txt.trim().is_empty() {
+                    if self.pts.len() >= 2 {
+                        let params = self.build_params();
+                        return s.execute("wall", &params).map(|_| Step::Done);
+                    }
+                    return Ok(Step::Continue);
+                }
+                let lower = txt.to_ascii_lowercase().trim().to_string();
+                match lower.as_str() {
+                    "type" => {
+                        self.exterior = !self.exterior;
+                        self.thickness = None;
+                        Ok(Step::Continue)
+                    }
+                    "thickness" => {
+                        self.num_target = Some(NumTarget::Thickness);
+                        Ok(Step::Continue)
+                    }
+                    "height" => {
+                        self.num_target = Some(NumTarget::Height);
+                        Ok(Step::Continue)
+                    }
+                    _ => Ok(Step::Continue),
+                }
+            }
+            Input::Cancel => Ok(Step::Cancel),
+            _ => Ok(Step::Continue),
+        }
+    }
+}
+
+impl WallM {
+    /// Build the JSON parameter object that the JSON `wall` command accepts.
+    /// `thickness` and `height` are included only when the user set them.
+    fn build_params(&self) -> Value {
+        let points: Vec<Value> = self.pts.iter().map(|p| json!([p.x, p.y])).collect();
+        let mut map = serde_json::Map::new();
+        map.insert("points".to_string(), json!(points));
+        map.insert("exterior".to_string(), json!(self.exterior));
+        if let Some(t) = self.thickness {
+            map.insert("thickness".to_string(), json!(t));
+        }
+        if let Some(h) = self.height {
+            map.insert("height".to_string(), json!(h));
+        }
+        Value::Object(map)
+    }
+
+    /// Parse `txt` as the number requested by `num_target`.
+    /// Rejects non-positive, non-finite, and unparseable values by re-prompting.
+    fn parse_number(&mut self, txt: &str) -> Result<Step> {
+        match txt.trim().parse::<f64>() {
+            Ok(v) if v.is_finite() && v > 0.0 => {
+                match self.num_target {
+                    Some(NumTarget::Thickness) => self.thickness = Some(v),
+                    Some(NumTarget::Height) => self.height = Some(v),
+                    None => {}
+                }
+                self.num_target = None;
+                Ok(Step::Continue)
+            }
+            _ => Ok(Step::Continue),
+        }
+    }
 }
 
 /// Run the `wall` command from JSON parameters. Never opens a dialog.
@@ -319,5 +482,78 @@ mod tests {
         let _ = s.execute("wall", &p).unwrap();
         let d = s.doc().unwrap();
         assert_eq!(d.arch.walls[0].height, 3.0);
+    }
+
+    #[test]
+    fn wall_machine_collects_points_and_creates_walls() {
+        let mut s = new_session_with_level();
+        s.start("wall").unwrap();
+        s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
+        s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
+        s.input(Input::Point(Vec2::new(3.0, 3.0))).unwrap();
+        s.input(Input::Text("".to_string()).into()).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 2);
+    }
+
+    #[test]
+    fn wall_machine_thickness_keyword_rejects_zero() {
+        let mut s = new_session_with_level();
+        s.start("wall").unwrap();
+        s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
+        s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
+        // Trigger the thickness prompt
+        s.input(Input::Text("Thickness".to_string()).into()).unwrap();
+        // Submit zero, which must be rejected (re-prompt, not finish)
+        s.input(Input::Text("0".to_string()).into()).unwrap();
+        // The wall has not been created yet because we never finished.
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
+        // Now submit a valid value and finish
+        s.input(Input::Text("4.0".to_string()).into()).unwrap();
+        s.input(Input::Text("".to_string()).into()).unwrap();
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 1);
+    }
+
+    #[test]
+    fn wall_machine_type_keyword_switches_to_interior() {
+        let mut s = new_session_with_level();
+        s.start("wall").unwrap();
+        s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
+        s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
+        // Default exterior = true; toggle to interior
+        s.input(Input::Text("type".to_string()).into()).unwrap();
+        s.input(Input::Text("".to_string()).into()).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 1);
+        assert!(!d.arch.walls[0].exterior);
+        assert_eq!(d.arch.walls[0].wall_type, "interior".to_string());
+    }
+
+    #[test]
+    fn wall_machine_cancel_touches_nothing() {
+        let mut s = new_session_with_level();
+        let before = s.doc().unwrap().arch.walls.len();
+        let before_rev = s.doc().unwrap().arch_revision;
+        s.start("wall").unwrap();
+        s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
+        s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
+        s.input(Input::Cancel).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), before);
+        assert_eq!(d.arch_revision, before_rev);
+    }
+
+    #[test]
+    fn wall_machine_needs_two_points_to_finish() {
+        let mut s = new_session_with_level();
+        s.start("wall").unwrap();
+        s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
+        // Enter with only one point: must not finish.
+        s.input(Input::Text("".to_string()).into()).unwrap();
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
+        // Add a second point and now finish.
+        s.input(Input::Point(Vec2::new(4.0, 0.0))).unwrap();
+        s.input(Input::Text("".to_string()).into()).unwrap();
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 1);
     }
 }
