@@ -102,8 +102,9 @@ pub fn wall_layer_polygons(w: &Wall) -> Vec<(String, Vec<Vec2>)> {
         if t < 1e-12 {
             continue;
         }
+        let outer = half - consumed;
+        let inner = half - consumed - t;
         consumed += t;
-        let inner = half - t;
         let a = w.start - perp * outer;
         let b = w.end - perp * outer;
         let c = w.end + perp * inner;
@@ -194,8 +195,8 @@ mod tests {
         let p = wall_polygon(&w).unwrap();
         let pb = Bounds2::from_points(p.iter().copied());
         assert_eq!(b, pb);
-        assert!((b.min.x - (-0.5)).abs() < 1e-9);
-        assert!((b.max.x - 11.5).abs() < 1e-9);
+        assert!((b.min.x - 1.0).abs() < 1e-9);
+        assert!((b.max.x - 11.0).abs() < 1e-9);
         assert!((b.min.y - 0.5).abs() < 1e-9);
         assert!((b.max.y - 3.5).abs() < 1e-9);
     }
