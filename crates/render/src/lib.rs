@@ -7,6 +7,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+mod arch;
 pub mod clip;
 mod dim;
 mod fill;
@@ -30,6 +31,7 @@ use cadcraft_doc::{Drawing, Entity, EntityKind, Handle, Lineweight, Prim, Space}
 use cadcraft_geom::{Bounds2, Mat3, Polyline, Vec2};
 use pen::Pen;
 
+pub use arch::{arch_handle, build_arch};
 pub use dim::{ArrowGeom, Arrowhead, DimGeometry, DimText, LineRole, arrowhead, dimension_geometry, dimension_geometry_with, format_linear_value};
 pub use fill::triangulate_evenodd;
 pub use hatch::{fill_loops as hatch_fill_loops, pattern_swatch};
