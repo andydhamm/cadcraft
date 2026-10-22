@@ -4,10 +4,12 @@ use cadcraft_geom::Vec2;
 
 use crate::{DPrim, DisplayList, Kind, Options};
 
+pub use cadcraft_doc::is_arch_handle;
+
 /// Stable proxy handle for an architectural object: arch objects have no entity handle, so
 /// selection and picking map back to the `ArchId` through this reserved range.
 pub fn arch_handle(id: ArchId) -> Handle {
-    Handle(0xA000_0000u64.saturating_add(u64::from(id.0)))
+    cadcraft_doc::arch_handle(id)
 }
 
 /// The poché (2D cross-section) primitives for `d.arch`, in wall order. The caller merges the

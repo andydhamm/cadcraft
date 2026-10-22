@@ -4,6 +4,7 @@
 //! This is the data layer (L1). 2D algorithms (joins, room detection, roof generation)
 //! live in `crates/arch` (L2) and operate on this model.
 
+use crate::Handle;
 use cadcraft_geom::{Bounds2, Vec2};
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +36,25 @@ impl std::str::FromStr for ArchId {
         let n = u32::from_str_radix(digits, 10).map_err(|_| format!("invalid arch id `{s}`"))?;
         Ok(ArchId(n))
     }
+}
+
+/// Base of the synthetic handle range reserved for architectural objects.
+///
+/// Arch objects are not entities in the store; render, grip and pick layers
+/// route on [`is_arch_handle`] to distinguish them from real entity handles.
+pub const ARCH_HANDLE_BASE: u64 = 0xA000_0000;
+
+/// The synthetic proxy handle for an architectural object.
+///
+/// Arch objects have no entity handle, so selection and picking map back to the
+/// [`ArchId`] through this reserved range.
+pub fn arch_handle(id: ArchId) -> Handle {
+    Handle(ARCH_HANDLE_BASE.saturating_add(u64::from(id.0)))
+}
+
+/// Whether `h` falls in the synthetic arch-handle range.
+pub fn is_arch_handle(h: Handle) -> bool {
+    h.0 >= ARCH_HANDLE_BASE && h.0 < ARCH_HANDLE_BASE.saturating_add(1u64 << 32)
 }
 
 /// Maximum number of walls in a drawing (caps join-stretch BFS and allocations).
@@ -604,5 +624,41 @@ mod tests {
         let msgs = m.validate();
         let count = msgs.iter().filter(|m| m.contains("max")).count();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn arch_handle_round_trips_and_is_recognised() {
+        assert!(is_arch_handle(arch_handle(ArchId(0))));
+        assert!(is_arch_handle(arch_handle(ArchId(7))));
+        assert_ne!(arch_handle(ArchId(0)), arch_handle(ArchId(1)));
+    }
+
+    #[test]
+    fn is_arch_handle_false_for_entity_handles() {
+        assert!(!is_arch_handle(Handle(0)));
+        assert!(!is_arch_handle(Handle(0x9FFF_FFFF)));
+    }
+
+    #[test]
+    fn drawing_default_has_an_empty_arch_model() {
+        assert!(Drawing::new_metric().arch.is_empty());
+        assert!(Drawing::default().arch.walls.is_empty());
+    }
+
+    #[test]
+    fn next_wall_id_never_reuses_an_id() {
+        let mut m = ArchModel::default();
+        let id1 = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), 0.2));
+        let id2 = m.push_wall(Wall::new(Vec2::new(2.0, 0.0), Vec2::new(3.0, 0.0), 0.2));
+        assert_ne!(id1, id2);
+        assert_ne!(id1, m.next_wall_id());
+        assert_ne!(id2, m.next_wall_id());
+        assert_eq!(m.next_wall_id(), ArchId(2));
+    }
+
+    #[test]
+    fn arch_id_from_str_is_case_insensitive() {
+        assert_eq!("w12".parse::<ArchId>().unwrap(), ArchId(12));
+        assert_eq!("W12".parse::<ArchId>().unwrap(), ArchId(12));
     }
 }
