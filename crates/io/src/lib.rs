@@ -12,6 +12,7 @@ mod dxf_read;
 mod dxf_table;
 mod dxf_write;
 mod dxf_xref;
+pub mod glb;
 pub mod pdf;
 pub mod plotter;
 pub mod svg;
@@ -122,6 +123,7 @@ pub fn write_framed(d: &Drawing, name: &str, window: Option<Bounds2>) -> Result<
     }
     match ext(name).as_str() {
         "dxf" | "" | "dwg" => write_with(d, name, &SaveOptions::default()),
+        "glb" => Ok(glb::write_drawing(d)),
         "svg" => Ok(svg::export_window(d, &Space::Model, window).into_bytes()),
         "png" => png_framed(d, &Space::Model, 2400, 1600, window),
         "pdf" => pdf::pdf(d, &Space::Model, &PdfOptions { compress: true, window, ..PdfOptions::default() }),
