@@ -13,7 +13,7 @@ pub use crate::mesh::{Bounds3, Mesh};
 use std::collections::BTreeSet;
 
 use cadcraft_arch::join::solve_joins;
-use cadcraft_doc::ArchModel;
+use cadcraft_doc::{ArchId, ArchModel};
 
 /// A 3D scene composed of extruded architectural meshes.
 #[derive(Debug, Clone)]

@@ -130,7 +130,7 @@ impl Mesh {
         }
         // Ensure CCW ordering so outward normals are correct.
         let ring: Vec<Vec2> = if area < 0.0 { ring.iter().rev().cloned().collect() } else { ring.to_vec() };
-        let m = ring.len();
+        let m = ring.len() as u32;
 
         let z0f = z0 as f32;
         let z1f = z1 as f32;
@@ -154,9 +154,9 @@ impl Mesh {
         let s_base = self.positions.len() as u32;
         // Bottom side ring
         for i in 0..m {
-            let (nx, ny) = outward_normal(&ring[i % m], &ring[(i + 1) % m]);
+            let (nx, ny) = outward_normal(&ring[(i % m) as usize], &ring[((i + 1) % m) as usize]);
             for _ in 0..2 {
-                let p = ring[i % m];
+                let p = ring[(i % m) as usize];
                 self.positions.push([p.x as f32, p.y as f32, z0f]);
                 self.uvs.push([p.x as f32, z0f]);
                 self.normals.push([nx, ny, 0.0]);
@@ -164,9 +164,9 @@ impl Mesh {
         }
         // Top side ring
         for i in 0..m {
-            let (nx, ny) = outward_normal(&ring[i % m], &ring[(i + 1) % m]);
+            let (nx, ny) = outward_normal(&ring[(i % m) as usize], &ring[((i + 1) % m) as usize]);
             for _ in 0..2 {
-                let p = ring[i % m];
+                let p = ring[(i % m) as usize];
                 self.positions.push([p.x as f32, p.y as f32, z1f]);
                 self.uvs.push([p.x as f32, z1f]);
                 self.normals.push([nx, ny, 0.0]);
