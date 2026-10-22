@@ -15,7 +15,7 @@ use crate::wall::wall_polygon;
 pub struct WallGraph {
     nodes: Vec<(ArchId, Vec2, Vec2)>,
     clusters: Vec<Vec<(ArchId, End)>>,
-    end_cluster: BTreeMap<(ArchId, End), usize>,
+    end_cluster: HashMap<(ArchId, End), usize>,
 }
 
 impl WallGraph {
@@ -30,12 +30,12 @@ impl WallGraph {
             if graph.nodes.len() >= MAX_WALLS {
                 break;
             }
-            if wall_polygon(&entry.wall).is_none() {
+            if wall_polygon(entry).is_none() {
                 continue;
             }
             let id = entry.id;
-            let start = entry.wall.start;
-            let end = entry.wall.end;
+            let start = entry.start;
+            let end = entry.end;
             graph.nodes.push((id, start, end));
             ends.push((id, End::Start, start));
             ends.push((id, End::End, end));
@@ -64,7 +64,13 @@ impl WallGraph {
 
         // Sort cluster members for determinism.
         for cluster in &mut graph.clusters {
-            cluster.sort();
+            cluster.sort_by(|a, b| {
+                a.0.cmp(&b.0).then_with(|| {
+                    let a_val = if a.1 == End::Start { 0u8 } else { 1u8 };
+                    let b_val = if b.1 == End::Start { 0u8 } else { 1u8 };
+                    a_val.cmp(&b_val)
+                })
+            });
         }
 
         graph
@@ -87,7 +93,9 @@ impl WallGraph {
                     let (id_j, end_j) = self.clusters[j][0];
                     let point_i = self.endpoint_point(id_i, end_i);
                     let point_j = self.endpoint_point(id_j, end_j);
-                    if point_i.distance_to(point_j) <= ENDPOINT_TOL {
+                    let dx = point_i.x - point_j.x;
+                    let dy = point_i.y - point_j.y;
+                    if dx * dx + dy * dy <= ENDPOINT_TOL * ENDPOINT_TOL {
                         for member in self.clusters[j].drain(..) {
                             self.clusters[i].push(member);
                             self.end_cluster.insert(member, i);
@@ -110,7 +118,7 @@ impl WallGraph {
         }
         self.clusters = new_clusters;
 
-        let mut new_end_cluster = BTreeMap::new();
+        let mut new_end_cluster = HashMap::new();
         for ((id, end), idx) in self.end_cluster.iter() {
             if let Some(new_idx) = remap.get(idx) {
                 new_end_cluster.insert((*id, *end), *new_idx);
@@ -148,11 +156,19 @@ impl WallGraph {
         let mut result = Vec::new();
         for (id, end) in self.end_cluster.keys() {
             let point = self.endpoint_point(*id, *end);
-            if point.distance_to(p) <= ENDPOINT_TOL {
+            let dx = point.x - p.x;
+            let dy = point.y - p.y;
+            if dx * dx + dy * dy <= ENDPOINT_TOL * ENDPOINT_TOL {
                 result.push((*id, *end));
             }
         }
-        result.sort();
+        result.sort_by(|a, b| {
+            a.0.cmp(&b.0).then_with(|| {
+                let a_val = if a.1 == End::Start { 0u8 } else { 1u8 };
+                let b_val = if b.1 == End::Start { 0u8 } else { 1u8 };
+                a_val.cmp(&b_val)
+            })
+        });
         result
     }
 
