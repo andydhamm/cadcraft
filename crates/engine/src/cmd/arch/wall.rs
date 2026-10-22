@@ -63,7 +63,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let d = s.doc_mut()?;
 
     // `type` overrides `exterior`; knee/railing/retaining are treated as interior
-    let exterior = match type_str {
+    let exterior = match &type_str {
         None => bool_or(p, "exterior", true),
         Some(t) => match t.as_str() {
             "exterior" => true,
@@ -71,6 +71,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
             _ => return Err(bad("wall", format!("unknown wall type `{t}`"))),
         },
     };
+    let wall_type = type_str.clone().unwrap_or_else(|| if exterior { "exterior".to_string() } else { "interior".to_string() });
 
     // Thickness: explicit or default based on exterior
     let thickness = size_param("wall", p, "thickness", false)?;
@@ -110,7 +111,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     };
 
     // --- Build wall objects ---
-    let base_level_idx = level.map(|l| d.arch.levels.iter().position(|lv| lv.name == l.name)).unwrap_or(0) as u32;
+    let base_level_idx = level.and_then(|l| d.arch.levels.iter().position(|lv| lv.name == l.name)).unwrap_or(0) as u32;
     let layers = super::wall_layers(exterior);
     let mut new_walls: Vec<Wall> = Vec::with_capacity(pts.len().saturating_sub(1));
     for i in 0..pts.len().saturating_sub(1) {
@@ -124,6 +125,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
             base_level: base_level_idx,
             to_ceiling: true,
             exterior,
+            wall_type: wall_type.clone(),
             join_start: JoinKind::default(),
             join_end: JoinKind::default(),
             layers: layers.clone(),
