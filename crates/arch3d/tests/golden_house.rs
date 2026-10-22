@@ -9,9 +9,10 @@
 //! The expected hash constant is written in by the developer after the first
 //! successful run.  Update it if the geometry changes intentionally.
 
-use cadcraft_arch3d::{Scene3d, build, build_dirty};
-use cadcraft_doc::arch::{ArchModel, Wall};
+use cadcraft_arch3d::Scene3d;
+use cadcraft_arch3d::builder::{build, build_dirty};
 use cadcraft_doc::geom::Vec2;
+use cadcraft_doc::{ArchModel, Wall};
 
 /// FNV-1a 64-bit hash (no external dependency).
 fn fnv1a_hash(data: &[u8]) -> u64 {
@@ -23,26 +24,24 @@ fn fnv1a_hash(data: &[u8]) -> u64 {
     hash
 }
 
-/// Concatenate all mesh vertex/UV/normal/normal-index bytes into one
+/// Concatenate all mesh position/UV/index bytes into one
 /// deterministic byte sequence for hashing.
 fn scene_bytes(scene: &Scene3d) -> Vec<u8> {
     let mut buf: Vec<u8> = Vec::new();
     for mesh in &scene.meshes {
         // object id (4 bytes)
-        buf.extend_from_slice(&mesh.object.to_le_bytes());
-        // per-vertex: position (3 × f32), uv (2 × f32)
-        for v in &mesh.vertices {
-            buf.extend_from_slice(&v[0].to_f32().to_le_bytes());
-            buf.extend_from_slice(&v[1].to_f32().to_le_bytes());
-            buf.extend_from_slice(&v[2].to_f32().to_le_bytes());
-            if let Some(uv) = &mesh.uv {
-                let (ux, uy) = match uv {
-                    0 => &v[4],
-                    1 => &v[5],
-                    _ => &v[0],
-                };
-                buf.extend_from_slice(&ux.to_f32().to_le_bytes());
-                buf.extend_from_slice(&uy.to_f32().to_le_bytes());
+        buf.extend_from_slice(&mesh.object.0.to_le_bytes());
+        // per-vertex: position (3 × f32)
+        for p in &mesh.positions {
+            buf.extend_from_slice(&p[0].to_f32().to_le_bytes());
+            buf.extend_from_slice(&p[1].to_f32().to_le_bytes());
+            buf.extend_from_slice(&p[2].to_f32().to_le_bytes());
+        }
+        // per-vertex UVs if present
+        if let Some(uvs) = &mesh.uvs {
+            for uv in uvs {
+                buf.extend_from_slice(&uv[0].to_f32().to_le_bytes());
+                buf.extend_from_slice(&uv[1].to_f32().to_le_bytes());
             }
         }
         // index count
@@ -122,13 +121,13 @@ fn golden_house_scene_hash() {
     let (mut min_x, mut min_y, mut min_z) = (f64::INFINITY, f64::INFINITY, f64::INFINITY);
     let (mut max_x, mut max_y, mut max_z) = (f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
     for mesh in &scene.meshes {
-        for v in &mesh.vertices {
-            min_x = min_x.min(v[0]);
-            max_x = max_x.max(v[0]);
-            min_y = min_y.min(v[1]);
-            max_y = max_y.max(v[1]);
-            min_z = min_z.min(v[2]);
-            max_z = max_z.max(v[2]);
+        for p in &mesh.positions {
+            min_x = min_x.min(p[0]);
+            max_x = max_x.max(p[0]);
+            min_y = min_y.min(p[1]);
+            max_y = max_y.max(p[1]);
+            min_z = min_z.min(p[2]);
+            max_z = max_z.max(p[2]);
         }
     }
     // Allow ±0.5 m tolerance for wall offset.

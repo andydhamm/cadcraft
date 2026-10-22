@@ -5,8 +5,8 @@
 
 use cadcraft_arch::join::WallShape;
 use cadcraft_arch::join::{solve_joins, stretch_wall};
-use cadcraft_doc::arch::{ArchId, ArchModel, JoinKind, Wall, WallType};
 use cadcraft_doc::geom::Vec2;
+use cadcraft_doc::{ArchId, ArchModel, JoinKind, Wall, WallType};
 
 /// A minimal xorshift64* PRNG with a fixed non-zero initial state.
 #[derive(Clone, Copy)]
@@ -132,7 +132,7 @@ fn assert_in_envelope(model: &ArchModel, shape: &WallShape, tol: f64) {
     let min_y = w.start.y.min(w.end.y) - w.thickness - tol;
     let max_y = w.end.y.max(w.start.y) + w.thickness + tol;
 
-    for v in &shape.ring {
+    for v in &shape.polygon {
         assert!(v.is_finite(), "non-finite vertex in shape {0}", shape.id);
         assert!(v.x >= min_x && v.x <= max_x, "vertex x {:.4} outside [{:.4}..{:.4}]", v.x, min_x, max_x);
         assert!(v.y >= min_y && v.y <= max_y, "vertex y {:.4} outside [{:.4}..{:.4}]", v.y, min_y, max_y);
