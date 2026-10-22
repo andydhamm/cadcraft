@@ -46,7 +46,6 @@ enum NumTarget {
 ///
 /// The machine delegates to the JSON `wall` command on finish so there is
 /// exactly one implementation path and one undo step.
-#[derive(Default)]
 pub struct WallM {
     pts: Vec<Vec2>,
     base: Option<Vec2>,
@@ -77,13 +76,15 @@ impl Interactive for WallM {
             return Prompt {
                 message: msg,
                 keywords: Vec::new(),
-                default: String::new(),
+                default: None,
                 accept: Accept::TEXT,
                 base: None,
-                corner: None,
+                corner: false,
                 grip: None,
                 picker: None,
                 distance: None,
+                deferred: None,
+                raw: String::new(),
             };
         }
 
@@ -96,13 +97,15 @@ impl Interactive for WallM {
         Prompt {
             message,
             keywords,
-            default: String::new(),
+            default: None,
             accept: Accept::POINT,
             base: self.base,
-            corner: None,
+            corner: false,
             grip: None,
             picker: None,
             distance: None,
+            deferred: None,
+            raw: String::new(),
         }
     }
 
@@ -126,6 +129,13 @@ impl Interactive for WallM {
                 if self.num_target.is_some() {
                     return self.parse_number(&txt);
                 }
+                if txt.trim().is_empty() {
+                    if self.pts.len() >= 2 {
+                        let params = self.build_params();
+                        return s.execute("wall", &params).map(|_| Step::Done);
+                    }
+                    return Ok(Step::Continue);
+                }
                 let lower = txt.to_ascii_lowercase().trim().to_string();
                 match lower.as_str() {
                     "type" => {
@@ -144,14 +154,6 @@ impl Interactive for WallM {
                     _ => Ok(Step::Continue),
                 }
             }
-            Input::Empty => {
-                if self.pts.len() >= 2 {
-                    let params = self.build_params();
-                    s.execute("wall", &params).map(|_| Step::Done)
-                } else {
-                    Ok(Step::Continue)
-                }
-            }
             Input::Cancel => Ok(Step::Cancel),
             _ => Ok(Step::Continue),
         }
@@ -163,14 +165,16 @@ impl WallM {
     /// `thickness` and `height` are included only when the user set them.
     fn build_params(&self) -> Value {
         let points: Vec<Value> = self.pts.iter().map(|p| json!([p.x, p.y])).collect();
-        let mut v = json!({ "points": points, "exterior": self.exterior });
+        let mut map = serde_json::Map::new();
+        map.insert("points".to_string(), json!(points));
+        map.insert("exterior".to_string(), json!(self.exterior));
         if let Some(t) = self.thickness {
-            v.insert("thickness".to_string(), json!(t));
+            map.insert("thickness".to_string(), json!(t));
         }
         if let Some(h) = self.height {
-            v.insert("height".to_string(), json!(h));
+            map.insert("height".to_string(), json!(h));
         }
-        v
+        Value::Object(map)
     }
 
     /// Parse `txt` as the number requested by `num_target`.
@@ -487,8 +491,7 @@ mod tests {
         s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
         s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
         s.input(Input::Point(Vec2::new(3.0, 3.0))).unwrap();
-        let step = s.input(Input::Empty).unwrap();
-        assert_eq!(step, Step::Done);
+        s.input(Input::Text("").into()).unwrap();
         let d = s.doc().unwrap();
         assert_eq!(d.arch.walls.len(), 2);
     }
@@ -502,13 +505,12 @@ mod tests {
         // Trigger the thickness prompt
         s.input(Input::Text("Thickness".into())).unwrap();
         // Submit zero, which must be rejected (re-prompt, not finish)
-        let step = s.input(Input::Text("0".into())).unwrap();
-        assert_eq!(step, Step::Continue);
+        s.input(Input::Text("0".into())).unwrap();
         // The wall has not been created yet because we never finished.
         assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
         // Now submit a valid value and finish
         s.input(Input::Text("4.0".into())).unwrap();
-        s.input(Input::Empty).unwrap();
+        s.input(Input::Text("").into()).unwrap();
         assert_eq!(s.doc().unwrap().arch.walls.len(), 1);
     }
 
@@ -520,7 +522,7 @@ mod tests {
         s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
         // Default exterior = true; toggle to interior
         s.input(Input::Text("type".into())).unwrap();
-        s.input(Input::Empty).unwrap();
+        s.input(Input::Text("").into()).unwrap();
         let d = s.doc().unwrap();
         assert_eq!(d.arch.walls.len(), 1);
         assert!(!d.arch.walls[0].exterior);
@@ -547,12 +549,11 @@ mod tests {
         s.start("wall").unwrap();
         s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
         // Enter with only one point: must not finish.
-        let step = s.input(Input::Empty).unwrap();
-        assert_eq!(step, Step::Continue);
+        s.input(Input::Text("").into()).unwrap();
         assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
         // Add a second point and now finish.
         s.input(Input::Point(Vec2::new(4.0, 0.0))).unwrap();
-        s.input(Input::Empty).unwrap();
+        s.input(Input::Text("").into()).unwrap();
         assert_eq!(s.doc().unwrap().arch.walls.len(), 1);
     }
 }
