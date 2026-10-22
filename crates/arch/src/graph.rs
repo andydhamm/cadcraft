@@ -96,7 +96,8 @@ impl WallGraph {
                     let dx = point_i.x - point_j.x;
                     let dy = point_i.y - point_j.y;
                     if dx * dx + dy * dy <= ENDPOINT_TOL * ENDPOINT_TOL {
-                        for member in self.clusters[j].drain(..) {
+                        let members: Vec<(ArchId, End)> = self.clusters[j].drain(..).collect();
+                        for member in members {
                             self.clusters[i].push(member);
                             self.end_cluster.insert(member, i);
                         }
@@ -257,11 +258,11 @@ impl WallGraph {
             return false;
         }
         for (id, _, _) in &self.nodes {
-            let start_cluster = match self.end_cluster.get(&(id, End::Start)) {
+            let start_cluster = match self.end_cluster.get(&(*id, End::Start)) {
                 Some(idx) => *idx,
                 None => return false,
             };
-            let end_cluster = match self.end_cluster.get(&(id, End::End)) {
+            let end_cluster = match self.end_cluster.get(&(*id, End::End)) {
                 Some(idx) => *idx,
                 None => return false,
             };
