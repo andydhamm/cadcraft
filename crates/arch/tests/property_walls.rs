@@ -129,7 +129,7 @@ fn assert_rings_well_formed(rings: &[&Vec<Vec2>]) {
 /// Each vertex of a resolved shape must lie within the original wall's
 /// bounding envelope (extended by `tol`).
 fn assert_in_envelope(model: &ArchModel, shape: &WallShape, tol: f64) {
-    let w = model.wall(&shape.id).expect("wall id missing from model");
+    let w = model.wall(shape.id).expect("wall id missing from model");
     let min_x = w.start.x.min(w.end.x) - w.thickness - tol;
     let max_x = w.end.x.max(w.start.x) + w.thickness + tol;
     let min_y = w.start.y.min(w.end.y) - w.thickness - tol;

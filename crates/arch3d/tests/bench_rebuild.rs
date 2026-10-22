@@ -92,7 +92,7 @@ fn three_hundred_walls_rebuild_under_50ms() {
 
     // --- full build ---
     let t0 = Instant::now();
-    let scene = cadcraft_arch3d::builder::build(&model);
+    let scene = cadcraft_arch3d::build(&model);
     let full_ms = t0.elapsed().as_millis() as f64 / 1_000.0;
     println!(
         "full build (300 walls): {:.1} ms, meshes: {}, tris: {}",
@@ -109,7 +109,7 @@ fn three_hundred_walls_rebuild_under_50ms() {
     dirty.insert(first_id);
 
     let t1 = Instant::now();
-    let _ = cadcraft_arch3d::builder::build_dirty(&model, &dirty, &scene);
+    let _ = cadcraft_arch3d::build_dirty(&model, &dirty, &scene);
     let dirty_ms = t1.elapsed().as_millis() as f64 / 1_000.0;
     println!("build_dirty (1 wall):  {:.1} ms", dirty_ms);
 

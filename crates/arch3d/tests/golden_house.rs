@@ -9,8 +9,7 @@
 //! The expected hash constant is written in by the developer after the first
 //! successful run.  Update it if the geometry changes intentionally.
 
-use cadcraft_arch3d::Scene3d;
-use cadcraft_arch3d::builder::{build, build_dirty};
+use cadcraft_arch3d::{Scene3d, build, build_dirty};
 use cadcraft_doc::geom::Vec2;
 use cadcraft_doc::{ArchId, ArchModel, Wall};
 
