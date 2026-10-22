@@ -1,9 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use cadcraft_doc::{ArchId, ArchModel, Wall};
+use cadcraft_doc::{ArchId, Wall};
 use cadcraft_geom::{Bounds2, Vec2};
-
-use crate::graph::WallGraph;
 
 pub const MAX_WALLS: usize = 4096;
 /// Max wall ends allowed to share one join point before we stop mitring.
@@ -126,356 +124,8 @@ pub fn ring_from_corners(left_start: Vec2, right_start: Vec2, left_end: Vec2, ri
     Some(ring)
 }
 
-/// A neighbour relationship at one wall end, used by `classify` to pick a join.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Neighbour {
-    /// A second wall whose own end is also at this point (end-to-end join).
-    EndToEnd { id: ArchId, end: End },
-    /// A wall whose centre-line interior passes within `ENDPOINT_TOL` of this point.
-    /// The current wall is the incoming wall; the neighbour is the host.
-    Mid { id: ArchId, end: End },
-    /// A wall collinear with the current wall.
-    Collinear { id: ArchId },
-    /// Cluster exceeds `MAX_JOIN_FAN`; treated as "no join".
-    Fan { count: usize },
-}
-
-/// Corner plan for one end after joins.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct EndPlan {
-    left: Vec2,
-    right: Vec2,
-    join: Option<Join>,
-}
-
-/// Distance from `p` to the infinite line through `w`'s centre line.
-fn dist_to_centre_line(w: &Wall, p: Vec2) -> f64 {
-    let d = w.end - w.start;
-    let len2 = d.len2();
-    if len2 < 1e-24 || !len2.is_finite() {
-        return p.dist(w.start);
-    }
-    (p - w.start).cross(d).abs() / len2.sqrt()
-}
-
-/// Whether the interior of `w`'s centre line passes within `tol` of `p`.
-fn centre_interior_passes(w: &Wall, p: Vec2, tol: f64) -> bool {
-    if !w.start.is_finite() || !w.end.is_finite() || !p.is_finite() {
-        return false;
-    }
-    let d = w.end - w.start;
-    let len2 = d.len2();
-    if len2 < 1e-24 {
-        return w.start.near(p, tol);
-    }
-    let t = (p - w.start).dot(d) / len2;
-    if t < 1e-6 || t > 1.0 - 1e-6 {
-        return false;
-    }
-    let foot = w.start + d * t;
-    foot.near(p, tol)
-}
-
-/// Classify neighbours at `(id, end)`.
-fn classify(model: &ArchModel, g: &WallGraph, id: ArchId, end: End) -> Vec<Neighbour> {
-    let Some(my_wall) = model.wall(id) else {
-        return Vec::new();
-    };
-    let my_point = End::point(end, my_wall);
-    if !my_point.is_finite() {
-        return Vec::new();
-    }
-    let Some(my_dir) = crate::wall::wall_dir(my_wall) else {
-        return Vec::new();
-    };
-    if !my_dir.is_finite() {
-        return Vec::new();
-    }
-
-    // Endpoint cluster size drives the fan count.
-    let cluster_ends = g.neighbours(id, end);
-    let total = cluster_ends.len() + 1;
-    if total > MAX_JOIN_FAN {
-        return vec![Neighbour::Fan { count: total }];
-    }
-
-    let mut out: Vec<Neighbour> = Vec::new();
-    let mut seen: Vec<ArchId> = Vec::new();
-
-    // First pass: walls whose own end is at this point (from the cluster).
-    for (nid, _nend) in &cluster_ends {
-        if *nid == id || seen.contains(&nid) {
-            continue;
-        }
-        seen.push(*nid);
-        let Some(nw) = model.wall(*nid) else {
-            continue;
-        };
-        if let Some(nb) = classify_one(my_point, my_dir, nw, *nid) {
-            out.push(nb);
-        }
-    }
-
-    // Second pass: walls not in the cluster whose centre-line interior or an
-    // endpoint passes within ENDPOINT_TOL of this point (T-join, stray collinear).
-    for w in &model.walls {
-        if w.id == id || seen.contains(&w.id) {
-            continue;
-        }
-        let touches = w.start.near(my_point, ENDPOINT_TOL) || w.end.near(my_point, ENDPOINT_TOL) || centre_interior_passes(w, my_point, ENDPOINT_TOL);
-        if !touches {
-            continue;
-        }
-        seen.push(w.id);
-        if let Some(nb) = classify_one(my_point, my_dir, w, w.id) {
-            out.push(nb);
-        }
-    }
-
-    // Sort for determinism.
-    out.sort_unstable_by_key(|n| n.id());
-
-    out
-}
-
-/// Classify the relationship between the neighbour `n` and the current wall's end,
-/// given the shared end point and the current wall's centre-line direction.
-///
-/// Returns `None` when `n` is degenerate / non-finite.
-fn classify_one(point: Vec2, dir: Vec2, n: &Wall, id: ArchId) -> Option<Neighbour> {
-    if !point.is_finite() || !dir.is_finite() {
-        return None;
-    }
-    let Some(nb_dir) = crate::wall::wall_dir(n) else {
-        return None;
-    };
-    if !nb_dir.is_finite() {
-        return None;
-    }
-
-    let parallel = dir.cross(nb_dir).abs() < 1e-9;
-
-    // Neighbour's own end sits on the shared point.
-    if n.start.near(point, ENDPOINT_TOL) {
-        if parallel && dist_to_centre_line(n, point) < ENDPOINT_TOL {
-            return Some(Neighbour::Collinear { id });
-        }
-        return Some(Neighbour::EndToEnd { id, end: End::Start });
-    }
-    if n.end.near(point, ENDPOINT_TOL) {
-        if parallel && dist_to_centre_line(n, point) < ENDPOINT_TOL {
-            return Some(Neighbour::Collinear { id });
-        }
-        return Some(Neighbour::EndToEnd { id, end: End::End });
-    }
-
-    // Otherwise: neighbour's centre-line interior passes within tolerance of the
-    // point (the current wall is the incoming wall; `n` is the host).
-    if centre_interior_passes(n, point, ENDPOINT_TOL) {
-        // Pick the nearer endpoint of the host for `end` (deterministic tie → Start).
-        let start_dist = (n.start - point).len2();
-        let end_dist = (n.end - point).len2();
-        let end = if start_dist <= end_dist { End::Start } else { End::End };
-        return Some(Neighbour::Mid { id, end });
-    }
-
-    None
-}
-
-fn id_of(n: &Neighbour) -> ArchId {
-    match n {
-        Neighbour::EndToEnd { id, .. } => *id,
-        Neighbour::Mid { id, .. } => *id,
-        Neighbour::Collinear { id } => *id,
-        Neighbour::Fan { .. } => ArchId(0),
-    }
-}
-impl Neighbour {
-    fn id(&self) -> ArchId {
-        id_of(self)
-    }
-}
-
-/// Intersect two infinite lines; return the intersection point if finite.
-fn intersect_inf(a: (Vec2, Vec2), b: (Vec2, Vec2)) -> Option<Vec2> {
-    let da = a.1 - a.0;
-    let db = b.1 - b.0;
-    let denom = da.cross(db);
-    if denom.abs() < 1e-14 {
-        return None;
-    }
-    let t = (b.0 - a.0).cross(db) / denom;
-    let p = a.0 + da * t;
-    (p.is_finite()).then_some(p)
-}
-
-/// Corner plan for one end of `w`, given the raw corners and classified neighbours.
-fn plan_end(model: &ArchModel, w: &Wall, end: End, raw: (Vec2, Vec2), nbrs: &[Neighbour]) -> EndPlan {
-    // Fan → no join.
-    if nbrs.iter().any(|n| matches!(n, Neighbour::Fan { .. })) {
-        return EndPlan { left: raw.0, right: raw.1, join: None };
-    }
-
-    // T join (Mid): trim the incoming wall's end onto the host's face.
-    if let Some(Neighbour::Mid { id: nid, .. }) = nbrs.iter().find(|n| matches!(n, Neighbour::Mid { .. })) {
-        let Some(host) = model.wall(*nid) else {
-            return EndPlan { left: raw.0, right: raw.1, join: None };
-        };
-        let Some(host_faces) = face_lines(host) else {
-            return EndPlan { left: raw.0, right: raw.1, join: None };
-        };
-        let dir = w.end - w.start;
-        let len2 = dir.len2();
-        if len2 < 1e-24 || !len2.is_finite() {
-            return EndPlan { left: raw.0, right: raw.1, join: None };
-        }
-        let perp = (dir / dir.len()).perp();
-        let half = w.thickness / 2.0;
-        for face in [host_faces[0], host_faces[1]] {
-            if let Some(p) = intersect_inf((w.start, w.end), face) {
-                if p.is_finite() {
-                    let left_c = p + perp * half;
-                    let right_c = p - perp * half;
-                    if left_c.is_finite() && right_c.is_finite() {
-                        return EndPlan { left: left_c, right: right_c, join: Some(Join::T(end)) };
-                    }
-                }
-            }
-        }
-    }
-
-    // L join (EndToEnd): mitre using cross-pairing of face lines.
-    if let Some(Neighbour::EndToEnd { id: nid, .. }) = nbrs.iter().find(|n| matches!(n, Neighbour::EndToEnd { .. })) {
-        let Some(neig) = model.wall(*nid) else {
-            return EndPlan { left: raw.0, right: raw.1, join: None };
-        };
-        if let (Some(my_faces), Some(nbr_faces)) = (face_lines(w), face_lines(neig)) {
-            // Cross-pairing: my left ↔ nbr right, my right ↔ nbr left.
-            let new_left = intersect_inf(my_faces[0], nbr_faces[1]).unwrap_or(raw.0);
-            let new_right = intersect_inf(my_faces[1], nbr_faces[0]).unwrap_or(raw.1);
-            if new_left.is_finite() && new_right.is_finite() {
-                return EndPlan { left: new_left, right: new_right, join: Some(Join::L(end)) };
-            }
-        }
-    }
-
-    // No join.
-    EndPlan { left: raw.0, right: raw.1, join: None }
-}
-
-/// Solve every wall's poché ring. Output order == `model.walls` order; degenerate
-/// walls (wall_polygon is None) are skipped and produce no shape.
-pub fn solve_joins(model: &ArchModel) -> Vec<WallShape> {
-    let g = crate::graph::WallGraph::build(model);
-    let mut shapes: Vec<WallShape> = Vec::new();
-
-    for w in &model.walls {
-        if crate::wall::wall_polygon(w).is_none() {
-            continue;
-        }
-        let Some(my_faces) = face_lines(w) else {
-            continue;
-        };
-        let raw_start = (my_faces[0].0, my_faces[1].0);
-        let raw_end = (my_faces[0].1, my_faces[1].1);
-
-        let nbrs_start = classify(model, &g, w.id, End::Start);
-        let nbrs_end = classify(model, &g, w.id, End::End);
-
-        // Compute base plans.
-        let mut plan_start = plan_end(model, w, End::Start, raw_start, &nbrs_start);
-        let mut plan_end_res = plan_end(model, w, End::End, raw_end, &nbrs_end);
-
-        // Collinear butt: apply to the wall that starts at the shared point.
-        // For each collinear neighbour, determine which wall is "trimmed".
-        for n in &nbrs_start {
-            if let Neighbour::Collinear { id: nid } = n {
-                if let Some(other) = model.wall(*nid) {
-                    // The trimmed wall is the one whose Start is the shared point.
-                    // i.e., this wall's Start == other's End → this wall is trimmed.
-                    if End::point(End::Start, w).near(other.end, ENDPOINT_TOL) || End::point(End::End, w).near(other.start, ENDPOINT_TOL) {
-                        // Determine trim direction
-                        let shared = End::point(End::Start, w);
-                        let other_endpoint = if shared.near(other.end, ENDPOINT_TOL) {
-                            other.end
-                        } else if shared.near(other.start, ENDPOINT_TOL) {
-                            other.start
-                        } else {
-                            continue;
-                        };
-                        let dir = other.end - other.start;
-                        let len2 = dir.len2();
-                        if len2 < 1e-24 {
-                            continue;
-                        }
-                        let perp = (dir / dir.len()).perp();
-                        let half = other.thickness / 2.0;
-                        let left_c = other_endpoint + perp * half;
-                        let right_c = other_endpoint - perp * half;
-                        if left_c.is_finite() && right_c.is_finite() {
-                            plan_start = EndPlan { left: left_c, right: right_c, join: Some(Join::Butt(End::Start)) };
-                        }
-                    }
-                }
-            }
-        }
-        for n in &nbrs_end {
-            if let Neighbour::Collinear { id: nid } = n {
-                if let Some(other) = model.wall(*nid) {
-                    let shared = End::point(End::End, w);
-                    let other_endpoint = if shared.near(other.end, ENDPOINT_TOL) {
-                        other.end
-                    } else if shared.near(other.start, ENDPOINT_TOL) {
-                        other.start
-                    } else {
-                        continue;
-                    };
-                    let dir = other.end - other.start;
-                    let len2 = dir.len2();
-                    if len2 < 1e-24 {
-                        continue;
-                    }
-                    let perp = (dir / dir.len()).perp();
-                    let half = other.thickness / 2.0;
-                    let left_c = other_endpoint + perp * half;
-                    let right_c = other_endpoint - perp * half;
-                    if left_c.is_finite() && right_c.is_finite() {
-                        plan_end_res = EndPlan { left: left_c, right: right_c, join: Some(Join::Butt(End::End)) };
-                    }
-                }
-            }
-        }
-
-        let ring = ring_from_corners(plan_start.left, plan_start.right, plan_end_res.left, plan_end_res.right);
-        let (polygon, joins) = match ring {
-            Some(p) => {
-                let mut js: Vec<Join> = Vec::new();
-                if let Some(j) = plan_start.join {
-                    js.push(j);
-                }
-                if let Some(j) = plan_end_res.join {
-                    js.push(j);
-                }
-                (p, js)
-            }
-            None => {
-                // Ring not simple: fall back to raw corners, drop joins.
-                match ring_from_corners(raw_start.0, raw_start.1, raw_end.0, raw_end.1) {
-                    Some(fb) => (fb, Vec::new()),
-                    None => {
-                        continue; // Degenerate: skip this wall entirely
-                    }
-                }
-            }
-        };
-
-        shapes.push(WallShape { id: w.id, polygon, centre: (w.start, w.end), joins });
-    }
-
-    shapes
-}
-
-fn polygon_area(pts: &[Vec2]) -> f64 {
+/// Signed polygon area (CCW positive). 0.0 for fewer than 3 points.
+pub fn polygon_area(pts: &[Vec2]) -> f64 {
     if pts.len() < 3 {
         return 0.0;
     }
@@ -497,6 +147,98 @@ pub fn solve_bounds(shapes: &[WallShape]) -> Bounds2 {
         all_points.extend(shape.polygon.iter().cloned());
     }
     Bounds2::from_points(all_points)
+}
+
+/// Move one end of a wall to `to`, then transitively move every neighbour end that
+/// shared that point (and their neighbours, and so on) so the wall graph stays
+/// connected. Returns the ids of every wall whose geometry changed, sorted ascending
+/// and deduplicated.
+pub fn stretch_wall(
+    model: &mut cadcraft_doc::ArchModel,
+    id: cadcraft_doc::ArchId,
+    end: End,
+    to: cadcraft_geom::Vec2,
+) -> Result<Vec<cadcraft_doc::ArchId>, ArchError> {
+    if !to.is_finite() {
+        return Err(ArchError::NotFinite);
+    }
+
+    let wall_idx = model.walls.iter().position(|w| w.id == id);
+    let wall_idx = match wall_idx {
+        Some(i) => i,
+        None => return Err(ArchError::NoSuchWall(id)),
+    };
+
+    let graph = crate::graph::WallGraph::build(model);
+
+    // Seed with the cluster containing (id, end); if the wall is degenerate
+    // (no cluster), just move its own end.
+    let initial: Vec<(ArchId, End)> = match graph.cluster_of(id, end) {
+        Some(idx) => graph.cluster(idx).to_vec(),
+        None => vec![(id, end)],
+    };
+
+    // Fixed-point BFS over the original graph snapshot.
+    let mut visited: BTreeSet<(ArchId, u8)> = initial.iter().map(|(w, e)| (*w, end_key(*e))).collect();
+    let mut moving: Vec<(ArchId, End)> = Vec::new();
+    let mut queue: VecDeque<(ArchId, End)> = initial.into_iter().collect();
+    let mut processed: usize = 0;
+
+    while let Some((w, e)) = queue.pop_front() {
+        if processed >= MAX_WALLS {
+            break;
+        }
+        processed += 1;
+        moving.push((w, e));
+
+        if let Some(idx) = graph.cluster_of(w, e) {
+            let cluster = graph.cluster(idx);
+            for (w2, e2) in cluster {
+                let key = (*w2, end_key(*e2));
+                if visited.insert(key) {
+                    queue.push_back((*w2, *e2));
+                }
+            }
+        }
+    }
+
+    // Snapshot original positions before mutating.
+    let mut originals: BTreeMap<ArchId, (Vec2, Vec2)> = BTreeMap::new();
+    for (w, _) in &moving {
+        if let Some(wall) = model.walls.iter().find(|wall| wall.id == *w) {
+            originals.insert(*w, (wall.start, wall.end));
+        }
+    }
+
+    // Apply the new position to each affected end.
+    for (w, e) in &moving {
+        if let Some(wall_idx) = model.walls.iter().position(|wall| wall.id == *w) {
+            match e {
+                End::Start => model.walls[wall_idx].start = to,
+                End::End => model.walls[wall_idx].end = to,
+            }
+        }
+    }
+
+    // Collect ids of walls whose geometry actually changed (sorted, deduped).
+    let mut changed: BTreeSet<ArchId> = BTreeSet::new();
+    for (w, (old_start, old_end)) in &originals {
+        if let Some(wall) = model.walls.iter().find(|wall| wall.id == *w) {
+            if wall.start != *old_start || wall.end != *old_end {
+                changed.insert(*w);
+            }
+        }
+    }
+
+    Ok(changed.into_iter().collect())
+}
+
+/// Maps an [`End`] to a small integer key for use in a `BTreeSet` pair.
+fn end_key(e: End) -> u8 {
+    match e {
+        End::Start => 0,
+        End::End => 1,
+    }
 }
 
 #[cfg(test)]
@@ -594,226 +336,93 @@ mod tests {
         assert_eq!(ArchError::TooManyWalls.to_string(), "too many walls (max 4096)");
     }
 
-    #[test]
-    fn l_join_mitres_both_walls_to_the_shared_corner() {
-        let mut model = ArchModel::default();
-        model.add_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0));
-        model.add_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 1.0));
-        let shapes = solve_joins(&model);
-        assert_eq!(shapes.len(), 2);
-
-        // Wall 0: end at (10,0) → Join::L(End)
-        // Wall 1: start at (10,0) → Join::L(Start)
-        let s0 = &shapes[0];
-        let s1 = &shapes[1];
-
-        let end_join = s0.joins.iter().find(|j| matches!(j, Join::L(e) if *e == End::End));
-        let start_join = s1.joins.iter().find(|j| matches!(j, Join::L(e) if *e == End::Start));
-        assert!(end_join.is_some(), "wall 0 end should be L");
-        assert!(start_join.is_some(), "wall 1 start should be L");
-
-        // Find the shared mitre corner on the bisector x - y = 10
-        // A's End left corner should be (10.5, 0.5): 10.5 - 0.5 = 10 ✓
-        // A's End right corner should be (9.5, -0.5): 9.5 - (-0.5) = 10 ✓
-        // Check wall 0's End corners
-        let a_end_left = s0.polygon[2]; // left_end
-        let a_end_right = s0.polygon[1]; // right_end
-
-        // The bisector check: x - y should be 10 (within 1e-9)
-        let bis_a_left = (a_end_left.x - a_end_left.y - 10.0).abs();
-        let bis_a_right = (a_end_right.x - a_end_right.y - 10.0).abs();
-        assert!(
-            bis_a_left < 1e-9 || bis_a_right < 1e-9,
-            "at least one mitre corner should be on bisector x-y=10, got: ({:.6},{:.6}) / ({:.6},{:.6})",
-            a_end_left.x,
-            a_end_left.y,
-            a_end_right.x,
-            a_end_right.y
-        );
-
-        // The shared corner between the two rings
-        // A's End left should equal B's Start left
-        // A's End right should equal B's Start right
-        let b_start_left = s1.polygon[0]; // left_start
-        let b_start_right = s1.polygon[1]; // right_start
-
-        assert!(a_end_left.near(b_start_left, 1e-9) || a_end_right.near(b_start_right, 1e-9), "rings should share a corner");
-
-        // Raw square corner (10, 0.5) should NOT be in either ring
-        let raw_corner = Vec2::new(10.0, 0.5);
-        assert!(!s0.polygon.iter().any(|p| p.near(raw_corner, 1e-9)), "wall 0 should not retain raw corner (10, 0.5)");
-        assert!(!s1.polygon.iter().any(|p| p.near(raw_corner, 1e-9)), "wall 1 should not retain raw corner (10, 0.5)");
+    fn make_wall(model: &mut cadcraft_doc::ArchModel, id: u32, start: Vec2, end: Vec2) {
+        model.walls.push(Wall { id: ArchId(id), start, end, thickness: 2.0, height: 3.0, layers: vec![], ..Wall::default() });
     }
 
     #[test]
-    fn t_join_butts_the_incoming_wall_at_the_face() {
-        let mut model = ArchModel::default();
-        // Host: (0,0)→(20,0), t=1
-        model.add_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(20.0, 0.0), 1.0));
-        // Incoming: (10,10)→(10,0), t=1
-        model.add_wall(Wall::new(Vec2::new(10.0, 10.0), Vec2::new(10.0, 0.0), 1.0));
-        let shapes = solve_joins(&model);
-        assert_eq!(shapes.len(), 2);
+    fn stretch_wall_moves_the_neighbour_end() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        make_wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        make_wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0));
 
-        let host = &shapes[0];
-        let incoming = &shapes[1];
+        let result = stretch_wall(&mut model, ArchId(0), End::End, Vec2::new(12.0, 3.0));
+        let ids: Vec<ArchId> = result.unwrap();
+        assert_eq!(ids, vec![ArchId(0), ArchId(1)]);
 
-        // Incoming should have Join::T(End)
-        let t_join = incoming.joins.iter().find(|j| matches!(j, Join::T(e) if *e == End::End));
-        assert!(t_join.is_some(), "incoming should have Join::T(End)");
-
-        // Incoming's end face should lie on y=0.5
-        let end_left = incoming.polygon[2];
-        let end_right = incoming.polygon[1];
-        assert!((end_left.y - 0.5).abs() < 1e-9, "incoming end left y={:.9} should be 0.5", end_left.y);
-        assert!((end_right.y - 0.5).abs() < 1e-9, "incoming end right y={:.9} should be 0.5", end_right.y);
-
-        // Host polygon unchanged: bounds span y in [-0.5, 0.5]
-        let hb = host.bounds();
-        assert!((hb.min.y - (-0.5)).abs() < 1e-9, "host min.y={}", hb.min.y);
-        assert!((hb.max.y - 0.5).abs() < 1e-9, "host max.y={}", hb.max.y);
+        // Wall 0's end moved to (12,3); wall 1's start followed.
+        assert_eq!(model.walls[0].end, Vec2::new(12.0, 3.0));
+        assert_eq!(model.walls[1].start, Vec2::new(12.0, 3.0));
+        assert_eq!(model.walls[1].end, Vec2::new(10.0, 10.0));
     }
 
     #[test]
-    fn angled_join_mitres_at_the_bisector() {
-        // 60° join: wall A at 0° (east), wall B at 60° (northeast)
-        let angle = std::f64::consts::FRAC_PI_3; // 60° = π/3
-        let mut model = ArchModel::default();
+    fn stretch_wall_on_missing_id_is_an_error() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        make_wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        let before = model.walls.clone();
 
-        // Wall A: (0,0)→(10,0), dir = (1,0), angle 0°
-        model.add_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0));
-        // Wall B: (10,0)→(10+cos60, sin60) = (15, 5.196...), dir at 60°
-        let b_end = Vec2::new(10.0 + 10.0 * angle.cos(), 0.0 + 10.0 * angle.sin());
-        model.add_wall(Wall::new(Vec2::new(10.0, 0.0), b_end, 1.0));
-
-        let shapes = solve_joins(&model);
-        assert_eq!(shapes.len(), 2);
-        let s0 = &shapes[0];
-        let s1 = &shapes[1];
-
-        // Both should have L join at the shared end
-        let a_end_join = s0.joins.iter().find(|j| matches!(j, Join::L(e) if *e == End::End));
-        let b_start_join = s1.joins.iter().find(|j| matches!(j, Join::L(e) if *e == End::Start));
-        assert!(a_end_join.is_some(), "wall A should have L(End)");
-        assert!(b_start_join.is_some(), "wall B should have L(Start)");
-
-        // The bisector of 0° and 60° is at 30°.
-        // Bisector direction: (cos30, sin30) = (√3/2, 0.5)
-        // Bisector line through (10,0): parametric (10 + t·cos30, 0 + t·sin30)
-        let bis_dir = Vec2::new(std::f64::consts::FRAC_PI_6.cos(), std::f64::consts::FRAC_PI_6.sin());
-        let bis_origin = Vec2::new(10.0, 0.0);
-
-        // Check A's End corners are on the bisector (within 1e-9)
-        // For the mitre, the corners lie on the bisector line.
-        // The distance from each corner to the bisector line should be ≈ 0.
-        // Distance from point p to line through origin with direction d:
-        //   |p × d| / |d|  (perpendicular distance)
-        let check_corner = |corner: &Vec2| -> bool {
-            // Distance from corner to the bisector line
-            let v = *corner - bis_origin;
-            let cross = v.cross(bis_dir);
-            (cross.abs() / bis_dir.len()) < 1e-6
-        };
-
-        // A's End: polygon[1] (right_end) and polygon[2] (left_end)
-        let a_corners = [s0.polygon[1], s0.polygon[2]];
-        let b_corners = [s1.polygon[0], s1.polygon[1]];
-
-        // At least one of A's End corners should be on the bisector
-        assert!(a_corners.iter().any(|c| check_corner(c)), "wall A mitre corner should be on bisector of 0°/60°");
-        // At least one of B's Start corners should be on the bisector
-        assert!(b_corners.iter().any(|c| check_corner(c)), "wall B mitre corner should be on bisector of 0°/60°");
+        let result = stretch_wall(&mut model, ArchId(999), End::Start, Vec2::new(1.0, 1.0));
+        assert_eq!(result, Err(ArchError::NoSuchWall(ArchId(999))));
+        assert_eq!(model.walls, before);
     }
 
     #[test]
-    fn collinear_walls_butt_and_do_not_overlap() {
-        let mut model = ArchModel::default();
-        // Wall A: (0,0)→(10,0), t=1
-        model.add_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0));
-        // Wall B: (10,0)→(20,0), t=1
-        model.add_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(20.0, 0.0), 1.0));
+    fn stretch_wall_rejects_a_non_finite_point() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        make_wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        let before = model.walls.clone();
 
-        let shapes = solve_joins(&model);
-        assert_eq!(shapes.len(), 2);
+        let r = stretch_wall(&mut model, ArchId(0), End::End, Vec2::new(f64::NAN, 0.0));
+        assert_eq!(r, Err(ArchError::NotFinite));
+        assert_eq!(model.walls, before);
 
-        let a = &shapes[0];
-        let b = &shapes[1];
-
-        // Each polygon area should be 10.0 (length 10 × thickness 1)
-        let area_a = polygon_area(&a.polygon);
-        let area_b = polygon_area(&b.polygon);
-        assert!((area_a - 10.0).abs() < 1e-9, "wall A area={}", area_a);
-        assert!((area_b - 10.0).abs() < 1e-9, "wall B area={}", area_b);
-
-        // Sum of areas = 20.0 (no double-covered strip)
-        let sum = area_a + area_b;
-        assert!((sum - 20.0).abs() < 1e-9, "sum of areas={}", sum);
+        let r = stretch_wall(&mut model, ArchId(0), End::End, Vec2::new(f64::INFINITY, 0.0));
+        assert_eq!(r, Err(ArchError::NotFinite));
+        assert_eq!(model.walls, before);
     }
 
     #[test]
-    fn closed_rectangle_ring_is_gap_free() {
-        let t = 0.3;
-        let half = t / 2.0;
-        let mut model = ArchModel::default();
-        // Bottom: (0,0)→(10,0)
-        model.add_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), t));
-        // Right: (10,0)→(10,8)
-        model.add_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), t));
-        // Top: (10,8)→(0,8)
-        model.add_wall(Wall::new(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), t));
-        // Left: (0,8)→(0,0)
-        model.add_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), t));
+    fn stretch_wall_propagates_through_a_chain() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Three walls all sharing the point (10,0) — a chain/fan.
+        make_wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        make_wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(0.0, 10.0));
+        make_wall(&mut model, 2, Vec2::new(10.0, 0.0), Vec2::new(20.0, 0.0));
 
-        let shapes = solve_joins(&model);
-        assert_eq!(shapes.len(), 4);
+        let result = stretch_wall(&mut model, ArchId(0), End::End, Vec2::new(12.0, 3.0));
+        let ids: Vec<ArchId> = result.unwrap();
+        assert_eq!(ids, vec![ArchId(0), ArchId(1), ArchId(2)]);
 
-        // Every shape has two Join::L
-        for s in &shapes {
-            let l_count = s.joins.iter().filter(|j| matches!(j, Join::L(_))).count();
-            assert_eq!(l_count, 2, "each rectangle wall should have 2 L joins, got {}", l_count);
-        }
+        assert_eq!(model.walls[0].end, Vec2::new(12.0, 3.0));
+        assert_eq!(model.walls[1].start, Vec2::new(12.0, 3.0));
+        assert_eq!(model.walls[2].start, Vec2::new(12.0, 3.0));
+    }
 
-        // Check corner points of the outer rectangle appear in exactly 2 shapes
-        // Outer corners: (0,0), (10,0), (10,8), (0,8)
-        // The "corner" of each wall's ring at the joint should be at specific points.
+    #[test]
+    fn stretch_wall_returns_only_changed_ids() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        make_wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        make_wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0));
 
-        // The outer rectangle corners in terms of wall rings:
-        // Bottom wall's Start: at (0,0) → corners at (0,-half) and (0,half)
-        // Bottom wall's End: at (10,0) → mitred
-        // Right wall's Start: at (10,0) → mitred
-        // etc.
+        // Drag wall 0's end to the point it already occupies.
+        let result = stretch_wall(&mut model, ArchId(0), End::End, Vec2::new(10.0, 0.0));
+        assert!(result.unwrap().is_empty());
+    }
 
-        // Instead, verify: each of the 4 outer corners (±half offsets) appears in exactly 2 polygons.
-        // Outer corner (0, 0):
-        //   - Bottom wall left face start: (0, -half) [bottom-left outer corner]
-        //   - Left wall right face end: (0, -half) [same point]
-        // Actually the outer corners of the rectangle are at:
-        //   (−half, −half) is NOT a corner... let me think differently.
+    #[test]
+    fn stretch_wall_on_a_self_touching_loop_terminates() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Triangle: three walls meeting at three corners.
+        make_wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        make_wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(5.0, 10.0));
+        make_wall(&mut model, 2, Vec2::new(5.0, 10.0), Vec2::new(0.0, 0.0));
 
-        // The outer boundary of the 4-wall rectangle:
-        // Bottom wall: left=(0,-h), right=(0,h), end_left=(10,0±h mitred), ...
-        // Actually, let's just check that the shared corners between adjacent walls match.
-
-        let h = half;
-        // The 4 outer "square" corners of the border:
-        // These are the points where the outer face lines of adjacent walls meet.
-        // For a proper closed rectangle with mitres, the outer corners should be shared.
-
-        // Check that wall 0's End left corner == wall 1's Start left corner (shared at bottom-right)
-        // Wall 0 (bottom): End left = polygon[2]
-        // Wall 1 (right): Start left = polygon[0]
-        assert!(shapes[0].polygon[2].near(shapes[1].polygon[0], 1e-9), "bottom-right outer corner not shared between wall 0 End and wall 1 Start");
-
-        // Wall 1 (right): End left = polygon[2]
-        // Wall 2 (top): Start left = polygon[0]
-        assert!(shapes[1].polygon[2].near(shapes[2].polygon[0], 1e-9), "top-right outer corner not shared between wall 1 End and wall 2 Start");
-
-        // Wall 2 (top): End left = polygon[2]
-        // Wall 3 (left): Start left = polygon[0]
-        assert!(shapes[2].polygon[2].near(shapes[3].polygon[0], 1e-9), "top-left outer corner not shared between wall 2 End and wall 3 Start");
-
-        // Wall 3 (left): End left = polygon[2]
-        // Wall 0 (bottom): Start left = polygon[0]
-        assert!(shapes[3].polygon[2].near(shapes[0].polygon[0], 1e-9), "bottom-left outer corner not shared between wall 3 End and wall 0 Start");
+        // Dragging one corner must terminate (bounded by the visited set + MAX_WALLS).
+        let result = stretch_wall(&mut model, ArchId(0), End::Start, Vec2::new(-1.0, 0.0));
+        let ids: Vec<ArchId> = result.unwrap();
+        // At most all three walls could be affected; the set is bounded.
+        assert!((ids.len()..=3).contains(&ids.len()));
+        assert!(!ids.is_empty());
     }
 }
