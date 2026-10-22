@@ -41,13 +41,13 @@ pub fn write(scene: &Scene3d) -> Vec<u8> {
     out.extend_from_slice(&[0x4a, 0x53, 0x4f, 0x4e]);
     push_u32(&mut out, json_text.len() as u32);
     out.extend_from_slice(json_text.as_bytes());
-    out.extend(&[0u8; json_pad]);
+    out.resize(out.len() + json_pad, 0);
 
     // Binary chunk (0x004E4942), padded to 4-byte alignment.
     out.extend_from_slice(&[0x42, 0x49, 0x4e, 0x00]);
     push_u32(&mut out, bin.len() as u32);
     out.extend_from_slice(&bin);
-    out.extend(&[0u8; bin_pad]);
+    out.resize(out.len() + bin_pad, 0);
 
     out
 }
@@ -69,7 +69,7 @@ fn push_f32(buf: &mut Vec<u8>, v: f32) {
 fn align4(buf: &mut Vec<u8>) {
     let r = buf.len() % 4;
     if r != 0 {
-        buf.extend(&[0u8; 4 - r]);
+        buf.resize(buf.len() + (4 - r), 0);
     }
 }
 
