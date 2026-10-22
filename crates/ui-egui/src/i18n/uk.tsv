@@ -71,6 +71,7 @@
 	Append to current selection set	Додати до поточного набору вибраних об'єктів
 	Arch Inspect	Архітектурний огляд
 	Architecture	Архітектура
+	Arch Sample	Архітектурний зразок
 	Apply to:	Застосувати до:
 	Apply true color	Застосувати колір RGB
 	Arc	Дуга
@@ -100,6 +101,7 @@
 	Block Reference	Посилання на блок
 	Block...	Блок...
 	Blocks	Блоки
+	Build 3D	Збудити 3D
 	Blue	Синій
 	Bold	Жирний
 	Boolean	Булеві операції
