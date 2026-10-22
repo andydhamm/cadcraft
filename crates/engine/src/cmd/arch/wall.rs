@@ -14,7 +14,8 @@
 //!
 //! Returns JSON: `{"walls": [{"id": "w1", "handle": "a0000001"}, ...], "joins": 0}`
 
-use cadcraft_arch::model::{JoinKind, Wall, WallKind};
+use cadcraft_arch::{JoinKind, Wall, WallKind};
+use cadcraft_doc::Handle;
 use cadcraft_geom::Vec2;
 use serde_json::{Value, json};
 
@@ -59,6 +60,8 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let level_name = str_param(p, "level").map(|s| s.to_string());
     let type_str = str_param(p, "type").map(|s| s.to_string());
 
+    let d = s.doc_mut()?;
+
     // Wall kind: `type` overrides `exterior`
     let wall_kind = match type_str {
         None => {
@@ -78,7 +81,8 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let exterior = matches!(wall_kind, WallKind::Exterior);
 
     // Thickness: explicit or default based on exterior
-    let thickness = match size_param("wall", p, "thickness", false) {
+    let thickness = size_param("wall", p, "thickness", false)?;
+    let thickness = match thickness {
         Some(t) => t,
         None => {
             if exterior {
@@ -90,23 +94,24 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     };
 
     // Level: from param or first in model
-    let d = s.doc_mut()?;
-    let level = level_name.as_ref().and_then(|name| d.arch.level(name)).or_else(|| d.arch.levels.first());
+    let level = level_name.as_deref().and_then(|name| d.arch.levels.iter().find(|l| l.name == name));
 
     // Height: explicit or level floor_to_floor
-    let height = match size_param("wall", p, "height", false) {
+    let height = size_param("wall", p, "height", false)?;
+    let height = match height {
         Some(h) => h,
         None => level.map(|l| l.floor_to_floor).unwrap_or(super::DEFAULT_EXT_THICKNESS * 5.0),
     };
 
     // Apply closed flag
     let pts = if closed && pts.len() > 2 {
-        if !pts.last().near(pts[0], 1e-6) {
-            let mut v = pts;
-            v.push(pts[0]);
-            v
-        } else {
-            pts
+        match pts.last() {
+            Some(last) if !last.near(pts[0], 1e-6) => {
+                let mut v = pts;
+                v.push(pts[0]);
+                v
+            }
+            _ => pts,
         }
     } else {
         pts
@@ -140,17 +145,13 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     // TODO(p1-join-solver): let joins = cadcraft_arch::join::solve_joins(&mut d.arch);
 
     // --- Build response: newly added walls only ---
-    let base_len = d.arch.walls.len().saturating_sub(new_walls.len());
-    let walls_json: Vec<Value> = d
-        .arch
-        .walls
+    let walls_json: Vec<Value> = new_walls
         .iter()
-        .skip(base_len)
         .map(|w| {
-            let idx = base_len + (w.id as usize - base_len as u64 as usize);
+            let handle = Handle(0xA000_0000u64 + w.id.0 as u64);
             json!({
-                "id": format!("w{}", w.id),
-                "handle": cadcraft_arch::model::arch_handle(idx as usize).hex(),
+                "id": format!("w{}", w.id.0),
+                "handle": handle.hex(),
             })
         })
         .collect();

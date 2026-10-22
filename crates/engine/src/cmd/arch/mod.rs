@@ -1,4 +1,5 @@
 //! Architecture command group.
+use crate::cmd::CommandSpec;
 
 /// Maximum number of walls that can be created in a single `wall` invocation.
 pub const MAX_WALLS: usize = 4096;
@@ -34,7 +35,6 @@ pub(crate) fn wall_layers(exterior: bool) -> Vec<(String, f64)> {
 /// Command specs for the architecture module.
 // later: inspect, stretch, build3d, sample
 pub fn specs() -> Vec<CommandSpec> {
-    use crate::cmd::CommandSpec;
     let mut v = Vec::new();
     v.extend(wall::specs());
     v
