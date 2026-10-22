@@ -297,6 +297,64 @@ impl ArchModel {
         }
         if pts.is_empty() { Bounds2::EMPTY } else { Bounds2::from_points(pts.iter().copied()) }
     }
+
+    /// Validate the model, returning a list of human-readable error messages.
+    ///
+    /// Checks (in order):
+    /// 1. Wall count does not exceed [`MAX_WALLS`].
+    /// 2. Per-wall: finite endpoints, thickness above minimum, non-zero length,
+    ///    known wall type, known level.
+    /// 3. No duplicate wall ids.
+    pub fn validate(&self) -> Vec<String> {
+        let mut messages = Vec::new();
+
+        if self.walls.len() > MAX_WALLS {
+            messages.push(format!("model has {} walls, max {MAX_WALLS}", self.walls.len()));
+        }
+
+        for w in &self.walls {
+            let id = format!("{}", w.id);
+
+            if !w.start.is_finite() || !w.end.is_finite() {
+                messages.push(format!("{}: non-finite endpoints", id));
+                continue;
+            }
+
+            if !(w.thickness > MIN_WALL_THICKNESS) {
+                messages.push(format!("{}: thickness {} below minimum {}", id, w.thickness, MIN_WALL_THICKNESS));
+            }
+
+            let length = w.start.dist(w.end);
+            if !(length > MIN_WALL_LENGTH) {
+                messages.push(format!("{}: zero or near-zero length", id));
+            }
+
+            if !w.wall_type.is_empty() && self.wall_type(&w.wall_type).is_none() {
+                messages.push(format!("{}: unknown wall type `{}`", id, w.wall_type));
+            }
+
+            if self.level(w.base_level).is_none() {
+                messages.push(format!("{}: unknown level {}", id, w.base_level));
+            }
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        let mut dupes = Vec::new();
+        for w in &self.walls {
+            if seen.contains(&w.id) {
+                if !dupes.contains(&w.id) {
+                    dupes.push(w.id);
+                }
+            } else {
+                seen.insert(w.id);
+            }
+        }
+        for id in &dupes {
+            messages.push(format!("duplicate wall id {}", id));
+        }
+
+        messages
+    }
 }
 
 #[cfg(test)]
@@ -471,5 +529,80 @@ mod tests {
     fn wall_type_lookup_is_case_insensitive() {
         let m = ArchModel::default();
         assert!(m.wall_type("exterior").is_some());
+    }
+
+    #[test]
+    fn validate_accepts_a_clean_model() {
+        let m = ArchModel::default();
+        assert!(m.validate().is_empty());
+
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        assert!(m.validate().is_empty());
+    }
+
+    #[test]
+    fn validate_rejects_non_positive_thickness_and_zero_length() {
+        let mut m = ArchModel::default();
+
+        // thickness 0
+        m.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.0, ..Wall::default() });
+
+        // thickness -1
+        m.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: -1.0, ..Wall::default() });
+
+        // start == end (zero length)
+        m.push_wall(Wall { start: Vec2::new(5.0, 5.0), end: Vec2::new(5.0, 5.0), thickness: 0.2, ..Wall::default() });
+
+        // NaN thickness
+        m.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: f64::NAN, ..Wall::default() });
+
+        let msgs = m.validate();
+        assert_eq!(msgs.len(), 4);
+        assert!(msgs[0].contains("below minimum"));
+        assert!(msgs[1].contains("below minimum"));
+        assert!(msgs[2].contains("zero or near-zero length"));
+        assert!(msgs[3].contains("below minimum"));
+    }
+
+    #[test]
+    fn validate_reports_unknown_wall_type_and_level() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            height: 2.7,
+            base_level: 7,
+            exterior: true,
+            wall_type: "Bogus".into(),
+            ..Wall::default()
+        });
+
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("unknown wall type")));
+        assert!(msgs.iter().any(|m| m.contains("unknown level")));
+    }
+
+    #[test]
+    fn validate_reports_duplicate_ids() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(20.0, 0.0), Vec2::new(30.0, 0.0), 0.2));
+        m.walls[1].id = m.walls[0].id;
+
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("duplicate wall id")));
+    }
+
+    #[test]
+    fn validate_flags_too_many_walls() {
+        let mut m = ArchModel::default();
+        for _ in 0..MAX_WALLS + 1 {
+            m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), 0.2));
+        }
+        let msgs = m.validate();
+        let count = msgs.iter().filter(|m| m.contains("max")).count();
+        assert_eq!(count, 1);
     }
 }
