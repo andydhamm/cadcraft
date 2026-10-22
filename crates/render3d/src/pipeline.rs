@@ -91,7 +91,7 @@ mod tests {
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions::default()).now_or_never().and_then(Result::ok);
 
         if let Some(adapter) = adapter {
-            let (device, _queue) = adapter.request_device(&wgpu::DeviceDescriptor::default()).now_or_never().flatten().expect("device");
+            let (device, _queue) = adapter.request_device(&wgpu::DeviceDescriptor::default()).now_or_never().and_then(Result::ok).expect("device");
             let meshes = upload(&device, &scene);
             assert_eq!(meshes.vertex_count, 3);
             assert_eq!(meshes.index_count, 3);
