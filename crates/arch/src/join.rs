@@ -178,14 +178,6 @@ fn centre_interior_passes(w: &Wall, p: Vec2, tol: f64) -> bool {
 
 /// Classify neighbours at `(id, end)`.
 fn classify(model: &ArchModel, g: &WallGraph, id: ArchId, end: End) -> Vec<Neighbour> {
-    let nbrs = g.neighbours(id, end);
-    let total = nbrs.len() + 1;
-    if total > MAX_JOIN_FAN {
-        return vec![Neighbour::Fan { count: total }];
-    }
-    if nbrs.is_empty() {
-        return Vec::new();
-    }
     let Some(my_wall) = model.wall(id) else {
         return Vec::new();
     };
@@ -200,35 +192,64 @@ fn classify(model: &ArchModel, g: &WallGraph, id: ArchId, end: End) -> Vec<Neigh
         return Vec::new();
     }
 
+    // Endpoint cluster size drives the fan count.
+    let cluster_ends = g.neighbours(id, end);
+    let total = cluster_ends.len() + 1;
+    if total > MAX_JOIN_FAN {
+        return vec![Neighbour::Fan { count: total }];
+    }
+
     let mut out: Vec<Neighbour> = Vec::new();
-    for (nid, nend) in nbrs {
-        if nid == id {
+    let mut seen: Vec<ArchId> = Vec::new();
+
+    // First pass: walls whose own end is at this point (from the cluster).
+    for (nid, _nend) in &cluster_ends {
+        if nid == id || seen.contains(&nid) {
             continue;
         }
-        let Some(nw) = model.wall(nid) else {
+        seen.push(*nid);
+        let Some(nw) = model.wall(*nid) else {
             continue;
         };
-        let Some(nbr_dir) = crate::wall::wall_dir(nw) else {
-            continue;
-        };
-        if !nbr_dir.is_finite() {
-            continue;
-        }
-        let parallel = my_dir.cross(nbr_dir).abs() < 1e-9;
-        if parallel {
-            if dist_to_centre_line(nw, my_point) < ENDPOINT_TOL {
-                out.push(Neighbour::Collinear { id: nid });
-            }
-        } else {
-            let nbr_point = End::point(nend, nw);
-            if nbr_point.near(my_point, ENDPOINT_TOL) {
-                out.push(Neighbour::EndToEnd { id: nid, end: nend });
-            } else if centre_interior_passes(nw, my_point, ENDPOINT_TOL) {
-                out.push(Neighbour::Mid { id: nid, end: nend });
-            }
+        if let Some(nb) = classify_one(model, my_point, my_dir, nw, *nid) {
+            out.push(nb);
         }
     }
+
+    // Second pass: walls not in the cluster whose centre-line interior or an
+    // endpoint passes within ENDPOINT_TOL of this point (T-join, stray collinear).
+    for w in &model.walls {
+        if w.id == id || seen.contains(&w.id) {
+            continue;
+        }
+        let touches = w.start.near(my_point, ENDPOINT_TOL) || w.end.near(my_point, ENDPOINT_TOL) || centre_interior_passes(w, my_point, ENDPOINT_TOL);
+        if !touches {
+            continue;
+        }
+        seen.push(w.id);
+        if let Some(nb) = classify_one(model, my_point, my_dir, w, w.id) {
+            out.push(nb);
+        }
+    }
+
+    // Sort for determinism.
+    out.sort_unstable_by_key(|n| n.id());
+
     out
+}
+
+fn id_of(n: &Neighbour) -> ArchId {
+    match n {
+        Neighbour::EndToEnd { id, .. } => *id,
+        Neighbour::Mid { id, .. } => *id,
+        Neighbour::Collinear { id } => *id,
+        Neighbour::Fan { .. } => ArchId(0),
+    }
+}
+impl Neighbour {
+    fn id(&self) -> ArchId {
+        id_of(self)
+    }
 }
 
 /// Intersect two infinite lines; return the intersection point if finite.
