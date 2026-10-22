@@ -122,10 +122,11 @@ fn drawing_layers_become_pdf_layers() {
         assert!(cat.contains(&format!("{id} 0 R")));
     }
     // The page maps its marks to the groups, and the marked sections are balanced.
-    // Marks are named after the layer's place in the layer table: the five A-arch layers
-    // sit between Defpoints and the user layers, so Walls is at index 7 and Doors at 10.
+    // Marks are named after the layer's place in the layer table; in this drawing only
+    // the plotted content layers (0, Walls, Doors) get marks, at their original table
+    // slots 0, 2 and 5.
     let page = &pages(&objs)[0];
-    for i in [0, 7, 10] {
+    for i in [0, 2, 5] {
         let id = reference(page, &format!("/L{i}"));
         assert!(ocgs.contains(&id));
     }
