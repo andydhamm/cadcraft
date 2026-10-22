@@ -39,14 +39,14 @@ fn generate_walls(n: usize) -> Vec<cadcraft_doc::Wall> {
     let mut pos = cadcraft_geom::Vec2::ZERO;
     let mut dir = 0usize; // 0:+x 1:+y 2:-x 3:-y (right turn = clockwise)
     // Right-angle turn every 4 + (rng % 3) walls (4..=6 walls per leg).
-    let mut legs_left: usize = 4 + (rng.next_u64() % 3);
+    let mut legs_left: usize = (4 + (rng.next_u64() % 3)) as usize;
     let mut k = 0usize; // 1-based wall index
 
     while walls.len() < n {
         // Length: 3.0 + (rng % 60) as f64 / 10.0 → [3.0, 8.9) in 0.1 steps.
         // Never zero with the seeded generator; if a degenerate value ever
         // comes back, skip it and retry with a fresh one, bounded retries.
-        let mut length = 0.0;
+        let mut length: f64 = 0.0;
         let mut tried = 0usize;
         while length <= 0.0 || !length.is_finite() || tried < 32 {
             length = 3.0 + ((rng.next() * 60.0).floor() as f64) / 10.0;
@@ -79,7 +79,7 @@ fn generate_walls(n: usize) -> Vec<cadcraft_doc::Wall> {
         legs_left = legs_left.saturating_sub(1);
         if legs_left == 0 {
             dir = (dir + 1) % 4;
-            legs_left = 4 + (rng.next_u64() % 3);
+            legs_left = (4 + (rng.next_u64() % 3)) as usize;
         }
     }
 
@@ -92,7 +92,7 @@ fn generate_walls(n: usize) -> Vec<cadcraft_doc::Wall> {
 /// arch model and calls `touch_arch()`; it is `.noundo()` because it is a
 /// benchmark fixture.
 fn run_sample(s: &mut Session, params: &Value) -> crate::Result<Value> {
-    let n = params.get("walls").and_then(|v| v.as_u64()).copied().unwrap_or(64).clamp(1, crate::cmd::arch::MAX_WALLS as u64) as usize;
+    let n = params.get("walls").and_then(|v| v.as_u64()).unwrap_or(64).clamp(1, crate::cmd::arch::MAX_WALLS as u64) as usize;
 
     let d = s.doc_mut()?;
     d.arch.walls = generate_walls(n);
@@ -131,18 +131,18 @@ mod tests {
         assert_eq!(r2["walls"].as_u64(), Some(2000));
 
         // Byte-identical wall data on fresh documents.
-        for (a, b) in s1.doc().arch.walls.iter().zip(s2.doc().arch.walls.iter()) {
+        for (a, b) in s1.doc().unwrap().arch.walls.iter().zip(s2.doc().unwrap().arch.walls.iter()) {
             assert_eq!(a, b);
         }
 
         // Revision was bumped.
-        assert!(s1.doc().arch_revision > 0);
+        assert!(s1.doc().unwrap().arch_revision > 0);
 
         // N is capped at MAX_WALLS.
         let mut big = fresh_session();
         let r3 = big.execute("arch.sample", &json!({ "walls": 99999 })).unwrap();
         assert_eq!(r3["walls"].as_u64(), Some(crate::cmd::arch::MAX_WALLS as u64));
-        assert_eq!(big.doc().arch.walls.len(), crate::cmd::arch::MAX_WALLS);
+        assert_eq!(big.doc().unwrap().arch.walls.len(), crate::cmd::arch::MAX_WALLS);
     }
 
     #[test]
@@ -156,7 +156,7 @@ mod tests {
     fn arch_sample_walls_are_connected() {
         let mut s = fresh_session();
         s.execute("arch.sample", &json!({ "walls": 64 })).unwrap();
-        let walls = &s.doc().arch.walls;
+        let walls = &s.doc().unwrap().arch.walls;
         for i in 0..walls.len().saturating_sub(1) {
             assert_eq!(walls[i].end, walls[i + 1].start, "wall {} end != wall {} start", i, i + 1);
         }

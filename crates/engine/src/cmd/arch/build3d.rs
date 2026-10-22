@@ -19,7 +19,7 @@ fn run_build3d(s: &mut Session, _params: &Value) -> crate::Result<Value> {
     let scene = build(&d.arch);
     Ok(json!({
         "meshes": scene.meshes.len(),
-        "triangles": scene.meshes.iter().map(|m| m.indices.len() / 3).sum(),
+        "triangles": scene.meshes.iter().map(|m| m.indices.len() / 3).sum::<usize>(),
         "rebuildMs": elapsed_ms(t),
         "bounds": {
             "min": [scene.bounds.min[0], scene.bounds.min[1], scene.bounds.min[2]],
@@ -103,8 +103,8 @@ mod tests {
     #[test]
     fn build3d_does_not_bump_the_revision() {
         let mut s = wall_session();
-        let before = s.doc()?.arch_revision;
+        let before = s.doc().unwrap().arch_revision;
         let _ = s.execute("build3d", &json!({})).unwrap();
-        assert_eq!(s.doc()?.arch_revision, before, "build3d must not bump arch_revision");
+        assert_eq!(s.doc().unwrap().arch_revision, before, "build3d must not bump arch_revision");
     }
 }
