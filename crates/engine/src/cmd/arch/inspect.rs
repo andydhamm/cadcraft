@@ -172,3 +172,85 @@ mod tests {
         assert!(v["levels"].is_array(), "levels should be an array");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Session;
+
+    /// Helper that runs a command and returns its Value, asserting it succeeded.
+    /// (Avoids `unwrap`/`expect`/`panic!` which are denied by the crate lints.)
+    fn exec(s: &mut Session, id: &str, params: &Value) -> Value {
+        let r = s.execute(id, params);
+        assert!(r.is_ok(), "command `{id}` failed: {r:?}");
+        match r {
+            Ok(v) => v,
+            Err(_) => json!(null),
+        }
+    }
+
+    #[test]
+    fn arch_inspect_reports_poché_polygons() {
+        let mut s = Session::new();
+        exec(
+            &mut s,
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [5.0, 0.0]],
+                "thickness": 0.1,
+            }),
+        );
+        let v = exec(&mut s, "arch.inspect", &json!({ "poche": true }));
+        let empty: Vec<Value> = Vec::new();
+        let walls = v["walls"].as_array().unwrap_or(&empty);
+        assert!(!walls.is_empty(), "expected at least one wall");
+        let w = &walls[0];
+        assert!(w["handle"].is_string());
+        assert!(w["start"].as_array().is_some());
+        assert!(w["polygon"].is_array(), "poché polygon missing");
+        assert!(w["layers"].is_array(), "layers missing");
+    }
+
+    #[test]
+    fn arch_inspect_empty_model_is_not_an_error() {
+        let mut s = Session::new();
+        let v = exec(&mut s, "arch.inspect", &json!({}));
+        let empty: Vec<Value> = Vec::new();
+        let walls = v["walls"].as_array().unwrap_or(&empty);
+        assert!(walls.is_empty(), "no walls expected on empty model");
+        assert_eq!(v["revision"], json!(0));
+    }
+
+    #[test]
+    fn arch_inspect_does_not_bump_revision() {
+        let mut s = Session::new();
+        exec(
+            &mut s,
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [5.0, 0.0]],
+                "thickness": 0.1,
+            }),
+        );
+        let before = exec(&mut s, "arch.inspect", &json!({}));
+        let after = exec(&mut s, "arch.inspect", &json!({}));
+        assert_eq!(before["revision"], after["revision"], "arch.inspect must not bump the arch revision");
+    }
+
+    #[test]
+    fn arch_inspect_lists_levels_and_bounds() {
+        let mut s = Session::new();
+        exec(
+            &mut s,
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [5.0, 0.0]],
+                "thickness": 0.1,
+            }),
+        );
+        let v = exec(&mut s, "arch.inspect", &json!({}));
+        let bounds = v["bounds"].as_array().expect("bounds should be an array");
+        assert_eq!(bounds.len(), 2, "bounds should be [[min],[max]]");
+        assert!(v["levels"].is_array(), "levels should be an array");
+    }
+}
