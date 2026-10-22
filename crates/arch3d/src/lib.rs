@@ -88,6 +88,20 @@ impl Scene3d {
     }
 }
 
+/// Build the full 3D scene from an arch model.
+///
+/// Top-level convenience wrapping [`Scene3d::build`].
+pub fn build(model: &ArchModel) -> Scene3d {
+    Scene3d::build(model)
+}
+
+/// Incremental rebuild that reuses unchanged meshes.
+///
+/// Top-level convenience wrapping [`Scene3d::build_dirty`].
+pub fn build_dirty(model: &ArchModel, dirty: &BTreeSet<ArchId>, prev: &Scene3d) -> Scene3d {
+    Scene3d::build_dirty(model, dirty, prev)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
