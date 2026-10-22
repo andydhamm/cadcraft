@@ -173,8 +173,8 @@ pub fn stretch_wall(
 
     // Seed with the cluster containing (id, end); if the wall is degenerate
     // (no cluster), just move its own end.
-    let initial: Vec<(ArchId, End)> = match graph.cluster_of((id, end)) {
-        Some(idx) => graph.cluster(idx),
+    let initial: Vec<(ArchId, End)> = match graph.cluster_of(id, end) {
+        Some(idx) => graph.cluster(idx).to_vec(),
         None => vec![(id, end)],
     };
 
@@ -191,9 +191,9 @@ pub fn stretch_wall(
         processed += 1;
         moving.push((w, e));
 
-        if let Some(idx) = graph.cluster_of((w, e)) {
-            if let Some(cluster) = graph.cluster(idx) {
-                for (w2, e2) in cluster {
+        if let Some(idx) = graph.cluster_of(w, e) {
+            let cluster = graph.cluster(idx);
+            for (w2, e2) in cluster {
                     let key = (w2, end_key(*e2));
                     if visited.insert(key) {
                         queue.push_back((w2, e2));
@@ -206,14 +206,14 @@ pub fn stretch_wall(
     // Snapshot original positions before mutating.
     let mut originals: BTreeMap<ArchId, (Vec2, Vec2)> = BTreeMap::new();
     for (w, _) in &moving {
-        if let Some(wall) = model.walls.iter().find(|w| w.id == *w) {
+        if let Some(wall) = model.walls.iter().find(|wall| wall.id == *w) {
             originals.insert(*w, (wall.start, wall.end));
         }
     }
 
     // Apply the new position to each affected end.
     for (w, e) in &moving {
-        if let Some(wall_idx) = model.walls.iter().position(|w| w.id == *w) {
+        if let Some(wall_idx) = model.walls.iter().position(|wall| wall.id == *w) {
             match e {
                 End::Start => model.walls[wall_idx].start = to,
                 End::End => model.walls[wall_idx].end = to,
@@ -224,8 +224,8 @@ pub fn stretch_wall(
     // Collect ids of walls whose geometry actually changed (sorted, deduped).
     let mut changed: BTreeSet<ArchId> = BTreeSet::new();
     for (w, (old_start, old_end)) in &originals {
-        if let Some(wall) = model.walls.iter().find(|w| w.id == *w) {
-            if wall.start != old_start || wall.end != old_end {
+        if let Some(wall) = model.walls.iter().find(|wall| wall.id == *w) {
+            if wall.start != *old_start || wall.end != *old_end {
                 changed.insert(*w);
             }
         }
