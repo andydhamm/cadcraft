@@ -408,6 +408,8 @@ pub use anno::*;
 
 #[cfg(test)]
 mod tests {
+    use crate::Drawing;
+
     /// A new drawing provides the `A-WALL` architectural layer for proxy graphics.
     #[test]
     fn a_wall_layer_exists_in_a_new_drawing() {
@@ -422,7 +424,8 @@ mod tests {
         let d = Drawing::new_imperial();
         let arch = ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
         for (i, name) in arch.iter().enumerate() {
-            assert_eq!(d.layers[2 + i].name, name, "layer at index {2 + i}");
+            let idx = 2 + i;
+            assert_eq!(d.layers[idx].name, name, "layer at index {idx}");
         }
     }
 }
