@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
 use cadcraft_doc::{ArchId, Wall};
 use cadcraft_geom::{Bounds2, Vec2};
 
@@ -147,6 +149,99 @@ pub fn solve_bounds(shapes: &[WallShape]) -> Bounds2 {
     Bounds2::from_points(all_points)
 }
 
+/// Move one end of a wall to `to`, then transitively move every neighbour end that
+/// shared that point (and their neighbours, and so on) so the wall graph stays
+/// connected. Returns the ids of every wall whose geometry changed, sorted ascending
+/// and deduplicated.
+pub fn stretch_wall(
+    model: &mut cadcraft_doc::ArchModel,
+    id: cadcraft_doc::ArchId,
+    end: End,
+    to: cadcraft_geom::Vec2,
+) -> Result<Vec<cadcraft_doc::ArchId>, ArchError> {
+    if !to.is_finite() {
+        return Err(ArchError::NotFinite);
+    }
+
+    let wall_idx = model.walls.iter().position(|w| w.id == id);
+    let wall_idx = match wall_idx {
+        Some(i) => i,
+        None => return Err(ArchError::NoSuchWall(id)),
+    };
+
+    let graph = crate::graph::WallGraph::build(model);
+
+    // Seed with the cluster containing (id, end); if the wall is degenerate
+    // (no cluster), just move its own end.
+    let initial: Vec<(ArchId, End)> = match graph.cluster_of((id, end)) {
+        Some(idx) => graph.cluster(idx),
+        None => vec![(id, end)],
+    };
+
+    // Fixed-point BFS over the original graph snapshot.
+    let mut visited: BTreeSet<(ArchId, u8)> = initial.iter().map(|(w, e)| (*w, end_key(*e))).collect();
+    let mut moving: Vec<(ArchId, End)> = Vec::new();
+    let mut queue: VecDeque<(ArchId, End)> = initial.into_iter().collect();
+    let mut processed: usize = 0;
+
+    while let Some((w, e)) = queue.pop_front() {
+        if processed >= MAX_WALLS {
+            break;
+        }
+        processed += 1;
+        moving.push((w, e));
+
+        if let Some(idx) = graph.cluster_of((w, e)) {
+            if let Some(cluster) = graph.cluster(idx) {
+                for (w2, e2) in cluster {
+                    let key = (w2, end_key(*e2));
+                    if visited.insert(key) {
+                        queue.push_back((w2, e2));
+                    }
+                }
+            }
+        }
+    }
+
+    // Snapshot original positions before mutating.
+    let mut originals: BTreeMap<ArchId, (Vec2, Vec2)> = BTreeMap::new();
+    for (w, _) in &moving {
+        if let Some(wall) = model.walls.iter().find(|w| w.id == *w) {
+            originals.insert(*w, (wall.start, wall.end));
+        }
+    }
+
+    // Apply the new position to each affected end.
+    for (w, e) in &moving {
+        if let Some(wall_idx) = model.walls.iter().position(|w| w.id == *w) {
+            match e {
+                End::Start => model.walls[wall_idx].start = to,
+                End::End => model.walls[wall_idx].end = to,
+            }
+        }
+    }
+
+    // Collect ids of walls whose geometry actually changed (sorted, deduped).
+    let mut changed: BTreeSet<ArchId> = BTreeSet::new();
+    for (w, (old_start, old_end)) in &originals {
+        if let Some(wall) = model.walls.iter().find(|w| w.id == *w) {
+            if wall.start != old_start || wall.end != old_end {
+                changed.insert(*w);
+            }
+        }
+    }
+
+    Ok(changed.into_iter().collect())
+}
+
+/// Maps an [`End`] to a small integer key for use in a `BTreeSet` pair.
+fn end_key(e: End) -> u8 {
+    match e {
+        End::Start => 0,
+        End::End => 1,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -240,5 +335,95 @@ mod tests {
 
         assert_eq!(ArchError::NotFinite.to_string(), "point is not finite");
         assert_eq!(ArchError::TooManyWalls.to_string(), "too many walls (max 4096)");
+    }
+
+    fn make_wall(model: &mut cadcraft_doc::ArchModel, id: u32, start: Vec2, end: Vec2) {
+        model.walls.push(Wall { id: ArchId(id), start, end, thickness: 2.0, height: 3.0, layers: vec![], ..Wall::default() });
+    }
+
+    #[test]
+    fn stretch_wall_moves_the_neighbour_end() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        make_wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        make_wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0));
+
+        let result = stretch_wall(&mut model, ArchId(0), End::End, Vec2::new(12.0, 3.0));
+        let ids: Vec<ArchId> = result.unwrap();
+        assert_eq!(ids, vec![ArchId(0), ArchId(1)]);
+
+        // Wall 0's end moved to (12,3); wall 1's start followed.
+        assert_eq!(model.walls[0].end, Vec2::new(12.0, 3.0));
+        assert_eq!(model.walls[1].start, Vec2::new(12.0, 3.0));
+        assert_eq!(model.walls[1].end, Vec2::new(10.0, 10.0));
+    }
+
+    #[test]
+    fn stretch_wall_on_missing_id_is_an_error() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        make_wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        let before = model.walls.clone();
+
+        let result = stretch_wall(&mut model, ArchId(999), End::Start, Vec2::new(1.0, 1.0));
+        assert_eq!(result, Err(ArchError::NoSuchWall(ArchId(999))));
+        assert_eq!(model.walls, before);
+    }
+
+    #[test]
+    fn stretch_wall_rejects_a_non_finite_point() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        make_wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        let before = model.walls.clone();
+
+        let r = stretch_wall(&mut model, ArchId(0), End::End, Vec2::new(f64::NAN, 0.0));
+        assert_eq!(r, Err(ArchError::NotFinite));
+        assert_eq!(model.walls, before);
+
+        let r = stretch_wall(&mut model, ArchId(0), End::End, Vec2::new(f64::INFINITY, 0.0));
+        assert_eq!(r, Err(ArchError::NotFinite));
+        assert_eq!(model.walls, before);
+    }
+
+    #[test]
+    fn stretch_wall_propagates_through_a_chain() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Three walls all sharing the point (10,0) — a chain/fan.
+        make_wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        make_wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(0.0, 10.0));
+        make_wall(&mut model, 2, Vec2::new(10.0, 0.0), Vec2::new(20.0, 0.0));
+
+        let result = stretch_wall(&mut model, ArchId(0), End::End, Vec2::new(12.0, 3.0));
+        let ids: Vec<ArchId> = result.unwrap();
+        assert_eq!(ids, vec![ArchId(0), ArchId(1), ArchId(2)]);
+
+        assert_eq!(model.walls[0].end, Vec2::new(12.0, 3.0));
+        assert_eq!(model.walls[1].start, Vec2::new(12.0, 3.0));
+        assert_eq!(model.walls[2].start, Vec2::new(12.0, 3.0));
+    }
+
+    #[test]
+    fn stretch_wall_returns_only_changed_ids() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        make_wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        make_wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0));
+
+        // Drag wall 0's end to the point it already occupies.
+        let result = stretch_wall(&mut model, ArchId(0), End::End, Vec2::new(10.0, 0.0));
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn stretch_wall_on_a_self_touching_loop_terminates() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Triangle: three walls meeting at three corners.
+        make_wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        make_wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(5.0, 10.0));
+        make_wall(&mut model, 2, Vec2::new(5.0, 10.0), Vec2::new(0.0, 0.0));
+
+        // Dragging one corner must terminate (bounded by the visited set + MAX_WALLS).
+        let result = stretch_wall(&mut model, ArchId(0), End::Start, Vec2::new(-1.0, 0.0));
+        let ids: Vec<ArchId> = result.unwrap();
+        // At most all three walls could be affected; the set is bounded.
+        assert!((ids.len()..=3).contains(&ids.len()));
+        assert!(!ids.is_empty());
     }
 }
