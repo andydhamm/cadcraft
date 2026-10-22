@@ -3,6 +3,7 @@
 use crate::Render3dError;
 use crate::camera::Camera;
 use crate::types::Scene3d;
+use image::ImageEncoder;
 
 /// Offscreen renderer that renders to a texture and reads back as PNG.
 pub struct Offscreen {
@@ -22,8 +23,7 @@ impl Offscreen {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, ..Default::default() })
             .await
-            .map_err(|e| Render3dError::Wgpu(e.to_string()))?
-            .ok_or(Render3dError::NoAdapter)?;
+            .map_err(|e| Render3dError::Wgpu(e.to_string()))?;
 
         let (device, queue) =
             adapter.request_device(&wgpu::DeviceDescriptor::default(), None).await.map_err(|e| Render3dError::Wgpu(e.to_string()))?;
@@ -79,7 +79,7 @@ impl Offscreen {
             let _ = tx.send(result);
         });
 
-        self.device.poll(wgpu::PollType::Wait);
+        self.device.poll(wgpu::PollType::Wait { submission_index: 0, timeout: std::time::Duration::from_secs(5) });
         rx.await.map_err(|e| Render3dError::Wgpu(format!("channel error: {e}")))?.map_err(|e| Render3dError::Wgpu(e.to_string()))?;
 
         let data = slice.get_mapped_range();
@@ -98,7 +98,7 @@ impl Offscreen {
 
 /// Render a scene headlessly and return a PNG. Returns `Render3dError::NoAdapter` if no GPU is available.
 pub async fn headless_png(scene: &Scene3d, camera: &Camera, size: (u32, u32)) -> Result<Vec<u8>, Render3dError> {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::new_without_display_handle());
     let offscreen = Offscreen::new(&instance, size).await?;
     offscreen.render(scene, camera, size);
     offscreen.read_png().await

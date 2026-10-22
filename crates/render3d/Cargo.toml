@@ -13,6 +13,7 @@ wgpu = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png"] }
 thiserror = "2"
 futures = "0.3"
+bytemuck = { version = "1.24", features = ["derive"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt"] }

@@ -1,6 +1,7 @@
 //! GPU mesh upload and render pipeline for the 3D viewport.
 
 use crate::types::{Mesh, Scene3d, Vertex};
+use wgpu::util::DeviceExt;
 
 /// GPU-side mesh buffers for a scene.
 pub struct GpuMeshes {

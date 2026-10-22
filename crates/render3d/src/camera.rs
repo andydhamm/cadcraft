@@ -80,22 +80,10 @@ impl Orbit {
         let new_up = right.cross(fw);
         // Column-major 4x4 (matches a WGSL `matrix<float, 4x4>` uniform).
         let m = [
-            right.x,
-            right.y,
-            right.z,
-            0.0,
-            new_up.x,
-            new_up.y,
-            new_up.z,
-            0.0,
-            -fw.x,
-            -fw.y,
-            -fw.z,
-            0.0,
-            -right.dot(eye),
-            -new_up.dot(eye),
-            fw.dot(eye),
-            1.0,
+            [right.x, new_up.x, -fw.x, -right.dot(eye)],
+            [right.y, new_up.y, -fw.y, -new_up.dot(eye)],
+            [right.z, new_up.z, -fw.z, fw.dot(eye)],
+            [0.0, 0.0, 0.0, 1.0],
         ];
         Mat4 { m }
     }
@@ -108,22 +96,10 @@ impl Orbit {
         let z_near = 0.1;
         let z_far = 10_000.0;
         let m = [
-            1.0 / (aspect * tan_half),
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0 / tan_half,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            (z_far + z_near) / (z_near - z_far),
-            (2.0 * z_near * z_far) / (z_near - z_far),
-            0.0,
-            0.0,
-            -1.0,
-            0.0,
+            [1.0 / (aspect * tan_half), 0.0, 0.0, 0.0],
+            [0.0, 1.0 / tan_half, 0.0, 0.0],
+            [0.0, 0.0, (z_far + z_near) / (z_near - z_far), -1.0],
+            [0.0, 0.0, (2.0 * z_near * z_far) / (z_near - z_far), 0.0],
         ];
         Mat4 { m }
     }
