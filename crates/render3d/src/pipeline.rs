@@ -88,7 +88,7 @@ mod tests {
         };
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions::default()).now_or_never().flatten();
+        let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions::default()).now_or_never().and_then(Result::ok);
 
         if let Some(adapter) = adapter {
             let (device, _queue) = adapter.request_device(&wgpu::DeviceDescriptor::default()).now_or_never().flatten().expect("device");
