@@ -1,0 +1,13 @@
+[package]
+name = "cadcraft-arch3d"
+version.workspace = true
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+cadcraft-arch = { workspace = true }
+cadcraft-color = { workspace = true }
+cadcraft-doc = { workspace = true }
+cadcraft-geom = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
