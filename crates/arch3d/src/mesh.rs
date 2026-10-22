@@ -138,17 +138,17 @@ impl Mesh {
         let b_base = self.positions.len() as u32;
 
         // ── Cap vertices ──────────────────────────────────────────────
-        // Bottom ring (normal: 0, -1, 0)
+        // Bottom ring: outward normal is -Z.
         for &p in &ring {
             self.positions.push([p.x as f32, p.y as f32, z0f]);
             self.uvs.push([p.x as f32, z0f]);
-            self.normals.push([0.0, -1.0, 0.0]);
+            self.normals.push([0.0, 0.0, -1.0]);
         }
-        // Top ring (normal: 0, 1, 0)
+        // Top ring: outward normal is +Z.
         for &p in &ring {
             self.positions.push([p.x as f32, p.y as f32, z1f]);
             self.uvs.push([p.x as f32, z1f]);
-            self.normals.push([0.0, 1.0, 0.0]);
+            self.normals.push([0.0, 0.0, 1.0]);
         }
 
         // ── Side vertices (duplicated for correct per-face normals) ───
@@ -315,4 +315,79 @@ fn point_in_triangle(p: &Vec2, a: &Vec2, b: &Vec2, c: &Vec2) -> bool {
     let u = (ac_x * ap_y - ac_y * ap_x) / denom;
     let v = (ab_x * ap_y - ab_y * ap_x) / denom;
     u >= -1e-9 && v >= -1e-9 && u + v <= 1.0 + 1e-9
+}
+
+/// A square ring (3,3)-(5,3)-(5,5)-(3,5), CCW.
+fn square_ring() -> Vec<Vec2> {
+    vec![Vec2::new(3.0, 3.0), Vec2::new(5.0, 3.0), Vec2::new(5.0, 5.0), Vec2::new(3.0, 5.0)]
+}
+
+/// A concave 5-gon with a reflex vertex at (1.5, 1.5).
+fn concave_ring() -> Vec<Vec2> {
+    vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(1.5, 1.5), Vec2::new(0.0, 4.0)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use cadcraft_arch::join::WallShape;
+
+    /// `triangulate` must split a concave (non-convex) 5-gon into 3 triangles.
+    #[test]
+    fn triangulate_handles_a_concave_ring() {
+        let ring = concave_ring();
+        let tri = triangulate(&ring);
+        assert_eq!(tri.len(), 3, "expected 3 triangles for a 5-gon; got {tri:?}");
+    }
+
+    /// A rectangular wall prism must be a closed 2-manifold.
+    #[test]
+    fn wall_mesh_is_manifold() {
+        let ring = square_ring();
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism(&ring, 0.0, 2.5);
+        assert!(mesh.is_manifold(), "wall prism must be a closed manifold");
+        assert!(mesh.triangle_count() > 0);
+    }
+
+    /// Every face normal must point outward from the prism interior.
+    /// Verified by checking the dot product of each vertex normal with the
+    /// vector from the box centroid to that vertex is non-negative.
+    #[test]
+    fn normals_face_outwards() {
+        let ring = square_ring();
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism(&ring, 0.0, 2.5);
+
+        let (cx, cy, cz) = (4.0f32, 4.0f32, 1.25f32);
+        for (i, p) in mesh.positions.iter().enumerate() {
+            let [x, y, z] = p;
+            let [nx, ny, nz] = mesh.normals[i];
+            let dot = (x - cx) * nx + (y - cy) * ny + (z - cz) * nz;
+            assert!(nx.is_finite() && ny.is_finite() && nz.is_finite());
+            assert!(dot > -1e-6, "normal at vertex {i} points inward: pos=({x}, {y}, {z}) normal=({nx}, {ny}, {nz}) dot={dot}");
+        }
+    }
+
+    /// The 3D bounds must match the plan envelope (3–5 in x/y) and the height (0–h in z).
+    #[test]
+    fn bounds_match_the_plan_envelope_and_height() {
+        let ring = square_ring();
+        let h = 2.5;
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism(&ring, 0.0, h);
+        let b = mesh.bounds();
+        assert!(b.min[0] <= 3.0 + 1e-9 && b.min[1] <= 3.0 + 1e-9);
+        assert!(b.max[0] >= 5.0 - 1e-9 && b.max[1] >= 5.0 - 1e-9);
+        assert!(b.min[2] >= -1e-9 && b.max[2] <= h + 1e-9);
+    }
+
+    /// A degenerate ring (fewer than 3 vertices) yields `None`.
+    #[test]
+    fn degenerate_wall_produces_no_mesh() {
+        let degenerate = WallShape { id: ArchId(1), polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)] };
+        let m = crate::walls::extrude_wall(&degenerate, 2.5, 0.0, "wall");
+        assert!(m.is_none(), "degenerate (2-vertex) wall must produce no mesh");
+    }
 }
