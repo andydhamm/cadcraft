@@ -16,11 +16,9 @@
 
 use cadcraft_arch::model::{JoinKind, Wall, WallKind};
 use cadcraft_geom::Vec2;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::cmd::{
-    bad, bool_or, CommandSpec, distinct_points, points_param, size_param, str_param,
-};
+use crate::cmd::{CommandSpec, bad, bool_or, distinct_points, points_param, size_param, str_param};
 use crate::{EngineError, Result, Session};
 
 /// Command specs for the wall module.
@@ -36,17 +34,13 @@ pub fn specs() -> Vec<CommandSpec> {
 /// Run the `wall` command from JSON parameters. Never opens a dialog.
 fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     // --- Parse and validate points ---
-    let pts = points_param(p, "points")
-        .ok_or_else(|| bad("wall", "`points` [[x,y],...] (2 or more) is required"))?;
+    let pts = points_param(p, "points").ok_or_else(|| bad("wall", "`points` [[x,y],...] (2 or more) is required"))?;
     let pts = distinct_points(&pts);
     if pts.len() < 2 {
         return Err(bad("wall", "`points` [[x,y],...] (2 or more) is required"));
     }
     if pts.len() > super::MAX_WALLS {
-        return Err(bad(
-            "wall",
-            format!("too many points ({} > {})", pts.len(), super::MAX_WALLS),
-        ));
+        return Err(bad("wall", format!("too many points ({} > {})", pts.len(), super::MAX_WALLS)));
     }
     for i in 0..pts.len() {
         if !pts[i].is_finite() {
@@ -69,11 +63,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let wall_kind = match type_str {
         None => {
             let ext = bool_or(p, "exterior", true);
-            if ext {
-                WallKind::Exterior
-            } else {
-                WallKind::Interior
-            }
+            if ext { WallKind::Exterior } else { WallKind::Interior }
         }
         Some(t) => match t.as_str() {
             "exterior" => WallKind::Exterior,
@@ -101,19 +91,12 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
 
     // Level: from param or first in model
     let d = s.doc_mut()?;
-    let level = level_name
-        .as_ref()
-        .and_then(|name| d.arch.level(name))
-        .or_else(|| d.arch.levels.first());
+    let level = level_name.as_ref().and_then(|name| d.arch.level(name)).or_else(|| d.arch.levels.first());
 
     // Height: explicit or level floor_to_floor
     let height = match size_param("wall", p, "height", false) {
         Some(h) => h,
-        None => {
-            level
-                .map(|l| l.floor_to_floor)
-                .unwrap_or(super::DEFAULT_EXT_THICKNESS * 5.0)
-        }
+        None => level.map(|l| l.floor_to_floor).unwrap_or(super::DEFAULT_EXT_THICKNESS * 5.0),
     };
 
     // Apply closed flag
@@ -133,9 +116,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let mut new_walls: Vec<Wall> = Vec::with_capacity(pts.len().saturating_sub(1));
     for (start, end) in pts.windows(2) {
         let id = d.arch.next_wall_id();
-        let base_level = level
-            .map(|l| l.name.clone())
-            .unwrap_or_else(|| "ground".to_string());
+        let base_level = level.map(|l| l.name.clone()).unwrap_or_else(|| "ground".to_string());
         new_walls.push(Wall {
             id,
             start: *start,
@@ -186,13 +167,7 @@ mod tests {
     fn new_session_with_level() -> Session {
         let mut s = Session::new();
         let d = s.doc_mut().unwrap();
-        d.arch.levels.push(
-            cadcraft_arch::model::Level {
-                name: "ground".to_string(),
-                floor_to_floor: 3.0,
-                ..Default::default()
-            },
-        );
+        d.arch.levels.push(cadcraft_arch::model::Level { name: "ground".to_string(), floor_to_floor: 3.0, ..Default::default() });
         d.touch_arch();
         s
     }

@@ -25,18 +25,9 @@ pub mod wall;
 /// requested wall thickness (see `crates/arch/src/wall.rs::wall_layer_polygons`).
 pub(crate) fn wall_layers(exterior: bool) -> Vec<(String, f64)> {
     if exterior {
-        vec![
-            ("siding".to_string(), 0.02),
-            ("sheathing".to_string(), 0.015),
-            ("stud".to_string(), 0.09),
-            ("drywall".to_string(), 0.013),
-        ]
+        vec![("siding".to_string(), 0.02), ("sheathing".to_string(), 0.015), ("stud".to_string(), 0.09), ("drywall".to_string(), 0.013)]
     } else {
-        vec![
-            ("drywall".to_string(), 0.013),
-            ("stud".to_string(), 0.09),
-            ("drywall".to_string(), 0.013),
-        ]
+        vec![("drywall".to_string(), 0.013), ("stud".to_string(), 0.09), ("drywall".to_string(), 0.013)]
     }
 }
 
@@ -48,4 +39,3 @@ pub fn specs() -> Vec<CommandSpec> {
     v.extend(wall::specs());
     v
 }
-<<<<<<< SEARCH
