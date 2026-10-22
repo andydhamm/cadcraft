@@ -3,6 +3,7 @@
 
 pub(crate) mod annoscale;
 mod annotate;
+mod arch;
 mod array;
 mod audit;
 pub(crate) mod blocks;
@@ -205,6 +206,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(tolerance::specs());
         v.extend(txt2mtxt::specs());
         v.extend(constraints::specs());
+        v.extend(arch::specs());
         v.extend(lisp::specs());
         v
     })

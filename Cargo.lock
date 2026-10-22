@@ -648,6 +648,7 @@ dependencies = [
 name = "cadcraft-engine"
 version = "0.10.0"
 dependencies = [
+ "cadcraft-arch",
  "cadcraft-color",
  "cadcraft-constraints",
  "cadcraft-doc",
