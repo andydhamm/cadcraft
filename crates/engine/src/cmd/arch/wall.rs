@@ -100,8 +100,9 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let pts = if closed && pts.len() > 2 {
         match pts.last() {
             Some(last) if !last.near(pts[0], 1e-6) => {
+                let first = pts[0];
                 let mut v = pts;
-                v.push(pts[0]);
+                v.push(first);
                 v
             }
             _ => pts,
@@ -132,13 +133,6 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
         });
     }
 
-    d.arch.walls.extend(new_walls);
-    d.touch_arch();
-
-    // --- Join solver (pending p1-join-solver merge) ---
-    let joins = 0usize;
-    // TODO(p1-join-solver): let joins = cadcraft_arch::join::solve_joins(&mut d.arch);
-
     // --- Build response: newly added walls only ---
     let walls_json: Vec<Value> = new_walls
         .iter()
@@ -150,6 +144,13 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
             })
         })
         .collect();
+
+    d.arch.walls.extend(new_walls);
+    d.touch_arch();
+
+    // --- Join solver (pending p1-join-solver merge) ---
+    let joins = 0usize;
+    // TODO(p1-join-solver): let joins = cadcraft_arch::join::solve_joins(&mut d.arch);
 
     Ok(json!({ "walls": walls_json, "joins": joins }))
 }
