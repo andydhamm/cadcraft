@@ -78,7 +78,7 @@ impl Offscreen {
             let _ = tx.send(result);
         });
 
-        self.device.poll(wgpu::PollType::Wait { submission_index: Some(0), timeout: Some(std::time::Duration::from_secs(5)) });
+        self.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(std::time::Duration::from_secs(5)) });
         rx.await.map_err(|e| Render3dError::Wgpu(format!("channel error: {e}")))?.map_err(|e| Render3dError::Wgpu(e.to_string()))?;
 
         let data = slice.get_mapped_range();
