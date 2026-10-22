@@ -5,6 +5,22 @@ use cadcraft_geom::{Bounds2, Vec2};
 
 use crate::graph::WallGraph;
 
+/// Whether a point is on the open interior of the segment `[a, b]` (strictly between
+/// the endpoints, on the line). Used to decide whether a line intersection is a true
+/// X crossing rather than an endpoint join.
+fn point_in_open_segment(a: Vec2, b: Vec2, p: Vec2) -> bool {
+    let ab = b - a;
+    let ab2 = ab.len() * ab.len();
+    if ab2 < JOIN_EPS {
+        return false;
+    }
+    if (p - a).cross(ab).abs() > ENDPOINT_TOL {
+        return false;
+    }
+    let t = (p - a).dot(ab) / ab2;
+    t > ENDPOINT_TOL && t < 1.0 - ENDPOINT_TOL
+}
+
 pub const MAX_WALLS: usize = 4096;
 /// Max wall ends allowed to share one join point before we stop mitring.
 pub const MAX_JOIN_FAN: usize = 8;
