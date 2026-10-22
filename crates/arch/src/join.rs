@@ -293,12 +293,19 @@ fn plan_end(w: &Wall, end: End, raw: (Vec2, Vec2), g: &WallGraph, model: &cadcra
             return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
         };
         let pt = end.point(w);
+        let Some(wdir) = wall_dir(w) else {
+            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+        };
         let Some(ndir) = wall_dir(nw) else {
             return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
         };
         let perp = Vec2::new(-ndir.y, ndir.x);
         let half = nw.thickness / 2.0;
-        let side = (pt - nw.start).dot(perp);
+        // Determine which side of the host the incoming wall approaches from
+        // by looking at a point along the incoming wall away from the join.
+        let away = if end == End::End { -wdir } else { wdir };
+        let away_pt = pt + away * 1.0;
+        let side = (away_pt - nw.start).dot(perp);
         let face_pt = if side > 0.0 {
             nw.start + ndir * ((pt - nw.start).dot(ndir)) + perp * half
         } else {
@@ -331,23 +338,23 @@ fn plan_end(w: &Wall, end: End, raw: (Vec2, Vec2), g: &WallGraph, model: &cadcra
         };
 
         // Interior bisector direction: between -wdir (back along this wall) and ndir (along neighbour)
-        let interior_dir = (-wdir + ndir);
-        if interior_dir.len() < JOIN_EPS {
+        let bisector = -wdir + ndir;
+        if bisector.len() < JOIN_EPS {
             return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
         }
 
         // For each face of this wall, intersect with both faces of the neighbour
-        // and pick the intersection that is more in the interior direction.
-        let pick_interior = |p: Vec2, q: Vec2| -> Vec2 {
-            let v1 = p - pt;
-            let v2 = q - pt;
-            if v1.dot(interior_dir) >= v2.dot(interior_dir) { p } else { q }
+        // and pick the intersection that lies on (or closest to) the bisector line.
+        let pick_on_bisector = |p: Vec2, q: Vec2| -> Vec2 {
+            let d1 = (p - pt).cross(bisector).abs();
+            let d2 = (q - pt).cross(bisector).abs();
+            if d1 <= d2 { p } else { q }
         };
 
         let left_a = line_line_infinite(raw.0, raw.0 + wdir * 1000.0, nface[0].0, nface[0].1).map(|(p, _, _)| p);
         let left_b = line_line_infinite(raw.0, raw.0 + wdir * 1000.0, nface[1].0, nface[1].1).map(|(p, _, _)| p);
         let left = match (left_a, left_b) {
-            (Some(a), Some(b)) => pick_interior(a, b),
+            (Some(a), Some(b)) => pick_on_bisector(a, b),
             (Some(a), None) => a,
             (None, Some(b)) => b,
             (None, None) => raw.0,
@@ -356,7 +363,7 @@ fn plan_end(w: &Wall, end: End, raw: (Vec2, Vec2), g: &WallGraph, model: &cadcra
         let right_a = line_line_infinite(raw.1, raw.1 + wdir * 1000.0, nface[0].0, nface[0].1).map(|(p, _, _)| p);
         let right_b = line_line_infinite(raw.1, raw.1 + wdir * 1000.0, nface[1].0, nface[1].1).map(|(p, _, _)| p);
         let right = match (right_a, right_b) {
-            (Some(a), Some(b)) => pick_interior(a, b),
+            (Some(a), Some(b)) => pick_on_bisector(a, b),
             (Some(a), None) => a,
             (None, Some(b)) => b,
             (None, None) => raw.1,
