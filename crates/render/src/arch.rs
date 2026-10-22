@@ -4,10 +4,12 @@ use cadcraft_geom::Vec2;
 
 use crate::{DPrim, DisplayList, Kind, Options};
 
+pub use cadcraft_doc::is_arch_handle;
+
 /// Stable proxy handle for an architectural object: arch objects have no entity handle, so
 /// selection and picking map back to the `ArchId` through this reserved range.
 pub fn arch_handle(id: ArchId) -> Handle {
-    Handle(0xA000_0000u64.saturating_add(u64::from(id.0)))
+    cadcraft_doc::arch_handle(id)
 }
 
 /// The poché (2D cross-section) primitives for `d.arch`, in wall order. The caller merges the
@@ -17,8 +19,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
     let layer = d.layer("A-WALL").map(|l| l.color).unwrap_or(Color::Index(7));
     let ink = crate::ink(Color::ByLayer, layer, Color::Index(7));
 
-    for entry in &d.arch.walls {
-        let wall = &entry.wall;
+    for wall in &d.arch.walls {
         if !wall.start.is_finite() || !wall.end.is_finite() {
             continue;
         }
@@ -47,7 +48,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
                 list.tris.push(*q);
             }
             list.prims.push(DPrim {
-                handle: arch_handle(entry.id),
+                handle: arch_handle(wall.id),
                 color: ink.rgb,
                 aci7: ink.aci7,
                 lw: 0.0,
@@ -66,7 +67,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
             list.verts.push(*q);
         }
         list.prims.push(DPrim {
-            handle: arch_handle(entry.id),
+            handle: arch_handle(wall.id),
             color: ink.rgb,
             aci7: ink.aci7,
             lw: 0.0,
@@ -87,7 +88,7 @@ mod tests {
     use cadcraft_doc::{Drawing, Layer};
 
     fn wall(start: Vec2, end: Vec2, thickness: f64) -> Wall {
-        Wall { start, end, thickness, height: 3.0, layers: Vec::new() }
+        Wall { start, end, thickness, height: 3.0, ..Wall::default() }
     }
 
     #[test]

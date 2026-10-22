@@ -1,7 +1,7 @@
 use crate::raster::{RasterOptions, View, render};
 use crate::*;
-use cadcraft_doc::{Common, Drawing, EntityKind, Hatch, HatchLoop, Space};
-use cadcraft_geom::{PolyVertex, Vec3};
+use cadcraft_doc::{ArchId, ArchModel, Common, Drawing, EntityKind, Hatch, HatchLoop, Space, Wall};
+use cadcraft_geom::{PolyVertex, Vec2, Vec3};
 
 fn sample() -> Drawing {
     let mut d = Drawing::new_imperial();
@@ -998,4 +998,53 @@ fn wide_polyline_centre_line_is_drawn_on_screen_only() {
         assert!(see_through.prims.iter().any(|p| p.kind == Kind::Tris && p.transparency == 50), "{lt}: the transparent band");
         assert_eq!(lines(&see_through), 0, "{lt}: a transparent band gets no hairline");
     }
+}
+
+// ---------- arch poché ----------
+
+/// A drawing with one model-space line and one arch wall (ArchId 0).
+fn arch_wall_drawing() -> Drawing {
+    let mut d = Drawing::new_imperial();
+    d.add(&Space::Model, Common::default(), EntityKind::Line(cadcraft_doc::Line { a: Vec3::new(0.0, 0.0, 0.0), b: Vec3::new(10.0, 0.0, 0.0) }))
+        .unwrap();
+    let mut model = ArchModel::default();
+    model.add_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.3, height: 3.0, ..Default::default() });
+    d.arch = model;
+    d.touch_arch();
+    d
+}
+
+#[test]
+fn build_includes_arch_poché() {
+    let d = arch_wall_drawing();
+    let l = build(&d, &Space::Model, &Options::default());
+    assert!(l.prims.iter().any(|p| p.kind == Kind::Tris && p.handle == crate::arch_handle(ArchId(0))), "no arch poché tris in the display list");
+}
+
+#[test]
+fn build_plot_includes_arch_poché() {
+    let d = arch_wall_drawing();
+    let l = build_plot(&d, &Space::Model, &Options::default());
+    assert!(l.prims.iter().any(|p| p.kind == Kind::Tris && p.handle == crate::arch_handle(ArchId(0))), "no arch poché tris in the plot display list");
+}
+
+#[test]
+fn arch_poché_extends_display_bounds() {
+    let mut d = Drawing::new_imperial();
+    d.add(&Space::Model, Common::default(), EntityKind::Line(cadcraft_doc::Line { a: Vec3::new(0.0, 0.0, 0.0), b: Vec3::new(1.0, 0.0, 0.0) }))
+        .unwrap();
+    let mut model = ArchModel::default();
+    model.add_wall(Wall { start: Vec2::new(100.0, 100.0), end: Vec2::new(110.0, 100.0), thickness: 0.3, height: 3.0, ..Default::default() });
+    d.arch = model;
+    d.touch_arch();
+    let l = build(&d, &Space::Model, &Options::default());
+    assert!(l.bounds.contains(Vec2::new(100.0, 100.0)), "bounds do not contain wall start");
+    assert!(l.bounds.contains(Vec2::new(110.0, 100.0)), "bounds do not contain wall end");
+}
+
+#[test]
+fn paper_space_skips_arch() {
+    let d = arch_wall_drawing();
+    let l = build(&d, &Space::Paper("Layout1".into()), &Options::default());
+    assert!(!l.prims.iter().any(|p| p.handle == crate::arch_handle(ArchId(0))), "arch poché drawn in paper space");
 }

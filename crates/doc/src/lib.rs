@@ -22,7 +22,7 @@ mod tables;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-pub use arch::{ArchId, ArchModel, Wall, WallEntry};
+pub use arch::{ARCH_HANDLE_BASE, ArchId, ArchModel, JoinKind, Level, RefSide, Wall, WallLayer, WallType, arch_handle, is_arch_handle};
 pub use array::*;
 pub use cadcraft_color as color;
 pub use cadcraft_geom as geom;

@@ -105,9 +105,7 @@ mod tests {
     use cadcraft_geom::Vec2;
 
     fn wall(start: Vec2, end: Vec2, thickness: f64) -> Wall {
-        let mut w = Wall::new(start, end, thickness);
-        w.height = 3.0;
-        w
+        Wall { start, end, thickness, height: 3.0, layers: Vec::new(), ..Wall::default() }
     }
 
     #[test]
@@ -146,9 +144,14 @@ mod tests {
 
     #[test]
     fn wall_layer_polygons_sum_to_the_wall_thickness() {
-        let mut w = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 4.0);
-        w.height = 3.0;
-        w.layers = vec![("outer".into(), 1.0), ("core".into(), 2.0), ("inner".into(), 1.0)];
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 4.0,
+            height: 3.0,
+            layers: vec![("outer".into(), 1.0), ("core".into(), 2.0), ("inner".into(), 1.0)],
+            ..Wall::default()
+        };
         let polys = wall_layer_polygons(&w);
         assert_eq!(polys.len(), 3);
         // Each band's thickness = distance between its two parallel edges.

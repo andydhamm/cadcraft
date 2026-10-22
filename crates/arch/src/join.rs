@@ -33,14 +33,7 @@ impl End {
     }
 }
 
-/// Per-wall join override. `Auto` = solver decides.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum JoinKind {
-    #[default]
-    Auto,
-    Butt,
-    Square,
-}
+pub use cadcraft_doc::JoinKind;
 
 /// The join applied at one end of a wall shape.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -197,8 +190,7 @@ mod tests {
 
     #[test]
     fn face_lines_are_the_two_long_edges_of_the_poché() {
-        let mut wall = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 2.0);
-        wall.height = 3.0;
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 2.0, height: 3.0, layers: vec![], ..Wall::default() };
         let lines = face_lines(&wall).unwrap();
         // Left face: offset +1.0 (left of a→b direction (1,0) → (0,1))
         assert_eq!(lines[0].0, Vec2::new(0.0, 1.0));
@@ -210,8 +202,7 @@ mod tests {
 
     #[test]
     fn ring_from_corners_matches_wall_polygon_when_untrimmed() {
-        let mut wall = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 2.0);
-        wall.height = 3.0;
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 2.0, height: 3.0, layers: vec![], ..Wall::default() };
         let lines = face_lines(&wall).unwrap();
         let left_start = lines[0].0;
         let left_end = lines[0].1;

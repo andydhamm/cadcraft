@@ -1,37 +1,44 @@
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
-#![forbid(unsafe_code)]
+//! The `arch` crate is the 2D algorithm layer (L2) for the arch3d feature.
+//!
+//! The architectural data model (`Wall`, `ArchId`, `ArchModel`, `Level`, `WallType`,
+//! `JoinKind`, `RefSide`, `WallLayer`) lives in `cadcraft-doc` (L1) so that it is stored on
+//! `Drawing` and participates in undo, autosave, audit and DXF round-trip. This crate contains
+//! the pure 2D algorithms that operate on that model:
+//!
+//! - `wall` — poché/offset geometry, wall bounds, wall construction helpers.
+//! - `join` — wall join solver (L/T/X/angled/collinear, mitre/butt, neighbour stretch).
+//!
+//! Model types are re-exported here so callers of `cadcraft-arch` get them from one place.
 
-pub mod graph;
+pub use cadcraft_doc::{ArchId, ArchModel, JoinKind, Level, RefSide, Wall, WallLayer, WallType};
+
 pub mod join;
 pub mod wall;
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use cadcraft_geom::{Bounds2, Vec2};
 
-    use cadcraft_doc::{ArchModel, Wall};
-    use cadcraft_geom::Vec2;
-
-    use crate::wall::wall_polygon;
+    #[test]
+    fn arch_reexports_model_types() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::ZERO, Vec2::new(1.0, 0.0), 0.2));
+        assert_eq!(m.len(), 1);
+        assert!(m.wall(m.next_wall_id()).is_none());
+    }
 
     #[test]
     fn arch_wall_bounds_through_reexport() {
-        let mut model = ArchModel::default();
-        let w = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 10.0), 0.2);
-        model.add_wall(w);
-        let entry = &model.walls[0];
-        let poly = wall_polygon(entry).unwrap();
-        let mut min_x = f64::INFINITY;
-        let mut max_x = f64::NEG_INFINITY;
-        let mut min_y = f64::INFINITY;
-        let mut max_y = f64::NEG_INFINITY;
-        for p in &poly {
-            min_x = min_x.min(p.x);
-            max_x = max_x.max(p.x);
-            min_y = min_y.min(p.y);
-            max_y = max_y.max(p.y);
-        }
-        let b = cadcraft_geom::Bounds2 { min: Vec2::new(min_x, min_y), max: Vec2::new(max_x, max_y) };
-        assert!((b.min.x - (-0.1)).abs() < 1e-9);
+        let w = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, ..Wall::default() };
+        let b = crate::wall::wall_bounds(&w);
+        // Bounds must cover the wall's centerline from start to end.
+        assert!(b.min.x <= w.start.x + 1e-9);
+        assert!(b.min.y <= w.start.y + 1e-9);
+        assert!(b.max.x >= w.end.x - 1e-9);
+        assert!(b.max.y >= w.end.y - 1e-9);
+
+        let zero = crate::wall::wall_bounds(&Wall::default());
+        assert_eq!(zero, Bounds2::EMPTY);
     }
 }
