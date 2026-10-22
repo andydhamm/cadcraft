@@ -540,3 +540,61 @@ pub fn polyline_grip_count(p: &LwPolyline) -> usize {
 #[cfg(test)]
 #[path = "grips_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod arch_grips_tests {
+    use super::*;
+    use crate::Session;
+    use cadcraft_doc::{ArchId, Handle, arch_handle};
+    use cadcraft_geom::Vec2;
+    use serde_json::json;
+
+    /// Build a session with the standard L-shaped wall
+    /// (w0: (0,0)-(10,0), w1: (10,0)-(10,10)).
+    fn setup() -> Session {
+        let s = Session::new();
+        s.execute("wall", &json!({"points": [[0, 0], [10, 0], [10, 10]]})).unwrap();
+        s
+    }
+
+    #[test]
+    fn arch_wall_grips_are_its_endpoints() {
+        let s = setup();
+        let grips = s.grips_of(arch_handle(ArchId(0))).unwrap();
+        assert_eq!(grips, vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)]);
+        assert!(s.grips_of(arch_handle(ArchId(99))).is_err());
+    }
+
+    #[test]
+    fn grip_drag_of_arch_wall_stretches_neighbours() {
+        let mut s = setup();
+        s.grip_edit(arch_handle(ArchId(0)), 1, Vec2::new(12.0, 0.0), GripMode::Stretch).unwrap();
+        let d = s.doc().unwrap();
+        let w1 = d.arch.wall(ArchId(1)).unwrap();
+        assert_eq!(w1.start, Vec2::new(12.0, 0.0));
+    }
+
+    #[test]
+    fn arch_wall_grip_drag_is_undoable() {
+        let mut s = setup();
+        s.grip_edit(arch_handle(ArchId(0)), 1, Vec2::new(12.0, 0.0), GripMode::Stretch).unwrap();
+        s.undo().unwrap();
+        let d = s.doc().unwrap();
+        let w0 = d.arch.wall(ArchId(0)).unwrap();
+        let w1 = d.arch.wall(ArchId(1)).unwrap();
+        assert_eq!(w0.end, Vec2::new(10.0, 0.0));
+        assert_eq!(w1.start, Vec2::new(10.0, 0.0));
+    }
+
+    #[test]
+    fn normal_entity_grips_still_work() {
+        let mut s = setup();
+        let val = s.execute("line", &json!({"points": [[0, 0], [10, 0]]})).unwrap();
+        let hex = val["handle"].as_str().unwrap();
+        let h = Handle(u64::from_str_radix(hex, 16).unwrap());
+        let grips = s.grips_of(h).unwrap();
+        assert_eq!(grips.len(), 2);
+        s.grip_edit(h, 0, Vec2::new(1.0, 1.0), GripMode::Stretch).unwrap();
+        assert!(s.grip_edit(arch_handle(ArchId(0)), 0, Vec2::new(1.0, 1.0), GripMode::Move).is_err());
+    }
+}
