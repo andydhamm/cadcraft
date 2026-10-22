@@ -33,14 +33,7 @@ impl End {
     }
 }
 
-/// Per-wall join override. `Auto` = solver decides.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum JoinKind {
-    #[default]
-    Auto,
-    Butt,
-    Square,
-}
+pub use cadcraft_doc::JoinKind;
 
 /// The join applied at one end of a wall shape.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

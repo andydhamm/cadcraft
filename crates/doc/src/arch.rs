@@ -82,14 +82,97 @@ pub struct WallEntry {
     pub wall: Wall,
 }
 
+/// Which side of the wall centre line the reference is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub enum RefSide {
+    Left,
+    Right,
+    #[default]
+    Centre,
+}
+
+/// A single layer within a wall type's build-up.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WallLayer {
+    pub name: String,
+    pub thickness: f64,
+    pub material: String,
+}
+
+/// A named wall type with its layer build-up and reference side.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WallType {
+    pub name: String,
+    pub layers: Vec<WallLayer>,
+    pub reference: RefSide,
+}
+
+/// Per-wall join override. `Mitre` means the solver decides.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub enum JoinKind {
+    #[default]
+    Mitre,
+    Butt,
+    Square,
+}
+
+/// A building level (floor plate).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Level {
+    pub index: u32,
+    pub name: String,
+    pub elevation: f64,
+    pub floor_to_floor: f64,
+    pub ceiling_height: f64,
+    pub structure: f64,
+}
+
 /// The architectural object model for a drawing.
 ///
 /// Stored on [`Drawing::arch`]; the 3D pane and incremental rebuilds key off
 /// [`Drawing::arch_revision`].
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArchModel {
     pub walls: Vec<WallEntry>,
     pub next_id: u32,
+    pub levels: Vec<Level>,
+    pub types: Vec<WallType>,
+}
+
+impl Default for ArchModel {
+    fn default() -> Self {
+        ArchModel {
+            walls: Vec::new(),
+            next_id: 0,
+            levels: vec![Level { index: 0, name: "Level 1".into(), elevation: 0.0, floor_to_floor: 2.4, ceiling_height: 2.4, structure: 0.2 }],
+            types: vec![
+                WallType {
+                    name: "Exterior".into(),
+                    layers: vec![
+                        WallLayer { name: "siding".into(), thickness: 0.02, material: "siding".into() },
+                        WallLayer { name: "sheathing".into(), thickness: 0.015, material: "sheathing".into() },
+                        WallLayer { name: "stud".into(), thickness: 0.09, material: "stud".into() },
+                        WallLayer { name: "drywall".into(), thickness: 0.013, material: "drywall".into() },
+                    ],
+                    reference: RefSide::Left,
+                },
+                WallType {
+                    name: "Interior".into(),
+                    layers: vec![
+                        WallLayer { name: "drywall".into(), thickness: 0.013, material: "drywall".into() },
+                        WallLayer { name: "stud".into(), thickness: 0.074, material: "stud".into() },
+                        WallLayer { name: "drywall".into(), thickness: 0.013, material: "drywall".into() },
+                    ],
+                    reference: RefSide::Centre,
+                },
+            ],
+        }
+    }
 }
 
 impl ArchModel {
@@ -114,6 +197,16 @@ impl ArchModel {
     /// Whether the model has no walls.
     pub fn is_empty(&self) -> bool {
         self.walls.is_empty()
+    }
+
+    /// Look up a wall type by name (case-insensitive).
+    pub fn wall_type(&self, name: &str) -> Option<&WallType> {
+        self.types.iter().find(|t| t.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Look up a level by index.
+    pub fn level(&self, index: u32) -> Option<&Level> {
+        self.levels.iter().find(|l| l.index == index)
     }
 
     /// Union of every wall's poché ring bounds.
@@ -214,5 +307,44 @@ mod tests {
     fn wall_default_works_in_struct_update() {
         let w = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), ..Wall::default() };
         assert_eq!(w.thickness, Wall::default().thickness);
+    }
+
+    #[test]
+    fn arch_model_defaults_have_two_wall_types() {
+        let m = ArchModel::default();
+        assert_eq!(m.types.len(), 2);
+        assert_eq!(m.types[0].name, "Exterior");
+        assert_eq!(m.types[1].name, "Interior");
+    }
+
+    #[test]
+    fn exterior_wall_type_layers_sum_to_thickness() {
+        let m = ArchModel::default();
+        let exterior = &m.types[0];
+        assert_eq!(exterior.layers.len(), 4);
+        let sum: f64 = exterior.layers.iter().map(|l| l.thickness).sum();
+        assert!((sum - 0.138).abs() < 1e-9);
+    }
+
+    #[test]
+    fn level_default_is_ground_floor() {
+        let m = ArchModel::default();
+        let level = &m.levels[0];
+        assert_eq!(level.index, 0);
+        assert_eq!(level.elevation, 0.0);
+        assert_eq!(level.floor_to_floor, 2.4);
+        assert_eq!(level.ceiling_height, 2.4);
+        assert_eq!(level.structure, 0.2);
+    }
+
+    #[test]
+    fn join_kind_defaults_to_mitre() {
+        assert_eq!(JoinKind::default(), JoinKind::Mitre);
+    }
+
+    #[test]
+    fn wall_type_lookup_is_case_insensitive() {
+        let m = ArchModel::default();
+        assert!(m.wall_type("exterior").is_some());
     }
 }
