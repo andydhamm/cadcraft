@@ -4,23 +4,8 @@
 //! 4-corner rectangle perpendicular to the centre line. Layer bands split that rectangle
 //! into nested sub-rectangles from `wall_type.layers`.
 
+pub use cadcraft_doc::Wall;
 use cadcraft_geom::{Bounds2, Vec2};
-
-/// A wall: centre-line segment, thickness, height, and layer bands.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Wall {
-    /// Centre-line start point.
-    pub start: Vec2,
-    /// Centre-line end point.
-    pub end: Vec2,
-    /// Wall thickness (perpendicular to the centre line).
-    pub thickness: f64,
-    /// Wall height (not used in 2D poché, but kept for 3D).
-    pub height: f64,
-    /// Layer bands: each `(name, thickness)` splits the wall thickness into nested
-    /// sub-bands. The sum of all band thicknesses must equal `thickness`.
-    pub layers: Vec<(String, f64)>,
-}
 
 /// The 4-corner CCW poché ring of a wall (no repeated first point).
 ///

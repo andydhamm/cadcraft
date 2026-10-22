@@ -6,6 +6,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+mod arch;
 mod array;
 mod constraint;
 mod entity;
@@ -21,6 +22,7 @@ mod tables;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+pub use arch::{ArchId, ArchModel, Wall, WallEntry};
 pub use array::*;
 pub use cadcraft_color as color;
 pub use cadcraft_geom as geom;
@@ -111,6 +113,10 @@ pub struct Drawing {
     pub constraints: Vec<Constraint>,
     /// User parameters and parametric settings.
     pub parametric: Parametric,
+    /// Architectural objects (walls, openings, rooms, …) drawn over this drawing.
+    pub arch: ArchModel,
+    /// Bumped by every arch edit; the 3D pane and incremental rebuilds key off it.
+    pub arch_revision: u64,
     /// The annotation scale list (SCALELISTEDIT).
     pub scales: Vec<AnnoScale>,
     /// Next free handle.
@@ -179,6 +185,8 @@ impl Drawing {
             plot_style_tables: Vec::new(),
             constraints: Vec::new(),
             parametric: Parametric::default(),
+            arch: ArchModel::default(),
+            arch_revision: 0,
             scales: imperial_scales(),
             handseed: 0x100,
             hidden_objects: BTreeSet::new(),
@@ -199,6 +207,11 @@ impl Drawing {
         if h.0 >= self.handseed {
             self.handseed = h.0.saturating_add(1);
         }
+    }
+
+    /// Bump the architectural revision counter (call after any edit to `self.arch`).
+    pub fn touch_arch(&mut self) {
+        self.arch_revision = self.arch_revision.saturating_add(1);
     }
 
     pub fn layer(&self, name: &str) -> Option<&Layer> {
