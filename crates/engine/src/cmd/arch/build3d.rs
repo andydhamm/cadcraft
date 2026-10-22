@@ -7,7 +7,7 @@
 use std::time::Instant;
 
 use cadcraft_arch3d::build;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::Session;
 
@@ -43,12 +43,7 @@ fn elapsed_ms(_t: Instant) -> f64 {
 /// Command spec for `build3d`.
 pub fn specs() -> Vec<crate::cmd::CommandSpec> {
     let mut v = Vec::new();
-    v.push(
-        crate::cmd::CommandSpec::new("build3d", "Build 3D", run_build3d)
-            .menu(&["Architecture", "Build 3D"])
-            .noundo()
-            .params("{}"),
-    );
+    v.push(crate::cmd::CommandSpec::new("build3d", "Build 3D", run_build3d).menu(&["Architecture", "Build 3D"]).noundo().params("{}"));
     v
 }
 

@@ -10,7 +10,7 @@
 //! This command *does* mutate the model and calls `touch_arch()`; it is
 //! `.noundo()` only because it is a benchmark fixture, not a user-facing edit.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::Session;
 
@@ -92,13 +92,7 @@ fn generate_walls(n: usize) -> Vec<cadcraft_doc::Wall> {
 /// arch model and calls `touch_arch()`; it is `.noundo()` because it is a
 /// benchmark fixture.
 fn run_sample(s: &mut Session, params: &Value) -> crate::Result<Value> {
-    let n = params
-        .get("walls")
-        .and_then(|v| v.as_u64())
-        .copied()
-        .unwrap_or(64)
-        .clamp(1, crate::cmd::arch::MAX_WALLS as u64)
-        as usize;
+    let n = params.get("walls").and_then(|v| v.as_u64()).copied().unwrap_or(64).clamp(1, crate::cmd::arch::MAX_WALLS as u64) as usize;
 
     let d = s.doc_mut()?;
     d.arch.walls = generate_walls(n);
@@ -109,12 +103,7 @@ fn run_sample(s: &mut Session, params: &Value) -> crate::Result<Value> {
 
 /// Command spec for `arch.sample`.
 pub fn specs() -> Vec<crate::cmd::CommandSpec> {
-    vec![
-        crate::cmd::CommandSpec::new("arch.sample", "Arch Sample", run_sample)
-            .menu(&[])
-            .noundo()
-            .params("{walls?: N}"),
-    ]
+    vec![crate::cmd::CommandSpec::new("arch.sample", "Arch Sample", run_sample).menu(&[]).noundo().params("{walls?: N}")]
 }
 
 #[cfg(test)]
@@ -169,14 +158,7 @@ mod tests {
         s.execute("arch.sample", &json!({ "walls": 64 })).unwrap();
         let walls = &s.doc().arch.walls;
         for i in 0..walls.len().saturating_sub(1) {
-            assert_eq!(
-                walls[i].end,
-                walls[i + 1].start,
-                "wall {} end != wall {} start",
-                i,
-                i + 1
-            );
+            assert_eq!(walls[i].end, walls[i + 1].start, "wall {} end != wall {} start", i, i + 1);
         }
     }
 }
-<<<<<<< SEARCH
