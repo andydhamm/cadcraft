@@ -78,9 +78,9 @@ fn build_300_wall_grid() -> ArchModel {
 
 /// 300-wall full `build` must be < 50 ms; single-wall `build_dirty` < 5 ms.
 ///
-/// In debug builds the test returns early (the budget only holds in release).
+/// In debug builds the test returns early (the budget only holds in release),
+/// so it is safe to run in any build mode without flaking.
 #[test]
-#[ignore]
 fn three_hundred_walls_rebuild_under_50ms() {
     if cfg!(debug) {
         println!("three_hundred_walls_rebuild_under_50ms: skipped in debug");
