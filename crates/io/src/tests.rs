@@ -1274,6 +1274,22 @@ fn constraints_and_parameters_roundtrip_exactly() {
 }
 
 #[test]
+fn arch_xrecord_written_for_walls() {
+    let mut d = sample();
+    d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    d.arch.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.15));
+    let text = write_dxf(&d);
+    assert!(text.contains("CADCRAFT_ARCH") && text.contains("XRECORD"), "{text}");
+    assert_eq!(text.matches("CADCRAFT_ARCH").count(), 1, "one dictionary entry only");
+}
+
+#[test]
+fn empty_arch_writes_no_xrecord() {
+    assert!(!write_dxf(&sample()).contains("CADCRAFT_ARCH"));
+    assert!(roundtrip(&sample()).arch.is_empty());
+}
+
+#[test]
 fn layer_states_roundtrip_next_to_constraints() {
     let mut d = Drawing::new_imperial();
     let (constraints, _) = parametric_sample(&mut d);
