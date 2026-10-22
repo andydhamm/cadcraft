@@ -125,7 +125,7 @@ fn drawing_layers_become_pdf_layers() {
     // Marks are named after the layer's place in the layer table (0, Defpoints, A-WALL, A-DOOR,
     // A-GLAZ, A-ROOF, A-STAIR, Walls, …).
     let page = &pages(&objs)[0];
-    for i in [0, 7, 10] {
+    for i in [7, 8, 10] {
         let id = reference(page, &format!("/L{i}"));
         assert!(ocgs.contains(&id));
     }
