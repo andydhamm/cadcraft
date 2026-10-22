@@ -323,6 +323,17 @@ mod tests {
     }
 
     #[test]
+    fn arch_model_add_returns_increasing_ids() {
+        let mut m = ArchModel::default();
+        let id1 = m.add_wall(Wall::default());
+        let id2 = m.add_wall(Wall::default());
+        assert_eq!(id1, ArchId(0));
+        assert_eq!(id2, ArchId(1));
+        assert!(m.wall(id1).is_some());
+        assert!(m.wall(id2).is_some());
+    }
+
+    #[test]
     fn arch_model_lookup_by_id() {
         let mut m = ArchModel::default();
         let id = m.add_wall(test_wall());
