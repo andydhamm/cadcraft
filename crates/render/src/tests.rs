@@ -1008,7 +1008,7 @@ fn arch_wall_drawing() -> Drawing {
     d.add(&Space::Model, Common::default(), EntityKind::Line(cadcraft_doc::Line { a: Vec3::new(0.0, 0.0, 0.0), b: Vec3::new(10.0, 0.0, 0.0) }))
         .unwrap();
     let mut model = ArchModel::default();
-    model.walls.push(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.3, height: 3.0, ..Default::default() });
+    model.add_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.3, height: 3.0, ..Default::default() });
     d.arch = model;
     d.touch_arch();
     d
@@ -1034,7 +1034,7 @@ fn arch_poché_extends_display_bounds() {
     d.add(&Space::Model, Common::default(), EntityKind::Line(cadcraft_doc::Line { a: Vec3::new(0.0, 0.0, 0.0), b: Vec3::new(1.0, 0.0, 0.0) }))
         .unwrap();
     let mut model = ArchModel::default();
-    model.walls.push(Wall { start: Vec2::new(100.0, 100.0), end: Vec2::new(110.0, 100.0), thickness: 0.3, height: 3.0, ..Default::default() });
+    model.add_wall(Wall { start: Vec2::new(100.0, 100.0), end: Vec2::new(110.0, 100.0), thickness: 0.3, height: 3.0, ..Default::default() });
     d.arch = model;
     d.touch_arch();
     let l = build(&d, &Space::Model, &Options::default());
