@@ -204,14 +204,14 @@ fn classify(model: &ArchModel, g: &WallGraph, id: ArchId, end: End) -> Vec<Neigh
 
     // First pass: walls whose own end is at this point (from the cluster).
     for (nid, _nend) in &cluster_ends {
-        if nid == id || seen.contains(&nid) {
+        if *nid == id || seen.contains(&nid) {
             continue;
         }
         seen.push(*nid);
         let Some(nw) = model.wall(*nid) else {
             continue;
         };
-        if let Some(nb) = classify_one(model, my_point, my_dir, nw, *nid) {
+        if let Some(nb) = classify_one(my_point, my_dir, nw, *nid) {
             out.push(nb);
         }
     }
@@ -227,7 +227,7 @@ fn classify(model: &ArchModel, g: &WallGraph, id: ArchId, end: End) -> Vec<Neigh
             continue;
         }
         seen.push(w.id);
-        if let Some(nb) = classify_one(model, my_point, my_dir, w, w.id) {
+        if let Some(nb) = classify_one(my_point, my_dir, w, w.id) {
             out.push(nb);
         }
     }
@@ -236,6 +236,50 @@ fn classify(model: &ArchModel, g: &WallGraph, id: ArchId, end: End) -> Vec<Neigh
     out.sort_unstable_by_key(|n| n.id());
 
     out
+}
+
+/// Classify the relationship between the neighbour `n` and the current wall's end,
+/// given the shared end point and the current wall's centre-line direction.
+///
+/// Returns `None` when `n` is degenerate / non-finite.
+fn classify_one(point: Vec2, dir: Vec2, n: &Wall, id: ArchId) -> Option<Neighbour> {
+    if !point.is_finite() || !dir.is_finite() {
+        return None;
+    }
+    let Some(nb_dir) = crate::wall::wall_dir(n) else {
+        return None;
+    };
+    if !nb_dir.is_finite() {
+        return None;
+    }
+
+    let parallel = dir.cross(nb_dir).abs() < 1e-9;
+
+    // Neighbour's own end sits on the shared point.
+    if n.start.near(point, ENDPOINT_TOL) {
+        if parallel && dist_to_centre_line(n, point) < ENDPOINT_TOL {
+            return Some(Neighbour::Collinear { id });
+        }
+        return Some(Neighbour::EndToEnd { id, end: End::Start });
+    }
+    if n.end.near(point, ENDPOINT_TOL) {
+        if parallel && dist_to_centre_line(n, point) < ENDPOINT_TOL {
+            return Some(Neighbour::Collinear { id });
+        }
+        return Some(Neighbour::EndToEnd { id, end: End::End });
+    }
+
+    // Otherwise: neighbour's centre-line interior passes within tolerance of the
+    // point (the current wall is the incoming wall; `n` is the host).
+    if centre_interior_passes(n, point, ENDPOINT_TOL) {
+        // Pick the nearer endpoint of the host for `end` (deterministic tie → Start).
+        let start_dist = (n.start - point).len2();
+        let end_dist = (n.end - point).len2();
+        let end = if start_dist <= end_dist { End::Start } else { End::End };
+        return Some(Neighbour::Mid { id, end });
+    }
+
+    None
 }
 
 fn id_of(n: &Neighbour) -> ArchId {
