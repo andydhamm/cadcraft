@@ -552,7 +552,7 @@ mod arch_grips_tests {
     /// Build a session with the standard L-shaped wall
     /// (w0: (0,0)-(10,0), w1: (10,0)-(10,10)).
     fn setup() -> Session {
-        let s = Session::new();
+        let mut s = Session::new();
         s.execute("wall", &json!({"points": [[0, 0], [10, 0], [10, 10]]})).unwrap();
         s
     }
