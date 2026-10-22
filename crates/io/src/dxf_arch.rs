@@ -50,7 +50,7 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     if p.version != 1 {
         return None;
     }
-    if p.model.walls.len() > cadcraft_doc::arch::MAX_WALLS {
+    if p.model.walls.len() > cadcraft_doc::MAX_WALLS {
         return None;
     }
     Some(p.model)
@@ -72,11 +72,12 @@ mod tests {
     #[test]
     fn arch_chunks_roundtrips_a_model() {
         let m = one_wall_model();
-        let Some(chunks) = arch_chunks(&m) else {
-            assert!(false, "a one-wall model must write an XRECORD");
+        let chunks = match arch_chunks(&m) {
+            Some(c) => c,
+            None => assert!(false, "a one-wall model must write an XRECORD"),
         };
-        assert!(!chunks.is_empty(), "a one-wall model must write an XRECORD");
-        let text: String = chunks.iter().map(str::as_str).collect();
+        assert!(!chunks.is_empty(), "a one-wall model must write a non-empty XRECORD");
+        let text = chunks.join("");
         assert_eq!(parse_arch(&text), Some(m));
     }
 
@@ -101,17 +102,17 @@ mod tests {
     fn parse_arch_accepts_model_missing_levels_types_next_id() {
         let m = one_wall_model();
         let mut obj: serde_json::Value = match serde_json::to_value(&m) {
-            Some(v) => v,
-            None => assert!(false, "own model must serialise"),
+            Ok(v) => v,
+            Err(e) => assert!(false, "own model must serialise: {e}"),
         };
-        if let Some(obj) = obj.as_object_mut() {
-            obj.remove("next_id");
-            obj.remove("levels");
-            obj.remove("types");
+        if let Some(map) = obj.as_object_mut() {
+            map.remove("next_id");
+            map.remove("levels");
+            map.remove("types");
         }
-        let text: String = match serde_json::to_string(&serde_json::json!({ "version": 1, "model": obj })) {
-            Some(t) => t,
-            None => assert!(false, "own model must serialise"),
+        let text: String = match serde_json::to_string(&serde_json::json!({ "version": 1, "model": obj.clone() })) {
+            Ok(t) => t,
+            Err(e) => assert!(false, "own model must serialise: {e}"),
         };
         assert!(parse_arch(&text).is_some());
     }
