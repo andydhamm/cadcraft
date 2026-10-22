@@ -3,6 +3,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use cadcraft_doc::{ArchId, Wall};
 use cadcraft_geom::{Bounds2, Vec2};
 
+use crate::graph::WallGraph;
+
 pub const MAX_WALLS: usize = 4096;
 /// Max wall ends allowed to share one join point before we stop mitring.
 pub const MAX_JOIN_FAN: usize = 8;
@@ -10,6 +12,8 @@ pub const MAX_JOIN_FAN: usize = 8;
 pub const ENDPOINT_TOL: f64 = 1e-6;
 /// Generic geometric epsilon.
 pub const JOIN_EPS: f64 = 1e-9;
+/// Parallelism test for "corresponding" (collinear) neighbour detection.
+const PARALLEL_EPS: f64 = 1e-9;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum End {
@@ -34,6 +38,9 @@ impl End {
         }
     }
 }
+
+use crate::wall::{wall_dir, wall_polygon};
+use cadcraft_geom::intersect::line_line_infinite;
 
 pub use cadcraft_doc::JoinKind;
 
@@ -147,6 +154,49 @@ pub fn solve_bounds(shapes: &[WallShape]) -> Bounds2 {
         all_points.extend(shape.polygon.iter().cloned());
     }
     Bounds2::from_points(all_points)
+}
+
+/// Solve every wall's poché ring. Output order == `model.walls` order; degenerate
+/// walls (`wall::wall_polygon` is `None`) are skipped and produce no shape.
+pub fn solve_joins(model: &cadcraft_doc::ArchModel) -> Vec<WallShape> {
+    let graph = WallGraph::build(model);
+    let mut out: Vec<WallShape> = Vec::with_capacity(model.walls.len());
+
+    for w in &model.walls {
+        if wall_polygon(w).is_none() {
+            continue;
+        }
+        let Some(face) = face_lines(w) else {
+            continue;
+        };
+        let (ls, le) = face[0];
+        let (rs, re) = face[1];
+
+        // Start end.
+        let plan_s = plan_end(w, End::Start, (ls, rs), graph, model, w.id)?;
+        // End end.
+        let plan_e = plan_end(w, End::End, (le, re), graph, model, w.id)?;
+
+        let corners = ring_from_corners(plan_s.left, plan_s.right, plan_e.left, plan_e.right);
+        let mut ring = match corners {
+            Some(r) => r,
+            None => {
+                // Rule 6: crossed/degenerate → fall back to the raw (untrimmed) corners.
+                let raw = ring_from_corners(ls, rs, le, re);
+                let _ = raw;
+                continue;
+            }
+        };
+
+        out.push(WallShape {
+            id: w.id,
+            polygon: ring,
+            centre: (w.start, w.end),
+            joins: vec![plan_s.join, plan_e.join].into_iter().filter_map(|j| j).collect(),
+        });
+    }
+
+    out
 }
 
 /// Move one end of a wall to `to`, then transitively move every neighbour end that
