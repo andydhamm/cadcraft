@@ -83,8 +83,8 @@ pub struct WallEntry {
 }
 
 /// Which side of the wall centre line the reference is on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum RefSide {
     Left,
     Right,
@@ -93,7 +93,7 @@ pub enum RefSide {
 }
 
 /// A single layer within a wall type's build-up.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct WallLayer {
     pub name: String,
@@ -102,7 +102,7 @@ pub struct WallLayer {
 }
 
 /// A named wall type with its layer build-up and reference side.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct WallType {
     pub name: String,
@@ -112,7 +112,7 @@ pub struct WallType {
 
 /// Per-wall join override. `Mitre` means the solver decides.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase")]
 pub enum JoinKind {
     #[default]
     Mitre,
@@ -121,7 +121,7 @@ pub enum JoinKind {
 }
 
 /// A building level (floor plate).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Level {
     pub index: u32,
