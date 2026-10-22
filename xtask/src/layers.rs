@@ -43,6 +43,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("render", Class::Layer(2)),
     ("arch", Class::Layer(2)),
     ("arch3d", Class::Layer(2)),
+    ("render3d", Class::Layer(5)),
     ("io", Class::Layer(3)),
     ("engine", Class::Layer(4)),
     ("ui-egui", Class::Layer(5)),
@@ -59,7 +60,7 @@ pub const TABLE: &[(&str, Class)] = &[
 /// The L0 foundation is a small chain: `raster` builds on `color` and
 /// `geom`, which the §3 diagram draws on one line. The GPU backend (`gpu`)
 /// reuses the CPU reference (`compose`) for LUTs and parity tests.
-pub const INTRA_LAYER_ORDER: &[&[&str]] = &[&["geom", "color"], &["fonts", "render"], &["arch", "arch3d"]];
+pub const INTRA_LAYER_ORDER: &[&[&str]] = &[&["geom", "color"], &["fonts", "render"], &["arch", "arch3d"], &["arch3d", "render3d"]];
 
 fn intra_layer_allowed(from: &str, to: &str) -> bool {
     let (from, to) = (short_name(from), short_name(to));
