@@ -14,7 +14,7 @@
 //!
 //! Returns JSON: `{"walls": [{"id": "w1", "handle": "a0000001"}, ...], "joins": 0}`
 
-use cadcraft_arch::{JoinKind, Wall, WallKind};
+use cadcraft_arch::{JoinKind, Level, Wall};
 use cadcraft_doc::Handle;
 use cadcraft_geom::Vec2;
 use serde_json::{Value, json};
@@ -62,23 +62,15 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
 
     let d = s.doc_mut()?;
 
-    // Wall kind: `type` overrides `exterior`
-    let wall_kind = match type_str {
-        None => {
-            let ext = bool_or(p, "exterior", true);
-            if ext { WallKind::Exterior } else { WallKind::Interior }
-        }
+    // `type` overrides `exterior`; knee/railing/retaining are treated as interior
+    let exterior = match type_str {
+        None => bool_or(p, "exterior", true),
         Some(t) => match t.as_str() {
-            "exterior" => WallKind::Exterior,
-            "interior" => WallKind::Interior,
-            "knee" => WallKind::Knee,
-            "railing" => WallKind::Railing,
-            "retaining" => WallKind::Retaining,
+            "exterior" => true,
+            "interior" | "knee" | "railing" | "retaining" => false,
             _ => return Err(bad("wall", format!("unknown wall type `{t}`"))),
         },
     };
-
-    let exterior = matches!(wall_kind, WallKind::Exterior);
 
     // Thickness: explicit or default based on exterior
     let thickness = size_param("wall", p, "thickness", false)?;
@@ -118,22 +110,25 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     };
 
     // --- Build wall objects ---
+    let base_level_idx = level
+        .map(|l| d.arch.levels.iter().position(|lv| lv.name == l.name))
+        .unwrap_or(0) as u32;
+    let layers = super::wall_layers(exterior);
     let mut new_walls: Vec<Wall> = Vec::with_capacity(pts.len().saturating_sub(1));
-    for (start, end) in pts.windows(2) {
+    for i in 0..pts.len().saturating_sub(1) {
         let id = d.arch.next_wall_id();
-        let base_level = level.map(|l| l.name.clone()).unwrap_or_else(|| "ground".to_string());
         new_walls.push(Wall {
             id,
-            start: *start,
-            end: *end,
+            start: pts[i],
+            end: pts[i + 1],
             thickness,
             height,
-            base_level,
+            base_level: base_level_idx,
             to_ceiling: true,
             exterior,
-            wall_type: wall_kind,
             join_start: JoinKind::default(),
             join_end: JoinKind::default(),
+            layers: layers.clone(),
         });
     }
 
@@ -168,7 +163,7 @@ mod tests {
     fn new_session_with_level() -> Session {
         let mut s = Session::new();
         let d = s.doc_mut().unwrap();
-        d.arch.levels.push(cadcraft_arch::model::Level { name: "ground".to_string(), floor_to_floor: 3.0, ..Default::default() });
+        d.arch.levels.push(Level { name: "ground".to_string(), floor_to_floor: 3.0, ..Default::default() });
         d.touch_arch();
         s
     }
@@ -200,27 +195,27 @@ mod tests {
             "points": [[0.0, 0.0], [1.0, 0.0]],
             "thickness": 0.0,
         });
-        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams(_))));
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ }))));
 
         // thickness: -1
         let p = json!({
             "points": [[0.0, 0.0], [1.0, 0.0]],
             "thickness": -1.0,
         });
-        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams(_))));
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ }))));
 
         // short segment (below MIN_WALL_LENGTH)
         let p = json!({
             "points": [[0.0, 0.0], [0.0000001, 0.0]],
         });
-        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams(_))));
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ }))));
 
         // height: very negative (non-positive, rejected by size_param)
         let p = json!({
             "points": [[0.0, 0.0], [1.0, 0.0]],
             "height": -1.0,
         });
-        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams(_))));
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ }))));
     }
 
     #[test]
