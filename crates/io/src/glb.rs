@@ -429,8 +429,8 @@ mod tests {
         let json_start = 12;
         let json_len = le32(&bytes, json_start + 4) as usize;
         let json = glb_json(&bytes, json_start + 8, json_start + 8 + json_len);
-        assert_eq!(json["meshes"].as_array().and_then(|a| a.len()), Some(0));
-        assert_eq!(json["scenes"][0]["nodes"].as_array().and_then(|a| a.len()), Some(0));
+        assert_eq!(json["meshes"].as_array().and_then(|a| Some(a.len())), Some(0));
+        assert_eq!(json["scenes"][0]["nodes"].as_array().and_then(|a| Some(a.len())), Some(0));
         let json_pad = (4 - json_len % 4) % 4;
         let bin_start = json_start + 8 + json_len + json_pad;
         assert_eq!(&bytes[bin_start..bin_start + 4], b"BIN\0");
