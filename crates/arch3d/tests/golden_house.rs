@@ -123,12 +123,12 @@ fn golden_house_scene_hash() {
     let (mut max_x, mut max_y, mut max_z) = (f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
     for mesh in &scene.meshes {
         for p in &mesh.positions {
-            min_x = min_x.min(p[0]);
-            max_x = max_x.max(p[0]);
-            min_y = min_y.min(p[1]);
-            max_y = max_y.max(p[1]);
-            min_z = min_z.min(p[2]);
-            max_z = max_z.max(p[2]);
+            min_x = min_x.min(p[0] as f64);
+            max_x = max_x.max(p[0] as f64);
+            min_y = min_y.min(p[1] as f64);
+            max_y = max_y.max(p[1] as f64);
+            min_z = min_z.min(p[2] as f64);
+            max_z = max_z.max(p[2] as f64);
         }
     }
     // Allow ±0.5 m tolerance for wall offset.
