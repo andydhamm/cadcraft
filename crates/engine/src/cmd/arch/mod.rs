@@ -14,6 +14,8 @@ pub const DEFAULT_EXT_THICKNESS: f64 = 0.2;
 /// Default interior wall thickness (m).
 pub const DEFAULT_INT_THICKNESS: f64 = 0.1;
 
+pub mod build3d;
+pub mod sample;
 pub mod wall;
 
 /// Default layered wall band thicknesses for the given wall side.
@@ -33,9 +35,10 @@ pub(crate) fn wall_layers(exterior: bool) -> Vec<(String, f64)> {
 }
 
 /// Command specs for the architecture module.
-// later: inspect, stretch, build3d, sample
 pub fn specs() -> Vec<CommandSpec> {
     let mut v = Vec::new();
     v.extend(wall::specs());
+    v.extend(build3d::specs());
+    v.extend(sample::specs());
     v
 }
