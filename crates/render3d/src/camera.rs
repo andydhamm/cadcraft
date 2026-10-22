@@ -142,18 +142,6 @@ impl Orbit {
         let dist = (half_diag * 3.0_f64.sqrt() / s).max(MIN_DISTANCE);
         Orbit::new(c, 30.0, 30.0, dist, fov)
     }
-
-    /// 4-column column-major matrix built from 4 column vectors.
-    #[inline]
-    fn from_columns(cols: [Vec4; 4]) -> Mat4 {
-        let m = [0.0_f64; 16];
-        for c in 0..4 {
-            for r in 0..4 {
-                m[c * 4 + r] = cols[c].y[r];
-            }
-        }
-        Mat4 { m }
-    }
 }
 
 fn clamp_deg(x: f64, lo: f64, hi: f64) -> f64 {
@@ -175,9 +163,6 @@ fn clamp_pos(x: f64, lo: f64, hi: f64) -> f64 {
         x
     }
 }
-
-// NOTE: Vec2/Vec3/Vec4/Mat4 above are stand-ins so this file compiles; the real
-// `cadcraft_geom::{Vec2, Vec3, Mat4}` from the workspace is used at the L5 boundary.
 
 #[cfg(test)]
 mod tests {

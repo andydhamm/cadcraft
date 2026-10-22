@@ -1,7 +1,6 @@
 //! GPU mesh upload and render pipeline for the 3D viewport.
 
-use cadcraft_arch3d::mesh::{Mesh, Scene3d};
-use cadcraft_geom::Mat4;
+use crate::types::{Mesh, Scene3d, Vertex};
 
 /// GPU-side mesh buffers for a scene.
 pub struct GpuMeshes {
@@ -76,9 +75,9 @@ mod tests {
         let scene = Scene3d {
             meshes: vec![Mesh {
                 vertices: vec![
-                    cadcraft_arch3d::mesh::Vertex { position: [0.0, 0.0, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
-                    cadcraft_arch3d::mesh::Vertex { position: [1.0, 0.0, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 0.0] },
-                    cadcraft_arch3d::mesh::Vertex { position: [0.0, 1.0, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
+                    Vertex { position: [0.0, 0.0, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
+                    Vertex { position: [1.0, 0.0, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 0.0] },
+                    Vertex { position: [0.0, 1.0, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
                 ],
                 indices: vec![0, 1, 2],
                 object: 1,

@@ -2,7 +2,7 @@
 
 use crate::Render3dError;
 use crate::camera::Camera;
-use cadcraft_arch3d::mesh::Scene3d;
+use crate::types::Scene3d;
 
 /// Offscreen renderer that renders to a texture and reads back as PNG.
 pub struct Offscreen {
@@ -22,6 +22,7 @@ impl Offscreen {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, ..Default::default() })
             .await
+            .map_err(|e| Render3dError::Wgpu(e.to_string()))?
             .ok_or(Render3dError::NoAdapter)?;
 
         let (device, queue) =
@@ -62,8 +63,11 @@ impl Offscreen {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("readback encoder") });
 
         encoder.copy_texture_to_buffer(
-            self.texture.as_image_copy(),
-            buffer.as_entire_buffer_binding(),
+            wgpu::TexelCopyTextureInfo { texture: &self.texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(self.width * 4), rows_per_image: Some(self.height) },
+            },
             wgpu::Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
         );
 
@@ -71,13 +75,11 @@ impl Offscreen {
 
         let slice = buffer.slice(..);
         let (tx, rx) = futures::channel::oneshot::channel();
-        slice
-            .map_async(wgpu::MapMode::Read, move |result| {
-                let _ = tx.send(result);
-            })
-            .map_err(|e| Render3dError::Wgpu(e.to_string()))?;
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
 
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device.poll(wgpu::PollType::Wait);
         rx.await.map_err(|e| Render3dError::Wgpu(format!("channel error: {e}")))?.map_err(|e| Render3dError::Wgpu(e.to_string()))?;
 
         let data = slice.get_mapped_range();
