@@ -9,11 +9,9 @@
 //! The expected hash constant is written in by the developer after the first
 //! successful run.  Update it if the geometry changes intentionally.
 
-use std::path::PathBuf;
-use std::sync::Arc;
-
-use arch3d::{Scene3d, build, build_dirty};
-use doc::arch::ArchModel;
+use cadcraft_arch3d::{Scene3d, build, build_dirty};
+use cadcraft_doc::arch::{ArchModel, Wall};
+use cadcraft_doc::geom::Vec2;
 
 /// FNV-1a 64-bit hash (no external dependency).
 fn fnv1a_hash(data: &[u8]) -> u64 {
@@ -56,11 +54,50 @@ fn scene_bytes(scene: &Scene3d) -> Vec<u8> {
     buf
 }
 
-/// Load the 10×8 m fixture JSON into an `ArchModel`.
+/// Build the 10×8 m demo house model programmatically (matches the fixture JSON).
 fn load_fixture() -> ArchModel {
-    let path = PathBuf::from("crates/arch3d/tests/fixtures/house_10x8.json");
-    let content = std::fs::read_to_string(&path).expect("fixture file missing");
-    serde_json::from_str(&content).expect("failed to parse fixture JSON")
+    let mut model = ArchModel::new();
+
+    // Exterior walls: 4 walls forming a 10×8 m rectangle
+    let exterior_walls = [
+        (Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)),
+        (Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0)),
+        (Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)),
+        (Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)),
+    ];
+    for (start, end) in exterior_walls {
+        model.add_wall(Wall {
+            start,
+            end,
+            thickness: 0.3,
+            height: 2.7,
+            base_level: 0.0,
+            to_ceiling: true,
+            exterior: true,
+            wall_type: Default::default(),
+            join_start: Default::default(),
+            join_end: Default::default(),
+        });
+    }
+
+    // Interior walls: 2 walls dividing the space
+    let interior_walls = [(Vec2::new(0.0, 4.0), Vec2::new(10.0, 4.0)), (Vec2::new(5.0, 0.0), Vec2::new(5.0, 8.0))];
+    for (start, end) in interior_walls {
+        model.add_wall(Wall {
+            start,
+            end,
+            thickness: 0.15,
+            height: 2.7,
+            base_level: 0.0,
+            to_ceiling: true,
+            exterior: false,
+            wall_type: Default::default(),
+            join_start: Default::default(),
+            join_end: Default::default(),
+        });
+    }
+
+    model
 }
 
 /// The 10×8 m house: 4 exterior walls + 2 interior walls produce a fixed,
@@ -119,7 +156,7 @@ fn build_dirty_equals_full_build() {
     // Keep only the first wall marked dirty; recompute from a "previous"
     // scene that already has all other walls.
     let first_id = full.meshes.first().map(|m| m.object).expect("no meshes");
-    let mut dirty_set: std::collections::BTreeSet<arch::ArchId> = std::collections::BTreeSet::new();
+    let mut dirty_set: std::collections::BTreeSet<cadcraft_arch::ArchId> = std::collections::BTreeSet::new();
     dirty_set.insert(first_id);
 
     let dirty_scene = build_dirty(&model, &dirty_set, &full);

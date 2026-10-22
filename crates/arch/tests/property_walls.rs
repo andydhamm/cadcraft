@@ -3,10 +3,10 @@
 //! Follows the seeded xorshift pattern from `geom/src/property_tests.rs` — no new
 //! dependencies, only std. Each run is deterministic via the seed.
 
-use arch::join::WallShape;
-use arch::join::{solve_joins, stretch_wall};
-use doc::arch::{ArchId, ArchModel, JoinKind, Wall, WallType};
-use geom::Vec2;
+use cadcraft_arch::join::WallShape;
+use cadcraft_arch::join::{solve_joins, stretch_wall};
+use cadcraft_doc::arch::{ArchId, ArchModel, JoinKind, Wall, WallType};
+use cadcraft_doc::geom::Vec2;
 
 /// A minimal xorshift64* PRNG with a fixed non-zero initial state.
 #[derive(Clone, Copy)]
@@ -85,7 +85,7 @@ fn build_random_model(seed: u64, num_walls: usize) -> (ArchModel, Vec<ArchId>) {
             let len = dx * dx + dy * dy;
             if len > 1e-12 {
                 // Walk along the centre line (collinear) or perpendicular (overlap).
-                if collinear { (x1 + dx * 0.1, y1 + dy * 0.1) } else { (-dy * shift / len.sqrt(), dx * shift / len.sqrt()) + (x1, y1) }
+                if collinear { (x1 + dx * 0.1, y1 + dy * 0.1) } else { (-dy * shift / len.sqrt() + x1, dx * shift / len.sqrt() + y1) }
             } else {
                 (x1 + shift, y1)
             }
@@ -134,8 +134,8 @@ fn assert_in_envelope(model: &ArchModel, shape: &WallShape, tol: f64) {
 
     for v in &shape.ring {
         assert!(v.is_finite(), "non-finite vertex in shape {0}", shape.id);
-        assert!(v.x >= min_x && v.x <= max_x, "vertex x {0:.4} outside [{}..{}]", v.x, min_x, max_x);
-        assert!(v.y >= min_y && v.y <= max_y, "vertex y {0:.4} outside [{}..{}]", v.y, min_y, max_y);
+        assert!(v.x >= min_x && v.x <= max_x, "vertex x {:.4} outside [{:.4}..{:.4}]", v.x, min_x, max_x);
+        assert!(v.y >= min_y && v.y <= max_y, "vertex y {:.4} outside [{:.4}..{:.4}]", v.y, min_y, max_y);
     }
 }
 

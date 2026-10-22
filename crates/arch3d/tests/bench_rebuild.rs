@@ -7,8 +7,8 @@
 
 use std::time::Instant;
 
-use doc::arch::{ArchModel, Wall};
-use geom::Vec2;
+use cadcraft_doc::arch::{ArchModel, Wall};
+use cadcraft_doc::geom::Vec2;
 
 /// Build a deterministic 300-wall grid: 20 rows × 15 columns of small rooms.
 fn build_300_wall_grid() -> ArchModel {
@@ -36,9 +36,9 @@ fn build_300_wall_grid() -> ArchModel {
                 base_level: 0.0,
                 to_ceiling: true,
                 exterior: r == 0 || r == rows - 1 || c == 0 || c == cols - 1,
-                wall_type: Default(),
-                join_start: Default(),
-                join_end: Default(),
+                wall_type: Default::default(),
+                join_start: Default::default(),
+                join_end: Default::default(),
             });
             count += 1;
         }
@@ -62,9 +62,9 @@ fn build_300_wall_grid() -> ArchModel {
             base_level: 0.0,
             to_ceiling: true,
             exterior: false,
-            wall_type: Default(),
-            join_start: Default(),
-            join_end: Default(),
+            wall_type: Default::default(),
+            join_start: Default::default(),
+            join_end: Default::default(),
         });
         count += 1;
     }
@@ -88,7 +88,7 @@ fn three_hundred_walls_rebuild_under_50ms() {
 
     // --- full build ---
     let t0 = Instant::now();
-    let scene = arch3d::build(&model);
+    let scene = cadcraft_arch3d::build(&model);
     let full_ms = t0.elapsed().as_millis() as f64 / 1_000.0;
     println!(
         "full build (300 walls): {:.1} ms, meshes: {}, tris: {}",
@@ -101,11 +101,11 @@ fn three_hundred_walls_rebuild_under_50ms() {
 
     // --- single-wall dirty rebuild ---
     let first_id = scene.meshes.first().map(|m| m.object).expect("no meshes");
-    let mut dirty: std::collections::BTreeSet<arch::ArchId> = std::collections::BTreeSet::new();
+    let mut dirty: std::collections::BTreeSet<cadcraft_arch::ArchId> = std::collections::BTreeSet::new();
     dirty.insert(first_id);
 
     let t1 = Instant::now();
-    let _ = arch3d::build_dirty(&model, &dirty, &scene);
+    let _ = cadcraft_arch3d::build_dirty(&model, &dirty, &scene);
     let dirty_ms = t1.elapsed().as_millis() as f64 / 1_000.0;
     println!("build_dirty (1 wall):  {:.1} ms", dirty_ms);
 
