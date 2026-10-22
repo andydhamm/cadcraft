@@ -425,7 +425,7 @@ mod tests {
         let arch = ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
         for (i, name) in arch.iter().enumerate() {
             let idx = 2 + i;
-            assert_eq!(d.layers[idx].name, name, "layer at index {idx}");
+            assert_eq!(d.layers[idx].name, *name, "layer at index {idx}");
         }
     }
 }
