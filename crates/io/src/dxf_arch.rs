@@ -38,7 +38,7 @@ pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
         return None;
     }
     let json = serde_json::to_string(&Payload { version: 1, model: m.clone() }).ok()?;
-    crate::dxf_ext::json_chunks(&json)
+    Some(crate::dxf_ext::json_chunks(&json))
 }
 
 /// Parse an architectural XRECORD payload; `None` when it is not a payload we understand.
@@ -50,7 +50,7 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     if p.version != 1 {
         return None;
     }
-    if p.model.walls.len() > cadcraft_doc::MAX_WALLS {
+    if p.model.walls.len() > cadcraft_doc::arch::MAX_WALLS {
         return None;
     }
     Some(p.model)
@@ -72,9 +72,11 @@ mod tests {
     #[test]
     fn arch_chunks_roundtrips_a_model() {
         let m = one_wall_model();
-        let chunks = arch_chunks(&m).unwrap_or_default();
+        let Some(chunks) = arch_chunks(&m) else {
+            assert!(false, "a one-wall model must write an XRECORD");
+        };
         assert!(!chunks.is_empty(), "a one-wall model must write an XRECORD");
-        let text: String = chunks.iter().collect();
+        let text: String = chunks.iter().map(str::as_str).collect();
         assert_eq!(parse_arch(&text), Some(m));
     }
 
@@ -97,13 +99,20 @@ mod tests {
 
     #[test]
     fn parse_arch_accepts_model_missing_levels_types_next_id() {
-        let mut obj = serde_json::to_value(&one_wall_model()).unwrap();
+        let m = one_wall_model();
+        let mut obj: serde_json::Value = match serde_json::to_value(&m) {
+            Some(v) => v,
+            None => assert!(false, "own model must serialise"),
+        };
         if let Some(obj) = obj.as_object_mut() {
             obj.remove("next_id");
             obj.remove("levels");
             obj.remove("types");
         }
-        let text = serde_json::to_string(&serde_json::json!({ "version": 1, "model": obj })).unwrap();
+        let text: String = match serde_json::to_string(&serde_json::json!({ "version": 1, "model": obj })) {
+            Some(t) => t,
+            None => assert!(false, "own model must serialise"),
+        };
         assert!(parse_arch(&text).is_some());
     }
 
