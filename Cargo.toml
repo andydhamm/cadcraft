@@ -18,6 +18,7 @@ cadcraft-dwg = { path = "crates/dwg" }
 cadcraft-color = { path = "crates/color" }
 cadcraft-doc = { path = "crates/doc" }
 cadcraft-arch = { path = "crates/arch" }
+cadcraft-arch3d = { path = "crates/arch3d" }
 cadcraft-constraints = { path = "crates/constraints" }
 cadcraft-fonts = { path = "crates/fonts" }
 cadcraft-render = { path = "crates/render" }

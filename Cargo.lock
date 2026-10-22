@@ -578,6 +578,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadcraft-arch3d"
+version = "0.10.0"
+dependencies = [
+ "cadcraft-arch",
+ "cadcraft-color",
+ "cadcraft-doc",
+ "cadcraft-geom",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "cadcraft-cli"
 version = "0.10.0"
 dependencies = [
