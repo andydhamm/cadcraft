@@ -4,7 +4,7 @@
 //! The UI calls [`Session::grip_edit`]; every edit runs through a `grip.*` command so it is
 //! undoable and reachable from scripts, the control channel and MCP.
 
-use cadcraft_doc::{DimKind, EntityKind, Handle, LwPolyline};
+use cadcraft_doc::{ARCH_HANDLE_BASE, ArchId, DimKind, EntityKind, Handle, LwPolyline, is_arch_handle};
 use cadcraft_geom::{Arc, EPS, Mat3, Polyline, Vec2, Vec3, norm_angle};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -37,6 +37,11 @@ fn translated(k: &EntityKind, d: Vec2) -> EntityKind {
     let mut k = k.clone();
     k.transform(&Mat3::translate(d));
     k
+}
+
+/// Derive the [`ArchId`] from an arch proxy handle, or `None` for normal entity handles.
+pub(crate) fn arch_id_from_handle(h: Handle) -> Option<ArchId> {
+    is_arch_handle(h.0).then(|| ArchId((h.0 - ARCH_HANDLE_BASE) as u32))
 }
 
 /// What a polyline grip index refers to (matches the order of `EntityKind::grips`).
@@ -512,6 +517,22 @@ impl Session {
     /// covers the selection: a stretch drags the grips of other selected objects that sit on the
     /// same point, and the other modes transform every selected object.
     pub fn grip_edit(&mut self, handle: Handle, grip_index: usize, new_point: Vec2, mode: GripMode) -> Result<()> {
+        if let Some(id) = arch_id_from_handle(handle) {
+            if mode != GripMode::Stretch {
+                return Err(EngineError::Other("arch walls support only the stretch grip".into()));
+            }
+            let end = if grip_index == 0 { "start" } else { "end" };
+            return self
+                .execute(
+                    "arch.wall.stretch",
+                    &json!({
+                        "wall": format!("w{}", id.0),
+                        "end": end,
+                        "to": [new_point.x, new_point.y],
+                    }),
+                )
+                .map(|_| ());
+        }
         let to = [new_point.x, new_point.y];
         let hs: Vec<String> = std::iter::once(handle).chain(self.selection().into_iter().filter(|h| *h != handle)).map(|h| h.hex()).collect();
         let r = match mode {
@@ -528,6 +549,13 @@ impl Session {
 
     /// Grip points of an object (the indices `grip_edit` takes).
     pub fn grips_of(&self, handle: Handle) -> Result<Vec<Vec2>> {
+        if let Some(id) = arch_id_from_handle(handle) {
+            let d = self.doc()?;
+            return match d.arch.wall(id) {
+                Some(w) => Ok(vec![w.start, w.end]),
+                None => Err(EngineError::Other("no such object".into())),
+            };
+        }
         self.doc()?.entity(handle).map(|e| e.kind.grips()).ok_or_else(|| EngineError::Other("no such object".into()))
     }
 }
