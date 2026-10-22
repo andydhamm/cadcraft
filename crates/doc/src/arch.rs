@@ -29,6 +29,19 @@ pub struct Wall {
     pub layers: Vec<(String, f64)>,
 }
 
+impl Wall {
+    /// A wall with the given centre line and thickness, 2.7 m high and no layer bands.
+    pub fn new(start: Vec2, end: Vec2, thickness: f64) -> Self {
+        Wall { start, end, thickness, height: 2.7, layers: Vec::new() }
+    }
+}
+
+impl Default for Wall {
+    fn default() -> Self {
+        Wall { start: Vec2::ZERO, end: Vec2::ZERO, thickness: 0.2, height: 2.7, layers: Vec::new() }
+    }
+}
+
 /// A wall entry: an [`ArchId`] paired with its [`Wall`] geometry.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WallEntry {
@@ -145,5 +158,28 @@ mod tests {
         d.touch_arch();
         d.touch_arch();
         assert_eq!(d.arch_revision, 2);
+    }
+
+    #[test]
+    fn wall_new_has_default_height_and_no_layers() {
+        let w = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), 0.15);
+        assert_eq!(w.thickness, 0.15);
+        assert_eq!(w.height, 2.7);
+        assert!(w.layers.is_empty());
+        assert_eq!(w.start, Vec2::new(0.0, 0.0));
+        assert_eq!(w.end, Vec2::new(1.0, 0.0));
+    }
+
+    #[test]
+    fn wall_default_is_a_usable_thin_wall() {
+        let w = Wall::default();
+        assert!(w.thickness > 0.0);
+        assert!(w.height > 0.0);
+    }
+
+    #[test]
+    fn wall_default_works_in_struct_update() {
+        let w = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), ..Wall::default() };
+        assert_eq!(w.thickness, Wall::default().thickness);
     }
 }
