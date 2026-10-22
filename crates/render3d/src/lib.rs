@@ -10,7 +10,7 @@ pub mod offscreen;
 pub mod pipeline;
 
 pub use camera::{Camera, Orbit};
-pub use offscreen::{Offscreen, Render3dError};
+pub use offscreen::{Offscreen, headless_png};
 pub use pipeline::{GpuMeshes, upload};
 
 /// Errors returned by the render3d crate.
