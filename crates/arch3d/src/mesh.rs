@@ -3,7 +3,7 @@
 //! This module is intentionally free of any `render` dependency; the ear-clipping
 //! triangulator here is self-contained and used by the arch3d builder.
 
-use cadcraft_doc::arch::ArchId;
+use cadcraft_doc::ArchId;
 use cadcraft_geom::Vec2;
 use std::collections::HashMap;
 
@@ -96,7 +96,7 @@ impl Mesh {
                 *edge_count.entry(edge).or_insert(0) += 1;
             }
         }
-        for &((a, b), count) in edge_count.iter() {
+        for (&(a, b), &count) in edge_count.iter() {
             match edge_count.get(&(b, a)) {
                 Some(&r) if r != count => return false,
                 Some(_) => {}

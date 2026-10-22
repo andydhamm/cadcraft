@@ -12,9 +12,8 @@ pub use crate::mesh::{Bounds3, Mesh};
 
 use std::collections::BTreeSet;
 
-use crate::walls;
 use cadcraft_arch::join::solve_joins;
-use cadcraft_doc::arch::ArchModel;
+use cadcraft_doc::ArchModel;
 
 /// A 3D scene composed of extruded architectural meshes.
 #[derive(Debug, Clone)]
@@ -36,7 +35,7 @@ impl Scene3d {
     }
 
     /// Find a mesh by its object id (arch object).
-    pub fn mesh_for(&self, id: &cadcraft_doc::arch::ArchId) -> Option<&Mesh> {
+    pub fn mesh_for(&self, id: &ArchId) -> Option<&Mesh> {
         self.meshes.iter().find(|m| &m.object == id)
     }
 
@@ -62,7 +61,7 @@ impl Scene3d {
     }
 
     /// Incremental rebuild: reuses meshes for ids not in `dirty`, recomputes bounds.
-    pub fn build_dirty(model: &ArchModel, dirty: &BTreeSet<cadcraft_doc::arch::ArchId>, prev: &Scene3d) -> Scene3d {
+    pub fn build_dirty(model: &ArchModel, dirty: &BTreeSet<ArchId>, prev: &Scene3d) -> Scene3d {
         let shapes = solve_joins(model);
         let mut meshes: Vec<Mesh> = Vec::with_capacity(shapes.len());
 
