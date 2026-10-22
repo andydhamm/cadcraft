@@ -86,8 +86,8 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
         }
     };
 
-    // Level: from param or first in model
-    let level = level_name.as_deref().and_then(|name| d.arch.levels.iter().find(|l| l.name == name));
+    // Level: from param, or the first level in the model when absent
+    let level = level_name.as_deref().and_then(|name| d.arch.levels.iter().find(|l| l.name == name)).or_else(|| d.arch.levels.first());
 
     // Height: explicit or level floor_to_floor
     let height = size_param("wall", p, "height", false)?;
