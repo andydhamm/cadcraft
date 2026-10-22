@@ -190,3 +190,22 @@ validation of `ARCHDETECT` precision/recall.
 4 automatic roofs → 5 stairs/railings/decks → 6 the 3D view properly → 7 generated elevations and
 sections → 8 `ARCHDETECT` on plain DXF → 9 glTF/OBJ/IFC export → 10 polish, materials, benchmarks,
 `docs/arch3d/USER-GUIDE.md`.
+
+## Phase 1 plan
+
+Phase 1 decisions and deltas from the proposal:
+
+1. **Arch data in `doc` (L1), algorithms in `arch` (L2)** — exactly the `constraints` precedent. `Drawing::arch: ArchModel` + `Drawing::arch_revision: u64` so undo, autosave, AUDIT and DXF save all see it. `Drawing::touch_arch()` bumps the revision; the 3D pane and `build_dirty` key off it.
+2. **Walls are centre-line segments only in phase 1** (`Wall { start, end, thickness, height, base_level, to_ceiling, exterior, wall_type, join_start/join_end }`). Arc walls, layered reference-side placement and knee/retaining flags are deferred to phase 2+; the fields that matter for joins (`join_start/join_end: JoinKind`) are already in the data.
+3. **Join solver is a pure function** `solve_joins(&ArchModel) -> Vec<WallShape>` — trim/extend centre-line ends to neighbour face-line intersections, then offset. L mitre / T butt / X butt-at-centre / collinear butt / parallel→square, with per-wall `JoinKind` override. No iterative relaxation, so it is deterministic and cheap (one pass + a spatial hash of endpoints).
+4. **Neighbour stretch** is `arch::join::stretch_wall(model, id, end, to) -> Vec<ArchId>`: transitive BFS over shared endpoints, capped at `MAX_WALLS = 4096`. Exposed as `arch.wall.stretch` and wired into `grips.rs`/`gripcmds.rs` for arch proxy handles, so UI drags are undoable and scriptable like every other grip.
+5. **Proxy handles**: arch objects are not entities. Plan geometry is tagged `Handle(0xA000_0000 + arch_id)` (`render::arch::arch_handle`) so picking/selection work without polluting the entity store. Consequence: `snap.rs` and `grips.rs` need arch branches (grips done in phase 1; snapping to wall faces/ends lands with phase 2 openings).
+6. **3D builder is pure and incremental**: `arch3d::build(&ArchModel) -> Scene3d`, `build_dirty(&ArchModel, &BTreeSet<ArchId>, &Scene3d)`. Meshes carry `object: ArchId` for picking and world-space box UVs (u=x, v=z) for siding. Ear-clipping triangulation lives in `arch3d::mesh` — `render` is deliberately **not** a dependency of `arch3d` (both are L2 and `render` pulls fonts/text machinery we do not want in the 3D path).
+7. **Own GLB writer** in `io::glb` (no dependency). Node names `wall-w1`, POSITION min/max on every accessor — that is what the acceptance check parses.
+8. **DXF**: `CADCRAFT_ARCH` XRECORD in the named-object dictionary (version-tagged JSON, same chunking as `CADCRAFT_CONSTRAINTS`) plus save-time proxy LWPOLYLINEs on `A-WALL` with `CADCRAFT` XDATA. Proxy graphics are **not** read back when the XRECORD is present — one source of truth. AIA/NCS layers `A-WALL/A-DOOR/A-GLAZ/A-ROOF/A-STAIR` added to new drawings.
+9. **`render3d` (L5) renders offscreen** into its own colour+depth textures and hands back a PNG/texture; `ui-egui` presents it as an image. This keeps egui's render pass (no depth buffer we control) untouched and behaves identically on WebGPU and WebGL2. `headless_png` returns `Render3dError::NoAdapter` — the CLI turns that into exit 0 (SKIP), so CI without a GPU is green.
+10. **MCP stays generic**: `wall`, `arch.inspect`, `arch.wall.stretch`, `build3d`, `arch.sample`, `view3d`, `camera` are `CommandSpec`s, reachable through `execute`/`list_commands`/`command_line`. No new MCP tool in phase 1.
+11. **CLI surface locked by the acceptance checks**: `cadcraft-cli convert IN.dxf OUT.glb`, `run … --export out.glb`, `cadcraft-cli render IN OUT.png --camera 'orbit,azimuth=…,elevation=…,distance=…,fov=…' [--size WxH]`.
+12. **Budgets are tests**: 300 walls full rebuild < 50 ms, one-wall `build_dirty` < 5 ms (`arch3d/tests/bench_rebuild.rs`, release-only), plus 2000-case random wall-graph fuzz asserting no panic and manifold rings.
+
+Remaining gaps after phase 1 (vs Chief Architect): openings and their plan symbols; rooms/floors/ceilings/levels; roofs; stairs/railings/decks; PBR, sun/shadows/SSAO, display styles, walkthrough, GPU picking; elevations/sections (HLR); ARCHDETECT; OBJ/IFC; arc walls and layered reference-side joins; wall-top clipping to rafters.
