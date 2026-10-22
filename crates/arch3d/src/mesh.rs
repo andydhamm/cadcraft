@@ -209,8 +209,8 @@ fn outward_normal(a: &Vec2, b: &Vec2) -> (f32, f32) {
     let dx = b.x - a.x;
     let dy = b.y - a.y;
     // For a CCW polygon, the outward normal of edge a→b is (dy, -dx).
-    let nx = dy;
-    let ny = -dx;
+    let nx = dy as f32;
+    let ny = -(dx as f32);
     let len = (nx * nx + ny * ny).sqrt();
     if len < 1e-15 { (0.0, 0.0) } else { (nx / len, ny / len) }
 }

@@ -47,7 +47,8 @@ impl Scene3d {
         let mut meshes: Vec<Mesh> = Vec::with_capacity(shapes.len());
 
         for shape in &shapes {
-            if let Some(mesh) = walls::extrude_wall(shape, shape.base_elevation, "wall") {
+            let height = model.walls.iter().find(|w| w.id == shape.id).map(|w| w.height).unwrap_or(0.0);
+            if let Some(mesh) = walls::extrude_wall(shape, height, 0.0, "wall") {
                 meshes.push(mesh);
             }
         }
@@ -57,7 +58,7 @@ impl Scene3d {
             b
         });
 
-        Scene3d { meshes, bounds, revision: model.revision }
+        Scene3d { meshes, bounds, revision: 0 }
     }
 
     /// Incremental rebuild: reuses meshes for ids not in `dirty`, recomputes bounds.
@@ -72,7 +73,8 @@ impl Scene3d {
                     continue;
                 }
             }
-            if let Some(mesh) = walls::extrude_wall(shape, shape.base_elevation, "wall") {
+            let height = model.walls.iter().find(|w| w.id == shape.id).map(|w| w.height).unwrap_or(0.0);
+            if let Some(mesh) = walls::extrude_wall(shape, height, 0.0, "wall") {
                 meshes.push(mesh);
             }
         }
@@ -82,6 +84,6 @@ impl Scene3d {
             b
         });
 
-        Scene3d { meshes, bounds, revision: model.revision }
+        Scene3d { meshes, bounds, revision: 0 }
     }
 }
