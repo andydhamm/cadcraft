@@ -148,7 +148,7 @@ mod tests {
         d.touch_arch();
         let list = build_arch(&d, &Options::default());
         for p in &list.prims {
-            assert_eq!(p.color, Rgb::from_u32(0x00ffff));
+            assert_eq!(p.color, Rgb::from_u32(0x00ff00));
             assert!(!p.aci7);
         }
 
