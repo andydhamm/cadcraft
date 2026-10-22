@@ -19,8 +19,14 @@ pub struct Mesh {
 }
 
 /// A complete 3D scene: a collection of meshes and their bounding box.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Scene3d {
     pub meshes: Vec<Mesh>,
     pub bounds: Bounds3,
+}
+
+impl Default for Scene3d {
+    fn default() -> Self {
+        Scene3d { meshes: Vec::new(), bounds: Bounds3::empty() }
+    }
 }
