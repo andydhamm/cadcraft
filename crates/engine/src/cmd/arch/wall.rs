@@ -312,7 +312,10 @@ mod tests {
     #[test]
     fn wall_defaults_use_the_level_floor_to_floor() {
         let mut s = new_session_with_level();
-        let p = json!({ "points": [[0.0, 0.0], [2.0, 0.0]] });
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "ground",
+        });
         let _ = s.execute("wall", &p).unwrap();
         let d = s.doc().unwrap();
         assert_eq!(d.arch.walls[0].height, 3.0);
