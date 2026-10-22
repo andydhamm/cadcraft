@@ -3,9 +3,10 @@
 //! This module is intentionally free of any `render` dependency; the ear-clipping
 //! triangulator here is self-contained and used by the arch3d builder.
 
+use std::collections::HashMap;
+
 use cadcraft_doc::ArchId;
 use cadcraft_geom::Vec2;
-use std::collections::HashMap;
 
 /// Axis-aligned bounding box in 3D world space.
 #[derive(Debug, Clone, Copy, PartialEq)]
