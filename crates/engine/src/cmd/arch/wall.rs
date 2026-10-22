@@ -82,9 +82,9 @@ impl Interactive for WallM {
                 corner: false,
                 grip: None,
                 picker: None,
-                distance: None,
-                deferred: None,
-                raw: String::new(),
+                distance: false,
+                deferred: false,
+                raw: false,
             };
         }
 
@@ -103,9 +103,9 @@ impl Interactive for WallM {
             corner: false,
             grip: None,
             picker: None,
-            distance: None,
-            deferred: None,
-            raw: String::new(),
+            distance: false,
+            deferred: false,
+            raw: false,
         }
     }
 
@@ -491,7 +491,7 @@ mod tests {
         s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
         s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
         s.input(Input::Point(Vec2::new(3.0, 3.0))).unwrap();
-        s.input(Input::Text("").into()).unwrap();
+        s.input(Input::Text("".to_string()).into()).unwrap();
         let d = s.doc().unwrap();
         assert_eq!(d.arch.walls.len(), 2);
     }
@@ -503,14 +503,14 @@ mod tests {
         s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
         s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
         // Trigger the thickness prompt
-        s.input(Input::Text("Thickness".into())).unwrap();
+        s.input(Input::Text("Thickness".to_string()).into()).unwrap();
         // Submit zero, which must be rejected (re-prompt, not finish)
-        s.input(Input::Text("0".into())).unwrap();
+        s.input(Input::Text("0".to_string()).into()).unwrap();
         // The wall has not been created yet because we never finished.
         assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
         // Now submit a valid value and finish
-        s.input(Input::Text("4.0".into())).unwrap();
-        s.input(Input::Text("").into()).unwrap();
+        s.input(Input::Text("4.0".to_string()).into()).unwrap();
+        s.input(Input::Text("".to_string()).into()).unwrap();
         assert_eq!(s.doc().unwrap().arch.walls.len(), 1);
     }
 
@@ -521,8 +521,8 @@ mod tests {
         s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
         s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
         // Default exterior = true; toggle to interior
-        s.input(Input::Text("type".into())).unwrap();
-        s.input(Input::Text("").into()).unwrap();
+        s.input(Input::Text("type".to_string()).into()).unwrap();
+        s.input(Input::Text("".to_string()).into()).unwrap();
         let d = s.doc().unwrap();
         assert_eq!(d.arch.walls.len(), 1);
         assert!(!d.arch.walls[0].exterior);
@@ -549,11 +549,11 @@ mod tests {
         s.start("wall").unwrap();
         s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
         // Enter with only one point: must not finish.
-        s.input(Input::Text("").into()).unwrap();
+        s.input(Input::Text("".to_string()).into()).unwrap();
         assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
         // Add a second point and now finish.
         s.input(Input::Point(Vec2::new(4.0, 0.0))).unwrap();
-        s.input(Input::Text("").into()).unwrap();
+        s.input(Input::Text("".to_string()).into()).unwrap();
         assert_eq!(s.doc().unwrap().arch.walls.len(), 1);
     }
 }
