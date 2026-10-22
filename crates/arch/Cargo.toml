@@ -1,0 +1,15 @@
+[package]
+name = "cadcraft-arch"
+description = "CADCraft architectural 2D geometry: wall poché, layer bands, offsets"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+cadcraft-geom = { workspace = true }
+cadcraft-doc = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
