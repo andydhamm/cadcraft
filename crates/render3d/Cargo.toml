@@ -9,6 +9,6 @@ repository.workspace = true
 cadcraft-geom = { path = "../geom" }
 cadcraft-color = { path = "../color" }
 cadcraft-arch3d = { path = "../arch3d" }
-wgpu = "0.26"
+wgpu = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png"] }
 thiserror = "2"
