@@ -169,13 +169,18 @@ pub struct WallType {
     pub reference: RefSide,
 }
 
-/// Per-wall join override. `Mitre` means the solver decides.
+/// Per-wall join override. `Auto`/`Mitre` mean the solver decides.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum JoinKind {
+    /// No explicit preference; the join solver decides.
+    Auto,
+    /// Default preference for new walls; the join solver decides.
     #[default]
     Mitre,
+    /// Force a butt joint.
     Butt,
+    /// Force a square joint.
     Square,
 }
 

@@ -221,6 +221,8 @@ enum Neighbour {
     /// A parallel (not collinear) neighbour whose end is aligned with this end;
     /// fall back to a square end.
     Parallel { id: ArchId, end: End },
+    /// A crossing: two centre lines intersect at an interior point of both.
+    X { id: ArchId, end: End, pt: Vec2 },
 }
 
 /// Classify the neighbours at one end of a wall.
@@ -386,7 +388,7 @@ fn plan_end(
             let right = pt - wperp * whalf;
             return Ok(EndPlan { left, right, join: Some(Join::Square(end)) });
         }
-        JoinKind::Auto => {}
+        JoinKind::Auto | JoinKind::Mitre => {}
     }
 
     if nbrs.is_empty() {
