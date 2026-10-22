@@ -39,7 +39,7 @@ fn generate_walls(n: usize) -> Vec<cadcraft_doc::Wall> {
     let mut pos = cadcraft_geom::Vec2::ZERO;
     let mut dir = 0usize; // 0:+x 1:+y 2:-x 3:-y (right turn = clockwise)
     // Right-angle turn every 4 + (rng % 3) walls (4..=6 walls per leg).
-    let mut legs_left: usize = 4 + (rng.state() % 3);
+    let mut legs_left: usize = 4 + (rng.next_u64() % 3);
     let mut k = 0usize; // 1-based wall index
 
     while walls.len() < n {
@@ -79,20 +79,104 @@ fn generate_walls(n: usize) -> Vec<cadcraft_doc::Wall> {
         legs_left = legs_left.saturating_sub(1);
         if legs_left == 0 {
             dir = (dir + 1) % 4;
-            legs_left = 4 + (rng.next() as f64).floor() as usize % 3 + 4; // placeholder, fixed below
-            // TODO: turn interval re-draw
+            legs_left = 4 + (rng.next_u64() % 3);
         }
     }
+
     walls
 }
-```
 
-Wait, I made an error in that sample generator — I left a placeholder. Let me fix it properly. The turn interval should be: `4 + (rng.next() as f64).floor() % 3`... no. Let me rework. The interval should be `4 + (something in 0..3)`. Since `rng.next()` returns `[0.0, 1.0)`, I need `(rng.next() * 3.0).floor()` to get 0, 1, or 2. So `4 + (rng.next() * 3.0).floor() as usize`. Let me fix this.
+/// Run `arch.sample`: inject a deterministic wall chain into the drawing.
+///
+/// `walls` defaults to 64, clamped to `1..=MAX_WALLS`. This mutates the
+/// arch model and calls `touch_arch()`; it is `.noundo()` because it is a
+/// benchmark fixture.
+fn run_sample(s: &mut Session, params: &Value) -> crate::Result<Value> {
+    let n = params
+        .get("walls")
+        .and_then(|v| v.as_u64())
+        .copied()
+        .unwrap_or(64)
+        .clamp(1, crate::cmd::arch::MAX_WALLS as u64)
+        as usize;
 
-Also I referenced `rng.state()` which doesn't exist. I need to add a `state()` method or just use `next()` for the first interval too.
+    let d = s.doc_mut()?;
+    d.arch.walls = generate_walls(n);
+    d.touch_arch();
 
-Let me rewrite sample.rs cleanly:
+    Ok(json!({ "walls": n, "revision": d.arch_revision }))
+}
 
-crates/engine/src/cmd/arch/sample.rs
-```
+/// Command spec for `arch.sample`.
+pub fn specs() -> Vec<crate::cmd::CommandSpec> {
+    vec![
+        crate::cmd::CommandSpec::new("arch.sample", "Arch Sample", run_sample)
+            .menu(&[])
+            .noundo()
+            .params("{walls?: N}"),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use serde_json::json;
+
+    /// A session with a fresh empty drawing.
+    fn fresh_session() -> Session {
+        let mut s = Session::empty();
+        s.new_drawing(false);
+        s
+    }
+
+    #[test]
+    fn arch_sample_is_deterministic_and_capped() {
+        let mut s1 = fresh_session();
+        let mut s2 = fresh_session();
+        let p = json!({ "walls": 2000 });
+        let r1 = s1.execute("arch.sample", &p).unwrap();
+        let r2 = s2.execute("arch.sample", &p).unwrap();
+
+        assert_eq!(r1["walls"].as_u64(), Some(2000));
+        assert_eq!(r2["walls"].as_u64(), Some(2000));
+
+        // Byte-identical wall data on fresh documents.
+        for (a, b) in s1.doc().arch.walls.iter().zip(s2.doc().arch.walls.iter()) {
+            assert_eq!(a, b);
+        }
+
+        // Revision was bumped.
+        assert!(s1.doc().arch_revision > 0);
+
+        // N is capped at MAX_WALLS.
+        let mut big = fresh_session();
+        let r3 = big.execute("arch.sample", &json!({ "walls": 99999 })).unwrap();
+        assert_eq!(r3["walls"].as_u64(), Some(crate::cmd::arch::MAX_WALLS as u64));
+        assert_eq!(big.doc().arch.walls.len(), crate::cmd::arch::MAX_WALLS);
+    }
+
+    #[test]
+    fn arch_sample_clamps_a_hostile_wall_count() {
+        let mut s = fresh_session();
+        let r = s.execute("arch.sample", &json!({ "walls": 999999999999 })).unwrap();
+        assert_eq!(r["walls"].as_u64(), Some(crate::cmd::arch::MAX_WALLS as u64));
+    }
+
+    #[test]
+    fn arch_sample_walls_are_connected() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "walls": 64 })).unwrap();
+        let walls = &s.doc().arch.walls;
+        for i in 0..walls.len().saturating_sub(1) {
+            assert_eq!(
+                walls[i].end,
+                walls[i + 1].start,
+                "wall {} end != wall {} start",
+                i,
+                i + 1
+            );
+        }
+    }
+}
 <<<<<<< SEARCH
