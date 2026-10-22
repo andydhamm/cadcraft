@@ -1,0 +1,76 @@
+{
+  "walls": [
+    {
+      "start": [0.0, 0.0],
+      "end": [10.0, 0.0],
+      "thickness": 0.3,
+      "height": 2.7,
+      "base_level": 0.0,
+      "to_ceiling": true,
+      "exterior": true,
+      "wall_type": "Default",
+      "join_start": "Auto",
+      "join_end": "Auto"
+    },
+    {
+      "start": [10.0, 0.0],
+      "end": [10.0, 8.0],
+      "thickness": 0.3,
+      "height": 2.7,
+      "base_level": 0.0,
+      "to_ceiling": true,
+      "exterior": true,
+      "wall_type": "Default",
+      "join_start": "Auto",
+      "join_end": "Auto"
+    },
+    {
+      "start": [10.0, 8.0],
+      "end": [0.0, 8.0],
+      "thickness": 0.3,
+      "height": 2.7,
+      "base_level": 0.0,
+      "to_ceiling": true,
+      "exterior": true,
+      "wall_type": "Default",
+      "join_start": "Auto",
+      "join_end": "Auto"
+    },
+    {
+      "start": [0.0, 8.0],
+      "end": [0.0, 0.0],
+      "thickness": 0.3,
+      "height": 2.7,
+      "base_level": 0.0,
+      "to_ceiling": true,
+      "exterior": true,
+      "wall_type": "Default",
+      "join_start": "Auto",
+      "join_end": "Auto"
+    },
+    {
+      "start": [0.0, 4.0],
+      "end": [10.0, 4.0],
+      "thickness": 0.15,
+      "height": 2.7,
+      "base_level": 0.0,
+      "to_ceiling": true,
+      "exterior": false,
+      "wall_type": "Default",
+      "join_start": "Auto",
+      "join_end": "Auto"
+    },
+    {
+      "start": [5.0, 0.0],
+      "end": [5.0, 8.0],
+      "thickness": 0.15,
+      "height": 2.7,
+      "base_level": 0.0,
+      "to_ceiling": true,
+      "exterior": false,
+      "wall_type": "Default",
+      "join_start": "Auto",
+      "join_end": "Auto"
+    }
+  ]
+}
