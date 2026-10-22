@@ -107,8 +107,8 @@ pub fn wall_layer_polygons(w: &Wall) -> Vec<(String, Vec<Vec2>)> {
         consumed += t;
         let a = w.start - perp * outer;
         let b = w.end - perp * outer;
-        let c = w.end + perp * inner;
-        let d = w.start + perp * inner;
+        let c = w.end - perp * inner;
+        let d = w.start - perp * inner;
         out.push((name.clone(), vec![a, b, c, d]));
     }
     out
