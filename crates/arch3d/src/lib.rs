@@ -87,3 +87,90 @@ impl Scene3d {
         Scene3d { meshes, bounds, revision: 0 }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::collections::BTreeSet;
+
+    use cadcraft_doc::Wall;
+    use cadcraft_geom::Vec2;
+
+    /// A model with two non-intersecting walls.
+    /// Wall 1: (0,0)→(4,0), t=0.3, h=2.5.  Wall 2: (10,0)→(14,0), t=0.3, h=3.0.
+    fn two_wall_model() -> ArchModel {
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(10.0, 0.0),
+            end: Vec2::new(14.0, 0.0),
+            thickness: 0.3,
+            height: 3.0,
+            ..Default::default()
+        });
+        model
+    }
+
+    #[test]
+    fn build_extrudes_a_rectangle_to_the_wall_height() {
+        let model = two_wall_model();
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.mesh_count(), 2, "expected 2 meshes, got {}", scene.mesh_count());
+        // Tallest wall is 3.0 (wall 2), so bounds max z ≈ 3.0.
+        assert!(scene.bounds.max[2] > 0.0, "z extent is zero");
+        assert!((scene.bounds.max[2] - 3.0).abs() < 1e-6, "z max = {}", scene.bounds.max[2]);
+        for id in [ArchId(1), ArchId(2)] {
+            assert!(scene.mesh_for(&id).is_some(), "no mesh for wall {}", id.0);
+        }
+    }
+
+    #[test]
+    fn build_is_deterministic_across_two_calls() {
+        let model = two_wall_model();
+        let s1 = Scene3d::build(&model);
+        let s2 = Scene3d::build(&model);
+        assert_eq!(s1.mesh_count(), s2.mesh_count());
+        assert_eq!(s1.bounds, s2.bounds);
+        for (a, b) in s1.meshes.iter().zip(s2.meshes.iter()) {
+            assert_eq!(a.object, b.object);
+            assert_eq!(a.positions, b.positions);
+            assert_eq!(a.normals, b.normals);
+            assert_eq!(a.uvs, b.uvs);
+            assert_eq!(a.indices, b.indices);
+            assert_eq!(a.material, b.material);
+        }
+    }
+
+    #[test]
+    fn build_dirty_rebuilds_only_the_touched_wall() {
+        let model = two_wall_model();
+        let full = Scene3d::build(&model);
+        assert_eq!(full.mesh_count(), 2);
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(2)]);
+        let partial = Scene3d::build_dirty(&model, &dirty, &full);
+        assert_eq!(partial.mesh_count(), 2);
+        assert_eq!(partial.bounds, full.bounds);
+        // Wall 1 (not dirty) must be bit-for-bit identical.
+        match (full.mesh_for(&ArchId(1)), partial.mesh_for(&ArchId(1))) {
+            (Some(a), Some(b)) => {
+                assert_eq!(a.positions, b.positions);
+                assert_eq!(a.normals, b.normals);
+                assert_eq!(a.uvs, b.uvs);
+                assert_eq!(a.indices, b.indices);
+                assert_eq!(a.material, b.material);
+            }
+            _ => assert!(false, "wall 1 mesh must exist in both scenes"),
+        }
+        // Wall 2 (dirty) must also be present.
+        assert!(partial.mesh_for(&ArchId(2)).is_some(), "wall 2 mesh missing from partial");
+    }
+}
