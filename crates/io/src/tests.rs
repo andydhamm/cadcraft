@@ -1290,6 +1290,58 @@ fn empty_arch_writes_no_xrecord() {
 }
 
 #[test]
+fn arch_roundtrips_through_dxf() {
+    let mut d = sample();
+    d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    d.arch.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.15));
+    let text = write_dxf(&d);
+    assert!(text.contains("CADCRAFT_ARCH"));
+    let back = roundtrip(&d);
+    assert_eq!(back.arch.walls.len(), 2);
+    assert_eq!(back.arch.walls, d.arch.walls);
+    assert_eq!(back.arch_revision, 1);
+    assert_eq!(roundtrip(&back).arch.walls, d.arch.walls);
+}
+
+#[test]
+fn garbage_arch_xrecord_is_ignored_not_fatal() {
+    let mut d = sample();
+    d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    d.arch.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.15));
+    let chunks = crate::dxf_arch::arch_chunks(&d.arch).unwrap();
+    let text = write_dxf(&d);
+    // Not JSON at all.
+    let bad = text.replace(&chunks[0], "not json at all");
+    let back = read_dxf(bad.as_bytes()).unwrap();
+    assert!(back.arch.is_empty());
+    assert_eq!(back.arch_revision, 0);
+    assert_eq!(back.model.len(), d.model.len());
+    // Empty payload.
+    let empty = text.replace(&chunks[0], "");
+    let back2 = read_dxf(empty.as_bytes()).unwrap();
+    assert!(back2.arch.is_empty());
+    assert_eq!(back2.arch_revision, 0);
+    assert_eq!(back2.model.len(), d.model.len());
+}
+
+#[test]
+fn hostile_arch_xrecord_never_panics() {
+    let mut d = sample();
+    d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    d.arch.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.15));
+    let chunks = crate::dxf_arch::arch_chunks(&d.arch).unwrap();
+    let text = write_dxf(&d);
+    let full = chunks.join("");
+    let payloads = vec!["{", "\"version\": 99}", &full[..full.len() / 3], "{\"version\":99,\"model\":{\"walls\":[]}}"];
+    for p in payloads {
+        let bad = text.replace(&chunks[0], p);
+        let back = read_dxf(bad.as_bytes()).unwrap();
+        assert!(back.arch.is_empty());
+        assert_eq!(back.arch_revision, 0);
+    }
+}
+
+#[test]
 fn layer_states_roundtrip_next_to_constraints() {
     let mut d = Drawing::new_imperial();
     let (constraints, _) = parametric_sample(&mut d);
