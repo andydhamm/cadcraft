@@ -319,6 +319,13 @@ mod tests {
         serde_json::from_slice(&bytes[offset..offset + len]).unwrap_or_default()
     }
 
+    /// Read the JSON chunk of a GLB byte slice and parse it.
+    fn glb_json_chunk(bytes: &[u8]) -> Value {
+        let json_start = 12;
+        let json_len = le32(&bytes, json_start + 4) as usize;
+        glb_json(bytes, json_start + 8, json_len)
+    }
+
     /// A little-endian `u32` stored at byte offset `off` (4 bytes, LE).
     fn le32(bytes: &[u8], off: usize) -> u32 {
         u32::from_le_bytes([bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]])
@@ -347,9 +354,7 @@ mod tests {
     #[test]
     fn glb_json_chunk_parses_and_has_one_mesh_per_wall() {
         let bytes = write(&scene_with(3));
-        let json_start = 12;
-        let json_len = le32(&bytes, json_start + 4) as usize;
-        let json = glb_json(&bytes, json_start + 8, json_len);
+        let json = glb_json_chunk(&bytes);
         match &json["meshes"] {
             Value::Array(m) => {
                 assert_eq!(m.len(), 3);
@@ -364,9 +369,7 @@ mod tests {
     #[test]
     fn glb_accessor_min_max_match_the_geometry() {
         let bytes = write(&scene_with(1));
-        let json_start = 12;
-        let json_len = le32(&bytes, json_start + 4) as usize;
-        let json = glb_json(&bytes, json_start + 8, json_start + 8 + json_len);
+        let json = glb_json_chunk(&bytes);
         let pos = &json["accessors"][0];
         match &pos["min"] {
             Value::Array(a) => {
@@ -391,9 +394,7 @@ mod tests {
     #[test]
     fn glb_indices_count_is_a_multiple_of_three() {
         let bytes = write(&scene_with(2));
-        let json_start = 12;
-        let json_len = le32(&bytes, json_start + 4) as usize;
-        let json = glb_json(&bytes, json_start + 8, json_start + 8 + json_len);
+        let json = glb_json_chunk(&bytes);
         match &json["accessors"] {
             Value::Array(accs) => {
                 for acc in accs {
@@ -426,13 +427,12 @@ mod tests {
         assert_eq!(&bytes[4..8], &[0x02, 0x00, 0x00, 0x00]);
         let total = le32(&bytes, 8);
         assert_eq!(total as usize, bytes.len());
-        let json_start = 12;
-        let json_len = le32(&bytes, json_start + 4) as usize;
-        let json = glb_json(&bytes, json_start + 8, json_start + 8 + json_len);
+        let json = glb_json_chunk(&bytes);
         assert_eq!(json["meshes"].as_array().and_then(|a| Some(a.len())), Some(0));
         assert_eq!(json["scenes"][0]["nodes"].as_array().and_then(|a| Some(a.len())), Some(0));
+        let json_len = le32(&bytes, 16) as usize;
         let json_pad = (4 - json_len % 4) % 4;
-        let bin_start = json_start + 8 + json_len + json_pad;
+        let bin_start = 12 + 8 + json_len + json_pad;
         assert_eq!(&bytes[bin_start..bin_start + 4], b"BIN\0");
         assert_eq!(bytes.len(), bin_start + 8);
     }
