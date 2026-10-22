@@ -8,7 +8,7 @@
 use std::time::Instant;
 
 use cadcraft_doc::geom::Vec2;
-use cadcraft_doc::{ArchModel, Wall};
+use cadcraft_doc::{ArchId, ArchModel, Wall};
 
 /// Build a deterministic 300-wall grid: 20 rows × 15 columns of small rooms.
 fn build_300_wall_grid() -> ArchModel {
@@ -29,7 +29,7 @@ fn build_300_wall_grid() -> ArchModel {
             let x1 = (c + 1) as f64 * cell_w;
             let y = (r as f64) * cell_h;
             model.add_wall(Wall {
-                id: 0,
+                id: ArchId(0),
                 start: Vec2::new(x0, y),
                 end: Vec2::new(x1, y),
                 thickness,
@@ -57,7 +57,7 @@ fn build_300_wall_grid() -> ArchModel {
         let y0 = (r as f64) * cell_h;
         let y1 = (r + 1) as f64 * cell_h;
         model.add_wall(Wall {
-            id: 0,
+            id: ArchId(0),
             start: Vec2::new(x, y0),
             end: Vec2::new(x, y1),
             thickness,
@@ -88,11 +88,11 @@ fn three_hundred_walls_rebuild_under_50ms() {
     }
 
     let model = build_300_wall_grid();
-    assert_eq!(model.walls_count(), 300, "expected 300 walls");
+    assert_eq!(model.walls.len(), 300, "expected 300 walls");
 
     // --- full build ---
     let t0 = Instant::now();
-    let scene = cadcraft_arch3d::build(&model);
+    let scene = cadcraft_arch3d::builder::build(&model);
     let full_ms = t0.elapsed().as_millis() as f64 / 1_000.0;
     println!(
         "full build (300 walls): {:.1} ms, meshes: {}, tris: {}",
@@ -109,7 +109,7 @@ fn three_hundred_walls_rebuild_under_50ms() {
     dirty.insert(first_id);
 
     let t1 = Instant::now();
-    let _ = cadcraft_arch3d::build_dirty(&model, &dirty, &scene);
+    let _ = cadcraft_arch3d::builder::build_dirty(&model, &dirty, &scene);
     let dirty_ms = t1.elapsed().as_millis() as f64 / 1_000.0;
     println!("build_dirty (1 wall):  {:.1} ms", dirty_ms);
 

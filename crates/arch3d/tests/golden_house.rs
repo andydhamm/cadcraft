@@ -10,9 +10,9 @@
 //! successful run.  Update it if the geometry changes intentionally.
 
 use cadcraft_arch3d::Scene3d;
-use cadcraft_arch3d::{build, build_dirty};
+use cadcraft_arch3d::builder::{build, build_dirty};
 use cadcraft_doc::geom::Vec2;
-use cadcraft_doc::{ArchModel, Wall};
+use cadcraft_doc::{ArchId, ArchModel, Wall};
 
 /// FNV-1a 64-bit hash (no external dependency).
 fn fnv1a_hash(data: &[u8]) -> u64 {
@@ -64,7 +64,7 @@ fn load_fixture() -> ArchModel {
     ];
     for (start, end) in exterior_walls {
         model.add_wall(Wall {
-            id: 0,
+            id: ArchId(0),
             start,
             end,
             thickness: 0.3,
@@ -83,7 +83,7 @@ fn load_fixture() -> ArchModel {
     let interior_walls = [(Vec2::new(0.0, 4.0), Vec2::new(10.0, 4.0)), (Vec2::new(5.0, 0.0), Vec2::new(5.0, 8.0))];
     for (start, end) in interior_walls {
         model.add_wall(Wall {
-            id: 0,
+            id: ArchId(0),
             start,
             end,
             thickness: 0.15,

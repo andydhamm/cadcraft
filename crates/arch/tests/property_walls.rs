@@ -3,6 +3,7 @@
 //! Follows the seeded xorshift pattern from `geom/src/property_tests.rs` — no new
 //! dependencies, only std. Each run is deterministic via the seed.
 
+use cadcraft_arch::join::End;
 use cadcraft_arch::join::WallShape;
 use cadcraft_arch::join::{solve_joins, stretch_wall};
 use cadcraft_doc::geom::Vec2;
@@ -94,7 +95,7 @@ fn build_random_model(seed: u64, num_walls: usize) -> (ArchModel, Vec<ArchId>) {
         };
 
         let wall = Wall {
-            id: 0,
+            id: ArchId(0),
             start: Vec2::new(x1, y1),
             end: Vec2::new(ex, ey),
             thickness,
@@ -128,7 +129,7 @@ fn assert_rings_well_formed(rings: &[&Vec<Vec2>]) {
 /// Each vertex of a resolved shape must lie within the original wall's
 /// bounding envelope (extended by `tol`).
 fn assert_in_envelope(model: &ArchModel, shape: &WallShape, tol: f64) {
-    let w = model.walls(&shape.id).expect("wall id missing from model");
+    let w = model.wall(&shape.id).expect("wall id missing from model");
     let min_x = w.start.x.min(w.end.x) - w.thickness - tol;
     let max_x = w.end.x.max(w.start.x) + w.thickness + tol;
     let min_y = w.start.y.min(w.end.y) - w.thickness - tol;
@@ -146,7 +147,7 @@ fn assert_in_envelope(model: &ArchModel, shape: &WallShape, tol: f64) {
 #[test]
 fn random_wall_graphs_never_panic() {
     for seed in 0..2000u64 {
-        let (model, ids) = build_random_model(seed, 50);
+        let (mut model, ids) = build_random_model(seed, 50);
 
         // solve_joins: must return without panicking on hostile input.
         let _shapes = solve_joins(&model);
@@ -154,7 +155,7 @@ fn random_wall_graphs_never_panic() {
         // stretch_wall: transitive BFS over a random pair of walls.
         if ids.len() >= 2 {
             let target = Vec2::new(1.0, 1.0);
-            let _affected = stretch_wall(&model, ids[0], ids[1], target);
+            let _affected = stretch_wall(&mut model, ids[0], End::Start, target);
         }
     }
 }
@@ -168,7 +169,7 @@ fn random_wall_rings_stay_in_their_envelope() {
         let (model, _ids) = build_random_model(seed, 50);
         let shapes = solve_joins(&model);
 
-        let rings: Vec<&Vec<Vec2>> = shapes.iter().map(|s| &s.ring).collect();
+        let rings: Vec<&Vec<Vec2>> = shapes.iter().map(|s| &s.polygon).collect();
         assert_rings_well_formed(&rings);
 
         for shape in &shapes {
