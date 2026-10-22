@@ -48,11 +48,27 @@ pub const MIN_WALL_LENGTH: f64 = 1e-6;
 
 /// A wall: centre-line segment, thickness, height, and layer bands.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Wall {
     /// Centre-line start point.
     pub start: Vec2,
     /// Centre-line end point.
     pub end: Vec2,
+    /// Stable identifier assigned by [`ArchModel::push_wall`].
+    pub id: ArchId,
+    /// The building level this wall sits on.
+    pub base_level: u32,
+    /// Whether the wall extends to the ceiling of its level.
+    pub to_ceiling: bool,
+    /// Whether this is an exterior wall.
+    pub exterior: bool,
+    /// Name of the wall type (e.g. "Exterior", "Interior").
+    #[serde(default = "default_wall_type")]
+    pub wall_type: String,
+    /// Join kind at the start end of the wall.
+    pub join_start: JoinKind,
+    /// Join kind at the end end of the wall.
+    pub join_end: JoinKind,
     /// Wall thickness (perpendicular to the centre line).
     pub thickness: f64,
     /// Wall height (not used in 2D poché, but kept for 3D).
@@ -62,24 +78,47 @@ pub struct Wall {
     pub layers: Vec<(String, f64)>,
 }
 
+fn default_wall_type() -> String {
+    "Exterior".into()
+}
+
 impl Wall {
     /// A wall with the given centre line and thickness, 2.7 m high and no layer bands.
     pub fn new(start: Vec2, end: Vec2, thickness: f64) -> Self {
-        Wall { start, end, thickness, height: 2.7, layers: Vec::new() }
+        Wall {
+            start,
+            end,
+            thickness,
+            height: 2.7,
+            layers: Vec::new(),
+            id: ArchId(0),
+            base_level: 0,
+            to_ceiling: false,
+            exterior: true,
+            wall_type: "Exterior".into(),
+            join_start: JoinKind::Mitre,
+            join_end: JoinKind::Mitre,
+        }
     }
 }
 
 impl Default for Wall {
     fn default() -> Self {
-        Wall { start: Vec2::ZERO, end: Vec2::ZERO, thickness: 0.2, height: 2.7, layers: Vec::new() }
+        Wall {
+            start: Vec2::ZERO,
+            end: Vec2::ZERO,
+            thickness: 0.2,
+            height: 2.7,
+            layers: Vec::new(),
+            id: ArchId(0),
+            base_level: 0,
+            to_ceiling: false,
+            exterior: true,
+            wall_type: "Exterior".into(),
+            join_start: JoinKind::Mitre,
+            join_end: JoinKind::Mitre,
+        }
     }
-}
-
-/// A wall entry: an [`ArchId`] paired with its [`Wall`] geometry.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct WallEntry {
-    pub id: ArchId,
-    pub wall: Wall,
 }
 
 /// Which side of the wall centre line the reference is on.
@@ -138,7 +177,7 @@ pub struct Level {
 /// [`Drawing::arch_revision`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArchModel {
-    pub walls: Vec<WallEntry>,
+    pub walls: Vec<Wall>,
     pub next_id: u32,
     pub levels: Vec<Level>,
     pub types: Vec<WallType>,
@@ -177,21 +216,42 @@ impl Default for ArchModel {
 
 impl ArchModel {
     /// Add a wall and return its new id.
-    pub fn add_wall(&mut self, w: Wall) -> ArchId {
+    pub fn push_wall(&mut self, mut w: Wall) -> ArchId {
         let id = ArchId(self.next_id);
         self.next_id = self.next_id.saturating_add(1);
-        self.walls.push(WallEntry { id, wall: w });
+        w.id = id;
+        self.walls.push(w);
         id
+    }
+
+    /// Add a wall and return its new id.
+    pub fn add_wall(&mut self, w: Wall) -> ArchId {
+        self.push_wall(w)
     }
 
     /// Look up a wall by id.
     pub fn wall(&self, id: ArchId) -> Option<&Wall> {
-        self.walls.iter().find(|e| e.id == id).map(|e| &e.wall)
+        self.walls.iter().find(|w| w.id == id)
+    }
+
+    /// The index of a wall by id, or `None` if not found.
+    pub fn wall_index(&self, id: ArchId) -> Option<usize> {
+        self.walls.iter().position(|w| w.id == id)
+    }
+
+    /// The id that will be assigned to the next wall.
+    pub fn next_wall_id(&self) -> ArchId {
+        ArchId(self.next_id)
+    }
+
+    /// The number of walls in the model.
+    pub fn len(&self) -> usize {
+        self.walls.len()
     }
 
     /// Iterate over all wall ids.
     pub fn wall_ids(&self) -> impl Iterator<Item = ArchId> + '_ {
-        self.walls.iter().map(|e| e.id)
+        self.walls.iter().map(|w| w.id)
     }
 
     /// Whether the model has no walls.
@@ -220,21 +280,20 @@ impl ArchModel {
         }
         let mut pts = Vec::with_capacity(self.walls.len() * 4);
         for w in &self.walls {
-            let wall = &w.wall;
-            if !wall.start.is_finite() || !wall.end.is_finite() || wall.thickness <= 0.0 || !wall.thickness.is_finite() {
+            if !w.start.is_finite() || !w.end.is_finite() || w.thickness <= 0.0 || !w.thickness.is_finite() {
                 continue;
             }
-            let len = wall.start.dist(wall.end);
+            let len = w.start.dist(w.end);
             if len < 1e-12 || !len.is_finite() {
                 continue;
             }
-            let half = wall.thickness / 2.0;
-            let dir = (wall.end - wall.start).normalized();
+            let half = w.thickness / 2.0;
+            let dir = (w.end - w.start).normalized();
             let perp = dir.perp();
-            pts.push(wall.start - perp * half);
-            pts.push(wall.end - perp * half);
-            pts.push(wall.end + perp * half);
-            pts.push(wall.start + perp * half);
+            pts.push(w.start - perp * half);
+            pts.push(w.end - perp * half);
+            pts.push(w.end + perp * half);
+            pts.push(w.start + perp * half);
         }
         if pts.is_empty() { Bounds2::EMPTY } else { Bounds2::from_points(pts.iter().copied()) }
     }
@@ -247,18 +306,20 @@ mod tests {
     use cadcraft_geom::Vec2;
 
     fn test_wall() -> Wall {
-        Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 2.0, height: 3.0, layers: Vec::new() }
+        Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 2.0, height: 3.0, ..Wall::default() }
     }
 
     #[test]
-    fn arch_model_add_returns_increasing_ids() {
+    fn push_wall_assigns_increasing_ids_and_stores_them() {
         let mut m = ArchModel::default();
-        let id1 = m.add_wall(test_wall());
-        let id2 = m.add_wall(test_wall());
-        let id3 = m.add_wall(test_wall());
+        let id1 = m.push_wall(test_wall());
+        let id2 = m.push_wall(test_wall());
         assert_eq!(id1, ArchId(0));
         assert_eq!(id2, ArchId(1));
-        assert_eq!(id3, ArchId(2));
+        assert!(m.wall(id1).is_some());
+        assert!(m.wall(id2).is_some());
+        assert_eq!(m.wall(id1).unwrap().start, Vec2::new(0.0, 0.0));
+        assert_eq!(m.wall(id2).unwrap().end, Vec2::new(10.0, 0.0));
     }
 
     #[test]
@@ -307,6 +368,59 @@ mod tests {
     fn wall_default_works_in_struct_update() {
         let w = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), ..Wall::default() };
         assert_eq!(w.thickness, Wall::default().thickness);
+    }
+
+    #[test]
+    fn wall_index_finds_position_and_none_for_unknown() {
+        let mut m = ArchModel::default();
+        m.push_wall(test_wall());
+        m.push_wall(test_wall());
+        m.push_wall(test_wall());
+        assert_eq!(m.wall_index(ArchId(0)), Some(0));
+        assert_eq!(m.wall_index(ArchId(1)), Some(1));
+        assert_eq!(m.wall_index(ArchId(2)), Some(2));
+        assert_eq!(m.wall_index(ArchId(99)), None);
+    }
+
+    #[test]
+    fn next_wall_id_tracks_next_id() {
+        let mut m = ArchModel::default();
+        assert_eq!(m.next_wall_id(), ArchId(0));
+        m.push_wall(test_wall());
+        assert_eq!(m.next_wall_id(), ArchId(1));
+        m.push_wall(test_wall());
+        assert_eq!(m.next_wall_id(), ArchId(2));
+    }
+
+    #[test]
+    fn wall_defaults_are_a_plain_exterior_wall() {
+        let w = Wall::default();
+        assert_eq!(w.join_start, JoinKind::Mitre);
+        assert_eq!(w.join_end, JoinKind::Mitre);
+        assert_eq!(w.base_level, 0);
+        assert!(w.exterior);
+        assert_eq!(w.wall_type, "Exterior");
+    }
+
+    #[test]
+    fn arch_model_bounds_uses_poché_envelope() {
+        let mut m = ArchModel::default();
+        // Bottom wall: (0,0) to (10,0)
+        m.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, ..Wall::default() });
+        // Right wall: (10,0) to (10,8)
+        m.push_wall(Wall { start: Vec2::new(10.0, 0.0), end: Vec2::new(10.0, 8.0), thickness: 0.2, ..Wall::default() });
+        // Top wall: (10,8) to (0,8)
+        m.push_wall(Wall { start: Vec2::new(10.0, 8.0), end: Vec2::new(0.0, 8.0), thickness: 0.2, ..Wall::default() });
+        // Left wall: (0,8) to (0,0)
+        m.push_wall(Wall { start: Vec2::new(0.0, 8.0), end: Vec2::new(0.0, 0.0), thickness: 0.2, ..Wall::default() });
+        // Degenerate zero-length wall (should be skipped)
+        m.push_wall(Wall { start: Vec2::new(5.0, 4.0), end: Vec2::new(5.0, 4.0), thickness: 0.2, ..Wall::default() });
+
+        let b = m.bounds();
+        assert!((b.min.x - (-0.1)).abs() < 1e-9, "min.x: {} != -0.1", b.min.x);
+        assert!((b.min.y - (-0.1)).abs() < 1e-9, "min.y: {} != -0.1", b.min.y);
+        assert!((b.max.x - 10.1).abs() < 1e-9, "max.x: {} != 10.1", b.max.x);
+        assert!((b.max.y - 8.1).abs() < 1e-9, "max.y: {} != 8.1", b.max.y);
     }
 
     #[test]

@@ -17,8 +17,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
     let layer = d.layer("A-WALL").map(|l| l.color).unwrap_or(Color::Index(7));
     let ink = crate::ink(Color::ByLayer, layer, Color::Index(7));
 
-    for entry in &d.arch.walls {
-        let wall = &entry.wall;
+    for wall in &d.arch.walls {
         if !wall.start.is_finite() || !wall.end.is_finite() {
             continue;
         }
@@ -47,7 +46,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
                 list.tris.push(*q);
             }
             list.prims.push(DPrim {
-                handle: arch_handle(entry.id),
+                handle: arch_handle(wall.id),
                 color: ink.rgb,
                 aci7: ink.aci7,
                 lw: 0.0,
@@ -66,7 +65,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
             list.verts.push(*q);
         }
         list.prims.push(DPrim {
-            handle: arch_handle(entry.id),
+            handle: arch_handle(wall.id),
             color: ink.rgb,
             aci7: ink.aci7,
             lw: 0.0,
@@ -87,7 +86,7 @@ mod tests {
     use cadcraft_doc::{Drawing, Layer};
 
     fn wall(start: Vec2, end: Vec2, thickness: f64) -> Wall {
-        Wall { start, end, thickness, height: 3.0, layers: Vec::new() }
+        Wall { start, end, thickness, height: 3.0, ..Wall::default() }
     }
 
     #[test]
