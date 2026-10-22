@@ -552,6 +552,10 @@ mod tests {
         model.walls.push(Wall { id: ArchId(id), start, end, thickness: 2.0, height: 3.0, layers: vec![], ..Wall::default() });
     }
 
+    fn wall(model: &mut cadcraft_doc::ArchModel, id: u32, start: Vec2, end: Vec2, t: f64) {
+        model.walls.push(Wall { id: ArchId(id), start, end, thickness: t, height: 3.0, layers: vec![], ..Wall::default() });
+    }
+
     #[test]
     fn stretch_wall_moves_the_neighbour_end() {
         let mut model = cadcraft_doc::ArchModel::default();
@@ -636,5 +640,163 @@ mod tests {
         // At most all three walls could be affected; the set is bounded.
         assert!((ids.len()..=3).contains(&ids.len()));
         assert!(!ids.is_empty());
+    }
+
+    #[test]
+    fn l_join_mitres_both_walls_to_the_shared_corner() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let s0 = &shapes[0];
+        let s1 = &shapes[1];
+
+        // Both shapes should have a Join::L at the touching end.
+        assert!(s0.joins.iter().any(|j| matches!(j, Join::L(End::End))));
+        assert!(s1.joins.iter().any(|j| matches!(j, Join::L(End::Start))));
+
+        // The shared mitre corner (9.5, 0.5) should lie on the bisector line x + y = 10.
+        let shared = Vec2::new(9.5, 0.5);
+        assert!((shared.x + shared.y - 10.0).abs() < 1e-9, "mitre corner not on bisector");
+
+        // Both rings should contain the shared corner.
+        assert!(s0.polygon.iter().any(|p| p.dist(shared) < 1e-9), "wall 0 missing shared corner");
+        assert!(s1.polygon.iter().any(|p| p.dist(shared) < 1e-9), "wall 1 missing shared corner");
+
+        // Neither ring should have its raw square corner at the join.
+        for p in &s0.polygon {
+            assert!(!((p.x - 10.0).abs() < 1e-9 && (p.y - 0.5).abs() < 1e-9), "wall 0 still has raw corner (10, 0.5)");
+            assert!(!((p.x - 10.0).abs() < 1e-9 && (p.y + 0.5).abs() < 1e-9), "wall 0 still has raw corner (10, -0.5)");
+        }
+        for p in &s1.polygon {
+            assert!(!((p.x - 9.5).abs() < 1e-9 && p.y.abs() < 1e-9), "wall 1 still has raw corner (9.5, 0)");
+            assert!(!((p.x - 10.5).abs() < 1e-9 && p.y.abs() < 1e-9), "wall 1 still has raw corner (10.5, 0)");
+        }
+    }
+
+    #[test]
+    fn t_join_butts_the_incoming_wall_at_the_face() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(20.0, 0.0), 1.0); // host
+        wall(&mut model, 1, Vec2::new(10.0, 10.0), Vec2::new(10.0, 0.0), 1.0); // incoming
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let host = &shapes[0];
+        let incoming = &shapes[1];
+
+        // The incoming wall should have a Join::T at its end.
+        assert!(incoming.joins.iter().any(|j| matches!(j, Join::T(End::End))));
+
+        // The incoming wall's end face should lie on y = 0.5 (the host's upper face).
+        let end_face_corners: Vec<Vec2> = incoming.polygon.iter().filter(|p| (p.y - 0.5).abs() < 1e-9).cloned().collect();
+        assert_eq!(end_face_corners.len(), 2, "incoming wall should have 2 corners on y=0.5");
+        assert!((end_face_corners[0].x - 9.5).abs() < 1e-9 || (end_face_corners[0].x - 10.5).abs() < 1e-9);
+        assert!((end_face_corners[1].x - 9.5).abs() < 1e-9 || (end_face_corners[1].x - 10.5).abs() < 1e-9);
+
+        // The host's polygon should be unchanged (its bounds still span y in [-0.5, 0.5]).
+        let host_bounds = host.bounds();
+        assert!((host_bounds.min.y + 0.5).abs() < 1e-9, "host bounds min.y should be -0.5");
+        assert!((host_bounds.max.y - 0.5).abs() < 1e-9, "host bounds max.y should be 0.5");
+    }
+
+    #[test]
+    fn angled_join_mitres_at_the_bisector() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        let angle = std::f64::consts::PI / 3.0; // 60 degrees
+        let end = Vec2::new(10.0 + 10.0 * angle.cos(), 10.0 * angle.sin());
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), end, 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let s0 = &shapes[0];
+        let s1 = &shapes[1];
+
+        // Both shapes should have a Join::L at the touching end.
+        assert!(s0.joins.iter().any(|j| matches!(j, Join::L(End::End))));
+        assert!(s1.joins.iter().any(|j| matches!(j, Join::L(End::Start))));
+
+        // The bisector direction is at 120 degrees from the x-axis.
+        let bisector_dir = Vec2::new(-0.5, std::f64::consts::SQRT_3 / 2.0);
+        let corner = Vec2::new(10.0, 0.0);
+
+        // Both shared mitre corners should lie on the bisector line.
+        let mut shared_count = 0;
+        for p in &s0.polygon {
+            for q in &s1.polygon {
+                if p.dist(*q) < 1e-9 {
+                    shared_count += 1;
+                    let v = *p - corner;
+                    let cross = v.cross(bisector_dir);
+                    assert!(cross.abs() < 1e-9, "shared corner {:?} not on bisector", p);
+                }
+            }
+        }
+        assert_eq!(shared_count, 2, "expected 2 shared corners");
+    }
+
+    #[test]
+    fn collinear_walls_butt_and_do_not_overlap() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(20.0, 0.0), 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let s0 = &shapes[0];
+        let s1 = &shapes[1];
+
+        // Each wall should have area 10.0 (no overlap, no gap).
+        let a0 = polygon_area(&s0.polygon);
+        let a1 = polygon_area(&s1.polygon);
+        assert!((a0 - 10.0).abs() < 1e-9, "wall 0 area should be 10.0, got {}", a0);
+        assert!((a1 - 10.0).abs() < 1e-9, "wall 1 area should be 10.0, got {}", a1);
+
+        // The sum should be 20.0 exactly.
+        assert!((a0 + a1 - 20.0).abs() < 1e-9, "total area should be 20.0");
+    }
+
+    #[test]
+    fn closed_rectangle_ring_is_gap_free() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.3);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.3);
+        wall(&mut model, 2, Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), 0.3);
+        wall(&mut model, 3, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.3);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 4);
+
+        // Every shape should have two Join::L joins.
+        for s in &shapes {
+            let l_count = s.joins.iter().filter(|j| matches!(j, Join::L(_))).count();
+            assert_eq!(l_count, 2, "shape {:?} should have 2 Join::L joins", s.id);
+        }
+
+        // Outer corners of the ring.
+        let outer = vec![Vec2::new(10.15, -0.15), Vec2::new(10.15, 8.15), Vec2::new(-0.15, 8.15), Vec2::new(-0.15, -0.15)];
+        // Inner corners of the ring.
+        let inner = vec![Vec2::new(9.85, 0.15), Vec2::new(9.85, 7.85), Vec2::new(0.15, 7.85), Vec2::new(0.15, 0.15)];
+
+        // Each corner should appear in exactly two shapes' polygons.
+        for c in outer.iter().chain(inner.iter()) {
+            let mut count = 0;
+            for s in &shapes {
+                for p in &s.polygon {
+                    if p.dist(*c) < 1e-9 {
+                        count += 1;
+                        break;
+                    }
+                }
+            }
+            assert_eq!(count, 2, "corner {:?} should appear in exactly 2 shapes, got {}", c, count);
+        }
     }
 }
