@@ -194,9 +194,9 @@ pub fn stretch_wall(
         if let Some(idx) = graph.cluster_of(w, e) {
             let cluster = graph.cluster(idx);
             for (w2, e2) in cluster {
-                let key = (w2, end_key(*e2));
+                let key = (*w2, end_key(*e2));
                 if visited.insert(key) {
-                    queue.push_back((w2, e2));
+                    queue.push_back((*w2, *e2));
                 }
             }
         }
