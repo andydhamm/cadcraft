@@ -12,6 +12,7 @@
 
 pub use cadcraft_doc::{ArchId, ArchModel, JoinKind, Level, RefSide, Wall, WallLayer, WallType};
 
+pub mod graph;
 pub mod join;
 pub mod wall;
 
