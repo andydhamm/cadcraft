@@ -112,7 +112,8 @@ impl Mesh {
     /// The ring must be a polygon of at least 3 finite vertices with non-zero
     /// area. A clockwise ring is automatically flipped to counter-clockwise so
     /// that normals point outward. Both end caps and all four side faces per
-    /// edge are included.
+    /// edge are included. Side faces share vertices with the caps, so the
+    /// resulting mesh is a closed 2-manifold.
     ///
     /// World-box UVs: u = x (world), v = z (world).
     pub fn push_prism(&mut self, ring: &[Vec2], z0: f64, z1: f64) {
@@ -137,69 +138,39 @@ impl Mesh {
         let z1f = z1 as f32;
         let b_base = self.positions.len() as u32;
 
-        // ── Cap vertices ──────────────────────────────────────────────
-        // Bottom ring: outward normal is -Z.
+        // Bottom cap vertices (outward normal: -Z).
         for &p in &ring {
             self.positions.push([p.x as f32, p.y as f32, z0f]);
             self.uvs.push([p.x as f32, z0f]);
             self.normals.push([0.0, 0.0, -1.0]);
         }
-        // Top ring: outward normal is +Z.
+        // Top cap vertices (outward normal: +Z).
         for &p in &ring {
             self.positions.push([p.x as f32, p.y as f32, z1f]);
             self.uvs.push([p.x as f32, z1f]);
             self.normals.push([0.0, 0.0, 1.0]);
         }
 
-        // ── Side vertices (duplicated for correct per-face normals) ───
-        let s_base = self.positions.len() as u32;
-        // Bottom side ring
-        for i in 0..m {
-            let (nx, ny) = outward_normal(&ring[(i % m) as usize], &ring[((i + 1) % m) as usize]);
-            for _ in 0..2 {
-                let p = ring[(i % m) as usize];
-                self.positions.push([p.x as f32, p.y as f32, z0f]);
-                self.uvs.push([p.x as f32, z0f]);
-                self.normals.push([nx, ny, 0.0]);
-            }
-        }
-        // Top side ring
-        for i in 0..m {
-            let (nx, ny) = outward_normal(&ring[(i % m) as usize], &ring[((i + 1) % m) as usize]);
-            for _ in 0..2 {
-                let p = ring[(i % m) as usize];
-                self.positions.push([p.x as f32, p.y as f32, z1f]);
-                self.uvs.push([p.x as f32, z1f]);
-                self.normals.push([nx, ny, 0.0]);
-            }
-        }
-        let sb_base = b_base + m; // bottom cap base
-        let st_base = sb_base + m; // top cap base
-        let ssb_base = st_base + m; // side bottom base
-        let sst_base = ssb_base + m; // side top base
-
-        // ── Bottom cap triangles ──────────────────────────────────────
+        // Bottom cap triangles: CW winding from above (reversed from the
+        // CCW triangulation), giving outward -Z normals.
         for tri in triangulate(&ring) {
-            let a = (sb_base + tri[0]) as u32;
-            let b = (sb_base + tri[1]) as u32;
-            let c = (sb_base + tri[2]) as u32;
-            self.indices.extend([a, b, c]);
+            self.indices.extend([(b_base + tri[0]) as u32, (b_base + tri[2]) as u32, (b_base + tri[1]) as u32]);
         }
 
-        // ── Top cap triangles ─────────────────────────────────────────
+        // Top cap triangles: CCW winding from above, giving +Z normals.
         for tri in triangulate(&ring) {
-            let a = (st_base + tri[0]) as u32;
-            let b = (st_base + tri[1]) as u32;
-            let c = (st_base + tri[2]) as u32;
-            self.indices.extend([a, b, c]);
+            self.indices.extend([(b_base + m + tri[0]) as u32, (b_base + m + tri[1]) as u32, (b_base + m + tri[2]) as u32]);
         }
 
-        // ── Side triangles ────────────────────────────────────────────
+        // Side faces: each ring edge becomes a quad split into two triangles.
+        // Vertices are shared with the cap rings (no duplication), so the
+        // mesh is a closed 2-manifold.
         for i in 0..m {
             let j = (i + 1) % m;
-            // Side bottom: two triangles per edge (CCW outward)
-            self.indices.extend([ssb_base + i * 2, ssb_base + j * 2, sst_base + i * 2]);
-            self.indices.extend([ssb_base + j * 2, sst_base + i * 2, sst_base + j * 2]);
+            // Triangle: bottom_i, bottom_j, top_j
+            self.indices.extend([b_base + i, b_base + j, b_base + m + j]);
+            // Triangle: bottom_i, top_j, top_i
+            self.indices.extend([b_base + i, b_base + m + j, b_base + m + i]);
         }
     }
 }
