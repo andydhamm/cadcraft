@@ -193,7 +193,9 @@ fn classify(model: &ArchModel, g: &WallGraph, id: ArchId, end: End) -> Vec<Neigh
     if !my_point.is_finite() {
         return Vec::new();
     }
-    let my_dir = crate::wall::wall_dir(my_wall);
+    let Some(my_dir) = crate::wall::wall_dir(my_wall) else {
+        return Vec::new();
+    };
     if !my_dir.is_finite() {
         return Vec::new();
     }
@@ -206,7 +208,9 @@ fn classify(model: &ArchModel, g: &WallGraph, id: ArchId, end: End) -> Vec<Neigh
         let Some(nw) = model.wall(nid) else {
             continue;
         };
-        let nbr_dir = crate::wall::wall_dir(nw);
+        let Some(nbr_dir) = crate::wall::wall_dir(nw) else {
+            continue;
+        };
         if !nbr_dir.is_finite() {
             continue;
         }
@@ -227,9 +231,16 @@ fn classify(model: &ArchModel, g: &WallGraph, id: ArchId, end: End) -> Vec<Neigh
     out
 }
 
-/// Intersect two line segments as infinite lines; return the point if finite.
+/// Intersect two infinite lines; return the intersection point if finite.
 fn intersect_inf(a: (Vec2, Vec2), b: (Vec2, Vec2)) -> Option<Vec2> {
-    let p = cadcraft_geom::intersect::line_line_infinite(a.0, a.1, b.0, b.1)?;
+    let da = a.1 - a.0;
+    let db = b.1 - b.0;
+    let denom = da.cross(db);
+    if denom.abs() < 1e-14 {
+        return None;
+    }
+    let t = (b.0 - a.0).cross(db) / denom;
+    let p = a.0 + da * t;
     (p.is_finite()).then_some(p)
 }
 
@@ -242,7 +253,7 @@ fn plan_end(model: &ArchModel, w: &Wall, end: End, raw: (Vec2, Vec2), nbrs: &[Ne
 
     // T join (Mid): trim the incoming wall's end onto the host's face.
     if let Some(Neighbour::Mid { id: nid, .. }) = nbrs.iter().find(|n| matches!(n, Neighbour::Mid { .. })) {
-        let Some(host) = model.wall(nid) else {
+        let Some(host) = model.wall(*nid) else {
             return EndPlan { left: raw.0, right: raw.1, join: None };
         };
         let Some(host_faces) = face_lines(host) else {
@@ -270,7 +281,7 @@ fn plan_end(model: &ArchModel, w: &Wall, end: End, raw: (Vec2, Vec2), nbrs: &[Ne
 
     // L join (EndToEnd): mitre using cross-pairing of face lines.
     if let Some(Neighbour::EndToEnd { id: nid, .. }) = nbrs.iter().find(|n| matches!(n, Neighbour::EndToEnd { .. })) {
-        let Some(neig) = model.wall(nid) else {
+        let Some(neig) = model.wall(*nid) else {
             return EndPlan { left: raw.0, right: raw.1, join: None };
         };
         if let (Some(my_faces), Some(nbr_faces)) = (face_lines(w), face_lines(neig)) {
@@ -314,7 +325,7 @@ pub fn solve_joins(model: &ArchModel) -> Vec<WallShape> {
         // For each collinear neighbour, determine which wall is "trimmed".
         for n in &nbrs_start {
             if let Neighbour::Collinear { id: nid } = n {
-                if let Some(other) = model.wall(nid) {
+                if let Some(other) = model.wall(*nid) {
                     // The trimmed wall is the one whose Start is the shared point.
                     // i.e., this wall's Start == other's End → this wall is trimmed.
                     if End::point(End::Start, w).near(other.end, ENDPOINT_TOL) || End::point(End::End, w).near(other.start, ENDPOINT_TOL) {
@@ -345,7 +356,7 @@ pub fn solve_joins(model: &ArchModel) -> Vec<WallShape> {
         }
         for n in &nbrs_end {
             if let Neighbour::Collinear { id: nid } = n {
-                if let Some(other) = model.wall(nid) {
+                if let Some(other) = model.wall(*nid) {
                     let shared = End::point(End::End, w);
                     let other_endpoint = if shared.near(other.end, ENDPOINT_TOL) {
                         other.end
