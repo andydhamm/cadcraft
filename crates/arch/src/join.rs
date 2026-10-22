@@ -320,8 +320,8 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
         if t2 <= ENDPOINT_TOL || t2 >= nw_len - ENDPOINT_TOL {
             continue;
         }
-        // This end is the nearest to the crossing.
-        let this_is_nearest = if end == End::Start { pt.dist(cross_pt) <= w.end.dist(cross_pt) } else { pt.dist(cross_pt) <= w.start.dist(cross_pt) };
+        // This end is the nearest to the crossing (End wins the tie when equidistant).
+        let this_is_nearest = if end == End::Start { pt.dist(cross_pt) < w.end.dist(cross_pt) } else { pt.dist(cross_pt) <= w.start.dist(cross_pt) };
         if this_is_nearest {
             neighbours.push(Neighbour::X { id: nw.id, end, pt: cross_pt });
         }
@@ -395,9 +395,19 @@ fn plan_end(
         return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
     }
 
-    // Fan: no join, keep raw corners.
+    // Fan: more than MAX_JOIN_FAN ends share this point; butt every end at the
+    // cluster point (square end through the point, perpendicular to the wall's
+    // own direction). Never mitre, never loop.
     if nbrs.iter().any(|n| matches!(n, Neighbour::Fan { .. })) {
-        return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+        let pt = end.point(w);
+        let Some(wdir) = wall_dir(w) else {
+            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
+        };
+        let wperp = Vec2::new(-wdir.y, wdir.x);
+        let whalf = w.thickness / 2.0;
+        let left = pt + wperp * whalf;
+        let right = pt - wperp * whalf;
+        return Ok(EndPlan { left, right, join: Some(Join::Butt(end)) });
     }
 
     // X: square end at the crossing centre.
