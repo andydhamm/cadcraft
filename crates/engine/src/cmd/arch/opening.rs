@@ -108,7 +108,7 @@ impl OpeningM {
     /// Parse `txt` as the number requested by `num_target`.
     /// Accepts only finite values: `> 0.0` for width/height, `>= 0.0` for sill.
     /// Re-prompts (`Step::Continue`) on invalid input, mirroring `WallM::parse_number`.
-    fn parse_number(&mut self, txt: &str) -> Result<Step> {
+    fn parse_number(&mut self, txt: &str) -> Result<Step, EngineError> {
         let v = match txt.trim().parse::<f64>() {
             Ok(v) if v.is_finite() => v,
             _ => return Ok(Step::Continue),
@@ -132,7 +132,7 @@ impl OpeningM {
 
     /// Build the JSON parameter map and execute the JSON command.
     /// Prefers `offset` over `point` when both are set.
-    fn finish(&self, s: &mut Session) -> Result<Step> {
+    fn finish(&self, s: &mut Session) -> Result<Step, EngineError> {
         let Some(host) = self.host else {
             return Ok(Step::Continue);
         };
@@ -186,7 +186,7 @@ impl Interactive for OpeningM {
             .base_opt(self.host_point)
     }
 
-    fn input(&mut self, s: &mut Session, i: Input) -> Result<Step> {
+    fn input(&mut self, s: &mut Session, i: Input) -> Result<Step, EngineError> {
         match i {
             // --- Stage 1: wall selection ---
             Input::Pick(handles) if self.host.is_none() => {
@@ -194,10 +194,15 @@ impl Interactive for OpeningM {
                     if !is_arch_handle(*h) {
                         continue;
                     }
-                    let id = ArchId((*h).0 - ARCH_HANDLE_BASE);
-                    if let Some(d) = s.doc()
-                        && d.arch.wall(id).is_some()
-                    {
+                    let raw = (*h).0 - ARCH_HANDLE_BASE;
+                    let id = match raw.try_into() {
+                        Ok(v) => ArchId(v),
+                        Err(_) => continue,
+                    };
+                    let Ok(d) = s.doc() else {
+                        continue;
+                    };
+                    if d.arch.wall(id).is_some() {
                         self.host = Some(id);
                         return Ok(Step::Continue);
                     }
@@ -208,7 +213,7 @@ impl Interactive for OpeningM {
                 if !pt.is_finite() {
                     return Ok(Step::Continue);
                 }
-                let Some(d) = s.doc() else {
+                let Ok(d) = s.doc() else {
                     return Ok(Step::Continue);
                 };
                 let mut best: Option<(f64, ArchId)> = None;
