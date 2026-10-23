@@ -17,8 +17,9 @@ pub use cadcraft_doc::{ArchId, ArchModel, JoinKind, Level, RefSide, Wall, WallLa
 
 pub mod graph;
 pub mod join;
-pub mod wall;
 pub mod opening;
+pub mod opening;
+pub mod wall;
 
 #[cfg(test)]
 mod tests {

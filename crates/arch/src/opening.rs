@@ -6,9 +6,9 @@
 //! are finite and panic-free, so hostile DXF/command input cannot crash the
 //! crate.
 
+use super::{ArchId, ArchModel};
 use cadcraft_doc::{Opening, OpeningKind};
 use cadcraft_geom::Vec2;
-use super::{ArchId, ArchModel};
 
 /// Minimum width of a hinged/pocket/sliding opening, in metres.
 pub const MIN_HINGED_WIDTH: f64 = 0.3;
@@ -83,11 +83,7 @@ pub fn min_width(kind: OpeningKind, style: &str) -> f64 {
 /// Minimum wall segment required on each side of an opening for a given style.
 pub fn min_segment(style: &str) -> f64 {
     let s = style.to_ascii_lowercase();
-    if s.contains("bay") || s.contains("box") || s.contains("bow") {
-        MIN_BAY_SEGMENT
-    } else {
-        MIN_WINDOW_SEGMENT
-    }
+    if s.contains("bay") || s.contains("box") || s.contains("bow") { MIN_BAY_SEGMENT } else { MIN_WINDOW_SEGMENT }
 }
 
 /// Whether the two closed-ish spans `[a0..a1]` and `[b0..b1]` overlap.
@@ -128,17 +124,11 @@ pub fn validate_placement(
 
     let min_w = min_width(kind, style);
     if width < min_w {
-        return Err(PlacementError(format!(
-            "width {width} below minimum {min_w} for {kind:?}"
-        )));
+        return Err(PlacementError(format!("width {width} below minimum {min_w} for {kind:?}")));
     }
 
     if !wall.height.is_finite() || sill + height > wall.height {
-        return Err(PlacementError(format!(
-            "sill+height {} exceeds wall height {}",
-            sill + height,
-            wall.height
-        )));
+        return Err(PlacementError(format!("sill+height {} exceeds wall height {}", sill + height, wall.height)));
     }
 
     let offset = offset.clamp(0.0, len);
@@ -166,9 +156,7 @@ pub fn validate_placement(
         let gap = (b0 - c1).max(c0 - b1);
         let need = if other.mull_group.is_some() { 0.0 } else { MIN_SEPARATION };
         if gap < need - EPS {
-            return Err(PlacementError(format!(
-                "opening overlaps or is too close to opening {other:?}"
-            )));
+            return Err(PlacementError(format!("opening overlaps or is too close to opening {other:?}")));
         }
     }
 
@@ -181,17 +169,7 @@ pub fn validate_placement(
 pub fn place_opening(model: &ArchModel, mut o: Opening, fit: bool) -> Result<Opening, PlacementError> {
     let min_w = min_width(o.kind, &o.style);
 
-    match validate_placement(
-        model,
-        o.host,
-        o.offset,
-        o.width,
-        o.sill,
-        o.height,
-        o.kind,
-        &o.style,
-        None,
-    ) {
+    match validate_placement(model, o.host, o.offset, o.width, o.sill, o.height, o.kind, &o.style, None) {
         Ok(offset) => {
             o.offset = offset;
             o.rough_width = o.width + ROUGH_ALLOWANCE;
@@ -211,19 +189,7 @@ pub fn place_opening(model: &ArchModel, mut o: Opening, fit: bool) -> Result<Ope
                 if mid == lo || mid == hi {
                     break;
                 }
-                if validate_placement(
-                    model,
-                    o.host,
-                    o.offset,
-                    mid,
-                    o.sill,
-                    o.height,
-                    o.kind,
-                    &o.style,
-                    None,
-                )
-                .is_ok()
-                {
+                if validate_placement(model, o.host, o.offset, mid, o.sill, o.height, o.kind, &o.style, None).is_ok() {
                     lo = mid;
                 } else {
                     hi = mid;
@@ -232,17 +198,7 @@ pub fn place_opening(model: &ArchModel, mut o: Opening, fit: bool) -> Result<Ope
             o.width = lo;
             o.rough_width = lo + ROUGH_ALLOWANCE;
             o.rough_height = o.height + ROUGH_ALLOWANCE;
-            match validate_placement(
-                model,
-                o.host,
-                o.offset,
-                o.width,
-                o.sill,
-                o.height,
-                o.kind,
-                &o.style,
-                None,
-            ) {
+            match validate_placement(model, o.host, o.offset, o.width, o.sill, o.height, o.kind, &o.style, None) {
                 Ok(offset) => {
                     o.offset = offset;
                     auto_panel(&mut o);
@@ -292,12 +248,7 @@ mod tests {
     use cadcraft_geom::Vec2;
 
     fn wall(model: &mut ArchModel, start: Vec2, end: Vec2, thickness: f64) -> ArchId {
-        model.push_wall(Wall {
-            start,
-            end,
-            thickness,
-            ..Wall::default()
-        })
+        model.push_wall(Wall { start, end, thickness, ..Wall::default() })
     }
 
     fn opening_on(model: &mut ArchModel, host: ArchId, offset: f64, width: f64) -> ArchId {
@@ -309,17 +260,7 @@ mod tests {
     fn validate_rejects_an_opening_wider_than_the_wall() {
         let mut model = ArchModel::default();
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(1.0, 0.0), 0.2);
-        let res = validate_placement(
-            &model,
-            host,
-            0.0,
-            2.0,
-            0.0,
-            2.0,
-            OpeningKind::Door,
-            "hinged",
-            None,
-        );
+        let res = validate_placement(&model, host, 0.0, 2.0, 0.0, 2.0, OpeningKind::Door, "hinged", None);
         assert!(res.is_err());
     }
 
@@ -327,29 +268,9 @@ mod tests {
     fn validate_enforces_the_minimum_garage_width() {
         let mut model = ArchModel::default();
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
-        let res = validate_placement(
-            &model,
-            host,
-            1.0,
-            1.0,
-            0.0,
-            2.0,
-            OpeningKind::GarageDoor,
-            "garage",
-            None,
-        );
+        let res = validate_placement(&model, host, 1.0, 1.0, 0.0, 2.0, OpeningKind::GarageDoor, "garage", None);
         assert!(res.is_err());
-        let ok = validate_placement(
-            &model,
-            host,
-            1.0,
-            2.0,
-            0.0,
-            2.0,
-            OpeningKind::GarageDoor,
-            "garage",
-            None,
-        );
+        let ok = validate_placement(&model, host, 1.0, 2.0, 0.0, 2.0, OpeningKind::GarageDoor, "garage", None);
         assert!(ok.is_ok());
     }
 
@@ -358,17 +279,7 @@ mod tests {
         let mut model = ArchModel::default();
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(1.0, 0.0), 0.2);
         // Window at offset 0 leaves no segment at the start.
-        let res = validate_placement(
-            &model,
-            host,
-            0.0,
-            0.6,
-            0.0,
-            1.5,
-            OpeningKind::Window,
-            "slider",
-            None,
-        );
+        let res = validate_placement(&model, host, 0.0, 0.6, 0.0, 1.5, OpeningKind::Window, "slider", None);
         assert!(res.is_err());
     }
 
@@ -377,17 +288,7 @@ mod tests {
         let mut model = ArchModel::default();
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
         opening_on(&mut model, host, 0.5, 1.0);
-        let res = validate_placement(
-            &model,
-            host,
-            1.0,
-            1.0,
-            0.0,
-            2.0,
-            OpeningKind::Door,
-            "hinged",
-            None,
-        );
+        let res = validate_placement(&model, host, 1.0, 1.0, 0.0, 2.0, OpeningKind::Door, "hinged", None);
         assert!(res.is_err());
     }
 
@@ -395,17 +296,7 @@ mod tests {
     fn validate_rejects_a_sill_above_the_header() {
         let mut model = ArchModel::default();
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
-        let res = validate_placement(
-            &model,
-            host,
-            1.0,
-            0.6,
-            2.0,
-            2.0,
-            OpeningKind::Window,
-            "slider",
-            None,
-        );
+        let res = validate_placement(&model, host, 1.0, 0.6, 2.0, 2.0, OpeningKind::Window, "slider", None);
         assert!(res.is_err());
     }
 
@@ -417,18 +308,10 @@ mod tests {
         let placed = place_opening(&mut model, o, true).unwrap();
         assert!(placed.width >= min_width(OpeningKind::Door, "hinged"));
         assert!(placed.width < 2.0);
-        assert!(validate_placement(
-            &model,
-            host,
-            placed.offset,
-            placed.width,
-            placed.sill,
-            placed.height,
-            OpeningKind::Door,
-            &placed.style,
-            None,
-        )
-        .is_ok());
+        assert!(
+            validate_placement(&model, host, placed.offset, placed.width, placed.sill, placed.height, OpeningKind::Door, &placed.style, None,)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -454,36 +337,9 @@ mod tests {
     fn validate_survives_nan_and_infinite_input() {
         let mut model = ArchModel::default();
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
-        let nan = validate_placement(
-            &model,
-            host,
-            f64::NAN,
-            0.9,
-            0.0,
-            2.0,
-            OpeningKind::Door,
-            "hinged",
-            None,
-        );
+        let nan = validate_placement(&model, host, f64::NAN, 0.9, 0.0, 2.0, OpeningKind::Door, "hinged", None);
         assert!(nan.is_err());
-        let inf = validate_placement(
-            &model,
-            host,
-            f64::INFINITY,
-            0.9,
-            0.0,
-            2.0,
-            OpeningKind::Door,
-            "hinged",
-            None,
-        );
+        let inf = validate_placement(&model, host, f64::INFINITY, 0.9, 0.0, 2.0, OpeningKind::Door, "hinged", None);
         assert!(inf.is_err());
     }
 }
-
-crates/arch/src/lib.rs
-```python
-<<<<<<< SEARCH
-pub mod graph;
-pub mod join;
-pub mod wall;
