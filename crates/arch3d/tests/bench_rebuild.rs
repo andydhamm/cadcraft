@@ -7,8 +7,9 @@
 
 use std::time::Instant;
 
+use cadcraft_doc::arch::Opening;
 use cadcraft_doc::geom::Vec2;
-use cadcraft_doc::{ArchId, ArchModel, Opening, Wall};
+use cadcraft_doc::{ArchId, ArchModel, Wall};
 
 /// Build a deterministic 300-wall grid: 20 rows × 15 columns of small rooms.
 fn build_300_wall_grid() -> ArchModel {

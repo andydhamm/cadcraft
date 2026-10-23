@@ -40,7 +40,7 @@ fn raw_wall_mesh(wall: &Wall, object: ArchId) -> Option<Mesh> {
     let p2 = Vec2::new(wall.end.x - nx * half, wall.end.y - ny * half);
     let p3 = Vec2::new(wall.start.x - nx * half, wall.start.y - ny * half);
 
-    let positions: Vec<Vec3> = vec![
+    let pos_f64: Vec<Vec3> = vec![
         Vec3::new(p0.x, p0.y, 0.0),
         Vec3::new(p1.x, p1.y, 0.0),
         Vec3::new(p2.x, p2.y, 0.0),
@@ -54,7 +54,7 @@ fn raw_wall_mesh(wall: &Wall, object: ArchId) -> Option<Mesh> {
     let cx = (p0.x + p1.x + p2.x + p3.x) * 0.25;
     let cy = (p0.y + p1.y + p2.y + p3.y) * 0.25;
     let cz = h * 0.5;
-    let normals: Vec<Vec3> = positions
+    let normals_f64: Vec<Vec3> = pos_f64
         .iter()
         .map(|p| {
             let vx = p.x - cx;
@@ -65,9 +65,10 @@ fn raw_wall_mesh(wall: &Wall, object: ArchId) -> Option<Mesh> {
         })
         .collect();
 
-    let uvs: Vec<Vec2> = positions.iter().map(|p| Vec2::new(p.x, p.z)).collect();
-
-    let indices: Vec<usize> = vec![
+    let positions: Vec<[f32; 3]> = pos_f64.iter().map(|p| [p.x as f32, p.y as f32, p.z as f32]).collect();
+    let normals: Vec<[f32; 3]> = normals_f64.iter().map(|n| [n.x as f32, n.y as f32, n.z as f32]).collect();
+    let uvs: Vec<[f32; 2]> = pos_f64.iter().map(|p| [p.x as f32, p.z as f32]).collect();
+    let indices: Vec<u32> = vec![
         0, 1, 2, 0, 2, 3, // bottom
         4, 5, 6, 4, 6, 7, // top
         1, 2, 7, 1, 7, 6, // front
@@ -76,7 +77,7 @@ fn raw_wall_mesh(wall: &Wall, object: ArchId) -> Option<Mesh> {
         2, 3, 4, 2, 4, 6, // right
     ];
 
-    Some(Mesh { positions, normals, uvs, indices, material: "wall", object })
+    Some(Mesh { positions, normals, uvs, indices, material: "wall".to_string(), object })
 }
 
 /// A 3D scene composed of extruded architectural meshes.
@@ -325,7 +326,7 @@ mod tests {
 
     #[test]
     fn build_dirty_after_an_opening_edit_equals_a_full_build() {
-        use cadcraft_doc::Opening;
+        use cadcraft_doc::arch::Opening;
 
         let mut model = ArchModel::default();
         model.walls.push(Wall {
