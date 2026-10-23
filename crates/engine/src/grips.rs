@@ -4,6 +4,7 @@
 //! The UI calls [`Session::grip_edit`]; every edit runs through a `grip.*` command so it is
 //! undoable and reachable from scripts, the control channel and MCP.
 
+use cadcraft_doc::arch::Opening;
 use cadcraft_doc::{ARCH_HANDLE_BASE, ArchId, DimKind, EntityKind, Handle, LwPolyline, is_arch_handle};
 use cadcraft_geom::{Arc, EPS, Mat3, Polyline, Vec2, Vec3, norm_angle};
 use serde::{Deserialize, Serialize};
@@ -518,6 +519,24 @@ impl Session {
     /// same point, and the other modes transform every selected object.
     pub fn grip_edit(&mut self, handle: Handle, grip_index: usize, new_point: Vec2, mode: GripMode) -> Result<()> {
         if let Some(id) = arch_id_from_handle(handle) {
+            let d = self.doc()?;
+            if let Some(o) = d.arch.opening(id) {
+                if mode != GripMode::Stretch {
+                    return Err(EngineError::Other("arch openings support only the stretch grip".into()));
+                }
+                let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
+                let off = cadcraft_arch::opening::project_to_wall(&d.arch, o.host, new_point)
+                    .ok_or_else(|| EngineError::Other("could not project point to wall".into()))?;
+                return self
+                    .execute(
+                        "arch.opening.move",
+                        &json!({
+                            "opening": format!("o{}", id.0),
+                            "offset": off,
+                        }),
+                    )
+                    .map(|_| ());
+            }
             if mode != GripMode::Stretch {
                 return Err(EngineError::Other("arch walls support only the stretch grip".into()));
             }
@@ -551,6 +570,17 @@ impl Session {
     pub fn grips_of(&self, handle: Handle) -> Result<Vec<Vec2>> {
         if let Some(id) = arch_id_from_handle(handle) {
             let d = self.doc()?;
+            if let Some(o) = d.arch.opening(id) {
+                let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
+                let dir = (w.end - w.start).normalized();
+                let perp = dir.perp();
+                let centre = w.start + dir * o.offset;
+                let half_w = o.width / 2.0;
+                let half_t = w.thickness / 2.0;
+                let hinge = centre + perp * half_t - dir * half_w;
+                let far = centre + perp * half_t + dir * half_w;
+                return Ok(vec![centre, hinge, far]);
+            }
             return match d.arch.wall(id) {
                 Some(w) => Ok(vec![w.start, w.end]),
                 None => Err(EngineError::Other("no such object".into())),
@@ -624,5 +654,66 @@ mod arch_grips_tests {
         assert!(grips.len() >= 2);
         s.grip_edit(h, 0, Vec2::new(1.0, 1.0), GripMode::Stretch).unwrap();
         assert!(s.grip_edit(arch_handle(ArchId(0)), 0, Vec2::new(1.0, 1.0), GripMode::Move).is_err());
+    }
+
+    /// Build a session with one wall and one door on it.
+    fn setup_opening() -> Session {
+        let mut s = Session::new();
+        s.execute("wall", &json!({"points": [[0, 0], [10, 0]]})).unwrap();
+        s.execute("door", &json!({"wall": "w0", "offset": 5.0, "width": 0.9})).unwrap();
+        s
+    }
+
+    #[test]
+    fn opening_grips_are_on_the_host_wall() {
+        let s = setup_opening();
+        let d = s.doc().unwrap();
+        let o = d.arch.opening(ArchId(1)).unwrap();
+        let grips = s.grips_of(arch_handle(ArchId(1))).unwrap();
+        assert_eq!(grips.len(), 3);
+        // Centre grip sits on the wall centre line at the opening offset.
+        assert_eq!(grips[0], Vec2::new(5.0, 0.0));
+        // Hinge and far grips are offset by half the wall thickness.
+        let w = d.arch.wall(o.host).unwrap();
+        let half_t = w.thickness / 2.0;
+        assert_eq!(grips[1].y, half_t);
+        assert_eq!(grips[2].y, half_t);
+    }
+
+    #[test]
+    fn grip_drag_moves_an_opening_along_its_wall() {
+        let mut s = setup_opening();
+        s.grip_edit(arch_handle(ArchId(1)), 0, Vec2::new(7.0, 0.0), GripMode::Stretch).unwrap();
+        let d = s.doc().unwrap();
+        let o = d.arch.opening(ArchId(1)).unwrap();
+        assert_eq!(o.offset, 7.0);
+    }
+
+    #[test]
+    fn opening_grip_drag_is_undoable() {
+        let mut s = setup_opening();
+        s.grip_edit(arch_handle(ArchId(1)), 0, Vec2::new(7.0, 0.0), GripMode::Stretch).unwrap();
+        s.undo().unwrap();
+        let d = s.doc().unwrap();
+        let o = d.arch.opening(ArchId(1)).unwrap();
+        assert_eq!(o.offset, 5.0);
+    }
+
+    #[test]
+    fn opening_grip_rejects_the_move_mode() {
+        let s = setup_opening();
+        let mut s = s;
+        assert!(s.grip_edit(arch_handle(ArchId(1)), 0, Vec2::new(7.0, 0.0), GripMode::Move).is_err());
+    }
+
+    #[test]
+    fn wall_grips_still_work() {
+        let mut s = setup_opening();
+        let grips = s.grips_of(arch_handle(ArchId(0))).unwrap();
+        assert_eq!(grips, vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)]);
+        s.grip_edit(arch_handle(ArchId(0)), 1, Vec2::new(12.0, 0.0), GripMode::Stretch).unwrap();
+        let d = s.doc().unwrap();
+        let w = d.arch.wall(ArchId(0)).unwrap();
+        assert_eq!(w.end, Vec2::new(12.0, 0.0));
     }
 }
