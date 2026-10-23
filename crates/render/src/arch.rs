@@ -144,7 +144,9 @@ mod tests {
     #[test]
     fn arch_poché_respects_the_layer_colour() {
         let mut d = Drawing::new_metric();
-        d.layers.push(Layer { name: "A-WALL".into(), color: Color::Index(3), ..Default::default() });
+        if let Some(l) = d.layer_mut("A-WALL") {
+            l.color = Color::Index(3);
+        }
         d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
         d.touch_arch();
         let list = build_arch(&d, &Options::default());
