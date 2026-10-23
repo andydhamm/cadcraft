@@ -101,8 +101,9 @@ impl Offscreen {
         // Each row is `bytes_per_row` bytes; the first `row_bytes` are the valid pixels.
         // Re-pack into a tight contiguous RGBA buffer (dropping per-row padding).
         let row = self.width as u64 * 4;
-        let pixels: Vec<u8> =
-            (0..self.height as u64).flat_map(|r| &full[(r * bytes_per_row) as usize..(r * bytes_per_row) as usize + row as usize]).collect();
+        let pixels: Vec<u8> = (0..self.height as u64)
+            .flat_map(|r| full[(r * bytes_per_row) as usize..(r * bytes_per_row) as usize + row as usize].iter().copied())
+            .collect();
         let img =
             image::RgbaImage::from_raw(self.width, self.height, pixels).ok_or_else(|| Render3dError::Buffer("invalid image data".to_string()))?;
 
