@@ -2,9 +2,9 @@
 use crate::cmd::CommandSpec;
 use crate::{EngineError, Session};
 use cadcraft_arch::join::solve_joins;
-use cadcraft_arch::opening::{opening_handle, opening_label, rough_offset};
+use cadcraft_arch::opening::rough_offset;
 use cadcraft_arch::symbol::opening_symbol;
-use cadcraft_arch::wall::{wall_label, wall_layer_polygons, wall_polygon};
+use cadcraft_arch::wall::{wall_layer_polygons, wall_polygon};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::Handle;
 use serde_json::json;
@@ -102,9 +102,9 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     if openings_flag {
         for o in &d.arch.openings {
             let mut obj = JsonMap::new();
-            obj.insert("id".to_string(), json!(opening_label(o.id)));
-            obj.insert("handle".to_string(), json!(format!("{:x}", opening_handle(o.id))));
-            obj.insert("host".to_string(), json!(wall_label(o.host)));
+            obj.insert("id".to_string(), json!(format!("o{}", o.id.0)));
+            obj.insert("handle".to_string(), json!(format!("{:x}", 0xA000_0000u64 + o.id.0)));
+            obj.insert("host".to_string(), json!(format!("w{}", o.host.0)));
             obj.insert("kind".to_string(), json!(o.kind));
             obj.insert("style".to_string(), json!(o.style));
             obj.insert("offset".to_string(), json!(o.offset));
@@ -461,7 +461,7 @@ mod tests {
         let o = &openings[0];
         let handle = o["handle"].as_str().expect("handle must be a string");
         assert!(handle.starts_with("a000"), "handle must be lowercase starting with 'a000': {handle}");
-        assert!(handle.chars().all(|c| c.is_ascii_lowercase || c.is_ascii_digit()), "handle must contain only lowercase hex: {handle}");
+        assert!(handle.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle must contain only lowercase hex: {handle}");
         assert_eq!(handle.len(), 8, "unpadded handle for a low id should be 8 chars: {handle}");
     }
 }
