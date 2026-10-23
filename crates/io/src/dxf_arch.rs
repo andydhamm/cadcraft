@@ -397,7 +397,7 @@ mod tests {
 
     /// The per-opening `(layer, tags)` from `proxy_opening_polylines`, grouped by layer.
     fn poly_by_layer(polys: &[(String, Vec<Tag>)]) -> std::collections::HashMap<String, Vec<Vec<Tag>>> {
-        let mut map: std::collections::HashMap<String, Vec<Tag>> = std::collections::HashMap::new();
+        let mut map: std::collections::HashMap<String, Vec<Vec<Tag>>> = std::collections::HashMap::new();
         for (l, t) in polys {
             map.entry(l.clone()).or_default().push(t.clone());
         }
