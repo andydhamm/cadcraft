@@ -480,7 +480,6 @@ mod tests {
         assert!(inf.is_err());
     }
 }
-```
 
 crates/arch/src/lib.rs
 ```python
