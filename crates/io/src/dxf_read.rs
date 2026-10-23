@@ -285,6 +285,9 @@ fn entity(kind: &str, tags: &[Tag]) -> Option<(Common, EntityKind)> {
             EntityKind::Ellipse(e)
         }
         "LWPOLYLINE" => {
+            if crate::dxf_arch::is_arch_proxy(tags) {
+                return None;
+            }
             let mut verts = Vec::new();
             let mut cur: Option<PolyVertex> = None;
             for tg in tags {
