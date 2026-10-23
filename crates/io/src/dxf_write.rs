@@ -1912,6 +1912,9 @@ fn tags_for(d: &Drawing, version: Version, target: Version) -> Vec<Tag> {
     if let Some(chunks) = dxf_ext::constraint_chunks(&d.constraints, &d.parametric) {
         xrecords.push((dxf_ext::CONSTRAINTS_KEY, w.h(), chunks));
     }
+    if let Some(chunks) = crate::dxf_arch::arch_chunks(&d.arch) {
+        xrecords.push((crate::dxf_arch::ARCH_KEY, w.h(), chunks));
+    }
     if let Some(chunks) = dxf_ext::layer_state_chunks(&d.layer_states) {
         xrecords.push((dxf_ext::LAYER_STATES_KEY, w.h(), chunks));
     }
