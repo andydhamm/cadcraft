@@ -437,10 +437,10 @@ mod tests {
         assert_eq!(materials.len(), unique.len(), "duplicate materials in meshes: {materials:?}");
 
         // Expected materials for a window with frame, glass, casing, sill, header.
-        assert!(materials.contains("window-frame"));
-        assert!(materials.contains("window-glass"));
-        assert!(materials.contains("window-casing"));
-        assert!(materials.contains("window-sill"));
+        assert!(materials.contains(&"window-frame"));
+        assert!(materials.contains(&"window-glass"));
+        assert!(materials.contains(&"window-casing"));
+        assert!(materials.contains(&"window-sill"));
 
         // No per-box material proliferation.
         assert!(meshes.len() <= 8, "too many meshes: {} (expected <= 8 merged components)", meshes.len());
