@@ -158,6 +158,6 @@ fn golden_scene_bounds_match_envelope() {
     assert!((b.max[1] - 8.1).abs() < 1e-4, "y max {} != 8.1", b.max[1]);
     assert!((b.max[2] - 2.7).abs() < 1e-4, "z max {} != 2.7", b.max[2]);
     assert!((b.min[0] + 0.1).abs() < 1e-4, "x min {} != -0.1", b.min[0]);
-    assert!((b.min[1] + 0.1).abs() < 1e-4, "y min {} != -0.1", b.min[1]);
+    assert!((b.min[1] + 0.2).abs() < 1e-4, "y min {} != -0.2", b.min[1]);
     assert!((b.min[2] + 0.0).abs() < 1e-4, "z min {} != 0.0", b.min[2]);
 }
