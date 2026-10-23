@@ -18,6 +18,7 @@ pub mod build3d;
 pub mod inspect;
 pub mod sample;
 pub mod stretch;
+pub mod view;
 pub mod wall;
 
 /// Default layered wall band thicknesses for the given wall side.
@@ -44,5 +45,6 @@ pub fn specs() -> Vec<CommandSpec> {
     v.extend(build3d::specs());
     v.extend(sample::specs());
     v.extend(stretch::specs());
+    v.extend(view::specs());
     v
 }

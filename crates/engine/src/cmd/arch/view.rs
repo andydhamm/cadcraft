@@ -3,7 +3,7 @@
 //! `view3d` builds and reports the architectural 3D scene. `camera` sets
 //! (or reads) the orbit camera parameters used by the 3D pane.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::EngineError;
 use crate::cmd::CommandSpec;
@@ -11,13 +11,8 @@ use crate::cmd::CommandSpec;
 /// `view3d` and `camera` command specs.
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        CommandSpec::new("view3d", "3D View", run_view3d)
-            .menu(&["Architecture", "3D View"])
-            .params("{}")
-            .noundo(),
-        CommandSpec::new("camera", "Camera", run_camera)
-            .params("{azimuth?, elevation?, distance?, target?}")
-            .noundo(),
+        CommandSpec::new("view3d", "3D View", run_view3d).menu(&["Architecture", "3D View"]).params("{}").noundo(),
+        CommandSpec::new("camera", "Camera", run_camera).params("{azimuth?, elevation?, distance?, target?}").noundo(),
     ]
 }
 
@@ -32,11 +27,7 @@ fn run_view3d(s: &mut Session, _params: &Value) -> Result<Value, EngineError> {
     // Count meshes by building the scene (empty ArchModel yields 0).
     let meshes: usize = {
         let arch = &doc.arch;
-        if arch.walls().is_empty() {
-            0
-        } else {
-            crate::arch3d::build(arch).meshes.len()
-        }
+        if arch.walls().is_empty() { 0 } else { crate::arch3d::build(arch).meshes.len() }
     };
     Ok(json!({ "ok": true, "meshes": meshes, "revision": revision }))
 }
@@ -48,30 +39,21 @@ fn run_view3d(s: &mut Session, _params: &Value) -> Result<Value, EngineError> {
 /// values. Always returns `{"ok":true,"azimuth":..,"elevation":..,
 /// "distance":..,"target":[x,y,z]}`.
 fn run_camera(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
-    let azimuth = params
-        .get("azimuth")
-        .and_then(Value::as_f64)
-        .filter(|v| v.is_finite())
-        .unwrap_or_default();
-    let elevation = params
-        .get("elevation")
-        .and_then(Value::as_f64)
-        .filter(|v| v.is_finite())
-        .unwrap_or(0.35);
-    let distance = params
-        .get("distance")
-        .and_then(Value::as_f64)
-        .filter(|v| v.is_finite() && *v > 0.0)
-        .unwrap_or(10.0);
+    let azimuth = params.get("azimuth").and_then(Value::as_f64).filter(|v| v.is_finite()).unwrap_or_default();
+    let elevation = params.get("elevation").and_then(Value::as_f64).filter(|v| v.is_finite()).unwrap_or(0.35);
+    let distance = params.get("distance").and_then(Value::as_f64).filter(|v| v.is_finite() && *v > 0.0).unwrap_or(10.0);
     let target = params
         .get("target")
-        .and_then(|t| t.as_array().and_then(|a| {
-            a.get(0).and_then(Value::as_f64)
-                .filter(|x| x.is_finite())
-                .zip(a.get(1).and_then(Value::as_f64).filter(|y| y.is_finite()))
-                .zip(a.get(2).and_then(Value::as_f64).filter(|z| z.is_finite()))
-                .map(|((x, y), z)| (x, y, z))
-        }))
+        .and_then(|t| {
+            t.as_array().and_then(|a| {
+                a.get(0)
+                    .and_then(Value::as_f64)
+                    .filter(|x| x.is_finite())
+                    .zip(a.get(1).and_then(Value::as_f64).filter(|y| y.is_finite()))
+                    .zip(a.get(2).and_then(Value::as_f64).filter(|z| z.is_finite()))
+                    .map(|((x, y), z)| (x, y, z))
+            })
+        })
         .unwrap_or((0.0, 0.0, 0.0));
 
     // Persist the camera on the drawing so the pane picks it up on next build.
@@ -107,9 +89,7 @@ mod tests {
     #[test]
     fn camera_command_updates_the_orbit() {
         let mut s = Session::new();
-        let r = s
-            .execute("camera", &json!({ "azimuth": 1.5, "elevation": 0.3, "distance": 25.0 }))
-            .unwrap();
+        let r = s.execute("camera", &json!({ "azimuth": 1.5, "elevation": 0.3, "distance": 25.0 })).unwrap();
         assert!(r["ok"].as_bool().unwrap());
         assert_eq!(r["azimuth"].as_f64().unwrap(), 1.5);
         assert_eq!(r["elevation"].as_f64().unwrap(), 0.3);
