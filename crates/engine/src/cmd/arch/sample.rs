@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 
 use crate::Session;
 use cadcraft_arch::opening::validate_placement;
-use cadcraft_doc::arch::{MAX_OPENINGS, Opening, OpeningKind};
+use cadcraft_doc::arch::{ArchId, ArchModel, MAX_OPENINGS, Opening, OpeningKind};
 
 /// Seeded xorshift64*, copied bit-for-bit from the CLI's `Rng`.
 struct Rng(u64);
@@ -166,7 +166,7 @@ fn run_sample(s: &mut Session, params: &Value) -> crate::Result<Value> {
     d.arch.walls = generate_walls(n);
     // The generated chain hardcodes ids 1..=n; keep the shared counter in
     // step so `push_opening` hands out ids that continue after the walls.
-    d.arch.next_id = n;
+    d.arch.next_id = n as u32;
     d.arch.openings.clear();
     let placed = seed_openings(&mut d.arch, count);
     d.touch_arch();
