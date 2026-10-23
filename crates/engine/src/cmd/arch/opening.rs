@@ -436,7 +436,7 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
         "openings": [
             {
                 "id": opening_label(id),
-                "handle": format!("{:x}", opening_handle(id)),
+                "handle": format!("{:x}", opening_handle(id).0),
                 "host": wall_label(host),
                 "offset": offset,
                 "width": placed_width,
