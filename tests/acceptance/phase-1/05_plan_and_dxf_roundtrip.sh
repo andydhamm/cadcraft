@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# The plan shows filled poche (one filled ring per wall, spanning the wall envelope),
+# and the arch model round-trips through DXF as CADCRAFT_ARCH + proxy linework.
 set -uo pipefail
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 cargo run -q -p cadcraft-cli -- run --metric \
@@ -9,9 +11,17 @@ test -s "$tmp/p.svg" || { echo "FAIL: no svg"; exit 1; }
 python3 - "$tmp/p.svg" <<'PY' || exit 1
 import re,sys
 s=open(sys.argv[1]).read()
-n=len(re.findall(r'<polygon[^>]*fill="(?!none)',s))+len(re.findall(r'<path[^>]*fill="(?!none)',s))
-assert n>=6, f"expected filled poché polygons in the plan svg, got {n}"
-print("ok:",n,"filled poché rings")
+filled=re.findall(r'<path[^>]*fill="(?!none)[^"]*"[^>]*?d="([^"]*)"',s)
+n=len(filled)+len(re.findall(r'<polygon[^>]*fill="(?!none)',s))
+assert n>=5, f"expected a filled poche ring per wall in the plan svg, got {n}"
+pts=[]
+for d in filled:
+    pts+= [float(v) for v in re.findall(r'-?\d+\.?\d*(?:[eE][-+]?\d+)?',d)]
+assert len(pts)>=8, f"filled rings carry no coordinates ({len(pts)} numbers)"
+xs=pts[0::2]; ys=pts[1::2]
+w=max(xs)-min(xs); h=max(ys)-min(ys)
+assert abs(w-10.2)<0.05 and abs(h-8.2)<0.05, f"filled poche envelope {w:.3f}x{h:.3f}, expected 10.2x8.2"
+print("ok:",n,"filled poche rings, envelope %.2fx%.2f"%(w,h))
 PY
 info=$(cargo run -q -p cadcraft-cli -- run "$tmp/p.dxf" --cmd 'arch.inspect {}' 2>/dev/null | tail -n 1) || { echo "FAIL: reopen failed"; exit 1; }
 python3 - "$info" "$tmp/p.dxf" <<'PY' || exit 1
