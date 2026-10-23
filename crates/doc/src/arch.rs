@@ -1074,7 +1074,7 @@ mod tests {
         m.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
         let oid = m.openings.last().unwrap().id.clone();
         m.push_opening(Opening::new(wid, 2.0, 0.9, 2.1, OpeningKind::Door));
-        m.openings.last().unwrap().id = oid;
+        m.openings.last_mut().unwrap().id = oid;
 
         let msgs = m.validate();
         assert!(msgs.iter().any(|m| m.contains("duplicate opening id")));
