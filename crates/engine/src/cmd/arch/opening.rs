@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(one["offset"], json!(3.0));
         assert_eq!(one["width"], json!(0.9));
         assert_eq!(one["resized"], json!(false));
-        assert_eq!(one["revision"], json!(rev_after));
+        assert_eq!(r["revision"], json!(rev_after));
     }
 
     #[test]
