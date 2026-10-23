@@ -416,12 +416,6 @@ mod tests {
         assert!(s.is_none(), "expected None for missing host wall");
     }
 }
-//! Generated 2D plan symbols for architectural openings.
-//!
-//! A [`Symbol`] is a set of world-space polylines (each a [`Vec<Vec2>`]).
-//! The symbol is generated from [`Opening`] data together with its host wall
-//! and is consumed at draw time by the plan renderer (`render::arch`) so that
-//! generated symbols follow the one-source-of-truth rule.
 
 use super::{ArchId, ArchModel};
 use cadcraft_doc::arch::{Hinge, Opening, OpeningKind, Swing};
