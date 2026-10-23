@@ -74,6 +74,9 @@
 	Arch Inspect	Архітектурний огляд
 	Architecture	Архітектура
 	Arch Sample	Архітектурний зразок
+	Door	Дверь
+	Window	Вікно
+	Garage Door	Гаражна дверь
 	Stretch Wall	Розтянути стіну
 	Apply to:	Застосувати до:
 	Apply true color	Застосувати колір RGB
@@ -1196,7 +1199,6 @@
 	Wall	Стіна
 	White	Білий
 	Width factor	Коефіцієнт ширини
-	Window	Вікно
 	Wipeout	Маскування
 	Workspace Switching	Перемикання робочого простору
 	Write Block	Записати блок у файл
@@ -1369,6 +1371,4 @@
 	Edit Command Aliases (PGP)...	Редагувати псевдоніми команд (PGP)...
 
 # Architecture (arch3d)
-	Door	Двері
-	Garage Door	Гаражні двері
 	Move Opening	Перемістити отвір
