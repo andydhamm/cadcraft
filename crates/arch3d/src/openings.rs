@@ -409,7 +409,7 @@ mod tests {
         for m in &meshes {
             if m.material.contains("header") {
                 for p in &m.positions {
-                    assert!(p[2] <= wall_height + 1e-6, "header exceeds wall height: z={}", p[2]);
+                    assert!(p[2].into() <= wall_height + 1e-6, "header exceeds wall height: z={}", p[2].into());
                 }
             }
         }
@@ -468,8 +468,8 @@ mod tests {
             let half_t = wall.thickness / 2.0;
             for m in opening_meshes(&model, &o) {
                 for p in &m.positions {
-                    let n = (Vec2::new(p[0], p[1]) - center).dot(normal);
-                    assert!(n.abs() <= half_t + 1e-6, "vertex {} of {} leaves wall band (n={})", p[0], m.material, n);
+                    let n = (Vec2::new(p[0].into(), p[1].into()) - center).dot(normal);
+                    assert!(n.abs() <= half_t + 1e-6, "vertex {} of {} leaves wall band (n={})", p[0].into(), m.material, n);
                 }
             }
         }
@@ -605,21 +605,23 @@ mod tests {
         for o in &model.openings {
             for m in opening_meshes(&model, o) {
                 for p in &m.positions {
-                    x_min = x_min.min(p[0]);
-                    x_max = x_max.max(p[0]);
-                    y_min = y_min.min(p[1]);
-                    y_max = y_max.max(p[1]);
-                    z_min = z_min.min(p[2]);
-                    z_max = z_max.max(p[2]);
+                    x_min = x_min.min(p[0].into());
+                    x_max = x_max.max(p[0].into());
+                    y_min = y_min.min(p[1].into());
+                    y_max = y_max.max(p[1].into());
+                    z_min = z_min.min(p[2].into());
+                    z_max = z_max.max(p[2].into());
                 }
             }
         }
 
-        assert!(x_min >= -eps, "scene x_min too low: {}", x_min);
-        assert!(x_max - x_min <= expected[0], "scene width too large: {}", x_max - x_min);
-        assert!(y_min >= -eps, "scene y_min too low: {}", y_min);
-        assert!(y_max - y_min <= expected[1], "scene depth too large: {}", y_max - y_min);
-        assert!((z_max - z_min).abs() <= expected[2], "scene height off: {}", z_max - z_min);
-        assert!((z_max - z_min).abs() >= expected[2] - 1e-3, "scene height too small: {}", z_max - z_min);
+        assert!(x_min >= -t / 2.0 - eps, "scene x_min too low: {}", x_min);
+        assert!(x_max - x_min <= expected.x, "scene width too large: {}", x_max - x_min);
+        assert!(x_max - x_min >= expected.x - 2.0 * eps, "scene width too small: {}", x_max - x_min);
+        assert!(y_min >= -t / 2.0 - eps, "scene y_min too low: {}", y_min);
+        assert!(y_max - y_min <= expected.y, "scene depth too large: {}", y_max - y_min);
+        assert!(y_max - y_min >= expected.y - 2.0 * eps, "scene depth too small: {}", y_max - y_min);
+        assert!((z_max - z_min).abs() <= expected.z, "scene height off: {}", z_max - z_min);
+        assert!((z_max - z_min).abs() >= expected.z - 2.0 * eps, "scene height too small: {}", z_max - z_min);
     }
 }
