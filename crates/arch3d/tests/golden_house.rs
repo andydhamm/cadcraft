@@ -50,8 +50,27 @@ fn scene_bytes(scene: &Scene3d) -> Vec<u8> {
     buf
 }
 
-/// Build the 10×8 m demo house model programmatically (matches the fixture JSON).
+/// Load `fixtures/house_10x8.json` and give its walls ids in file order.
 fn load_fixture() -> ArchModel {
+    let parsed: Result<ArchModel, _> = serde_json::from_str(include_str!("fixtures/house_10x8.json"));
+    assert!(parsed.is_ok(), "fixture does not parse as an ArchModel: {:?}", parsed.as_ref().err());
+    let parsed = parsed.unwrap_or_default();
+    let mut model = ArchModel::default();
+    for w in parsed.walls {
+        model.add_wall(w);
+    }
+    model
+}
+
+/// The fixture used to be documented as loaded but was never read (and did not parse:
+/// a float `base_level`, `"Auto"` instead of `"auto"`). Keep it honest.
+#[test]
+fn fixture_json_matches_the_programmatic_house() {
+    assert_eq!(load_fixture().walls, programmatic_house().walls);
+}
+
+/// Build the 10×8 m demo house model programmatically (matches the fixture JSON).
+fn programmatic_house() -> ArchModel {
     let mut model = ArchModel::default();
 
     // Exterior walls: 4 walls forming a 10×8 m rectangle
@@ -142,7 +161,7 @@ fn golden_house_scene_hash() {
 
     // Golden value recorded on the first successful build; update this if the
     // geometry changes intentionally.
-    const GOLDEN_HASH: u64 = 0xcc91_3625_55fc_5450;
+    const GOLDEN_HASH: u64 = 0xf288_5117_3f3e_77d8;
     assert_eq!(hash, GOLDEN_HASH, "scene hash drift: {hash:016x} != GOLDEN_HASH");
 }
 
@@ -153,7 +172,6 @@ fn build_dirty_equals_full_build() {
     let model = load_fixture();
     let full = build(&model);
 
-    let dirty: std::collections::BTreeSet<_> = full.meshes.iter().map(|m| m.object).collect();
     // Keep only the first wall marked dirty; recompute from a "previous"
     // scene that already has all other walls.
     let first_id = full.meshes.first().map(|m| m.object).expect("no meshes");
@@ -167,4 +185,30 @@ fn build_dirty_equals_full_build() {
     let tri_full: usize = full.meshes.iter().map(|m| m.indices.len() / 3).sum();
     let tri_dirty: usize = dirty_scene.meshes.iter().map(|m| m.indices.len() / 3).sum();
     assert_eq!(tri_full, tri_dirty, "build_dirty changed triangle count");
+    // Same geometry, byte for byte (counts alone would not notice a stale or moved mesh).
+    assert_eq!(scene_bytes(&dirty_scene), scene_bytes(&full), "build_dirty geometry differs from a full build");
+}
+
+/// The two interior walls of the fixture cross at (5, 4). A crossing joins both walls; it
+/// must not cut either back to the crossing point (which deleted half of each interior wall
+/// from the 3D model and from the plan).
+#[test]
+fn crossing_interior_walls_keep_their_full_length() {
+    let model = load_fixture();
+    let scene = build(&model);
+    for (id, axis, lo, hi) in [(ArchId(4), 0usize, 0.0f64, 10.0f64), (ArchId(5), 1, 0.0, 8.0)] {
+        let mesh = scene.mesh_for(&id).unwrap_or_else(|| unreachable_mesh(id));
+        let b = mesh.bounds();
+        assert!(
+            b.min[axis] <= lo + 0.2 && b.max[axis] >= hi - 0.2,
+            "interior wall {id} spans {}..{} on axis {axis}, expected about {lo}..{hi}",
+            b.min[axis],
+            b.max[axis]
+        );
+    }
+}
+
+/// Test-only fallback for a missing mesh, so the assertion message names the wall.
+fn unreachable_mesh(id: ArchId) -> &'static cadcraft_arch3d::Mesh {
+    panic!("no mesh for interior wall {id}")
 }
