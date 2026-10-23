@@ -40,7 +40,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     for w in &d.arch.walls {
         let mut obj = JsonMap::new();
         obj.insert("id".to_string(), json!(w.id));
-        obj.insert("handle".to_string(), json!(Handle(0xA000_0000u64 + u64::from(w.id.0)).hex()));
+        obj.insert("handle".to_string(), json!(format!("{:016X}", 0xA000_0000u64 + u64::from(w.id.0))));
         obj.insert("start".to_string(), json!([w.start.x, w.start.y]));
         obj.insert("end".to_string(), json!([w.end.x, w.end.y]));
         obj.insert("thickness".to_string(), json!(w.thickness));
@@ -103,7 +103,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
         for o in &d.arch.openings {
             let mut obj = JsonMap::new();
             obj.insert("id".to_string(), json!(o.id));
-            obj.insert("handle".to_string(), json!(Handle(0xA000_0000u64 + u64::from(o.id.0)).hex()));
+            obj.insert("handle".to_string(), json!(format!("{:016X}", 0xA000_0000u64 + u64::from(o.id.0))));
             obj.insert("host".to_string(), json!(o.host));
             obj.insert("kind".to_string(), json!(o.kind));
             obj.insert("style".to_string(), json!(o.style));
