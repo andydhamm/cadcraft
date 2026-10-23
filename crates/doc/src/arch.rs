@@ -364,6 +364,7 @@ impl Default for ArchModel {
     fn default() -> Self {
         ArchModel {
             walls: Vec::new(),
+            openings: Vec::new(),
             next_id: 0,
             levels: vec![Level { index: 0, name: "Level 1".into(), elevation: 0.0, floor_to_floor: 2.4, ceiling_height: 2.4, structure: 0.2 }],
             types: vec![
@@ -463,7 +464,7 @@ impl ArchModel {
     /// All openings on a given host wall, sorted by offset.
     pub fn openings_on(&self, host: ArchId) -> Vec<&Opening> {
         let mut v: Vec<&Opening> = self.openings.iter().filter(|o| o.host == host).collect();
-        v.sort_by_key(|o| o.offset);
+        v.sort_by(|a, b| a.offset.partial_cmp(&b.offset).unwrap_or(std::cmp::Ordering::EQUAL));
         v
     }
 
