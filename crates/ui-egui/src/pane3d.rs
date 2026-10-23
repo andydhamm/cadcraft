@@ -5,8 +5,9 @@
 //! rebuilt only when `Drawing::arch_revision` advances since the last frame.
 //! Without a GPU adapter the pane shows a static "3D not available" placeholder
 //! rather than panicking or showing a blank window.
-
-use std::cell::RefCell;
+//!
+//! **Status:** nothing sets [`Pane3d::available`] yet and `render3d` has no draw pass, so
+//! the pane always shows the placeholder; it must not blame a missing GPU for that.
 
 /// Orbit-camera parameters for the 3D pane.
 #[derive(Clone, Copy, Debug)]
@@ -46,6 +47,12 @@ pub struct Pane3d {
     pub has_content: bool,
 }
 
+impl Default for Pane3d {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Pane3d {
     /// New pane with a default orbit and no scene built yet.
     pub fn new() -> Self {
@@ -76,8 +83,10 @@ pub fn draw(ui: &mut egui::Ui, pane: &mut Pane3d) {
     egui::Frame::default().show(ui, |ui| {
         ui.add_space(6.0);
         if !pane.available {
-            ui.label("3D not available");
-            ui.label("No GPU adapter detected.");
+            // `available` is never set until the renderer exists: saying "no GPU adapter"
+            // here sent people with a working GPU after a hardware problem they do not have.
+            ui.label("3D not available yet");
+            ui.label("The 3D view is not implemented in this build; Build 3D and .glb export work.");
         } else if pane.last_revision == 0 || !pane.has_content {
             ui.label("No walls yet.");
         } else {

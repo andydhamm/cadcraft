@@ -231,10 +231,14 @@ fn run_ui_command_inner(app: &mut CadApp, id: &str, params: &Value) -> Option<Re
             toggle(&mut app.ui.show_command_line, params);
             Ok(Value::Null)
         }
+        // A toggle (like the other View items): it used to switch the 3D pane on for good,
+        // replacing the drawing area with no way back to the 2D canvas.
         "ui.show3d" => {
-            app.ui.show_three_d = true;
-            let _ = app.run("view3d", json!({}));
-            Ok(json!({"showThreeD": true}))
+            toggle(&mut app.ui.show_three_d, params);
+            if app.ui.show_three_d {
+                let _ = app.run("view3d", json!({}));
+            }
+            Ok(json!({"showThreeD": app.ui.show_three_d}))
         }
         "ui.toggle.viewcube" => {
             toggle(&mut app.ui.show_viewcube, params);
@@ -760,6 +764,19 @@ mod tests {
         assert!(r["data"].is_string());
         assert_eq!(asked.borrow().len(), 1);
         assert!(app.ui.dialog.is_none());
+    }
+
+    #[test]
+    fn show3d_toggles_back_to_the_drawing() {
+        let (mut app, _) = app_with_picker(None);
+        assert!(!app.ui.show_three_d);
+        assert_eq!(app.run("ui.show3d", json!({})).unwrap()["showThreeD"], json!(true));
+        assert!(app.ui.show_three_d);
+        assert_eq!(app.run("ui.show3d", json!({})).unwrap()["showThreeD"], json!(false));
+        assert!(!app.ui.show_three_d, "a second View ▸ 3D View must return to the 2D canvas");
+        app.run("ui.show3d", json!({"on": true})).unwrap();
+        app.run("ui.show3d", json!({"on": true})).unwrap();
+        assert!(app.ui.show_three_d, "{{on:true}} sets rather than toggles");
     }
 
     #[test]
