@@ -69,7 +69,7 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
     // 3. Sizes with per-kind defaults.
     let (def_width, def_height, def_sill) = match kind {
         OpeningKind::Door => (0.9, 2.1, 0.0),
-        OpeningKind::Window => (1.2, 1.2, 0.9),
+        OpeningKind::Window | OpeningKind::CasedOpening => (1.2, 1.2, 0.9),
         OpeningKind::GarageDoor => (2.4, 2.1, 0.0),
     };
     let width = crate::cmd::size_param(cmd, p, "width", false)?.unwrap_or(def_width);
@@ -84,7 +84,7 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
         let lower = st.to_ascii_lowercase();
         let valid: &[&str] = match kind {
             OpeningKind::Door => DOOR_STYLES.as_slice(),
-            OpeningKind::Window => WINDOW_STYLES.as_slice(),
+            OpeningKind::Window | OpeningKind::CasedOpening => WINDOW_STYLES.as_slice(),
             OpeningKind::GarageDoor => GARAGE_STYLES.as_slice(),
         };
         if !valid.contains(&lower.as_str()) {
@@ -193,7 +193,7 @@ mod tests {
 
     /// A session with one 10-unit wall at the origin (host `w0`).
     fn session_with_wall() -> Session {
-        let s = Session::new();
+        let mut s = Session::new();
         let r = s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]]}));
         r.expect("create wall");
         s
