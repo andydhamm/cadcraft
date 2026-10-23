@@ -251,7 +251,8 @@ mod tests {
 
     #[test]
     fn parse_arch_rejects_unknown_versions() {
-        assert!(parse_arch(r#"{"version": 2, "model": { "walls": [] }}"#).is_none());
+        // Only schema versions 1 and 2 are understood; 3 and later are unknown.
+        assert!(parse_arch(r#"{"version": 3, "model": { "walls": [] }}"#).is_none());
         assert!(parse_arch(r#"{"version": 0, "model": { "walls": [] }}"#).is_none());
     }
 
