@@ -137,7 +137,8 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
 
     let placed = place_opening(&d.arch, o, fit).map_err(|e| crate::cmd::bad(cmd, e.to_string()))?;
 
-    let resized = (placed.width - requested_width).abs() > 1e-9;
+    let placed_width = placed.width;
+    let resized = (placed_width - requested_width).abs() > 1e-9;
     let id = d.arch.push_opening(placed);
     d.touch_arch();
 
@@ -148,7 +149,7 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
                 "handle": arch_handle(id).hex(),
                 "host": host.to_string(),
                 "offset": offset,
-                "width": placed.width,
+                "width": placed_width,
                 "resized": resized,
             }
         ],
