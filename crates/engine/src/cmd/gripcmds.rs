@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::curves;
 use super::*;
-use crate::grips::{GripAction, GripMode, grip_action, mode_matrix, stretch_grip};
+use crate::grips::{ArchTarget, GripAction, GripMode, grip_action, mode_matrix, stretch_grip};
 use crate::{EngineError, Result, Session};
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -41,16 +41,35 @@ fn stretch(s: &mut Session, cmd: &str, p: &Value) -> Result<Value> {
         .ok_or_else(|| bad(cmd, "`handle` is required"))?;
     let i = index_param(cmd, p)?;
     let to = point_req(cmd, p, "to")?;
-    if let Some(id) = crate::grips::arch_id_from_handle(h) {
-        let end = if i == 0 { "start" } else { "end" };
-        return s.execute(
-            "arch.wall.stretch",
-            &json!({
-                "wall": format!("w{}", id.0),
-                "end": end,
-                "to": [to.x, to.y],
-            }),
-        );
+    if let Some(target) = crate::grips::arch_id_from_handle(h) {
+        return match target {
+            ArchTarget::Wall(id) => {
+                let end = if i == 0 { "start" } else { "end" };
+                s.execute(
+                    "arch.wall.stretch",
+                    &json!({
+                        "wall": format!("w{}", id.0),
+                        "end": end,
+                        "to": [to.x, to.y],
+                    }),
+                )
+            }
+            ArchTarget::Opening(id) => {
+                let d = s.doc()?;
+                let o = d.arch.opening(id).ok_or_else(|| bad(cmd, "no such opening"))?;
+                if d.arch.wall(o.host).is_none() {
+                    return Err(bad(cmd, "no such wall"));
+                }
+                let off = cadcraft_arch::opening::project_to_wall(&d.arch, o.host, to).ok_or_else(|| bad(cmd, "could not project point to wall"))?;
+                s.execute(
+                    "arch.opening.move",
+                    &json!({
+                        "opening": format!("o{}", id.0),
+                        "offset": off,
+                    }),
+                )
+            }
+        };
     }
     if curves::is_locked(s, h) {
         return Err(EngineError::Other("The object is on a locked layer.".into()));

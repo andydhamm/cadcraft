@@ -507,14 +507,31 @@ pub fn mode_matrix(mode: GripMode, base: Vec2, to: Vec2) -> Option<Mat3> {
     }
 }
 
-/// The [`ArchId`] for a wall proxy handle, or `None` if `h` is not a wall arch handle.
+/// The arch object a proxy handle points at. Walls and openings are stored in separate
+/// lists, so a wall id and an opening id may be the same number. The handle range alone
+/// (not the id) tells which list to look up: opening ranges sit `OPENING_HANDLE_OFFSET`
+/// above `ARCH_HANDLE_BASE`; the remainder of the arch range is walls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchTarget {
+    /// A wall, resolved through `ArchModel::wall`.
+    Wall(ArchId),
+    /// An opening, resolved through `ArchModel::opening`.
+    Opening(ArchId),
+}
+
+/// Resolve an arch proxy handle to its target, or `None` if `h` is not an arch proxy handle.
 ///
-/// Opening handles return `None` (they route to `arch.opening.move`, not `arch.wall.stretch`).
-pub fn arch_id_from_handle(h: Handle) -> Option<ArchId> {
+/// Opening ranges resolve to `ArchTarget::Opening`; everything else in the arch range
+/// resolves to `ArchTarget::Wall`. Because a wall id and an opening id can share a number,
+/// this is the single place that disambiguates them.
+pub fn arch_id_from_handle(h: Handle) -> Option<ArchTarget> {
     if is_opening_handle(h) {
-        return None;
+        return Some(ArchTarget::Opening(ArchId((h.0 - ARCH_HANDLE_BASE - OPENING_HANDLE_OFFSET) as u32)));
     }
-    if is_arch_handle(h) { Some(ArchId((h.0 - ARCH_HANDLE_BASE) as u32)) } else { None }
+    if is_arch_handle(h) {
+        return Some(ArchTarget::Wall(ArchId((h.0 - ARCH_HANDLE_BASE) as u32)));
+    }
+    None
 }
 
 impl Session {
@@ -523,45 +540,42 @@ impl Session {
     /// covers the selection: a stretch drags the grips of other selected objects that sit on the
     /// same point, and the other modes transform every selected object.
     pub fn grip_edit(&mut self, handle: Handle, grip_index: usize, new_point: Vec2, mode: GripMode) -> Result<()> {
-        if is_opening_handle(handle) {
-            let id = ArchId((handle.0 - ARCH_HANDLE_BASE - OPENING_HANDLE_OFFSET) as u32);
+        if let Some(target) = arch_id_from_handle(handle) {
+            if mode != GripMode::Stretch {
+                return match target {
+                    ArchTarget::Opening(_) => Err(EngineError::Other("arch openings support only the stretch grip".into())),
+                    ArchTarget::Wall(_) => Err(EngineError::Other("arch walls support only the stretch grip".into())),
+                };
+            }
             let d = self.doc()?;
-            if let Some(o) = d.arch.opening(id) {
-                if mode != GripMode::Stretch {
-                    return Err(EngineError::Other("arch openings support only the stretch grip".into()));
-                }
-                let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
-                let off = cadcraft_arch::opening::project_to_wall(&d.arch, o.host, new_point)
-                    .ok_or_else(|| EngineError::Other("could not project point to wall".into()))?;
-                return self
-                    .execute(
+            return match target {
+                ArchTarget::Opening(id) => {
+                    let o = d.arch.opening(id).ok_or_else(|| EngineError::Other("no such opening".into()))?;
+                    let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
+                    let off = cadcraft_arch::opening::project_to_wall(&d.arch, o.host, new_point)
+                        .ok_or_else(|| EngineError::Other("could not project point to wall".into()))?;
+                    self.execute(
                         "arch.opening.move",
                         &json!({
                             "opening": format!("o{}", id.0),
                             "offset": off,
                         }),
                     )
-                    .map(|_| ());
-            }
-            return Err(EngineError::Other("no such opening".into()));
-        }
-        if is_arch_handle(handle) {
-            let id = ArchId((handle.0 - ARCH_HANDLE_BASE) as u32);
-            let d = self.doc()?;
-            if mode != GripMode::Stretch {
-                return Err(EngineError::Other("arch walls support only the stretch grip".into()));
-            }
-            let end = if grip_index == 0 { "start" } else { "end" };
-            return self
-                .execute(
-                    "arch.wall.stretch",
-                    &json!({
-                        "wall": format!("w{}", id.0),
-                        "end": end,
-                        "to": [new_point.x, new_point.y],
-                    }),
-                )
-                .map(|_| ());
+                    .map(|_| ())
+                }
+                ArchTarget::Wall(id) => {
+                    let end = if grip_index == 0 { "start" } else { "end" };
+                    self.execute(
+                        "arch.wall.stretch",
+                        &json!({
+                            "wall": format!("w{}", id.0),
+                            "end": end,
+                            "to": [new_point.x, new_point.y],
+                        }),
+                    )
+                    .map(|_| ())
+                }
+            };
         }
         let to = [new_point.x, new_point.y];
         let hs: Vec<String> = std::iter::once(handle).chain(self.selection().into_iter().filter(|h| *h != handle)).map(|h| h.hex()).collect();
@@ -579,28 +593,25 @@ impl Session {
 
     /// Grip points of an object (the indices `grip_edit` takes).
     pub fn grips_of(&self, handle: Handle) -> Result<Vec<Vec2>> {
-        if is_opening_handle(handle) {
-            let id = ArchId((handle.0 - ARCH_HANDLE_BASE - OPENING_HANDLE_OFFSET) as u32);
+        if let Some(target) = arch_id_from_handle(handle) {
             let d = self.doc()?;
-            let Some(o) = d.arch.opening(id) else {
-                return Err(EngineError::Other("no such object".into()));
-            };
-            let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
-            let dir = (w.end - w.start).normalized();
-            let perp = dir.perp();
-            let centre = w.start + dir * o.offset;
-            let half_w = o.width / 2.0;
-            let half_t = w.thickness / 2.0;
-            let hinge = centre + perp * half_t - dir * half_w;
-            let far = centre + perp * half_t + dir * half_w;
-            return Ok(vec![centre, hinge, far]);
-        }
-        if is_arch_handle(handle) {
-            let id = ArchId((handle.0 - ARCH_HANDLE_BASE) as u32);
-            let d = self.doc()?;
-            return match d.arch.wall(id) {
-                Some(w) => Ok(vec![w.start, w.end]),
-                None => Err(EngineError::Other("no such object".into())),
+            return match target {
+                ArchTarget::Opening(id) => {
+                    let o = d.arch.opening(id).ok_or_else(|| EngineError::Other("no such object".into()))?;
+                    let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
+                    let dir = (w.end - w.start).normalized();
+                    let perp = dir.perp();
+                    let centre = w.start + dir * o.offset;
+                    let half_w = o.width / 2.0;
+                    let half_t = w.thickness / 2.0;
+                    let hinge = centre + perp * half_t - dir * half_w;
+                    let far = centre + perp * half_t + dir * half_w;
+                    Ok(vec![centre, hinge, far])
+                }
+                ArchTarget::Wall(id) => match d.arch.wall(id) {
+                    Some(w) => Ok(vec![w.start, w.end]),
+                    None => Err(EngineError::Other("no such object".into())),
+                },
             };
         }
         self.doc()?.entity(handle).map(|e| e.kind.grips()).ok_or_else(|| EngineError::Other("no such object".into()))
@@ -732,5 +743,34 @@ mod arch_grips_tests {
         let d = s.doc().unwrap();
         let w = d.arch.wall(ArchId(0)).unwrap();
         assert_eq!(w.end, Vec2::new(12.0, 0.0));
+    }
+
+    /// An opening's proxy handle must resolve to the opening, never to the wall that
+    /// shares the same id number; the handle range (not the id) is what disambiguates.
+    #[test]
+    fn opening_handles_resolve_to_openings_not_walls() {
+        let s = setup_opening();
+
+        // In this fixture the wall and opening both carry id 0, so the only thing
+        // that separates them is their respective handle ranges.
+        assert_eq!(arch_id_from_handle(opening_handle(ArchId(0))), Some(ArchTarget::Opening(ArchId(0))));
+        assert_eq!(arch_id_from_handle(arch_handle(ArchId(0))), Some(ArchTarget::Wall(ArchId(0))));
+
+        // Picking the opening handle must return the three opening grips on the host
+        // wall, not the two endpoint grips of the wall.
+        assert_eq!(s.grips_of(opening_handle(ArchId(0))).unwrap().len(), 3);
+        assert_eq!(s.grips_of(arch_handle(ArchId(0))).unwrap().len(), 2);
+    }
+
+    /// Dragging an opening's grip slides the opening along its host wall; the host
+    /// wall stays put and the opening offset tracks the dragged point.
+    #[test]
+    fn opening_grips_drag_along_the_host_wall() {
+        let mut s = setup_opening();
+        s.grip_edit(opening_handle(ArchId(0)), 0, Vec2::new(3.0, 0.0), GripMode::Stretch).unwrap();
+        let d = s.doc().unwrap();
+        let o = d.arch.opening(ArchId(0)).unwrap();
+        assert_eq!(o.offset, 3.0);
+        assert_eq!(o.host, ArchId(0));
     }
 }
