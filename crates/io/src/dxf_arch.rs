@@ -20,8 +20,15 @@ pub(crate) const ARCH_KEY: &str = "CADCRAFT_ARCH";
 /// Layer of the save-time proxy plan polylines.
 pub(crate) const ARCH_PROXY_LAYER: &str = "A-WALL";
 
-/// `CADCRAFT` xdata marker identifying a proxy polyline, so the reader drops it.
+/// `CADCRAFT` xdata marker identifying a wall proxy polyline, so the reader drops it.
 pub(crate) const ARCH_PROXY_MARKER: &str = "ARCHWALL";
+
+/// `CADCRAFT` xdata marker identifying a save-time opening proxy polyline, so the reader
+/// drops it (the opening's model data is the one source of truth).
+pub(crate) const ARCH_OPENING_MARKER: &str = "ARCHOPENING";
+
+/// Layer of the save-time opening proxy polylines.
+pub(crate) const ARCH_OPENING_LAYER: &str = "A-DOOR";
 
 /// Rejects payloads larger than this before they are even parsed.
 const MAX_ARCH_PAYLOAD: usize = 8 << 20;
@@ -45,26 +52,46 @@ pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
     if m.is_empty() {
         return None;
     }
-    let json = serde_json::to_string(&Payload { version: 1, model: m.clone() }).ok()?;
+    let json = serde_json::to_string(&Payload { version: 2, model: m.clone() }).ok()?;
     Some(crate::dxf_ext::json_chunks(&json))
 }
 
 /// Parse an architectural XRECORD payload; `None` when it is not a payload we understand.
+///
+/// Accepts schema version 1 (no openings: v1 → empty openings) and version 2 (openings
+/// present). Both are bounded — the wall count against [`MAX_WALLS`] and the opening count
+/// against [`MAX_OPENINGS`] — so hostile payloads can not overflow allocations.
 pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     if text.len() > MAX_ARCH_PAYLOAD {
         return None;
     }
     let p: Payload = serde_json::from_str(text).ok()?;
-    if p.version != 1 {
+    if p.version != 1 && p.version != 2 {
         return None;
     }
     if p.model.walls.len() > cadcraft_doc::MAX_WALLS {
         return None;
     }
-    Some(p.model)
+    let model = if p.version == 1 {
+        let mut m = p.model;
+        m.openings.clear();
+        m
+    } else {
+        p.model
+    };
+    if model.openings.len() > cadcraft_doc::arch::MAX_OPENINGS {
+        return None;
+    }
+    Some(model)
 }
 
-/// The four corners of a wall's poche ring (the offset centre-line rectangle), in order.
+/// True when an entity's `CADCRAFT` xdata carries the [`ARCH_PROXY_MARKER`] or
+/// [`ARCH_OPENING_MARKER`] marker, i.e. the record is a save-time proxy (wall or opening)
+/// polyline to be dropped on read.
+pub(crate) fn is_arch_proxy(tags: &[Tag]) -> bool {
+    let markers = [ARCH_PROXY_MARKER, ARCH_OPENING_MARKER];
+    crate::dxf_ext::xdata(tags, crate::dxf_ext::APP).iter().any(|t| t.code == 1000 && markers.iter().any(|m| t.str().trim() == *m))
+}
 ///
 /// Returns `None` for a degenerate wall: a non-finite endpoint, `thickness <= 0`, or a
 /// centre-line shorter than `1e-12`.
@@ -82,6 +109,49 @@ fn wall_ring(w: &cadcraft_doc::Wall) -> Option<Vec<Vec2>> {
     }
     let perp = dir.rotate(std::f64::consts::PI / 2.0) * (w.thickness / 2.0 / len);
     Some([w.start + perp, w.end + perp, w.end - perp, w.start - perp].into_iter().collect())
+}
+
+/// The four corners of an opening's rough rectangle along the host wall, in the same corner
+/// order as [`wall_ring`], offset by half the wall thickness.
+///
+/// The rough span is centred on `o.offset` (measured from the wall start in metres) and uses
+/// `o.rough_width`, mirroring `arch::symbol::opening_symbol`'s rough geometry. Returns `None`
+/// for a degenerate wall (as [`wall_ring`] does) or when any input is non-finite.
+fn opening_ring(w: &cadcraft_doc::Wall, o: &cadcraft_doc::arch::Opening) -> Option<Vec<Vec2>> {
+    if !w.start.is_finite() || !w.end.is_finite() {
+        return None;
+    }
+    if w.thickness <= 0.0 {
+        return None;
+    }
+    let dir = w.end - w.start;
+    let len = dir.len();
+    if len < 1e-12 {
+        return None;
+    }
+    let offset = if o.offset.is_finite() { o.offset } else { 0.0 };
+    let width = if o.width.is_finite() && o.width > 0.0 { o.width } else { 0.9 };
+    let rough_width = if o.rough_width.is_finite() && o.rough_width > 0.0 { o.rough_width } else { width + 0.12 };
+    if !offset.is_finite() || !width.is_finite() || !rough_width.is_finite() {
+        return None;
+    }
+    let rough_start = offset - (rough_width - width) / 2.0;
+    let rough_end = rough_start + rough_width;
+    if !rough_start.is_finite() || !rough_end.is_finite() {
+        return None;
+    }
+    let along = dir.normalized();
+    let half = along.perp() * (w.thickness / 2.0);
+    Some(
+        [
+            w.start + along * rough_start + half,
+            w.start + along * rough_end + half,
+            w.start + along * rough_end - half,
+            w.start + along * rough_start - half,
+        ]
+        .into_iter()
+        .collect(),
+    )
 }
 
 /// The DXF groups (after the common entity groups) of one closed LWPOLYLINE per wall poche
@@ -112,16 +182,46 @@ pub(crate) fn proxy_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
         .collect()
 }
 
-/// True when the entity's `CADCRAFT` xdata carries the [`ARCH_PROXY_MARKER`] marker, i.e. the
-/// record is a save-time proxy polyline to be dropped on read.
-pub(crate) fn is_arch_proxy(tags: &[Tag]) -> bool {
-    crate::dxf_ext::xdata(tags, crate::dxf_ext::APP).iter().any(|t| t.code == 1000 && t.str().trim() == ARCH_PROXY_MARKER)
+/// The DXF groups of one closed LWPOLYLINE per opening proxy ring, on layer
+/// [`ARCH_OPENING_LAYER`], each tagged with the [`ARCH_OPENING_MARKER`] xdata and the
+/// opening's id. Returns `Vec::new()` when there are no openings; the output is capped at
+/// [`cadcraft_arch::MAX_OPENINGS`] polylines.
+pub(crate) fn proxy_opening_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
+    m.openings
+        .iter()
+        .take(cadcraft_doc::arch::MAX_OPENINGS)
+        .filter_map(|o| {
+            let symbol = cadcraft_arch::symbol::opening_symbol(m, o);
+            let mut corners: Option<Vec<Vec2>> = symbol.as_ref().and_then(|s| s.polylines.first().cloned());
+            if corners.as_ref().map_or(true, |c| c.is_empty()) {
+                corners = m.wall(o.host).and_then(|w| opening_ring(w, o));
+            }
+            let Some(corners) = corners else {
+                return None;
+            };
+            if corners.is_empty() {
+                return None;
+            }
+            let mut t = Vec::new();
+            t.push(Tag::i(90, 4));
+            t.push(Tag::i(70, 1));
+            for c in &corners {
+                t.push(Tag::f(10, c.x));
+                t.push(Tag::f(20, c.y));
+            }
+            t.push(Tag::s(1001, crate::dxf_ext::APP));
+            t.push(Tag::s(1000, ARCH_OPENING_MARKER));
+            t.push(Tag::s(1000, &o.id.to_string()));
+            Some(t)
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{read_dxf, write_dxf};
+    use cadcraft_doc::arch::{Opening, OpeningKind};
     use cadcraft_doc::{ArchModel, Drawing, EntityKind, Wall};
     use cadcraft_geom::Vec2;
 
@@ -151,7 +251,8 @@ mod tests {
 
     #[test]
     fn parse_arch_rejects_unknown_versions() {
-        assert!(parse_arch(r#"{"version": 2, "model": { "walls": [] }}"#).is_none());
+        // Only schema versions 1 and 2 are understood; 3 and later are unknown.
+        assert!(parse_arch(r#"{"version": 3, "model": { "walls": [] }}"#).is_none());
         assert!(parse_arch(r#"{"version": 0, "model": { "walls": [] }}"#).is_none());
     }
 
@@ -257,5 +358,89 @@ mod tests {
         let text2 = write_dxf(&back);
         let count2 = text2.matches("ARCHWALL").count();
         assert_eq!(count1, count2, "ARCHWALL count changed: {} -> {}", count1, count2);
+    }
+
+    #[test]
+    fn openings_roundtrip_through_the_arch_xrecord() {
+        let mut d = Drawing::new_metric();
+        let wid = d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        let oid = d.arch.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
+        let want = d.arch.opening(oid).unwrap().clone();
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.openings.len(), 1, "opening lost on the arch XRECORD round trip");
+        let got = &back.arch.openings[0];
+        assert_eq!(got.id, oid, "opening id changed on round trip");
+        assert_eq!(got.host, wid, "host wall id changed on round trip");
+        assert_eq!(got.width, want.width);
+        assert_eq!(got.height, want.height);
+        assert_eq!(got.sill, want.sill);
+        assert_eq!(got.kind, OpeningKind::Door);
+        assert_eq!(got.layer, want.layer);
+    }
+
+    #[test]
+    fn version_1_payload_still_parses() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        // A version-1 file predates the openings concept; the JSON may carry openings but
+        // `parse_arch` drops them, keeping the wall.
+        let json = serde_json::json!({ "version": 1, "model": m }).to_string();
+        let text = crate::dxf_ext::json_chunks(&json).join("");
+        let parsed = parse_arch(&text);
+        assert!(parsed.is_some(), "a version-1 payload must still parse");
+        if let Some(m) = parsed {
+            assert!(m.openings.is_empty(), "version 1 must yield no openings");
+            assert_eq!(m.walls.len(), 1, "version 1 lost its wall");
+        }
+    }
+
+    #[test]
+    fn opening_proxy_polylines_are_written_on_a_door() {
+        let mut d = Drawing::new_metric();
+        let wid = d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        d.arch.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
+
+        let text = write_dxf(&d);
+        assert!(text.contains("ARCHOPENING"), "no ARCHOPENING marker in the DXF");
+        assert!(text.contains("A-DOOR"), "no A-DOOR layer in the DXF");
+    }
+
+    #[test]
+    fn proxy_openings_are_dropped_when_the_xrecord_is_present() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        d.arch.push_opening(Opening::new(d.arch.walls[0].id, 1.0, 0.9, 2.1, OpeningKind::Door));
+
+        let text = write_dxf(&d);
+        assert!(text.contains("ARCHOPENING"), "no opening proxy written");
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        // The opening survives via the XRECORD...
+        assert_eq!(back.arch.openings.len(), 1, "opening lost via the XRECORD");
+
+        // ...but the save-time proxy polyline (ARCHOPENING xdata) is dropped on read.
+        let mut count = 0;
+        for e in back.model.iter() {
+            if let EntityKind::LwPolyline(_) = &e.kind {
+                count += e.common.xdata.iter().filter(|t| t.code == 1000 && t.value.trim() == ARCH_OPENING_MARKER).count();
+            }
+        }
+        assert_eq!(count, 0, "model LWPOLYLINE carries ARCHOPENING xdata");
+    }
+
+    #[test]
+    fn hostile_opening_payload_never_panics() {
+        for h in ["", "not json", "{}", "[]", "null"] {
+            assert!(parse_arch(h).is_none(), "hostile input {h:?}");
+        }
+        // A version-2 payload whose openings field has the wrong type is rejected.
+        assert!(parse_arch(r#"{"version": 2, "model": {"openings": "boom"}}"#).is_none());
+        // An oversized payload is rejected before it is parsed.
+        assert!(parse_arch(&"a".repeat((8 << 20) + 1)).is_none());
+        // arch_chunks is None for an empty model and must not panic for a populated one.
+        assert!(arch_chunks(&ArchModel::default()).is_none());
     }
 }

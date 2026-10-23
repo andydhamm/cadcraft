@@ -700,6 +700,7 @@ name = "cadcraft-io"
 version = "0.10.0"
 dependencies = [
  "acadrust",
+ "cadcraft-arch",
  "cadcraft-arch3d",
  "cadcraft-color",
  "cadcraft-doc",
