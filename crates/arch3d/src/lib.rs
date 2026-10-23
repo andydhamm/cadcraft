@@ -126,8 +126,9 @@ impl Scene3d {
         }
 
         let mut openings_built = 0;
+        let wall_map: BTreeMap<ArchId, &Wall> = model.walls.iter().map(|w| (w.id, w)).collect();
         for opening in &model.openings {
-            let o_meshes: Vec<Mesh> = openings::opening_meshes(model, opening).into_iter().filter(|m| !m.positions.is_empty()).collect();
+            let o_meshes: Vec<Mesh> = openings::opening_meshes(&wall_map, opening).into_iter().filter(|m| !m.positions.is_empty()).collect();
             if !o_meshes.is_empty() {
                 openings_built += 1;
                 meshes.extend(o_meshes);
@@ -168,18 +169,22 @@ impl Scene3d {
         }
 
         let mut openings_built = 0;
+        let wall_map: BTreeMap<ArchId, &Wall> = model.walls.iter().map(|w| (w.id, w)).collect();
+        let prev_by_object: BTreeMap<ArchId, Vec<Mesh>> = prev.meshes.iter().fold(BTreeMap::new(), |mut m, mesh| {
+            m.entry(mesh.object).or_default().push(mesh.clone());
+            m
+        });
         for opening in &model.openings {
             if dirty.contains(&opening.id) {
-                let o_meshes: Vec<Mesh> = openings::opening_meshes(model, opening).into_iter().filter(|m| !m.positions.is_empty()).collect();
+                let o_meshes: Vec<Mesh> = openings::opening_meshes(&wall_map, opening).into_iter().filter(|m| !m.positions.is_empty()).collect();
                 if !o_meshes.is_empty() {
                     openings_built += 1;
                     meshes.extend(o_meshes);
                 }
             } else {
-                let prev_opening_meshes: Vec<Mesh> = prev.meshes.iter().filter(|m| m.object == opening.id).map(|m| m.clone()).collect();
-                if !prev_opening_meshes.is_empty() {
+                if let Some(om) = prev_by_object.get(&opening.id) {
                     openings_built += 1;
-                    meshes.extend(prev_opening_meshes);
+                    meshes.extend(om.iter().map(|m| m.clone()));
                 }
             }
         }
@@ -392,5 +397,166 @@ mod tests {
         let scene = Scene3d::build(&model);
         assert!(scene.mesh_for(&ArchId(0)).is_some(), "valid wall mesh missing");
         assert!(scene.mesh_for(&ArchId(1)).is_none(), "degenerate wall mesh should be skipped");
+    }
+
+    #[test]
+    fn opening_components_merge_into_one_mesh_per_material() {
+        use cadcraft_doc::arch::{Opening, OpeningKind};
+
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(0),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let mut opening = Opening::default();
+        opening.id = ArchId(100);
+        opening.host = ArchId(0);
+        opening.offset = 5.0;
+        opening.width = 1.2;
+        opening.height = 1.5;
+        opening.sill = 0.9;
+        opening.frame_width = 0.05;
+        opening.frame_depth = 0.1;
+        opening.casing_width = 0.05;
+        opening.casing_depth = 0.02;
+        opening.sill_depth = 0.05;
+        opening.style = "window".to_string();
+        opening.kind = OpeningKind::Window;
+
+        let wall_map: BTreeMap<ArchId, &Wall> = model.walls.iter().map(|w| (w.id, w)).collect();
+        let meshes = openings::opening_meshes(&wall_map, &opening);
+
+        // Each material should appear in at most one mesh.
+        let materials: Vec<&str> = meshes.iter().map(|m| m.material.as_str()).collect();
+        let unique: BTreeSet<&str> = materials.iter().copied().collect();
+        assert_eq!(materials.len(), unique.len(), "duplicate materials in meshes: {materials:?}");
+
+        // Expected materials for a window with frame, glass, casing, sill, header.
+        assert!(materials.contains(&"window-frame"));
+        assert!(materials.contains(&"window-glass"));
+        assert!(materials.contains(&"window-casing"));
+        assert!(materials.contains(&"window-sill"));
+
+        // No per-box material proliferation.
+        assert!(meshes.len() <= 8, "too many meshes: {} (expected <= 8 merged components)", meshes.len());
+
+        // Every mesh is non-empty and has matching material count.
+        for m in &meshes {
+            assert!(!m.positions.is_empty(), "empty mesh {}", m.material);
+            assert!(m.indices.len() % 3 == 0, "bad index count in {}", m.material);
+        }
+    }
+
+    #[test]
+    fn build_dirty_matches_full_build_after_an_opening_edit() {
+        use std::collections::BTreeSet;
+
+        use cadcraft_doc::arch::{Opening, OpeningKind};
+        use cadcraft_geom::Vec2;
+
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(0),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let open_id = ArchId(1);
+        let mut opening = Opening::default();
+        opening.id = open_id;
+        opening.host = ArchId(0);
+        opening.offset = 2.0;
+        opening.width = 0.8;
+        opening.height = 1.5;
+        opening.sill = 0.9;
+        opening.frame_width = 0.05;
+        opening.frame_depth = 0.1;
+        opening.casing_width = 0.05;
+        opening.casing_depth = 0.02;
+        opening.style = "window".to_string();
+        opening.kind = OpeningKind::Window;
+        model.openings.push(opening);
+
+        let full = Scene3d::build(&model);
+
+        // Edit the opening: widen it.
+        let mut edited = model.clone();
+        if let Some(o) = edited.openings.iter_mut().find(|o| o.id == open_id) {
+            o.width = 1.2;
+        }
+
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([open_id]);
+        let partial = Scene3d::build_dirty(&edited, &dirty, &full);
+        let full_edited = Scene3d::build(&edited);
+
+        assert_eq!(partial.mesh_count(), full_edited.mesh_count(), "partial={} full_edited={}", partial.mesh_count(), full_edited.mesh_count());
+        for (a, b) in partial.meshes.iter().zip(full_edited.meshes.iter()) {
+            assert_eq!(a.object, b.object, "object mismatch: {} vs {}", a.object.0, b.object.0);
+            assert_eq!(a.positions, b.positions, "position mismatch: {}", a.material);
+            assert_eq!(a.normals, b.normals, "normal mismatch: {}", a.material);
+            assert_eq!(a.uvs, b.uvs, "uv mismatch: {}", a.material);
+            assert_eq!(a.indices, b.indices, "index mismatch: {}", a.material);
+            assert_eq!(a.material, b.material, "material mismatch: {} vs {}", a.material, b.material);
+        }
+    }
+
+    #[test]
+    fn three_hundred_walls_150_openings_rebuild_under_50ms() {
+        use std::collections::BTreeSet;
+        use std::time::Instant;
+
+        use cadcraft_doc::arch::{Opening, OpeningKind};
+        use cadcraft_geom::Vec2;
+
+        let mut model = ArchModel::default();
+
+        // 300 walls in a grid.
+        for i in 0..300u32 {
+            let x0 = (i / 30) as f64 * 4.0;
+            let y0 = (i % 30) as f64 * 2.0;
+            model.walls.push(Wall {
+                id: ArchId(i),
+                start: Vec2::new(x0, y0),
+                end: Vec2::new(x0 + 2.5, y0),
+                thickness: 0.3,
+                height: 2.5,
+                ..Default::default()
+            });
+        }
+
+        // 150 window openings, each on a distinct wall.
+        for i in 0..150u32 {
+            let mut opening = Opening::default();
+            opening.id = ArchId(1000 + i);
+            opening.host = ArchId(i * 2);
+            opening.offset = 1.2;
+            opening.width = 1.0;
+            opening.height = 1.5;
+            opening.sill = 0.9;
+            opening.frame_width = 0.05;
+            opening.frame_depth = 0.1;
+            opening.casing_width = 0.05;
+            opening.casing_depth = 0.02;
+            opening.style = "window".to_string();
+            opening.kind = OpeningKind::Window;
+            model.openings.push(opening);
+        }
+
+        let full = Scene3d::build(&model);
+
+        let dirty: BTreeSet<ArchId> = (1000..1150).map(ArchId).collect();
+        let t0 = Instant::now();
+        let _partial = Scene3d::build_dirty(&model, &dirty, &full);
+        let ms = t0.elapsed().as_secs_f64() * 1000.0;
+
+        assert!(ms < 50.0, "build_dirty 300w/150o took {:.1} ms (budget 50 ms)", ms);
     }
 }

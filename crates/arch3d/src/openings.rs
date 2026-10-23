@@ -3,9 +3,11 @@
 //! Each component (frame, casing, glass, leaf, sill, header) is a separate
 //! [`Mesh`] tagged with the opening's [`ArchId`] for picking.
 
+use std::collections::BTreeMap;
+
 use cadcraft_arch::opening::is_double;
 use cadcraft_doc::arch::{Opening, OpeningKind};
-use cadcraft_doc::{ArchId, ArchModel};
+use cadcraft_doc::{ArchId, ArchModel, Wall};
 use cadcraft_geom::{Vec2, Vec3};
 
 use crate::mesh::Mesh;
@@ -19,9 +21,14 @@ fn band_offset(off: f64, depth: f64, wall_t: f64) -> f64 {
 
 /// Build all component meshes for a single opening.
 ///
+/// Components that share a material (e.g. all frame prisms) are merged into
+/// a single `Mesh`, keeping `io::glb` node names unchanged (`door-frame-o0`,
+/// `window-glass-o1`, …) while cutting the per-opening mesh count from ~10
+/// to ~5.
+///
 /// Returns an empty vector if the host wall is missing or degenerate.
-pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
-    let wall = match model.walls.iter().find(|w| w.id == o.host) {
+pub fn opening_meshes(walls: &BTreeMap<ArchId, &Wall>, o: &Opening) -> Vec<Mesh> {
+    let wall = match walls.get(&o.host) {
         Some(w) => w,
         None => return Vec::new(),
     };
@@ -34,7 +41,26 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
     let center = wall.start + dir * o.offset;
     // Offsets measured from the wall centre plane (along `normal`), each
     // clamped so the component stays inside the wall's thickness band.
-    let mut meshes = Vec::new();
+    let mut meshes: BTreeMap<String, Mesh> = BTreeMap::new();
+    let mut push_box = |material: &str, a: Vec2, b: Vec2, z0: f64, z1: f64, depth: f64| {
+        if depth <= 0.0 {
+            return;
+        }
+        let dir = b - a;
+        let len = dir.len();
+        if len < 1e-9 || (z1 - z0).abs() < 1e-9 {
+            return;
+        }
+        let d = dir / len;
+        let n = Vec2::new(-d.y, d.x);
+        let half = depth / 2.0;
+        let p0 = a + n * half;
+        let p1 = a - n * half;
+        let p2 = b - n * half;
+        let p3 = b + n * half;
+        let mesh = meshes.entry(material.to_string()).or_insert_with(|| Mesh::new(material, o.id));
+        mesh.push_prism(&[p0, p1, p2, p3], z0, z1);
+    };
 
     let w = o.width;
     let h = o.height;
@@ -63,56 +89,77 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
 
     // Frame: left jamb
     let jamb_off = band_offset(o.recess - wall_t / 2.0 + fd / 2.0, fd, wall_t);
-    let left_a = center + dir * (-w / 2.0 - fw / 2.0) + normal * jamb_off;
-    let left_b = center + dir * (-w / 2.0 + fw / 2.0) + normal * jamb_off;
-    if let Some(mesh) = box_between(left_a, left_b, frame_z0, frame_z1, fd, &format!("{}-frame", kind_prefix), o.id) {
-        meshes.push(mesh);
-    }
+    push_box(
+        &format!("{}-frame", kind_prefix),
+        center + dir * (-w / 2.0 - fw / 2.0) + normal * jamb_off,
+        center + dir * (-w / 2.0 + fw / 2.0) + normal * jamb_off,
+        frame_z0,
+        frame_z1,
+        fd,
+    );
 
     // Frame: right jamb
-    let right_a = center + dir * (w / 2.0 - fw / 2.0) + normal * jamb_off;
-    let right_b = center + dir * (w / 2.0 + fw / 2.0) + normal * jamb_off;
-    if let Some(mesh) = box_between(right_a, right_b, frame_z0, frame_z1, fd, &format!("{}-frame", kind_prefix), o.id) {
-        meshes.push(mesh);
-    }
+    push_box(
+        &format!("{}-frame", kind_prefix),
+        center + dir * (w / 2.0 - fw / 2.0) + normal * jamb_off,
+        center + dir * (w / 2.0 + fw / 2.0) + normal * jamb_off,
+        frame_z0,
+        frame_z1,
+        fd,
+    );
 
     // Frame: head
     let head_off = band_offset(o.recess - wall_t / 2.0 + fd / 2.0, fw, wall_t);
-    let head_a = center + dir * (-w / 2.0) + normal * head_off;
-    let head_b = center + dir * (w / 2.0) + normal * head_off;
-    if let Some(mesh) = box_between(head_a, head_b, frame_z1 - fw, frame_z1, fw, &format!("{}-frame", kind_prefix), o.id) {
-        meshes.push(mesh);
-    }
+    push_box(
+        &format!("{}-frame", kind_prefix),
+        center + dir * (-w / 2.0) + normal * head_off,
+        center + dir * (w / 2.0) + normal * head_off,
+        frame_z1 - fw,
+        frame_z1,
+        fw,
+    );
 
     // Frame: sill
     let sill_off = band_offset(o.recess - wall_t / 2.0 + fd / 2.0, fw, wall_t);
-    let sill_a = center + dir * (-w / 2.0) + normal * sill_off;
-    let sill_b = center + dir * (w / 2.0) + normal * sill_off;
-    if let Some(mesh) = box_between(sill_a, sill_b, frame_z0, frame_z0 + fw, fw, &format!("{}-frame", kind_prefix), o.id) {
-        meshes.push(mesh);
-    }
+    push_box(
+        &format!("{}-frame", kind_prefix),
+        center + dir * (-w / 2.0) + normal * sill_off,
+        center + dir * (w / 2.0) + normal * sill_off,
+        frame_z0,
+        frame_z0 + fw,
+        fw,
+    );
 
-    // Casing (both faces)
+    // Casing (both faces + head)
     if cw > 0.0 {
         let casing_off = band_offset(o.recess - wall_t / 2.0 + cd / 2.0, cd, wall_t);
-        let cl_a = center + dir * (-w / 2.0 - fw / 2.0 - cw) + normal * casing_off;
-        let cl_b = center + dir * (-w / 2.0 - fw / 2.0) + normal * casing_off;
-        if let Some(mesh) = box_between(cl_a, cl_b, frame_z0, frame_z1, cd, &format!("{}-casing", kind_prefix), o.id) {
-            meshes.push(mesh);
-        }
+        push_box(
+            &format!("{}-casing", kind_prefix),
+            center + dir * (-w / 2.0 - fw / 2.0 - cw) + normal * casing_off,
+            center + dir * (-w / 2.0 - fw / 2.0) + normal * casing_off,
+            frame_z0,
+            frame_z1,
+            cd,
+        );
 
-        let cr_a = center + dir * (w / 2.0 + fw / 2.0) + normal * casing_off;
-        let cr_b = center + dir * (w / 2.0 + fw / 2.0 + cw) + normal * casing_off;
-        if let Some(mesh) = box_between(cr_a, cr_b, frame_z0, frame_z1, cd, &format!("{}-casing", kind_prefix), o.id) {
-            meshes.push(mesh);
-        }
+        push_box(
+            &format!("{}-casing", kind_prefix),
+            center + dir * (w / 2.0 + fw / 2.0) + normal * casing_off,
+            center + dir * (w / 2.0 + fw / 2.0 + cw) + normal * casing_off,
+            frame_z0,
+            frame_z1,
+            cd,
+        );
 
         let casing_head_off = band_offset(o.recess - wall_t / 2.0 + cd / 2.0, cw, wall_t);
-        let ch_a = center + dir * (-w / 2.0 - fw / 2.0) + normal * casing_head_off;
-        let ch_b = center + dir * (w / 2.0 + fw / 2.0) + normal * casing_head_off;
-        if let Some(mesh) = box_between(ch_a, ch_b, frame_z1 - cw, frame_z1, cw, &format!("{}-casing", kind_prefix), o.id) {
-            meshes.push(mesh);
-        }
+        push_box(
+            &format!("{}-casing", kind_prefix),
+            center + dir * (-w / 2.0 - fw / 2.0) + normal * casing_head_off,
+            center + dir * (w / 2.0 + fw / 2.0) + normal * casing_head_off,
+            frame_z1 - cw,
+            frame_z1,
+            cw,
+        );
     }
 
     // Glass: every window gets it; doors get it when the style indicates glazing.
@@ -124,11 +171,14 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
             || o.style.contains("glass"));
     if is_window || is_glazed_door {
         let glass_off = band_offset(o.recess - wall_t / 2.0 + fd / 2.0, 0.006, wall_t);
-        let glass_a = center + dir * (-w / 2.0 + fw) + normal * glass_off;
-        let glass_b = center + dir * (w / 2.0 - fw) + normal * glass_off;
-        if let Some(mesh) = box_between(glass_a, glass_b, frame_z0 + fw, frame_z1 - fw, 0.006, &format!("{}-glass", kind_prefix), o.id) {
-            meshes.push(mesh);
-        }
+        push_box(
+            &format!("{}-glass", kind_prefix),
+            center + dir * (-w / 2.0 + fw) + normal * glass_off,
+            center + dir * (w / 2.0 - fw) + normal * glass_off,
+            frame_z0 + fw,
+            frame_z1 - fw,
+            0.006,
+        );
     }
 
     // Leaf: doors (not windows, not cased openings) get a leaf.
@@ -141,23 +191,32 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
         let two_leaves = o.style.contains("sliding") || o.style.contains("bifold") || o.style.contains("french") || is_double(o);
         if two_leaves {
             let half_w = (w - 2.0 * fw) / 2.0;
-            let l_a = center + dir * (-w / 2.0 + fw) + normal * leaf_off;
-            let l_b = center + dir * (-w / 2.0 + fw + half_w) + normal * leaf_off;
-            if let Some(mesh) = box_between(l_a, l_b, leaf_z0, leaf_z1, leaf_t, &format!("{}-leaf", kind_prefix), o.id) {
-                meshes.push(mesh);
-            }
+            push_box(
+                &format!("{}-leaf", kind_prefix),
+                center + dir * (-w / 2.0 + fw) + normal * leaf_off,
+                center + dir * (-w / 2.0 + fw + half_w) + normal * leaf_off,
+                leaf_z0,
+                leaf_z1,
+                leaf_t,
+            );
 
-            let r_a = center + dir * (w / 2.0 - fw - half_w) + normal * leaf_off;
-            let r_b = center + dir * (w / 2.0 - fw) + normal * leaf_off;
-            if let Some(mesh) = box_between(r_a, r_b, leaf_z0, leaf_z1, leaf_t, &format!("{}-leaf", kind_prefix), o.id) {
-                meshes.push(mesh);
-            }
+            push_box(
+                &format!("{}-leaf", kind_prefix),
+                center + dir * (w / 2.0 - fw - half_w) + normal * leaf_off,
+                center + dir * (w / 2.0 - fw) + normal * leaf_off,
+                leaf_z0,
+                leaf_z1,
+                leaf_t,
+            );
         } else {
-            let l_a = center + dir * (-w / 2.0 + fw) + normal * leaf_off;
-            let l_b = center + dir * (w / 2.0 - fw) + normal * leaf_off;
-            if let Some(mesh) = box_between(l_a, l_b, leaf_z0, leaf_z1, leaf_t, &format!("{}-leaf", kind_prefix), o.id) {
-                meshes.push(mesh);
-            }
+            push_box(
+                &format!("{}-leaf", kind_prefix),
+                center + dir * (-w / 2.0 + fw) + normal * leaf_off,
+                center + dir * (w / 2.0 - fw) + normal * leaf_off,
+                leaf_z0,
+                leaf_z1,
+                leaf_t,
+            );
         }
     }
 
@@ -167,8 +226,9 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
         let s_a = center + dir * (-w / 2.0 - fw / 2.0 - sd) + normal * ext_sill_off;
         let s_b = center + dir * (w / 2.0 + fw / 2.0 + sd) + normal * ext_sill_off;
         let sill_bottom = (frame_z0 - 0.02).max(0.0);
-        if let Some(mesh) = box_between(s_a, s_b, sill_bottom, frame_z0, 0.04, &format!("{}-sill", kind_prefix), o.id) {
-            meshes.push(mesh);
+        let sill_mat = format!("{}-sill", kind_prefix);
+        if let Some(mesh) = box_between(s_a, s_b, sill_bottom, frame_z0, 0.04, &sill_mat, o.id) {
+            meshes.insert(sill_mat, mesh);
         }
     }
 
@@ -180,12 +240,13 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
         let header_off = band_offset(0.0, wall_t, wall_t);
         let h_a = center + dir * (-w / 2.0 - fw) + normal * header_off;
         let h_b = center + dir * (w / 2.0 + fw) + normal * header_off;
-        if let Some(mesh) = box_between(h_a, h_b, frame_z1, header_top, wall_t, &format!("{}-header", kind_prefix), o.id) {
-            meshes.push(mesh);
+        let header_mat = format!("{}-header", kind_prefix);
+        if let Some(mesh) = box_between(h_a, h_b, frame_z1, header_top, wall_t, &header_mat, o.id) {
+            meshes.insert(header_mat, mesh);
         }
     }
 
-    meshes
+    meshes.into_values().collect()
 }
 
 /// Create a box mesh between two 2D points, from z0 to z1, with given depth.
@@ -215,7 +276,6 @@ fn box_between(a: Vec2, b: Vec2, z0: f64, z1: f64, depth: f64, material: &str, i
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadcraft_doc::Wall;
 
     fn wall_model() -> ArchModel {
         let mut model = ArchModel::default();
@@ -276,7 +336,7 @@ mod tests {
     fn a_window_produces_frame_glass_and_sill_meshes() {
         let model = wall_model();
         let o = window_opening();
-        let meshes = opening_meshes(&model, &o);
+        let meshes = opening_meshes(&walls_map(&model), &o);
         let has_frame = meshes.iter().any(|m| m.material == "window-frame");
         let has_glass = meshes.iter().any(|m| m.material == "window-glass");
         let has_sill = meshes.iter().any(|m| m.material == "window-sill");
@@ -289,7 +349,7 @@ mod tests {
     fn a_hinged_door_produces_a_frame_and_one_leaf() {
         let model = wall_model();
         let o = door_opening();
-        let meshes = opening_meshes(&model, &o);
+        let meshes = opening_meshes(&walls_map(&model), &o);
         let has_frame = meshes.iter().any(|m| m.material == "door-frame");
         let leaf_count = meshes.iter().filter(|m| m.material == "door-leaf").count();
         assert!(has_frame, "missing door-frame mesh");
@@ -301,9 +361,11 @@ mod tests {
         let model = wall_model();
         let mut o = door_opening();
         o.style = "sliding".to_string();
-        let meshes = opening_meshes(&model, &o);
-        let leaf_count = meshes.iter().filter(|m| m.material == "door-leaf").count();
-        assert_eq!(leaf_count, 2, "expected 2 leaves, got {}", leaf_count);
+        let meshes = opening_meshes(&walls_map(&model), &o);
+        let leaf_meshes: Vec<&Mesh> = meshes.iter().filter(|m| m.material == "door-leaf").collect();
+        assert_eq!(leaf_meshes.len(), 1, "expected 1 merged leaf mesh, got {}", leaf_meshes.len());
+        // Each leaf prism (4-vertex ring extrusion) has 12 triangles; two leaves = 24.
+        assert_eq!(leaf_meshes[0].triangle_count(), 24, "expected 24 triangles (2 leaves), got {}", leaf_meshes[0].triangle_count(),);
     }
 
     #[test]
@@ -311,9 +373,11 @@ mod tests {
         let model = wall_model();
         let mut o = door_opening();
         o.style = "french".to_string();
-        let meshes = opening_meshes(&model, &o);
-        let leaf_count = meshes.iter().filter(|m| m.material == "door-leaf").count();
-        assert_eq!(leaf_count, 2, "expected 2 leaves, got {}", leaf_count);
+        let meshes = opening_meshes(&walls_map(&model), &o);
+        let leaf_meshes: Vec<&Mesh> = meshes.iter().filter(|m| m.material == "door-leaf").collect();
+        assert_eq!(leaf_meshes.len(), 1, "expected 1 merged leaf mesh, got {}", leaf_meshes.len());
+        // Each leaf prism (4-vertex ring extrusion) has 12 triangles; two leaves = 24.
+        assert_eq!(leaf_meshes[0].triangle_count(), 24, "expected 24 triangles (2 leaves), got {}", leaf_meshes[0].triangle_count(),);
     }
 
     #[test]
@@ -321,7 +385,7 @@ mod tests {
         let model = wall_model();
         let mut o = window_opening();
         o.recess = 0.05;
-        let meshes = opening_meshes(&model, &o);
+        let meshes = opening_meshes(&walls_map(&model), &o);
         assert!(!meshes.is_empty(), "no meshes for recessed window");
         let frame = meshes.iter().find(|m| m.material == "window-frame");
         assert!(frame.is_some(), "missing window-frame");
@@ -332,7 +396,7 @@ mod tests {
         let model = wall_model();
         let mut o = window_opening();
         o.casing_width = 0.0;
-        let meshes = opening_meshes(&model, &o);
+        let meshes = opening_meshes(&walls_map(&model), &o);
         let has_casing = meshes.iter().any(|m| m.material == "window-casing");
         assert!(!has_casing, "casing should be skipped");
     }
@@ -341,7 +405,7 @@ mod tests {
     fn glass_uses_the_glass_material() {
         let model = wall_model();
         let o = window_opening();
-        let meshes = opening_meshes(&model, &o);
+        let meshes = opening_meshes(&walls_map(&model), &o);
         let glass = meshes.iter().find(|m| m.material == "window-glass");
         assert!(glass.is_some(), "missing window-glass mesh");
     }
@@ -350,7 +414,7 @@ mod tests {
     fn opening_meshes_are_manifold() {
         let model = wall_model();
         let o = window_opening();
-        let meshes = opening_meshes(&model, &o);
+        let meshes = opening_meshes(&walls_map(&model), &o);
         for m in &meshes {
             assert_eq!(m.indices.len() % 3, 0, "indices not multiple of 3");
             for &idx in &m.indices {
@@ -364,7 +428,7 @@ mod tests {
         let model = wall_model();
         let mut o = window_opening();
         o.host = ArchId(999);
-        let meshes = opening_meshes(&model, &o);
+        let meshes = opening_meshes(&walls_map(&model), &o);
         assert!(meshes.is_empty(), "expected empty for missing host");
     }
 
@@ -372,7 +436,7 @@ mod tests {
     fn a_window_produces_window_glass_meshes() {
         let model = wall_model();
         let o = window_opening();
-        let meshes = opening_meshes(&model, &o);
+        let meshes = opening_meshes(&walls_map(&model), &o);
         let has_window_glass = meshes.iter().any(|m| m.material == "window-glass");
         let has_window_frame = meshes.iter().any(|m| m.material == "window-frame");
         assert!(has_window_glass, "missing window-glass mesh");
@@ -383,7 +447,7 @@ mod tests {
     fn a_hinged_door_produces_door_leaf_and_frame() {
         let model = wall_model();
         let o = door_opening();
-        let meshes = opening_meshes(&model, &o);
+        let meshes = opening_meshes(&walls_map(&model), &o);
         let has_door_frame = meshes.iter().any(|m| m.material == "door-frame");
         let has_door_leaf = meshes.iter().any(|m| m.material == "door-leaf");
         assert!(has_door_frame, "missing door-frame mesh");
@@ -395,8 +459,9 @@ mod tests {
         let model = wall_model();
         let window = window_opening();
         let door = door_opening();
+        let wm = walls_map(&model);
         for o in [&window, &door] {
-            let meshes = opening_meshes(&model, o);
+            let meshes = opening_meshes(&wm, o);
             for m in &meshes {
                 assert!(!m.positions.is_empty(), "mesh {} has no positions", m.material);
             }
@@ -407,7 +472,7 @@ mod tests {
     fn header_stays_inside_the_wall_height() {
         let model = wall_model();
         let o = window_opening();
-        let meshes = opening_meshes(&model, &o);
+        let meshes = opening_meshes(&walls_map(&model), &o);
         let wall_height = 2.5;
         for m in &meshes {
             if m.material.contains("header") {
@@ -434,6 +499,10 @@ mod tests {
     }
 
     /// One of each opening type on the wall in `model`.
+    fn walls_map(model: &ArchModel) -> BTreeMap<ArchId, &Wall> {
+        model.walls.iter().map(|w| (w.id, w)).collect()
+    }
+
     fn all_openings(model: &ArchModel) -> Vec<Opening> {
         let base = |style: &str, kind: OpeningKind| Opening {
             id: ArchId(100),
@@ -464,13 +533,14 @@ mod tests {
     #[test]
     fn opening_meshes_stay_inside_the_host_wall_thickness() {
         let model = band_wall(0.3);
+        let wm = walls_map(&model);
         for o in all_openings(&model) {
             let wall = &model.walls[0];
             let dir = (wall.end - wall.start).normalized();
             let normal = Vec2::new(-dir.y, dir.x);
             let center = wall.start + dir * o.offset;
             let half_t = wall.thickness / 2.0;
-            for m in opening_meshes(&model, &o) {
+            for m in opening_meshes(&wm, &o) {
                 for p in &m.positions {
                     let n = (Vec2::new(p[0] as f64, p[1] as f64) - center).dot(normal);
                     assert!(n.abs() <= half_t + 1e-6, "vertex {} of {} leaves wall band (n={})", p[0] as f64, m.material, n);
@@ -606,8 +676,9 @@ mod tests {
         }
 
         // Opening component meshes: they must fit inside the wall envelope.
+        let wm = walls_map(&model);
         for o in &model.openings {
-            for m in opening_meshes(&model, o) {
+            for m in opening_meshes(&wm, o) {
                 for p in &m.positions {
                     x_min = x_min.min(p[0].into());
                     x_max = x_max.max(p[0].into());
