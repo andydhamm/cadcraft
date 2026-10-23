@@ -86,7 +86,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
             transparency: 0,
             kind: Kind::Polyline,
             start,
-            len: closed.len(),
+            len: u32::try_from(closed.len()).unwrap_or(u32::MAX),
         });
     }
 
