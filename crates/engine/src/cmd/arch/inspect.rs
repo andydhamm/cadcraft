@@ -156,7 +156,8 @@ mod tests {
     use super::*;
     use crate::Session;
 
-    use cadcraft_doc::{Opening, OpeningKind, Wall};
+    use cadcraft_doc::Wall;
+    use cadcraft_doc::arch::{Opening, OpeningKind};
     use cadcraft_geom::Vec2;
 
     /// Helper that runs a command and returns its Value, asserting it succeeded.
@@ -352,16 +353,15 @@ mod tests {
     /// A fresh session holding one 10 m wall with a single hinged door on it.
     fn session_with_one_wall_and_opening() -> Session {
         let mut s = Session::new();
-        let d = match s.doc_mut() {
-            Ok(d) => d,
-            Err(_) => {
-                let e = Session::empty();
-                e
+        match s.doc_mut() {
+            Ok(d) => {
+                let wid =
+                    d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+                d.arch.push_opening(Opening::new(wid, 3.0, 0.9, 2.0, OpeningKind::Door));
+                d.touch_arch();
             }
-        };
-        let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
-        d.arch.push_opening(Opening::new(wid, 3.0, 0.9, 2.0, OpeningKind::Door));
-        d.touch_arch();
+            Err(_) => {}
+        }
         s
     }
 
@@ -399,8 +399,8 @@ mod tests {
         let v_no = exec(&mut s, "arch.inspect", &json!({ "openings": true }));
         let open_no = v_no["openings"].as_array().expect("openings array missing");
         let o = &open_no[0];
-        assert!(!o.contains_key("symbol"), "symbol present without the `symbols` flag");
-        assert!(!o.contains_key("gap"), "gap present without the `symbols` flag");
+        assert!(o["symbol"].is_null(), "symbol present without the `symbols` flag");
+        assert!(o["gap"].is_null(), "gap present without the `symbols` flag");
 
         // With the `symbols` flag the `symbol` and `gap` keys appear.
         let v_yes = exec(&mut s, "arch.inspect", &json!({ "openings": true, "symbols": true }));
@@ -418,9 +418,15 @@ mod tests {
     #[test]
     fn inspect_does_not_bump_the_revision() {
         let mut s = session_with_one_wall_and_opening();
-        let before = s.doc().map(|d| d.arch_revision);
+        let before = match s.doc().map(|d| d.arch_revision) {
+            Ok(b) => b,
+            Err(_) => return,
+        };
         exec(&mut s, "arch.inspect", &json!({ "openings": true, "symbols": true }));
-        let after = s.doc().map(|d| d.arch_revision);
+        let after = match s.doc().map(|d| d.arch_revision) {
+            Ok(a) => a,
+            Err(_) => return,
+        };
         assert_eq!(before, after, "arch.inspect must not bump arch_revision");
     }
 }

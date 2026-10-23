@@ -52,6 +52,7 @@ pub fn specs() -> Vec<crate::cmd::CommandSpec> {
 mod tests {
     use super::*;
 
+    use cadcraft_doc::arch::{Opening, OpeningKind};
     use cadcraft_doc::{ArchId, Wall};
     use cadcraft_geom::Vec2;
     use serde_json::json;
