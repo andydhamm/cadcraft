@@ -133,10 +133,10 @@ pub fn validate_placement(
     let rough_width = width + ROUGH_ALLOWANCE;
     let rough_off = offset - rough_width / 2.0;
     let min_seg = min_segment(style);
-    if rough_off < min_seg {
+    if offset < min_seg {
         return Err(PlacementError("rough span extends past the start of the wall".into()));
     }
-    if rough_off + rough_width > len - min_seg {
+    if offset + width > len - min_seg {
         return Err(PlacementError("rough span extends past the end of the wall".into()));
     }
 
