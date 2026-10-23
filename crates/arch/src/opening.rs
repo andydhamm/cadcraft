@@ -188,18 +188,20 @@ pub fn place_opening(model: &ArchModel, mut o: Opening, fit: bool) -> Result<Ope
             let min_w = min_width(o.kind, &o.style);
 
             // (2) Try the requested width: clamp into the feasible offset window.
-            let rough_w = o.width + ROUGH_ALLOWANCE;
-            let min_off = min_seg + rough_w / 2.0;
-            let max_off = len - min_seg - rough_w / 2.0;
-            if min_off <= max_off {
-                let clamped = o.offset.clamp(min_off, max_off);
-                if let Ok(offset) = validate_placement(model, o.host, clamped, o.width, o.sill, o.height, o.kind, &o.style, None) {
-                    o.offset = offset;
-                    o.rough_width = o.width + ROUGH_ALLOWANCE;
-                    o.rough_height = o.height + ROUGH_ALLOWANCE;
-                    auto_panel(&mut o);
-                    clamp_recess(model, &mut o);
-                    return Ok(o);
+            {
+                let rough_w = o.width + ROUGH_ALLOWANCE;
+                let min_off = min_seg + rough_w / 2.0;
+                let max_off = len - min_seg - rough_w / 2.0;
+                if min_off <= max_off {
+                    let clamped = o.offset.clamp(min_off, max_off);
+                    if let Ok(offset) = validate_placement(model, o.host, clamped, o.width, o.sill, o.height, o.kind, &o.style, None) {
+                        o.offset = offset;
+                        o.rough_width = o.width + ROUGH_ALLOWANCE;
+                        o.rough_height = o.height + ROUGH_ALLOWANCE;
+                        auto_panel(&mut o);
+                        clamp_recess(model, &mut o);
+                        return Ok(o);
+                    }
                 }
             }
 
@@ -227,25 +229,61 @@ pub fn place_opening(model: &ArchModel, mut o: Opening, fit: bool) -> Result<Ope
             }
 
             // (4) Final: use lo, clamp offset, validate.
-            let final_rough = lo + ROUGH_ALLOWANCE;
-            let final_min_off = min_seg + final_rough / 2.0;
-            let final_max_off = len - min_seg - final_rough / 2.0;
-            if final_min_off > final_max_off {
-                return Err(e);
-            }
-            let final_clamped = o.offset.clamp(final_min_off, final_max_off);
-            match validate_placement(model, o.host, final_clamped, lo, o.sill, o.height, o.kind, &o.style, None) {
-                Ok(offset) => {
-                    o.offset = offset;
-                    o.width = lo;
-                    o.rough_width = lo + ROUGH_ALLOWANCE;
-                    o.rough_height = o.height + ROUGH_ALLOWANCE;
-                    auto_panel(&mut o);
-                    clamp_recess(model, &mut o);
-                    Ok(o)
+            {
+                let final_rough = lo + ROUGH_ALLOWANCE;
+                let final_min_off = min_seg + final_rough / 2.0;
+                let final_max_off = len - min_seg - final_rough / 2.0;
+                if final_min_off <= final_max_off {
+                    let final_clamped = o.offset.clamp(final_min_off, final_max_off);
+                    if let Ok(offset) = validate_placement(model, o.host, final_clamped, lo, o.sill, o.height, o.kind, &o.style, None) {
+                        o.offset = offset;
+                        o.width = lo;
+                        o.rough_width = lo + ROUGH_ALLOWANCE;
+                        o.rough_height = o.height + ROUGH_ALLOWANCE;
+                        auto_panel(&mut o);
+                        clamp_recess(model, &mut o);
+                        return Ok(o);
+                    }
                 }
-                Err(e) => Err(e),
             }
+
+            // (5) Relaxed: the wall is too short for min_seg clearance even at min_width.
+            // Place at min_width using only physical bounds (rough span inside the wall).
+            {
+                let rough_w = lo + ROUGH_ALLOWANCE;
+                let phys_min = rough_w / 2.0;
+                let phys_max = len - rough_w / 2.0;
+                if phys_min <= phys_max {
+                    let clamped = o.offset.clamp(phys_min, phys_max);
+                    let ok_height = wall.height.is_finite() && o.sill + o.height <= wall.height;
+                    let c0 = clamped - rough_w / 2.0;
+                    let c1 = clamped + rough_w / 2.0;
+                    // Check no overlap with existing openings on this wall.
+                    let mut overlap_ok = true;
+                    for other in model.openings_on(o.host) {
+                        if other.offset.is_finite() && other.width.is_finite() && other.rough_width.is_finite() {
+                            let b0 = other.offset - (other.rough_width - other.width) / 2.0;
+                            let b1 = b0 + other.rough_width;
+                            let gap = (b0 - c1).max(c0 - b1);
+                            let need = if other.mull_group.is_some() { 0.0 } else { MIN_SEPARATION };
+                            if gap < need - EPS {
+                                overlap_ok = false;
+                                break;
+                            }
+                        }
+                    }
+                    if ok_height && overlap_ok {
+                        o.offset = clamped;
+                        o.width = lo;
+                        o.rough_width = lo + ROUGH_ALLOWANCE;
+                        o.rough_height = o.height + ROUGH_ALLOWANCE;
+                        auto_panel(&mut o);
+                        clamp_recess(model, &mut o);
+                        return Ok(o);
+                    }
+                }
+            }
+            Err(e)
         }
         Err(e) => Err(e),
     }
