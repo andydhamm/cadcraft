@@ -115,7 +115,7 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
     }
 
     // Header
-    let header_h = o.header;
+    let header_h = 0.2;
     let h_a = recessed + dir * (-w / 2.0 - fw) + normal * (-wall_t / 2.0);
     let h_b = recessed + dir * (w / 2.0 + fw) + normal * (-wall_t / 2.0);
     meshes.push(box_between(h_a, h_b, frame_z1, frame_z1 + header_h, wall_t, "header", o.id));
@@ -171,7 +171,6 @@ mod tests {
             width: 1.2,
             height: 1.5,
             sill: 0.9,
-            header: 0.2,
             frame_width: 0.05,
             frame_depth: 0.1,
             casing_width: 0.05,
@@ -192,7 +191,6 @@ mod tests {
             width: 0.9,
             height: 2.1,
             sill: 0.0,
-            header: 0.2,
             frame_width: 0.05,
             frame_depth: 0.1,
             casing_width: 0.05,
