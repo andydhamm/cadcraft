@@ -84,7 +84,8 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
     let mut materials: Vec<Value> = Vec::new();
     let mut material_index: HashMap<String, u32> = HashMap::new();
 
-    for (i, m) in scene.meshes.iter().enumerate() {
+    let written_meshes: Vec<&Mesh> = scene.meshes.iter().filter(|m| !m.positions.is_empty()).collect();
+    for (i, m) in written_meshes.iter().enumerate() {
         let mat_idx = if let Some(idx) = material_index.get(&m.material) {
             *idx
         } else {
@@ -237,7 +238,7 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
     }
 
     let buffers: Vec<Value> = if bin.is_empty() { Vec::new() } else { vec![json!({ "byteLength": bin.len() as u32 })] };
-    let node_refs: Vec<u32> = (0..scene.meshes.len() as u32).collect();
+    let node_refs: Vec<u32> = (0..written_meshes.len() as u32).collect();
     let value = json!({
         "version": 2,
         "asset": { "version": "2.0", "generator": "CADCraft arch3d" },
@@ -614,5 +615,42 @@ mod tests {
         let a = write(&scene);
         let b = write(&scene);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn glb_nodes_include_door_window_and_glass() {
+        let mut scene = scene_with(0);
+        // Door frame mesh (o0).
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "door-frame".into();
+            m.object = ArchId(0);
+            m
+        });
+        // Window glass mesh (o1) — verifies {material}-o{number} naming.
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "window-glass".into();
+            m.object = ArchId(1);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let nodes = json["nodes"].as_array().unwrap();
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().map(|m| m["name"].as_str().unwrap().to_string()).collect();
+        assert!(mesh_names.contains(&"door-frame-o0".to_string()), "missing door-frame-o0: {:?}", mesh_names);
+        assert!(mesh_names.contains(&"window-glass-o1".to_string()), "missing window-glass-o1: {:?}", mesh_names);
+        // Nodes mirror mesh names.
+        let node_names: Vec<String> = nodes.iter().map(|n| n["name"].as_str().unwrap().to_string()).collect();
+        assert!(node_names.contains(&"door-frame-o0".to_string()), "node missing door-frame-o0: {:?}", node_names);
+        assert!(node_names.contains(&"window-glass-o1".to_string()), "node missing window-glass-o1: {:?}", node_names);
+        // Glass material: alphaMode BLEND and baseColorFactor[3] < 0.6.
+        let materials = json["materials"].as_array().unwrap();
+        assert!(
+            materials.iter().any(|m| m["name"] == "window-glass"
+                && m["alphaMode"] == "BLEND"
+                && m["pbrMetallicRoughness"]["baseColorFactor"][3].as_f64().unwrap() < 0.6),
+            "window-glass material missing BLEND/alpha"
+        );
     }
 }

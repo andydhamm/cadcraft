@@ -2377,13 +2377,13 @@ fn tags_for(d: &Drawing, version: Version, target: Version) -> Vec<Tag> {
             w.s(100, "AcDbPolyline");
             w.t.extend(tags);
         }
-        for tags in crate::dxf_arch::proxy_opening_polylines(&d.arch) {
+        for (layer, tags) in crate::dxf_arch::proxy_opening_polylines(&d.arch) {
             w.s(0, "LWPOLYLINE");
             let h = w.h();
             w.s(5, h);
             w.s(330, &ms_br);
             w.s(100, "AcDbEntity");
-            w.s(8, crate::dxf_arch::ARCH_OPENING_LAYER);
+            w.s(8, &layer);
             w.s(100, "AcDbPolyline");
             w.t.extend(tags);
         }
