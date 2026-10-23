@@ -744,3 +744,4 @@ mod tests {
         let after = s.doc().expect("doc").arch.opening(ArchId(0)).map(|o| o.offset);
         assert_eq!(after, before, "offset should be restored after undo");
     }
+}
