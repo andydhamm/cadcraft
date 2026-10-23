@@ -554,28 +554,26 @@ impl Session {
                     let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
                     let off = cadcraft_arch::opening::project_to_wall(&d.arch, o.host, new_point)
                         .ok_or_else(|| EngineError::Other("could not project point to wall".into()))?;
-                    self
-                        .execute(
-                            "arch.opening.move",
-                            &json!({
-                                "opening": format!("o{}", id.0),
-                                "offset": off,
-                            }),
-                        )
-                        .map(|_| ())
+                    self.execute(
+                        "arch.opening.move",
+                        &json!({
+                            "opening": format!("o{}", id.0),
+                            "offset": off,
+                        }),
+                    )
+                    .map(|_| ())
                 }
                 ArchTarget::Wall(id) => {
                     let end = if grip_index == 0 { "start" } else { "end" };
-                    self
-                        .execute(
-                            "arch.wall.stretch",
-                            &json!({
-                                "wall": format!("w{}", id.0),
-                                "end": end,
-                                "to": [new_point.x, new_point.y],
-                            }),
-                        )
-                        .map(|_| ())
+                    self.execute(
+                        "arch.wall.stretch",
+                        &json!({
+                            "wall": format!("w{}", id.0),
+                            "end": end,
+                            "to": [new_point.x, new_point.y],
+                        }),
+                    )
+                    .map(|_| ())
                 }
             };
         }
@@ -614,30 +612,6 @@ impl Session {
                     Some(w) => Ok(vec![w.start, w.end]),
                     None => Err(EngineError::Other("no such object".into())),
                 },
-            };
-        }
-        self.doc()?.entity(handle).map(|e| e.kind.grips()).ok_or_else(|| EngineError::Other("no such object".into()))
-    }
-            let d = self.doc()?;
-            let Some(o) = d.arch.opening(id) else {
-                return Err(EngineError::Other("no such object".into()));
-            };
-            let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
-            let dir = (w.end - w.start).normalized();
-            let perp = dir.perp();
-            let centre = w.start + dir * o.offset;
-            let half_w = o.width / 2.0;
-            let half_t = w.thickness / 2.0;
-            let hinge = centre + perp * half_t - dir * half_w;
-            let far = centre + perp * half_t + dir * half_w;
-            return Ok(vec![centre, hinge, far]);
-        }
-        if is_arch_handle(handle) {
-            let id = ArchId((handle.0 - ARCH_HANDLE_BASE) as u32);
-            let d = self.doc()?;
-            return match d.arch.wall(id) {
-                Some(w) => Ok(vec![w.start, w.end]),
-                None => Err(EngineError::Other("no such object".into())),
             };
         }
         self.doc()?.entity(handle).map(|e| e.kind.grips()).ok_or_else(|| EngineError::Other("no such object".into()))
@@ -769,5 +743,34 @@ mod arch_grips_tests {
         let d = s.doc().unwrap();
         let w = d.arch.wall(ArchId(0)).unwrap();
         assert_eq!(w.end, Vec2::new(12.0, 0.0));
+    }
+
+    /// An opening's proxy handle must resolve to the opening, never to the wall that
+    /// shares the same id number; the handle range (not the id) is what disambiguates.
+    #[test]
+    fn opening_handles_resolve_to_openings_not_walls() {
+        let s = setup_opening();
+
+        // In this fixture the wall and opening both carry id 0, so the only thing
+        // that separates them is their respective handle ranges.
+        assert_eq!(arch_id_from_handle(opening_handle(ArchId(0))), Some(ArchTarget::Opening(ArchId(0))));
+        assert_eq!(arch_id_from_handle(arch_handle(ArchId(0))), Some(ArchTarget::Wall(ArchId(0))));
+
+        // Picking the opening handle must return the three opening grips on the host
+        // wall, not the two endpoint grips of the wall.
+        assert_eq!(s.grips_of(opening_handle(ArchId(0))).unwrap().len(), 3);
+        assert_eq!(s.grips_of(arch_handle(ArchId(0))).unwrap().len(), 2);
+    }
+
+    /// Dragging an opening's grip slides the opening along its host wall; the host
+    /// wall stays put and the opening offset tracks the dragged point.
+    #[test]
+    fn opening_grips_drag_along_the_host_wall() {
+        let mut s = setup_opening();
+        s.grip_edit(opening_handle(ArchId(0)), 0, Vec2::new(3.0, 0.0), GripMode::Stretch).unwrap();
+        let d = s.doc().unwrap();
+        let o = d.arch.opening(ArchId(0)).unwrap();
+        assert_eq!(o.offset, 3.0);
+        assert_eq!(o.host, ArchId(0));
     }
 }

@@ -439,13 +439,7 @@ mod tests {
     #[test]
     fn plan_symbol_prims_use_the_opening_handle() {
         let mut d = Drawing::new_metric();
-        let wid = d.arch.push_wall(Wall {
-            start: Vec2::new(0.0, 0.0),
-            end: Vec2::new(10.0, 0.0),
-            thickness: 0.2,
-            height: 2.7,
-            ..Wall::default(),
-        });
+        let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
         let oid = d.arch.push_opening(Opening::new(wid, 5.0, 1.0, 2.1, OpeningKind::Door));
         d.touch_arch();
         let list = build_arch(&d, &Options::default());
