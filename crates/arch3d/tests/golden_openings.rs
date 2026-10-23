@@ -124,7 +124,7 @@ fn build_dirty_after_an_opening_move_equals_build() {
     if let Some(o) = moved.openings.first_mut() {
         o.offset += 0.25;
     }
-    let dirty: BTreeSet<ArchId> = BTreeSet::from([moved.openings.iter().map(|o| o.id).collect()]);
+    let dirty: BTreeSet<ArchId> = moved.openings.iter().map(|o| o.id).collect();
     let partial = build_dirty(&moved, &dirty, &full);
 
     // A full rebuild of the moved model must equal the dirty rebuild.
