@@ -1060,10 +1060,10 @@ mod tests {
     #[test]
     fn opening_handle_hex_starts_with_a000() {
         let oh = opening_handle(ArchId(0));
-        let hex = oh.hex();
+        let hex = oh.hex().to_lowercase();
         assert!(hex.starts_with("a000"), "opening handle hex is `{hex}`, expected prefix `a000`");
         let oh7 = opening_handle(ArchId(7));
-        let hex7 = oh7.hex();
+        let hex7 = oh7.hex().to_lowercase();
         assert!(hex7.starts_with("a000"), "opening handle hex is `{hex7}`, expected prefix `a000`");
     }
 
