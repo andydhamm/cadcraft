@@ -148,7 +148,8 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
     if is_window && sd > 0.0 {
         let s_a = recessed + dir * (-w / 2.0 - fw / 2.0 - sd) + normal * (-wall_t / 2.0);
         let s_b = recessed + dir * (w / 2.0 + fw / 2.0 + sd) + normal * (-wall_t / 2.0);
-        if let Some(mesh) = box_between(s_a, s_b, frame_z0 - 0.02, frame_z0, 0.04, &format!("{}-sill", kind_prefix), o.id) {
+        let sill_bottom = (frame_z0 - 0.02).max(0.0);
+        if let Some(mesh) = box_between(s_a, s_b, sill_bottom, frame_z0, 0.04, &format!("{}-sill", kind_prefix), o.id) {
             meshes.push(mesh);
         }
     }
