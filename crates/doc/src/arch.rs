@@ -66,6 +66,12 @@ pub const MIN_WALL_THICKNESS: f64 = 1e-4;
 /// Minimum wall length, in metres.
 pub const MIN_WALL_LENGTH: f64 = 1e-6;
 
+/// Maximum number of openings in a drawing.
+pub const MAX_OPENINGS: usize = 8192;
+
+/// Minimum opening width, in metres.
+pub const MIN_OPENING_WIDTH: f64 = 0.1;
+
 /// A wall: centre-line segment, thickness, height, and layer bands.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -184,6 +190,43 @@ pub enum JoinKind {
     Square,
 }
 
+/// The kind of architectural opening.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OpeningKind {
+    /// A hinged or sliding door.
+    #[default]
+    Door,
+    /// A window.
+    Window,
+    /// A garage door.
+    GarageDoor,
+    /// A cased opening (no swing).
+    CasedOpening,
+}
+
+/// Which side the hinge is on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Hinge {
+    /// Hinge on the left.
+    #[default]
+    Left,
+    /// Hinge on the right.
+    Right,
+}
+
+/// Which direction the opening swings.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Swing {
+    /// Swings inward.
+    #[default]
+    In,
+    /// Swings outward.
+    Out,
+}
+
 /// A building level (floor plate).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -196,6 +239,109 @@ pub struct Level {
     pub structure: f64,
 }
 
+/// An architectural opening (door, window, garage door, or cased opening).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Opening {
+    pub id: ArchId,
+    pub host: ArchId,
+    pub offset: f64,
+    pub width: f64,
+    pub height: f64,
+    pub sill: f64,
+    pub kind: OpeningKind,
+    pub style: String,
+    pub hinge: Hinge,
+    pub swing: Swing,
+    pub recess: f64,
+    pub frame_width: f64,
+    pub frame_depth: f64,
+    pub casing_width: f64,
+    pub casing_depth: f64,
+    pub sill_depth: f64,
+    pub rough_width: f64,
+    pub rough_height: f64,
+    pub swing_angle: f64,
+    pub percent_open: f64,
+    pub glass_mode: String,
+    pub mull_group: Option<ArchId>,
+    pub layer: String,
+}
+
+impl Default for Opening {
+    fn default() -> Self {
+        Self {
+            id: ArchId(0),
+            host: ArchId(0),
+            offset: 0.0,
+            width: 0.9,
+            height: 2.1,
+            sill: 0.0,
+            kind: OpeningKind::Door,
+            style: "hinged".into(),
+            hinge: Hinge::Left,
+            swing: Swing::In,
+            recess: 0.0,
+            frame_width: 0.06,
+            frame_depth: 0.10,
+            casing_width: 0.05,
+            casing_depth: 0.015,
+            sill_depth: 0.03,
+            rough_width: 1.02,
+            rough_height: 2.22,
+            swing_angle: 0.0,
+            percent_open: 0.0,
+            glass_mode: "automatic".into(),
+            mull_group: None,
+            layer: "A-DOOR".into(),
+        }
+    }
+}
+
+impl Opening {
+    /// Create a new opening on the given host wall.
+    ///
+    /// Rough dimensions are set to finished + 0.12 m. Style and layer are
+    /// derived from `kind`. Non-finite numeric inputs are clamped to defaults.
+    pub fn new(host: ArchId, offset: f64, width: f64, height: f64, kind: OpeningKind) -> Self {
+        let offset = if offset.is_finite() { offset } else { 0.0 };
+        let width = if width.is_finite() { width } else { 0.9 };
+        let height = if height.is_finite() { height } else { 2.1 };
+        let style = match kind {
+            OpeningKind::Window => "slider".to_string(),
+            OpeningKind::GarageDoor => "garage".to_string(),
+            OpeningKind::CasedOpening => "cased".to_string(),
+            OpeningKind::Door => "hinged".to_string(),
+        };
+        let layer = if kind == OpeningKind::Window { "A-GLAZ" } else { "A-DOOR" };
+        Self {
+            id: ArchId(0),
+            host,
+            offset,
+            width,
+            height,
+            sill: 0.0,
+            kind,
+            style,
+            hinge: Hinge::Left,
+            swing: Swing::In,
+            recess: 0.0,
+            frame_width: 0.06,
+            frame_depth: 0.10,
+            casing_width: 0.05,
+            casing_depth: 0.015,
+            sill_depth: 0.03,
+            rough_width: width + 0.12,
+            rough_height: height + 0.12,
+            swing_angle: 0.0,
+            percent_open: 0.0,
+            glass_mode: "automatic".into(),
+            mull_group: None,
+            layer: layer.to_string(),
+        }
+    }
+}
+
 /// The architectural object model for a drawing.
 ///
 /// Stored on [`Drawing::arch`]; the 3D pane and incremental rebuilds key off
@@ -204,6 +350,8 @@ pub struct Level {
 #[serde(default)]
 pub struct ArchModel {
     pub walls: Vec<Wall>,
+    #[serde(default)]
+    pub openings: Vec<Opening>,
     #[serde(default)]
     pub next_id: u32,
     #[serde(default)]
@@ -216,6 +364,7 @@ impl Default for ArchModel {
     fn default() -> Self {
         ArchModel {
             walls: Vec::new(),
+            openings: Vec::new(),
             next_id: 0,
             levels: vec![Level { index: 0, name: "Level 1".into(), elevation: 0.0, floor_to_floor: 2.4, ceiling_height: 2.4, structure: 0.2 }],
             types: vec![
@@ -291,6 +440,42 @@ impl ArchModel {
     /// Look up a wall type by name (case-insensitive).
     pub fn wall_type(&self, name: &str) -> Option<&WallType> {
         self.types.iter().find(|t| t.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Add an opening and return its new id.
+    pub fn push_opening(&mut self, mut o: Opening) -> ArchId {
+        let id = ArchId(self.next_id);
+        self.next_id = self.next_id.saturating_add(1);
+        o.id = id;
+        self.openings.push(o);
+        id
+    }
+
+    /// Look up an opening by id.
+    pub fn opening(&self, id: ArchId) -> Option<&Opening> {
+        self.openings.iter().find(|o| o.id == id)
+    }
+
+    /// The index of an opening by id, or `None` if not found.
+    pub fn opening_index(&self, id: ArchId) -> Option<usize> {
+        self.openings.iter().position(|o| o.id == id)
+    }
+
+    /// All openings on a given host wall, sorted by offset.
+    pub fn openings_on(&self, host: ArchId) -> Vec<&Opening> {
+        let mut v: Vec<&Opening> = self.openings.iter().filter(|o| o.host == host).collect();
+        v.sort_by(|a, b| a.offset.partial_cmp(&b.offset).unwrap_or(std::cmp::Ordering::Equal));
+        v
+    }
+
+    /// Remove an opening by id. Returns true if it was found.
+    pub fn remove_opening(&mut self, id: ArchId) -> bool {
+        if let Some(pos) = self.openings.iter().position(|o| o.id == id) {
+            self.openings.remove(pos);
+            true
+        } else {
+            false
+        }
     }
 
     /// Look up a level by index.
@@ -380,6 +565,73 @@ impl ArchModel {
         }
         for id in &dupes {
             messages.push(format!("duplicate wall id {}", id));
+        }
+
+        if self.openings.len() > MAX_OPENINGS {
+            messages.push(format!("model has {} openings, max {MAX_OPENINGS}", self.openings.len()));
+        }
+
+        for o in &self.openings {
+            let id = format!("{}", o.id);
+
+            if !o.offset.is_finite()
+                || !o.width.is_finite()
+                || !o.height.is_finite()
+                || !o.sill.is_finite()
+                || !o.recess.is_finite()
+                || !o.frame_width.is_finite()
+                || !o.frame_depth.is_finite()
+                || !o.casing_width.is_finite()
+                || !o.casing_depth.is_finite()
+                || !o.sill_depth.is_finite()
+                || !o.rough_width.is_finite()
+                || !o.rough_height.is_finite()
+                || !o.swing_angle.is_finite()
+                || !o.percent_open.is_finite()
+            {
+                messages.push(format!("{}: non-finite numeric value", id));
+                continue;
+            }
+
+            if !(o.width >= MIN_OPENING_WIDTH) {
+                messages.push(format!("{}: width {} below minimum {}", id, o.width, MIN_OPENING_WIDTH));
+            }
+
+            if o.sill < 0.0 {
+                messages.push(format!("{}: negative sill {}", id, o.sill));
+            }
+
+            if let Some(host) = self.wall(o.host) {
+                if o.sill + o.height > host.height {
+                    messages.push(format!("{}: sill+height {} exceeds wall height {}", id, o.sill + o.height, host.height));
+                }
+            } else {
+                messages.push(format!("{}: unknown host wall {}", id, o.host));
+                continue;
+            }
+
+            if o.rough_width < o.width {
+                messages.push(format!("{}: rough width {} below finished width {}", id, o.rough_width, o.width));
+            }
+
+            if o.rough_height < o.height {
+                messages.push(format!("{}: rough height {} below finished height {}", id, o.rough_height, o.height));
+            }
+        }
+
+        let mut seen_op = std::collections::HashSet::new();
+        let mut dupe_ops = Vec::new();
+        for o in &self.openings {
+            if seen_op.contains(&o.id) {
+                if !dupe_ops.contains(&o.id) {
+                    dupe_ops.push(o.id);
+                }
+            } else {
+                seen_op.insert(o.id);
+            }
+        }
+        for id in &dupe_ops {
+            messages.push(format!("duplicate opening id {}", id));
         }
 
         messages
@@ -669,5 +921,89 @@ mod tests {
     fn arch_id_from_str_is_case_insensitive() {
         assert_eq!("w12".parse::<ArchId>().unwrap(), ArchId(12));
         assert_eq!("W12".parse::<ArchId>().unwrap(), ArchId(12));
+    }
+
+    #[test]
+    fn push_opening_shares_the_id_counter_with_walls() {
+        let mut m = ArchModel::default();
+        let wid = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        let oid = m.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
+        assert_eq!(wid, ArchId(0));
+        assert_eq!(oid, ArchId(1));
+        assert_eq!(m.next_wall_id(), ArchId(2));
+        assert!(m.opening(oid).is_some());
+        assert!(m.opening(ArchId(999)).is_none());
+    }
+
+    #[test]
+    fn opening_defaults_have_rough_larger_than_finished() {
+        let o = Opening::new(ArchId(1), 0.5, 0.9, 2.1, OpeningKind::Door);
+        assert!((o.rough_width - (o.width + 0.12)).abs() < 1e-12);
+        assert!((o.rough_height - (o.height + 0.12)).abs() < 1e-12);
+        assert!(o.rough_width > o.width);
+        assert!(o.rough_height > o.height);
+
+        let d = Opening::default();
+        assert!(d.rough_width > d.width);
+        assert!(d.rough_height > d.height);
+    }
+
+    #[test]
+    fn opening_defaults_pick_the_a_door_or_a_glaz_layer() {
+        let door = Opening::new(ArchId(1), 0.0, 0.9, 2.1, OpeningKind::Door);
+        let window = Opening::new(ArchId(1), 0.0, 0.9, 2.1, OpeningKind::Window);
+        let garage = Opening::new(ArchId(1), 0.0, 2.0, 2.5, OpeningKind::GarageDoor);
+        let cased = Opening::new(ArchId(1), 0.0, 0.5, 2.0, OpeningKind::CasedOpening);
+        assert_eq!(door.layer, "A-DOOR");
+        assert_eq!(window.layer, "A-GLAZ");
+        assert_eq!(garage.layer, "A-DOOR");
+        assert_eq!(cased.layer, "A-DOOR");
+    }
+
+    #[test]
+    fn validate_rejects_an_opening_on_a_missing_host() {
+        let mut m = ArchModel::default();
+        m.push_opening(Opening::new(ArchId(999), 0.0, 0.9, 2.1, OpeningKind::Door));
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("unknown host wall")));
+    }
+
+    #[test]
+    fn validate_rejects_a_sill_above_the_wall_height() {
+        let mut m = ArchModel::default();
+        let wid = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        let mut o = Opening::new(wid, 1.0, 0.9, 1.5, OpeningKind::Window);
+        o.sill = 2.0;
+        m.push_opening(o);
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("exceeds wall height")));
+    }
+
+    #[test]
+    fn validate_rejects_too_many_openings() {
+        let mut m = ArchModel::default();
+        for i in 0..MAX_OPENINGS + 1 {
+            m.push_opening(Opening::new(ArchId(i as u32), 0.0, 0.9, 2.1, OpeningKind::Door));
+        }
+        let msgs = m.validate();
+        let count = msgs.iter().filter(|m| m.contains("max")).count();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn opening_json_roundtrips_with_rough_and_recess() {
+        let mut o = Opening::new(ArchId(1), 0.5, 1.2, 1.8, OpeningKind::Window);
+        o.recess = 0.08;
+        o.rough_width = 1.32;
+        o.rough_height = 1.92;
+        o.id = ArchId(42);
+        let json = serde_json::to_string(&o).unwrap();
+        let back: Opening = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, ArchId(42));
+        assert_eq!(back.host, ArchId(1));
+        assert_eq!(back.recess, 0.08);
+        assert_eq!(back.rough_width, 1.32);
+        assert_eq!(back.rough_height, 1.92);
+        assert_eq!(back.layer, "A-GLAZ");
     }
 }
