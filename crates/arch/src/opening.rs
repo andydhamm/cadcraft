@@ -406,7 +406,7 @@ mod tests {
         let o = Opening::new(ArchId(1), 1.0, 1.0, 0.1, 2.0, OpeningKind::Door);
         let rough_w = o.width + ROUGH_ALLOWANCE;
         let o_rough = Opening {
-            ..o
+            ..o,
             rough_width: rough_w,
         };
         let off = rough_offset(&o_rough);
