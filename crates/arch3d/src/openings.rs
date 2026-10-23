@@ -91,7 +91,7 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
         let leaf_z0 = frame_z0 + fw;
         let leaf_z1 = frame_z1 - fw;
 
-        let two_leaves = o.style == "sliding" || o.style == "bifold" || is_double(o);
+        let two_leaves = o.style == "sliding" || o.style == "bifold" || o.style == "french" || is_double(o);
         if two_leaves {
             let half_w = (w - 2.0 * fw) / 2.0;
             let l_a = recessed + dir * (-w / 2.0 + fw) + normal * (-wall_t / 2.0 + leaf_t / 2.0);
