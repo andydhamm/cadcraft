@@ -14,10 +14,71 @@ pub mod walls;
 
 pub use crate::mesh::{Bounds3, Mesh};
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadcraft_arch::join::solve_joins;
-use cadcraft_doc::{ArchId, ArchModel};
+use cadcraft_doc::{ArchId, ArchModel, Wall};
+use cadcraft_geom::{Vec2, Vec3};
+
+/// Build a simple extruded-rectangle mesh from a wall's raw start/end/thickness.
+///
+/// Used as a fallback when the join solver produced no shape for a wall id.
+/// Returns `None` if the wall is degenerate (zero length or zero height).
+fn raw_wall_mesh(wall: &Wall, object: ArchId) -> Option<Mesh> {
+    let dx = wall.end.x - wall.start.x;
+    let dy = wall.end.y - wall.start.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    let h = wall.height;
+    if len < 1e-9 || h <= 0.0 {
+        return None;
+    }
+    let nx = -dy / len;
+    let ny = dx / len;
+    let half = wall.thickness / 2.0;
+    let p0 = Vec2::new(wall.start.x + nx * half, wall.start.y + ny * half);
+    let p1 = Vec2::new(wall.end.x + nx * half, wall.end.y + ny * half);
+    let p2 = Vec2::new(wall.end.x - nx * half, wall.end.y - ny * half);
+    let p3 = Vec2::new(wall.start.x - nx * half, wall.start.y - ny * half);
+
+    let pos_f64: Vec<Vec3> = vec![
+        Vec3::new(p0.x, p0.y, 0.0),
+        Vec3::new(p1.x, p1.y, 0.0),
+        Vec3::new(p2.x, p2.y, 0.0),
+        Vec3::new(p3.x, p3.y, 0.0),
+        Vec3::new(p0.x, p0.y, h),
+        Vec3::new(p1.x, p1.y, h),
+        Vec3::new(p2.x, p2.y, h),
+        Vec3::new(p3.x, p3.y, h),
+    ];
+
+    let cx = (p0.x + p1.x + p2.x + p3.x) * 0.25;
+    let cy = (p0.y + p1.y + p2.y + p3.y) * 0.25;
+    let cz = h * 0.5;
+    let normals_f64: Vec<Vec3> = pos_f64
+        .iter()
+        .map(|p| {
+            let vx = p.x - cx;
+            let vy = p.y - cy;
+            let vz = p.z - cz;
+            let l = (vx * vx + vy * vy + vz * vz).sqrt();
+            if l < 1e-12 { Vec3::new(0.0, 0.0, 1.0) } else { Vec3::new(vx / l, vy / l, vz / l) }
+        })
+        .collect();
+
+    let positions: Vec<[f32; 3]> = pos_f64.iter().map(|p| [p.x as f32, p.y as f32, p.z as f32]).collect();
+    let normals: Vec<[f32; 3]> = normals_f64.iter().map(|n| [n.x as f32, n.y as f32, n.z as f32]).collect();
+    let uvs: Vec<[f32; 2]> = pos_f64.iter().map(|p| [p.x as f32, p.z as f32]).collect();
+    let indices: Vec<u32> = vec![
+        0, 1, 2, 0, 2, 3, // bottom
+        4, 5, 6, 4, 6, 7, // top
+        1, 2, 7, 1, 7, 6, // front
+        3, 0, 4, 3, 4, 7, // back
+        0, 1, 5, 0, 5, 4, // left
+        2, 3, 4, 2, 4, 6, // right
+    ];
+
+    Some(Mesh { positions, normals, uvs, indices, material: "wall".to_string(), object })
+}
 
 /// A 3D scene composed of extruded architectural meshes.
 #[derive(Debug, Clone)]
@@ -46,23 +107,31 @@ impl Scene3d {
 
     /// Build the full 3D scene from an arch model.
     ///
-    /// Solves joins once, then extrudes each wall.
+    /// Solves joins once, then extrudes each wall (falling back to a raw
+    /// rectangular mesh when the join solver produced no shape for a wall).
     pub fn build(model: &ArchModel) -> Scene3d {
         let shapes = solve_joins(model);
-        let mut meshes: Vec<Mesh> = Vec::with_capacity(shapes.len());
+        let shape_by_id: BTreeMap<ArchId, usize> = shapes.iter().enumerate().map(|(i, s)| (s.id, i)).collect();
+        let mut meshes: Vec<Mesh> = Vec::with_capacity(model.walls.len());
 
-        for shape in &shapes {
-            let height = model.walls.iter().find(|w| w.id == shape.id).map(|w| w.height).unwrap_or(0.0);
-            if let Some(mesh) = walls::extrude_wall(shape, height, 0.0, "wall") {
-                meshes.push(mesh);
+        for wall in &model.walls {
+            let height = wall.height;
+            let mesh = match shape_by_id.get(&wall.id).and_then(|&i| shapes.get(i)) {
+                Some(shape) => walls::extrude_wall(shape, height, 0.0, "wall"),
+                None => raw_wall_mesh(wall, wall.id),
+            };
+            if let Some(m) = mesh {
+                meshes.push(m);
             }
         }
 
         let mut openings_built = 0;
         for opening in &model.openings {
-            let o_meshes = openings::opening_meshes(model, opening);
-            openings_built += 1;
-            meshes.extend(o_meshes.into_iter().filter(|m| !m.positions.is_empty()));
+            let o_meshes: Vec<Mesh> = openings::opening_meshes(model, opening).into_iter().filter(|m| !m.positions.is_empty()).collect();
+            if !o_meshes.is_empty() {
+                openings_built += 1;
+                meshes.extend(o_meshes);
+            }
         }
 
         meshes.retain(|m| !m.positions.is_empty());
@@ -78,31 +147,39 @@ impl Scene3d {
     /// Incremental rebuild: reuses meshes for ids not in `dirty`, recomputes bounds.
     pub fn build_dirty(model: &ArchModel, dirty: &BTreeSet<ArchId>, prev: &Scene3d) -> Scene3d {
         let shapes = solve_joins(model);
-        let mut meshes: Vec<Mesh> = Vec::with_capacity(shapes.len());
+        let shape_by_id: BTreeMap<ArchId, usize> = shapes.iter().enumerate().map(|(i, s)| (s.id, i)).collect();
+        let mut meshes: Vec<Mesh> = Vec::with_capacity(model.walls.len());
 
-        for shape in &shapes {
-            if !dirty.contains(&shape.id) {
-                if let Some(mesh) = prev.mesh_for(&shape.id) {
+        for wall in &model.walls {
+            if !dirty.contains(&wall.id) {
+                if let Some(mesh) = prev.mesh_for(&wall.id) {
                     meshes.push(mesh.clone());
                     continue;
                 }
             }
-            let height = model.walls.iter().find(|w| w.id == shape.id).map(|w| w.height).unwrap_or(0.0);
-            if let Some(mesh) = walls::extrude_wall(shape, height, 0.0, "wall") {
-                meshes.push(mesh);
+            let height = wall.height;
+            let mesh = match shape_by_id.get(&wall.id).and_then(|&i| shapes.get(i)) {
+                Some(shape) => walls::extrude_wall(shape, height, 0.0, "wall"),
+                None => raw_wall_mesh(wall, wall.id),
+            };
+            if let Some(m) = mesh {
+                meshes.push(m);
             }
         }
 
         let mut openings_built = 0;
         for opening in &model.openings {
             if dirty.contains(&opening.id) {
-                let o_meshes = openings::opening_meshes(model, opening);
-                openings_built += 1;
-                meshes.extend(o_meshes.into_iter().filter(|m| !m.positions.is_empty()));
+                let o_meshes: Vec<Mesh> = openings::opening_meshes(model, opening).into_iter().filter(|m| !m.positions.is_empty()).collect();
+                if !o_meshes.is_empty() {
+                    openings_built += 1;
+                    meshes.extend(o_meshes);
+                }
             } else {
-                let prev_meshes: Vec<&Mesh> = prev.meshes.iter().filter(|m| m.object == opening.id).collect();
-                for m in prev_meshes {
-                    meshes.push(m.clone());
+                let prev_opening_meshes: Vec<Mesh> = prev.meshes.iter().filter(|m| m.object == opening.id).map(|m| m.clone()).collect();
+                if !prev_opening_meshes.is_empty() {
+                    openings_built += 1;
+                    meshes.extend(prev_opening_meshes);
                 }
             }
         }
@@ -223,5 +300,97 @@ mod tests {
         let src = include_str!("lib.rs");
         assert!(src.contains("deny(clippy::unwrap_used"));
         assert!(src.contains("forbid(unsafe_code)"));
+    }
+
+    #[test]
+    fn build_emits_one_mesh_per_wall() {
+        let mut model = ArchModel::default();
+        for i in 0..5 {
+            let x0 = i as f64 * 2.0;
+            let x1 = x0 + 1.5;
+            model.walls.push(Wall {
+                id: ArchId(i),
+                start: Vec2::new(x0, 0.0),
+                end: Vec2::new(x1, 0.0),
+                thickness: 0.3,
+                height: 2.5,
+                ..Default::default()
+            });
+        }
+        let scene = Scene3d::build(&model);
+        for i in 0..5 {
+            assert!(scene.mesh_for(&ArchId(i)).is_some(), "no mesh for wall {}", i);
+        }
+        assert_eq!(scene.mesh_count(), 5);
+    }
+
+    #[test]
+    fn build_dirty_after_an_opening_edit_equals_a_full_build() {
+        use cadcraft_doc::arch::Opening;
+
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(0),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let open_id = ArchId(1);
+        let mut opening = Opening::default();
+        opening.id = open_id;
+        opening.host = ArchId(0);
+        opening.offset = 2.0;
+        opening.width = 0.8;
+        opening.height = 2.0;
+        model.openings.push(opening);
+
+        let full = Scene3d::build(&model);
+
+        let mut edited = model.clone();
+        if let Some(o) = edited.openings.iter_mut().find(|o| o.id == open_id) {
+            o.width = 1.2;
+        }
+
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([open_id]);
+        let partial = Scene3d::build_dirty(&edited, &dirty, &full);
+        let full_edited = Scene3d::build(&edited);
+
+        assert_eq!(partial.mesh_count(), full_edited.mesh_count());
+        assert_eq!(partial.openings_built, full_edited.openings_built);
+        for (a, b) in partial.meshes.iter().zip(full_edited.meshes.iter()) {
+            assert_eq!(a.object, b.object);
+            assert_eq!(a.positions, b.positions);
+            assert_eq!(a.normals, b.normals);
+            assert_eq!(a.uvs, b.uvs);
+            assert_eq!(a.indices, b.indices);
+            assert_eq!(a.material, b.material);
+        }
+    }
+
+    #[test]
+    fn scene_skips_empty_meshes() {
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(0),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(2.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 2.0),
+            end: Vec2::new(2.0, 2.0),
+            thickness: 0.3,
+            height: 0.0,
+            ..Default::default()
+        });
+        let scene = Scene3d::build(&model);
+        assert!(scene.mesh_for(&ArchId(0)).is_some(), "valid wall mesh missing");
+        assert!(scene.mesh_for(&ArchId(1)).is_none(), "degenerate wall mesh should be skipped");
     }
 }
