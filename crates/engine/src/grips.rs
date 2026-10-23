@@ -5,7 +5,7 @@
 //! undoable and reachable from scripts, the control channel and MCP.
 
 use cadcraft_doc::arch::Opening;
-use cadcraft_doc::{ARCH_HANDLE_BASE, ArchId, DimKind, EntityKind, Handle, LwPolyline, is_arch_handle};
+use cadcraft_doc::{ARCH_HANDLE_BASE, ArchId, DimKind, EntityKind, Handle, LwPolyline, OPENING_HANDLE_OFFSET, is_arch_handle, is_opening_handle};
 use cadcraft_geom::{Arc, EPS, Mat3, Polyline, Vec2, Vec3, norm_angle};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -38,11 +38,6 @@ fn translated(k: &EntityKind, d: Vec2) -> EntityKind {
     let mut k = k.clone();
     k.transform(&Mat3::translate(d));
     k
-}
-
-/// Derive the [`ArchId`] from an arch proxy handle, or `None` for normal entity handles.
-pub(crate) fn arch_id_from_handle(h: Handle) -> Option<ArchId> {
-    is_arch_handle(h).then(|| ArchId((h.0 - ARCH_HANDLE_BASE) as u32))
 }
 
 /// What a polyline grip index refers to (matches the order of `EntityKind::grips`).
@@ -512,13 +507,24 @@ pub fn mode_matrix(mode: GripMode, base: Vec2, to: Vec2) -> Option<Mat3> {
     }
 }
 
+/// The [`ArchId`] for a wall proxy handle, or `None` if `h` is not a wall arch handle.
+///
+/// Opening handles return `None` (they route to `arch.opening.move`, not `arch.wall.stretch`).
+pub fn arch_id_from_handle(h: Handle) -> Option<ArchId> {
+    if is_opening_handle(h) {
+        return None;
+    }
+    if is_arch_handle(h) { Some(ArchId((h.0 - ARCH_HANDLE_BASE) as u32)) } else { None }
+}
+
 impl Session {
     /// Drag grip `grip_index` of `handle` to `new_point` in `mode` (one undo step).
     /// The base point of the rotate/scale/mirror modes is the grip itself. As in AutoCAD the edit
     /// covers the selection: a stretch drags the grips of other selected objects that sit on the
     /// same point, and the other modes transform every selected object.
     pub fn grip_edit(&mut self, handle: Handle, grip_index: usize, new_point: Vec2, mode: GripMode) -> Result<()> {
-        if let Some(id) = arch_id_from_handle(handle) {
+        if is_opening_handle(handle) {
+            let id = ArchId((handle.0 - ARCH_HANDLE_BASE - OPENING_HANDLE_OFFSET) as u32);
             let d = self.doc()?;
             if let Some(o) = d.arch.opening(id) {
                 if mode != GripMode::Stretch {
@@ -537,6 +543,11 @@ impl Session {
                     )
                     .map(|_| ());
             }
+            return Err(EngineError::Other("no such opening".into()));
+        }
+        if is_arch_handle(handle) {
+            let id = ArchId((handle.0 - ARCH_HANDLE_BASE) as u32);
+            let d = self.doc()?;
             if mode != GripMode::Stretch {
                 return Err(EngineError::Other("arch walls support only the stretch grip".into()));
             }
@@ -568,19 +579,25 @@ impl Session {
 
     /// Grip points of an object (the indices `grip_edit` takes).
     pub fn grips_of(&self, handle: Handle) -> Result<Vec<Vec2>> {
-        if let Some(id) = arch_id_from_handle(handle) {
+        if is_opening_handle(handle) {
+            let id = ArchId((handle.0 - ARCH_HANDLE_BASE - OPENING_HANDLE_OFFSET) as u32);
             let d = self.doc()?;
-            if let Some(o) = d.arch.opening(id) {
-                let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
-                let dir = (w.end - w.start).normalized();
-                let perp = dir.perp();
-                let centre = w.start + dir * o.offset;
-                let half_w = o.width / 2.0;
-                let half_t = w.thickness / 2.0;
-                let hinge = centre + perp * half_t - dir * half_w;
-                let far = centre + perp * half_t + dir * half_w;
-                return Ok(vec![centre, hinge, far]);
-            }
+            let Some(o) = d.arch.opening(id) else {
+                return Err(EngineError::Other("no such object".into()));
+            };
+            let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
+            let dir = (w.end - w.start).normalized();
+            let perp = dir.perp();
+            let centre = w.start + dir * o.offset;
+            let half_w = o.width / 2.0;
+            let half_t = w.thickness / 2.0;
+            let hinge = centre + perp * half_t - dir * half_w;
+            let far = centre + perp * half_t + dir * half_w;
+            return Ok(vec![centre, hinge, far]);
+        }
+        if is_arch_handle(handle) {
+            let id = ArchId((handle.0 - ARCH_HANDLE_BASE) as u32);
+            let d = self.doc()?;
             return match d.arch.wall(id) {
                 Some(w) => Ok(vec![w.start, w.end]),
                 None => Err(EngineError::Other("no such object".into())),
@@ -603,7 +620,7 @@ mod tests;
 mod arch_grips_tests {
     use super::*;
     use crate::Session;
-    use cadcraft_doc::{ArchId, Handle, arch_handle};
+    use cadcraft_doc::{ArchId, Handle, arch_handle, opening_handle};
     use cadcraft_geom::Vec2;
     use serde_json::json;
 
@@ -668,8 +685,8 @@ mod arch_grips_tests {
     fn opening_grips_are_on_the_host_wall() {
         let s = setup_opening();
         let d = s.doc().unwrap();
-        let o = d.arch.opening(ArchId(1)).unwrap();
-        let grips = s.grips_of(arch_handle(ArchId(1))).unwrap();
+        let o = d.arch.opening(ArchId(0)).unwrap();
+        let grips = s.grips_of(opening_handle(ArchId(0))).unwrap();
         assert_eq!(grips.len(), 3);
         // Centre grip sits on the wall centre line at the opening offset.
         assert_eq!(grips[0], Vec2::new(5.0, 0.0));
@@ -683,19 +700,19 @@ mod arch_grips_tests {
     #[test]
     fn grip_drag_moves_an_opening_along_its_wall() {
         let mut s = setup_opening();
-        s.grip_edit(arch_handle(ArchId(1)), 0, Vec2::new(7.0, 0.0), GripMode::Stretch).unwrap();
+        s.grip_edit(opening_handle(ArchId(0)), 0, Vec2::new(7.0, 0.0), GripMode::Stretch).unwrap();
         let d = s.doc().unwrap();
-        let o = d.arch.opening(ArchId(1)).unwrap();
+        let o = d.arch.opening(ArchId(0)).unwrap();
         assert_eq!(o.offset, 7.0);
     }
 
     #[test]
     fn opening_grip_drag_is_undoable() {
         let mut s = setup_opening();
-        s.grip_edit(arch_handle(ArchId(1)), 0, Vec2::new(7.0, 0.0), GripMode::Stretch).unwrap();
+        s.grip_edit(opening_handle(ArchId(0)), 0, Vec2::new(7.0, 0.0), GripMode::Stretch).unwrap();
         s.undo().unwrap();
         let d = s.doc().unwrap();
-        let o = d.arch.opening(ArchId(1)).unwrap();
+        let o = d.arch.opening(ArchId(0)).unwrap();
         assert_eq!(o.offset, 5.0);
     }
 
@@ -703,7 +720,7 @@ mod arch_grips_tests {
     fn opening_grip_rejects_the_move_mode() {
         let s = setup_opening();
         let mut s = s;
-        assert!(s.grip_edit(arch_handle(ArchId(1)), 0, Vec2::new(7.0, 0.0), GripMode::Move).is_err());
+        assert!(s.grip_edit(opening_handle(ArchId(0)), 0, Vec2::new(7.0, 0.0), GripMode::Move).is_err());
     }
 
     #[test]

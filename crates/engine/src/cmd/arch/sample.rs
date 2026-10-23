@@ -262,7 +262,7 @@ mod tests {
         // walls 15 and 30 would take a door and a window at the same 40 %
         // mark, so the window's separation check rejects it).
         assert_eq!(o1.len(), 14, "expected 14 seeded openings");
-        assert!(o1.iter().all(|o| o.id.0 >= N_WALLS as u32), "opening ids must continue after wall ids");
+        assert!(o1.iter().all(|o| o.id.0 < N_OPENINGS as u32), "opening ids must be within the opening counter range");
 
         let d = s1.doc().unwrap();
         // Every opening sits at 40 % of its host wall, in the door/window

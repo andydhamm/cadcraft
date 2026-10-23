@@ -57,6 +57,37 @@ pub fn is_arch_handle(h: Handle) -> bool {
     h.0 >= ARCH_HANDLE_BASE && h.0 < ARCH_HANDLE_BASE.saturating_add(1u64 << 32)
 }
 
+/// Offset within the arch-handle range reserved for opening proxy handles.
+///
+/// Wall handles occupy `[ARCH_HANDLE_BASE, ARCH_HANDLE_BASE + OPENING_HANDLE_OFFSET)`.
+/// Opening handles occupy `[ARCH_HANDLE_BASE + OPENING_HANDLE_OFFSET, ...)` and remain
+/// recognisable by [`is_arch_handle`] (the full `1 << 32` range).
+pub const OPENING_HANDLE_OFFSET: u64 = 0x8000;
+
+/// The synthetic proxy handle for an architectural opening.
+///
+/// Openings are not entities; their proxy handle lives in the upper half of the
+/// arch range so picking/selection can disambiguate from wall handles.
+pub fn opening_handle(id: ArchId) -> Handle {
+    Handle(ARCH_HANDLE_BASE.saturating_add(OPENING_HANDLE_OFFSET).saturating_add(u64::from(id.0)))
+}
+
+/// Whether `h` falls in the synthetic opening-handle range.
+pub fn is_opening_handle(h: Handle) -> bool {
+    h.0 >= ARCH_HANDLE_BASE.saturating_add(OPENING_HANDLE_OFFSET)
+        && h.0 < ARCH_HANDLE_BASE.saturating_add(OPENING_HANDLE_OFFSET).saturating_add(1u64 << 15)
+}
+
+/// Human-readable label for an opening id, e.g. `o0`, `o1`.
+pub fn opening_label(id: ArchId) -> String {
+    format!("o{}", id.0)
+}
+
+/// Human-readable label for a wall id, e.g. `w0`, `w1`.
+pub fn wall_label(id: ArchId) -> String {
+    format!("w{}", id.0)
+}
+
 /// Maximum number of walls in a drawing (caps join-stretch BFS and allocations).
 pub const MAX_WALLS: usize = 4096;
 
@@ -355,6 +386,8 @@ pub struct ArchModel {
     #[serde(default)]
     pub next_id: u32,
     #[serde(default)]
+    pub next_opening_id: u32,
+    #[serde(default)]
     pub levels: Vec<Level>,
     #[serde(default)]
     pub types: Vec<WallType>,
@@ -366,6 +399,7 @@ impl Default for ArchModel {
             walls: Vec::new(),
             openings: Vec::new(),
             next_id: 0,
+            next_opening_id: 0,
             levels: vec![Level { index: 0, name: "Level 1".into(), elevation: 0.0, floor_to_floor: 2.4, ceiling_height: 2.4, structure: 0.2 }],
             types: vec![
                 WallType {
@@ -443,9 +477,12 @@ impl ArchModel {
     }
 
     /// Add an opening and return its new id.
+    ///
+    /// Openings use their own counter (`next_opening_id`) so the first opening
+    /// placed is always `ArchId(0)` regardless of how many walls exist.
     pub fn push_opening(&mut self, mut o: Opening) -> ArchId {
-        let id = ArchId(self.next_id);
-        self.next_id = self.next_id.saturating_add(1);
+        let id = ArchId(self.next_opening_id);
+        self.next_opening_id = self.next_opening_id.saturating_add(1);
         o.id = id;
         self.openings.push(o);
         id
@@ -924,15 +961,34 @@ mod tests {
     }
 
     #[test]
-    fn push_opening_shares_the_id_counter_with_walls() {
+    fn opening_ids_have_their_own_counter() {
         let mut m = ArchModel::default();
         let wid = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
         let oid = m.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
         assert_eq!(wid, ArchId(0));
-        assert_eq!(oid, ArchId(1));
-        assert_eq!(m.next_wall_id(), ArchId(2));
+        assert_eq!(oid, ArchId(0));
+        assert_eq!(m.next_wall_id(), ArchId(1));
+        assert_eq!(m.next_opening_id, 1);
         assert!(m.opening(oid).is_some());
         assert!(m.opening(ArchId(999)).is_none());
+    }
+
+    #[test]
+    fn push_opening_shares_the_id_counter_with_walls() {
+        let mut m = ArchModel::default();
+        let w0 = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        let w1 = m.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 0.2));
+        let o0 = m.push_opening(Opening::new(w0, 1.0, 0.9, 2.1, OpeningKind::Door));
+        let o1 = m.push_opening(Opening::new(w1, 1.0, 0.9, 2.1, OpeningKind::Window));
+        assert_eq!(w0, ArchId(0));
+        assert_eq!(w1, ArchId(1));
+        assert_eq!(o0, ArchId(0));
+        assert_eq!(o1, ArchId(1));
+        assert_eq!(m.next_wall_id(), ArchId(2));
+        assert_eq!(m.next_opening_id, 2);
+        assert!(m.opening(o0).is_some());
+        assert!(m.opening(o1).is_some());
+        assert!(m.opening(ArchId(2)).is_none());
     }
 
     #[test]
@@ -1005,5 +1061,40 @@ mod tests {
         assert_eq!(back.rough_width, 1.32);
         assert_eq!(back.rough_height, 1.92);
         assert_eq!(back.layer, "A-GLAZ");
+    }
+
+    #[test]
+    fn opening_handles_are_distinct_from_wall_handles() {
+        let wh = arch_handle(ArchId(0));
+        let oh = opening_handle(ArchId(0));
+        assert_ne!(wh, oh);
+        assert!(is_arch_handle(wh));
+        assert!(is_arch_handle(oh));
+        assert!(is_opening_handle(oh));
+        assert!(!is_opening_handle(wh));
+        assert!(!is_arch_handle(Handle(0)));
+    }
+
+    #[test]
+    fn opening_handle_hex_starts_with_a000() {
+        let oh = opening_handle(ArchId(0));
+        let hex = oh.hex().to_lowercase();
+        assert!(hex.starts_with("a000"), "opening handle hex is `{hex}`, expected prefix `a000`");
+        let oh7 = opening_handle(ArchId(7));
+        let hex7 = oh7.hex().to_lowercase();
+        assert!(hex7.starts_with("a000"), "opening handle hex is `{hex7}`, expected prefix `a000`");
+    }
+
+    #[test]
+    fn validate_flags_duplicate_opening_ids() {
+        let mut m = ArchModel::default();
+        let wid = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
+        let oid = m.openings.last().unwrap().id.clone();
+        m.push_opening(Opening::new(wid, 2.0, 0.9, 2.1, OpeningKind::Door));
+        m.openings.last_mut().unwrap().id = oid;
+
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("duplicate opening id")));
     }
 }

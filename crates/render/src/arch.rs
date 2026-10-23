@@ -6,7 +6,7 @@ use cadcraft_geom::Vec2;
 
 use crate::{DPrim, DisplayList, Kind, Options};
 
-pub use cadcraft_doc::is_arch_handle;
+pub use cadcraft_doc::{is_arch_handle, opening_handle};
 
 /// Stable proxy handle for an architectural object: arch objects have no entity handle, so
 /// selection and picking map back to the `ArchId` through this reserved range.
@@ -165,7 +165,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
                     list.verts.push(*q);
                 }
                 list.prims.push(DPrim {
-                    handle: arch_handle(o.id),
+                    handle: opening_handle(o.id),
                     color: sym_ink.rgb,
                     aci7: sym_ink.aci7,
                     lw: 0.0,
@@ -376,7 +376,7 @@ mod tests {
         d.touch_arch();
         let list = build_arch(&d, &Options::default());
 
-        let handle = arch_handle(oid);
+        let handle = opening_handle(oid);
         let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
         assert!(!symbol_prims.is_empty(), "no prims tagged with the opening handle");
     }
@@ -393,7 +393,7 @@ mod tests {
         d.touch_arch();
         let list = build_arch(&d, &Options::default());
 
-        let handle = arch_handle(ArchId(1));
+        let handle = opening_handle(ArchId(0));
         let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
         assert!(!symbol_prims.is_empty(), "no prims for the door opening");
         for p in &symbol_prims {
@@ -413,7 +413,7 @@ mod tests {
         d.touch_arch();
         let list = build_arch(&d, &Options::default());
 
-        let handle = arch_handle(ArchId(1));
+        let handle = opening_handle(ArchId(0));
         let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
         assert!(!symbol_prims.is_empty(), "no prims for the window opening");
         for p in &symbol_prims {
@@ -430,7 +430,7 @@ mod tests {
         d.touch_arch();
         let list = build_arch(&d, &Options::default());
 
-        let handle = arch_handle(ArchId(999));
+        let handle = opening_handle(ArchId(0));
         assert!(list.prims.iter().all(|p| p.handle != handle), "prims drawn for a missing-host opening");
     }
 

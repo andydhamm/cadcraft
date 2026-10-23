@@ -545,7 +545,7 @@ mod tests {
         let rev_after = s.doc().expect("doc").arch_revision;
         assert_ne!(rev_before, rev_after, "arch revision did not change");
         let one = &r["openings"].as_array().expect("openings")[0];
-        assert_eq!(one["id"], json!("w1"));
+        assert_eq!(one["id"], json!("w0"));
         assert_eq!(one["host"], json!("w0"));
         assert_eq!(one["offset"], json!(3.0));
         assert_eq!(one["width"], json!(0.9));
@@ -676,21 +676,21 @@ mod tests {
     #[test]
     fn opening_move_updates_the_offset() {
         let mut s = session_with_door();
-        let r = s.execute("arch.opening.move", &json!({"opening": "w1", "offset": 6.5})).expect("move opening");
-        assert_eq!(r["moved"], json!("w1"), "moved should be the opening id");
+        let r = s.execute("arch.opening.move", &json!({"opening": "w0", "offset": 6.5})).expect("move opening");
+        assert_eq!(r["moved"], json!("w0"), "moved should be the opening id");
         assert_eq!(r["offset"], json!(6.5), "moved offset should be echoed");
         let d = s.doc().expect("doc");
-        assert_eq!(d.arch.opening(ArchId(1)).map(|o| o.offset), Some(6.5), "stored offset should be 6.5");
+        assert_eq!(d.arch.opening(ArchId(0)).map(|o| o.offset), Some(6.5), "stored offset should be 6.5");
     }
 
     #[test]
     fn opening_move_rejects_a_position_past_the_wall() {
         let mut s = session_with_door();
-        let r = s.execute("arch.opening.move", &json!({"opening": "w1", "offset": 9.5}));
+        let r = s.execute("arch.opening.move", &json!({"opening": "w0", "offset": 9.5}));
         let err = r.expect_err("moving the door past the wall end should be rejected");
         assert!(!err.to_string().is_empty(), "expected a placement error");
         let d = s.doc().expect("doc");
-        assert_eq!(d.arch.opening(ArchId(1)).map(|o| o.offset), Some(3.0), "stored offset must be unchanged");
+        assert_eq!(d.arch.opening(ArchId(0)).map(|o| o.offset), Some(3.0), "stored offset must be unchanged");
     }
 
     #[test]
@@ -705,9 +705,9 @@ mod tests {
     fn opening_move_accepts_a_point_instead_of_an_offset() {
         let mut s = session_with_door();
         // Wall w0 runs (0,0) -> (10,0); (6,0) projects to offset 6.0.
-        let r = s.execute("arch.opening.move", &json!({"opening": "w1", "point": [6.0, 0.0]})).expect("move opening via point");
+        let r = s.execute("arch.opening.move", &json!({"opening": "w0", "point": [6.0, 0.0]})).expect("move opening via point");
         assert_eq!(r["offset"], json!(6.0), "projected offset should be 6.0");
         let d = s.doc().expect("doc");
-        assert_eq!(d.arch.opening(ArchId(1)).map(|o| o.offset), Some(6.0), "stored offset should be 6.0");
+        assert_eq!(d.arch.opening(ArchId(0)).map(|o| o.offset), Some(6.0), "stored offset should be 6.0");
     }
 }
