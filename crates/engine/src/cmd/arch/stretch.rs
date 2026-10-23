@@ -78,7 +78,13 @@ mod tests {
         let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [12.0, 0.0]}));
         assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
         let val = res.unwrap();
-        let moved: Vec<String> = val["moved"].as_array().expect("moved should be an array").iter().map(|v| v.to_string()).collect();
+        let moved: Vec<String> = val["moved"]
+            .as_array()
+            .expect("moved should be an array")
+            .iter()
+            .map(|v| v.as_str().expect("moved entries must be strings"))
+            .map(str::to_owned)
+            .collect();
         assert!(moved.contains(&"w0".to_string()), "w0 should be in moved: {moved:?}");
         assert!(moved.contains(&"w1".to_string()), "w1 should be in moved: {moved:?}");
 
