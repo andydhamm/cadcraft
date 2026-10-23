@@ -20,8 +20,12 @@ pub(crate) const ARCH_KEY: &str = "CADCRAFT_ARCH";
 /// Layer of the save-time proxy plan polylines.
 pub(crate) const ARCH_PROXY_LAYER: &str = "A-WALL";
 
-/// `CADCRAFT` xdata marker identifying a proxy polyline, so the reader drops it.
+/// `CADCRAFT` xdata marker identifying a wall proxy polyline, so the reader drops it.
 pub(crate) const ARCH_PROXY_MARKER: &str = "ARCHWALL";
+
+/// `CADCRAFT` xdata marker identifying a save-time opening proxy polyline, so the reader
+/// drops it (the opening's model data is the one source of truth).
+pub(crate) const ARCH_OPENING_MARKER: &str = "ARCHOPENING";
 
 /// Rejects payloads larger than this before they are even parsed.
 const MAX_ARCH_PAYLOAD: usize = 8 << 20;
@@ -45,26 +49,46 @@ pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
     if m.is_empty() {
         return None;
     }
-    let json = serde_json::to_string(&Payload { version: 1, model: m.clone() }).ok()?;
+    let json = serde_json::to_string(&Payload { version: 2, model: m.clone() }).ok()?;
     Some(crate::dxf_ext::json_chunks(&json))
 }
 
 /// Parse an architectural XRECORD payload; `None` when it is not a payload we understand.
+///
+/// Accepts schema version 1 (no openings: v1 → empty openings) and version 2 (openings
+/// present). Both are bounded — the wall count against [`MAX_WALLS`] and the opening count
+/// against [`MAX_OPENINGS`] — so hostile payloads can not overflow allocations.
 pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     if text.len() > MAX_ARCH_PAYLOAD {
         return None;
     }
     let p: Payload = serde_json::from_str(text).ok()?;
-    if p.version != 1 {
+    if p.version != 1 && p.version != 2 {
         return None;
     }
     if p.model.walls.len() > cadcraft_doc::MAX_WALLS {
         return None;
     }
-    Some(p.model)
+    let model = if p.version == 1 {
+        let mut m = p.model;
+        m.openings.clear();
+        m
+    } else {
+        p.model
+    };
+    if model.openings.len() > cadcraft_doc::MAX_OPENINGS {
+        return None;
+    }
+    Some(model)
 }
 
-/// The four corners of a wall's poche ring (the offset centre-line rectangle), in order.
+/// True when an entity's `CADCRAFT` xdata carries the [`ARCH_PROXY_MARKER`] or
+/// [`ARCH_OPENING_MARKER`] marker, i.e. the record is a save-time proxy (wall or opening)
+/// polyline to be dropped on read.
+pub(crate) fn is_arch_proxy(tags: &[Tag]) -> bool {
+    let markers = [ARCH_PROXY_MARKER, ARCH_OPENING_MARKER];
+    crate::dxf_ext::xdata(tags, crate::dxf_ext::APP).iter().any(|t| t.code == 1000 && markers.iter().any(|m| t.str().trim() == *m))
+}
 ///
 /// Returns `None` for a degenerate wall: a non-finite endpoint, `thickness <= 0`, or a
 /// centre-line shorter than `1e-12`.
@@ -82,6 +106,49 @@ fn wall_ring(w: &cadcraft_doc::Wall) -> Option<Vec<Vec2>> {
     }
     let perp = dir.rotate(std::f64::consts::PI / 2.0) * (w.thickness / 2.0 / len);
     Some([w.start + perp, w.end + perp, w.end - perp, w.start - perp].into_iter().collect())
+}
+
+/// The four corners of an opening's rough rectangle along the host wall, in the same corner
+/// order as [`wall_ring`], offset by half the wall thickness.
+///
+/// The rough span is centred on `o.offset` (measured from the wall start in metres) and uses
+/// `o.rough_width`, mirroring `arch::symbol::opening_symbol`'s rough geometry. Returns `None`
+/// for a degenerate wall (as [`wall_ring`] does) or when any input is non-finite.
+fn opening_ring(w: &cadcraft_doc::Wall, o: &cadcraft_doc::Opening) -> Option<Vec<Vec2>> {
+    if !w.start.is_finite() || !w.end.is_finite() {
+        return None;
+    }
+    if w.thickness <= 0.0 {
+        return None;
+    }
+    let dir = w.end - w.start;
+    let len = dir.len();
+    if len < 1e-12 {
+        return None;
+    }
+    let offset = if o.offset.is_finite() { o.offset } else { 0.0 };
+    let width = if o.width.is_finite() && o.width > 0.0 { o.width } else { 0.9 };
+    let rough_width = if o.rough_width.is_finite() && o.rough_width > 0.0 { o.rough_width } else { width + 0.12 };
+    if !offset.is_finite() || !width.is_finite() || !rough_width.is_finite() {
+        return None;
+    }
+    let rough_start = offset - (rough_width - width) / 2.0;
+    let rough_end = rough_start + rough_width;
+    if !rough_start.is_finite() || !rough_end.is_finite() {
+        return None;
+    }
+    let along = dir.normalized();
+    let half = along.perp() * (w.thickness / 2.0);
+    Some(
+        [
+            w.start + along * rough_start + half,
+            w.start + along * rough_end + half,
+            w.start + along * rough_end - half,
+            w.start + along * rough_start - half,
+        ]
+        .into_iter()
+        .collect(),
+    )
 }
 
 /// The DXF groups (after the common entity groups) of one closed LWPOLYLINE per wall poche
