@@ -27,7 +27,7 @@ pub fn arch_snap(d: &Drawing, cursor: Vec2, aperture: f64, osmode: u32) -> Optio
         return None;
     }
 
-    let model = d.arch;
+    let model = &d.arch;
     let walls: Vec<&Wall> = model.walls.iter().take(MAX_ARCH_WALLS).collect();
 
     let mut cands: Vec<(f64, u8, u32, Vec2, &'static str)> = Vec::with_capacity(256);
