@@ -14,7 +14,7 @@ use crate::mesh::Mesh;
 ///
 /// Returns an empty vector if the host wall is missing or degenerate.
 pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
-    let wall = match model.walls.iter().find(|w| w.id == o.host_wall) {
+    let wall = match model.walls.iter().find(|w| w.id == o.host) {
         Some(w) => w,
         None => return Vec::new(),
     };
@@ -31,7 +31,7 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
 
     let w = o.width;
     let h = o.height;
-    let sill_h = o.sill_height;
+    let sill_h = o.sill;
     let fw = o.frame_width;
     let fd = o.frame_depth;
     let cw = o.casing_width;
@@ -115,7 +115,7 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
     }
 
     // Header
-    let header_h = o.header_height;
+    let header_h = o.header;
     let h_a = recessed + dir * (-w / 2.0 - fw) + normal * (-wall_t / 2.0);
     let h_b = recessed + dir * (w / 2.0 + fw) + normal * (-wall_t / 2.0);
     meshes.push(box_between(h_a, h_b, frame_z1, frame_z1 + header_h, wall_t, "header", o.id));
@@ -166,12 +166,12 @@ mod tests {
     fn window_opening() -> Opening {
         Opening {
             id: ArchId(100),
-            host_wall: ArchId(1),
+            host: ArchId(1),
             offset: 5.0,
             width: 1.2,
             height: 1.5,
-            sill_height: 0.9,
-            header_height: 0.2,
+            sill: 0.9,
+            header: 0.2,
             frame_width: 0.05,
             frame_depth: 0.1,
             casing_width: 0.05,
@@ -187,12 +187,12 @@ mod tests {
     fn door_opening() -> Opening {
         Opening {
             id: ArchId(101),
-            host_wall: ArchId(1),
+            host: ArchId(1),
             offset: 5.0,
             width: 0.9,
             height: 2.1,
-            sill_height: 0.0,
-            header_height: 0.2,
+            sill: 0.0,
+            header: 0.2,
             frame_width: 0.05,
             frame_depth: 0.1,
             casing_width: 0.05,
@@ -296,7 +296,7 @@ mod tests {
     fn opening_meshes_are_empty_for_a_missing_host() {
         let model = wall_model();
         let mut o = window_opening();
-        o.host_wall = ArchId(999);
+        o.host = ArchId(999);
         let meshes = opening_meshes(&model, &o);
         assert!(meshes.is_empty(), "expected empty for missing host");
     }
