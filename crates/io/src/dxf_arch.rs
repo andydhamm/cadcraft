@@ -79,7 +79,7 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     } else {
         p.model
     };
-    if model.openings.len() > cadcraft_doc::MAX_OPENINGS {
+    if model.openings.len() > cadcraft_arch::MAX_OPENINGS {
         return None;
     }
     Some(model)
@@ -117,7 +117,7 @@ fn wall_ring(w: &cadcraft_doc::Wall) -> Option<Vec<Vec2>> {
 /// The rough span is centred on `o.offset` (measured from the wall start in metres) and uses
 /// `o.rough_width`, mirroring `arch::symbol::opening_symbol`'s rough geometry. Returns `None`
 /// for a degenerate wall (as [`wall_ring`] does) or when any input is non-finite.
-fn opening_ring(w: &cadcraft_doc::Wall, o: &cadcraft_doc::Opening) -> Option<Vec<Vec2>> {
+fn opening_ring(w: &cadcraft_doc::Wall, o: &cadcraft_arch::Opening) -> Option<Vec<Vec2>> {
     if !w.start.is_finite() || !w.end.is_finite() {
         return None;
     }
@@ -189,7 +189,7 @@ pub(crate) fn proxy_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
 pub(crate) fn proxy_opening_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
     m.openings
         .iter()
-        .take(cadcraft_doc::MAX_OPENINGS)
+        .take(cadcraft_arch::MAX_OPENINGS)
         .filter_map(|o| {
             let symbol = cadcraft_arch::symbol::opening_symbol(m, o).as_ref();
             let mut corners: Option<Vec<Vec2>> = symbol.and_then(|s| s.polylines.first().cloned());
