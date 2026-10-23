@@ -4,7 +4,8 @@
 //! The UI calls [`Session::grip_edit`]; every edit runs through a `grip.*` command so it is
 //! undoable and reachable from scripts, the control channel and MCP.
 
-use cadcraft_doc::{ARCH_HANDLE_BASE, ArchId, DimKind, EntityKind, Handle, LwPolyline, Opening, is_arch_handle};
+use cadcraft_doc::arch::Opening;
+use cadcraft_doc::{ARCH_HANDLE_BASE, ArchId, DimKind, EntityKind, Handle, LwPolyline, is_arch_handle};
 use cadcraft_geom::{Arc, EPS, Mat3, Polyline, Vec2, Vec3, norm_angle};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -523,8 +524,9 @@ impl Session {
                 if mode != GripMode::Stretch {
                     return Err(EngineError::Other("arch openings support only the stretch grip".into()));
                 }
-                let w = d.arch.wall(o.wall).ok_or_else(|| EngineError::Other("no such wall".into()))?;
-                let off = cadcraft_arch::opening::project_to_wall(w, new_point);
+                let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
+                let off = cadcraft_arch::opening::project_to_wall(&d.arch, o.host, new_point)
+                    .ok_or_else(|| EngineError::Other("could not project point to wall".into()))?;
                 return self
                     .execute(
                         "arch.opening.move",
@@ -569,7 +571,7 @@ impl Session {
         if let Some(id) = arch_id_from_handle(handle) {
             let d = self.doc()?;
             if let Some(o) = d.arch.opening(id) {
-                let w = d.arch.wall(o.wall).ok_or_else(|| EngineError::Other("no such wall".into()))?;
+                let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
                 let dir = (w.end - w.start).normalized();
                 let perp = dir.perp();
                 let centre = w.start + dir * o.offset;
@@ -672,7 +674,8 @@ mod arch_grips_tests {
         // Centre grip sits on the wall centre line at the opening offset.
         assert_eq!(grips[0], Vec2::new(5.0, 0.0));
         // Hinge and far grips are offset by half the wall thickness.
-        let half_t = o.thickness / 2.0;
+        let w = d.arch.wall(o.host).unwrap();
+        let half_t = w.thickness / 2.0;
         assert_eq!(grips[1].y, half_t);
         assert_eq!(grips[2].y, half_t);
     }
