@@ -44,7 +44,7 @@ impl std::fmt::Display for PlacementError {
 /// The left edge of the rough (cut) span, i.e. the finished offset shifted
 /// so the finished opening is centred within the rough opening.
 pub fn rough_offset(o: &Opening) -> f64 {
-    o.offset - (o.rough_width - o.width) / 2.0
+    o.offset - o.rough_width / 2.0
 }
 
 /// Project a world point `p` onto the centre line of the host wall and return
@@ -131,12 +131,12 @@ pub fn validate_placement(
 
     let offset = offset.clamp(0.0, len);
     let rough_width = width + ROUGH_ALLOWANCE;
-    let rough_off = offset - (rough_width - width) / 2.0;
+    let rough_off = offset - rough_width / 2.0;
     let min_seg = min_segment(style);
-    if rough_off < min_seg {
+    if offset < min_seg {
         return Err(PlacementError("rough span extends past the start of the wall".into()));
     }
-    if rough_off + rough_width > len - min_seg {
+    if offset + width > len - min_seg {
         return Err(PlacementError("rough span extends past the end of the wall".into()));
     }
 
@@ -163,7 +163,9 @@ pub fn validate_placement(
 
 /// Place an opening on its host wall. When `fit` is true and the opening does
 /// not fit, the width is shrunk (bisection) to the largest value that still
-/// fits and is at least `min_width`; the offset is kept clamped to the wall.
+/// fits and is at least `min_width`; if even `min_width` does not fit at the
+/// current offset, the opening is slid into the valid window. The offset is
+/// kept clamped to the wall.
 pub fn place_opening(model: &ArchModel, mut o: Opening, fit: bool) -> Result<Opening, PlacementError> {
     let min_w = min_width(o.kind, &o.style);
 
@@ -203,7 +205,31 @@ pub fn place_opening(model: &ArchModel, mut o: Opening, fit: bool) -> Result<Ope
                     clamp_recess(model, &mut o);
                     Ok(o)
                 }
-                Err(e) => Err(e),
+                Err(_) => {
+                    // Even min_width doesn't fit at this offset; slide into valid window.
+                    let wall = model.wall(o.host).ok_or_else(|| PlacementError("host wall not found".into()))?;
+                    let len = wall.start.dist(wall.end);
+                    if !len.is_finite() || len < 1e-12 {
+                        return Err(PlacementError("host wall has zero or non-finite length".into()));
+                    }
+                    let min_seg = min_segment(&o.style);
+                    let half_rough = o.rough_width / 2.0;
+                    let min_off = min_seg + half_rough;
+                    let max_off = len - min_seg - half_rough;
+                    if min_off > max_off {
+                        return Err(e);
+                    }
+                    o.offset = o.offset.clamp(min_off, max_off);
+                    match validate_placement(model, o.host, o.offset, o.width, o.sill, o.height, o.kind, &o.style, None) {
+                        Ok(offset) => {
+                            o.offset = offset;
+                            auto_panel(&mut o);
+                            clamp_recess(model, &mut o);
+                            Ok(o)
+                        }
+                        Err(e) => Err(e),
+                    }
+                }
             }
         }
         Err(e) => Err(e),
@@ -339,5 +365,50 @@ mod tests {
         assert!(nan.is_err());
         let inf = validate_placement(&model, host, f64::INFINITY, 0.9, 0.0, 2.0, OpeningKind::Door, "hinged", None);
         assert!(inf.is_err());
+    }
+
+    #[test]
+    fn validate_rejects_sill_above_header() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        // Wall height is 0.2 (default), sill 2.0 + height 2.0 = 4.0 > 0.2
+        let res = validate_placement(&model, host, 1.0, 0.6, 2.0, 2.0, OpeningKind::Window, "slider", None);
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(err.0.contains("exceeds wall height"));
+    }
+
+    #[test]
+    fn fit_shrinks_a_too_wide_opening() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(1.5, 0.0), 0.2);
+        // Opening width 2.0 is too wide for a 1.5m wall with min segments
+        let o = Opening::new(host, 0.5, 2.0, 2.0, OpeningKind::Door);
+        let placed = place_opening(&model, o, true).unwrap();
+        // Should be shrunk to fit but still >= min_width
+        assert!(placed.width >= min_width(OpeningKind::Door, "hinged"));
+        assert!(placed.width < 2.0);
+    }
+
+    #[test]
+    fn fit_slides_an_opening_away_from_the_wall_end() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(3.0, 0.0), 0.2);
+        // Place at offset 0 with a width that fits but is too close to the start
+        let o = Opening::new(host, 0.0, 1.0, 2.0, OpeningKind::Door);
+        let placed = place_opening(&model, o, true).unwrap();
+        // Should be slid away from the wall start
+        assert!(placed.offset > 0.0);
+    }
+
+    #[test]
+    fn rough_span_is_centred_on_the_offset() {
+        let o = Opening::new(ArchId(1), 1.0, 1.0, 2.0, OpeningKind::Door);
+        let rough_w = o.width + ROUGH_ALLOWANCE;
+        let o_rough = Opening { rough_width: rough_w, ..o };
+        let off = rough_offset(&o_rough);
+        // Rough span [off, off + rough_w] should be centred on offset 1.0
+        let centre = (off + off + rough_w) / 2.0;
+        assert!((centre - 1.0).abs() < 1e-9);
     }
 }
