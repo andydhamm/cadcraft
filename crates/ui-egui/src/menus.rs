@@ -28,6 +28,7 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("ui.panel.properties", "Properties Inspector", &["Window", "Properties Inspector"], Some("Cmd+1")),
     ("ui.panel.layers", "Layers Palette", &["Window", "Layers Palette"], None),
     ("ui.panel.quickcalc", "QuickCalc", &["Window", "QuickCalc"], Some("Cmd+8")),
+    ("ui.show3d", "3D View", &["View", "3D", "3D View"], None),
     ("ui.toggle.systemcursor", "Show System Cursor", &["View", "Accessibility", "Show System Cursor"], None),
     ("ui.animations.system", "Use System Setting", &["View", "Accessibility", "Animation Effects", "Use System Setting"], None),
     ("ui.animations.on", "On", &["View", "Accessibility", "Animation Effects", "On"], None),
@@ -230,9 +231,10 @@ fn run_ui_command_inner(app: &mut CadApp, id: &str, params: &Value) -> Option<Re
             toggle(&mut app.ui.show_command_line, params);
             Ok(Value::Null)
         }
-        "ui.toggle.systemcursor" => {
-            toggle(&mut app.ui.system_cursor, params);
-            Ok(Value::Null)
+        "ui.show3d" => {
+            app.ui.show_three_d = true;
+            let _ = app.run("view3d", &json!({}));
+            Ok(json!({"showThreeD": true}))
         }
         "ui.toggle.viewcube" => {
             toggle(&mut app.ui.show_viewcube, params);
@@ -240,6 +242,10 @@ fn run_ui_command_inner(app: &mut CadApp, id: &str, params: &Value) -> Option<Re
         }
         "ui.toggle.ucsicon" => {
             toggle(&mut app.ui.show_ucs_icon, params);
+            Ok(Value::Null)
+        }
+        "ui.toggle.systemcursor" => {
+            toggle(&mut app.ui.system_cursor, params);
             Ok(Value::Null)
         }
         "ui.toggle.menubar" => {

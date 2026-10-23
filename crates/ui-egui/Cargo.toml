@@ -20,6 +20,7 @@ cadcraft-fonts = { workspace = true }
 egui = { workspace = true }
 # GPU canvas paint callback (same egui-wgpu/wgpu eframe uses with its "wgpu" feature).
 egui-wgpu = { workspace = true }
+cadcraft-render3d = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }

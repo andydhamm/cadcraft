@@ -40,6 +40,7 @@ pub mod menus;
 pub mod opening;
 pub mod options;
 pub mod palettes;
+pub mod pane3d;
 pub mod parametric;
 pub mod plotstyles;
 pub mod quick;
@@ -80,6 +81,8 @@ pub struct UiState {
     pub show_viewcube: bool,
     pub show_ucs_icon: bool,
     pub show_layer_list: bool,
+    /// Whether the 3D architectural pane is shown in the dockable area.
+    pub show_three_d: bool,
     /// Keep the system cursor visible over the drawing area (a small crosshair at the centre of the
     /// drawn one) instead of hiding it. Screen magnifiers (Windows Magnifier "follow the mouse
     /// pointer"), screen readers, recorders and remote desktops track the system cursor and lose it
@@ -166,6 +169,7 @@ impl Default for UiState {
             show_viewcube: true,
             show_ucs_icon: true,
             show_layer_list: false,
+            show_three_d: false,
             system_cursor: std::env::var("CADCRAFT_SYSTEM_CURSOR").is_ok_and(|v| !matches!(v.trim(), "" | "0" | "false" | "off")),
             toolset_tab: "Drafting".into(),
             collapsed_groups: Vec::new(),
@@ -202,6 +206,8 @@ pub struct CadApp {
     pub options: options::UiOptions,
     pub services: Services,
     pub canvas: canvas::CanvasState,
+    /// The architectural 3D viewport pane (orbit camera + offscreen render state).
+    pub pane3d: pane3d::Pane3d,
     /// Desktop HID status and navigation preferences; the web host supplies no HID backend.
     pub spacemouse: spacemouse::State,
     pub cmd: cmdline::CmdLine,
@@ -260,6 +266,7 @@ impl CadApp {
             options: options::UiOptions::default(),
             services,
             canvas: canvas::CanvasState::default(),
+            pane3d: pane3d::Pane3d::new(),
             spacemouse: spacemouse::State::default(),
             cmd: cmdline::CmdLine::default(),
             status: None,
@@ -648,7 +655,11 @@ impl CadApp {
         }
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
             if has_doc {
-                docking::show(self, ui);
+                if self.ui.show_three_d {
+                    pane3d::draw(ui, &mut self.pane3d);
+                } else {
+                    docking::show(self, ui);
+                }
             } else {
                 chrome::start_page(self, ui);
             }
