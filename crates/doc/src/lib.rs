@@ -19,6 +19,8 @@ mod plotter;
 mod refedit;
 mod store;
 mod tables;
+#[cfg(test)]
+mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -405,27 +407,3 @@ impl Drawing {
 
 mod anno;
 pub use anno::*;
-
-#[cfg(test)]
-mod tests {
-    use crate::Drawing;
-
-    /// A new drawing provides the `A-WALL` architectural layer for proxy graphics.
-    #[test]
-    fn a_wall_layer_exists_in_a_new_drawing() {
-        let d = Drawing::new_metric();
-        assert!(d.layers.iter().any(|l| l.name == "A-WALL"));
-    }
-
-    /// The five AIA/NCS arch layers are present in a new drawing in the standard order,
-    /// after `0` and `Defpoints`.
-    #[test]
-    fn arch_layers_are_in_a_new_drawing_in_order() {
-        let d = Drawing::new_imperial();
-        let arch = ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
-        for (i, name) in arch.iter().enumerate() {
-            let idx = 2 + i;
-            assert_eq!(d.layers[idx].name, *name, "layer at index {idx}");
-        }
-    }
-}
