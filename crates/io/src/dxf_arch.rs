@@ -27,9 +27,6 @@ pub(crate) const ARCH_PROXY_MARKER: &str = "ARCHWALL";
 /// drops it (the opening's model data is the one source of truth).
 pub(crate) const ARCH_OPENING_MARKER: &str = "ARCHOPENING";
 
-/// Layer of the save-time opening proxy polylines.
-pub(crate) const ARCH_OPENING_LAYER: &str = "A-DOOR";
-
 /// Rejects payloads larger than this before they are even parsed.
 const MAX_ARCH_PAYLOAD: usize = 8 << 20;
 
@@ -182,11 +179,12 @@ pub(crate) fn proxy_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
         .collect()
 }
 
-/// The DXF groups of one closed LWPOLYLINE per opening proxy ring, on layer
-/// [`ARCH_OPENING_LAYER`], each tagged with the [`ARCH_OPENING_MARKER`] xdata and the
-/// opening's id. Returns `Vec::new()` when there are no openings; the output is capped at
+/// The DXF groups of one closed LWPOLYLINE per opening proxy ring, on the opening's own
+/// layer (`A-DOOR` for doors/garage doors, `A-GLAZ` for windows), each tagged with the
+/// [`ARCH_OPENING_MARKER`] xdata and the opening's label (`o{n}`). Returns `Vec::new()`
+/// when there are no openings; the output is capped at
 /// [`cadcraft_arch::MAX_OPENINGS`] polylines.
-pub(crate) fn proxy_opening_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
+pub(crate) fn proxy_opening_polylines(m: &ArchModel) -> Vec<(String, Vec<Tag>)> {
     m.openings
         .iter()
         .take(cadcraft_doc::arch::MAX_OPENINGS)
@@ -211,8 +209,8 @@ pub(crate) fn proxy_opening_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
             }
             t.push(Tag::s(1001, crate::dxf_ext::APP));
             t.push(Tag::s(1000, ARCH_OPENING_MARKER));
-            t.push(Tag::s(1000, &o.id.to_string()));
-            Some(t)
+            t.push(Tag::s(1000, &format!("o{}", o.id)));
+            Some((o.layer.clone(), t))
         })
         .collect()
 }
@@ -397,15 +395,116 @@ mod tests {
         }
     }
 
+    /// The per-opening `(layer, tags)` from `proxy_opening_polylines`, grouped by layer.
+    fn poly_by_layer(polys: &[(String, Vec<Tag>)]) -> std::collections::HashMap<String, Vec<Vec<Tag>>> {
+        let mut map: std::collections::HashMap<String, Vec<Vec<Tag>>> = std::collections::HashMap::new();
+        for (l, t) in polys {
+            map.entry(l.clone()).or_default().push(t.clone());
+        }
+        map
+    }
+
     #[test]
     fn opening_proxy_polylines_are_written_on_a_door() {
         let mut d = Drawing::new_metric();
+        d.ensure_layer("A-DOOR");
         let wid = d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
         d.arch.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
 
         let text = write_dxf(&d);
         assert!(text.contains("ARCHOPENING"), "no ARCHOPENING marker in the DXF");
         assert!(text.contains("A-DOOR"), "no A-DOOR layer in the DXF");
+    }
+
+    #[test]
+    fn opening_proxy_polylines_use_the_opening_layer() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-DOOR");
+        d.ensure_layer("A-GLAZ");
+        let wid = d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        d.arch.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
+        d.arch.push_opening(Opening::new(wid, 4.0, 0.9, 1.5, OpeningKind::Window));
+
+        let polys = proxy_opening_polylines(&d.arch);
+        assert_eq!(polys.len(), 2, "expected two opening proxy rings");
+
+        // Each ring is on the opening's own layer.
+        let (dl, dts) = &polys[0];
+        let (wl, wts) = &polys[1];
+        assert_eq!(dl.as_str(), d.arch.openings[0].layer.as_str(), "door ring not on its layer");
+        assert_eq!(wl.as_str(), d.arch.openings[1].layer.as_str(), "window ring not on its layer");
+
+        // One ring per expected layer.
+        let grouped = poly_by_layer(&polys);
+        assert!(!grouped.get("A-DOOR").map(|v| v.is_empty()).unwrap_or(true), "no proxy ring on A-DOOR");
+        assert!(!grouped.get("A-GLAZ").map(|v| v.is_empty()).unwrap_or(true), "no proxy ring on A-GLAZ");
+
+        // XDATA carries ARCHOPENING marker and the o{n} label.
+        assert!(dts.iter().any(|t| t.code == 1000 && t.str().trim() == ARCH_OPENING_MARKER));
+        assert!(dts.iter().any(|t| t.code == 1000 && t.str().trim().starts_with("o")));
+        assert!(wts.iter().any(|t| t.code == 1000 && t.str().trim().starts_with("o")));
+    }
+
+    #[test]
+    fn resaving_does_not_duplicate_openings() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-DOOR");
+        d.ensure_layer("A-GLAZ");
+        let wid = d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        d.arch.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
+        d.arch.push_opening(Opening::new(wid, 4.0, 0.9, 1.5, OpeningKind::Window));
+
+        let want = d.arch.openings.len();
+        let first = read_dxf(write_dxf(&d).as_bytes()).unwrap();
+        let second = read_dxf(write_dxf(&first).as_bytes()).unwrap();
+
+        assert_eq!(first.arch.openings.len(), want, "openings changed on first read");
+        assert_eq!(second.arch.openings.len(), want, "openings changed on second read");
+
+        // No ARCHOPENING proxy polyline survives the read (model is the source of truth).
+        let count_proxy = |d: &Drawing| {
+            d.model
+                .iter()
+                .filter(|e| matches!(&e.kind, EntityKind::LwPolyline(_)))
+                .filter(|e| e.common.xdata.iter().any(|t| t.code == 1000 && t.value.trim() == ARCH_OPENING_MARKER))
+                .count()
+        };
+        assert_eq!(count_proxy(&first), 0, "opening proxy polyline survived the first read");
+        assert_eq!(count_proxy(&second), 0, "opening proxy polyline survived the second read");
+    }
+
+    #[test]
+    fn openings_round_trip_through_dxf() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-DOOR");
+        d.ensure_layer("A-GLAZ");
+        let wid = d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(12.0, 0.0), 0.2));
+        let door = d.arch.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
+        let window = d.arch.push_opening(Opening::new(wid, 4.0, 1.2, 1.5, OpeningKind::Window));
+        let garage = d.arch.push_opening(Opening::new(wid, 6.5, 2.4, 2.1, OpeningKind::GarageDoor));
+
+        let snap = d.arch.clone();
+        for _ in 0..2 {
+            let text = write_dxf(&d);
+            let back = read_dxf(text.as_bytes()).unwrap();
+            d = back;
+        }
+        assert_eq!(d.arch.openings.len(), snap.openings.len(), "opening count changed after round trip");
+        let door_r = d.arch.opening(door).unwrap().clone();
+        let window_r = d.arch.opening(window).unwrap().clone();
+        let garage_r = d.arch.opening(garage).unwrap().clone();
+
+        assert_eq!(door_r.kind, snap.openings[0].kind);
+        assert_eq!(window_r.kind, snap.openings[1].kind);
+        assert_eq!(garage_r.kind, snap.openings[2].kind);
+        assert_eq!(window_r.sill, snap.openings[1].sill);
+        assert_eq!(door_r.width, snap.openings[0].width);
+        assert_eq!(garage_r.width, snap.openings[2].width);
+
+        // Layers persist in the saved drawing.
+        let text = write_dxf(&d);
+        assert!(text.contains("A-DOOR"), "A-DOOR missing from a saved drawing with a door");
+        assert!(text.contains("A-GLAZ"), "A-GLAZ missing from a saved drawing with a window");
     }
 
     #[test]
