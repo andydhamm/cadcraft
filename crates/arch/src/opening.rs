@@ -326,7 +326,7 @@ mod tests {
         let mut o = Opening::new(ArchId(1), 0.0, 1.5, 2.0, OpeningKind::Door);
         auto_panel(&mut o);
         assert!(o.style.contains("double"));
-        let narrow = Opening::new(ArchId(2), 0.0, 0.9, 2.0, OpeningKind::Door);
+        let mut narrow = Opening::new(ArchId(2), 0.0, 0.9, 2.0, OpeningKind::Door);
         auto_panel(&mut narrow);
         assert!(!narrow.style.contains("double"));
     }
