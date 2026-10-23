@@ -37,15 +37,15 @@ pub fn write(scene: &Scene3d) -> Vec<u8> {
     out.extend_from_slice(&[0x02, 0x00, 0x00, 0x00]);
     push_u32(&mut out, total as u32);
 
-    // JSON chunk (0x4E4F534A), padded to 4-byte alignment.
-    out.extend_from_slice(&[0x4a, 0x53, 0x4f, 0x4e]);
+    // JSON chunk (0x4E4F534A), padded to 4-byte alignment with 0x20.
     push_u32(&mut out, json_text.len() as u32);
+    out.extend_from_slice(&[0x4a, 0x53, 0x4f, 0x4e]);
     out.extend_from_slice(json_text.as_bytes());
-    out.resize(out.len() + json_pad, 0);
+    out.resize(out.len() + json_pad, 0x20);
 
-    // Binary chunk (0x004E4942), padded to 4-byte alignment.
-    out.extend_from_slice(&[0x42, 0x49, 0x4e, 0x00]);
+    // Binary chunk (0x004E4942), padded to 4-byte alignment with 0x00.
     push_u32(&mut out, bin.len() as u32);
+    out.extend_from_slice(&[0x42, 0x49, 0x4e, 0x00]);
     out.extend_from_slice(&bin);
     out.resize(out.len() + bin_pad, 0);
 
@@ -118,16 +118,17 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
         }
         align4(&mut bin);
         let pos_len = (m.positions.len() * 12) as u32;
+        let bv_pos = buffer_views.len();
         buffer_views.push(json!({
             "buffer": 0,
-            "offset": pos_start,
-            "length": pos_len,
-            "viewType": 6,
+            "byteOffset": pos_start,
+            "byteLength": pos_len,
+            "target": 34962,
         }));
         let (pmin, pmax) = extents3(&m.positions);
         accessors.push(json!({
-            "buffer": 0,
-            "offset": pos_start,
+            "bufferView": bv_pos,
+            "byteOffset": 0,
             "count": m.positions.len() as u32,
             "type": "VEC3",
             "componentType": 5126,
@@ -145,15 +146,16 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
         }
         align4(&mut bin);
         let n_len = (m.normals.len() * 12) as u32;
+        let bv_norm = buffer_views.len();
         buffer_views.push(json!({
             "buffer": 0,
-            "offset": n_start,
-            "length": n_len,
-            "viewType": 6,
+            "byteOffset": n_start,
+            "byteLength": n_len,
+            "target": 34962,
         }));
         accessors.push(json!({
-            "buffer": 0,
-            "offset": n_start,
+            "bufferView": bv_norm,
+            "byteOffset": 0,
             "count": m.normals.len() as u32,
             "type": "VEC3",
             "componentType": 5126,
@@ -168,15 +170,16 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
         }
         align4(&mut bin);
         let uv_len = (m.uvs.len() * 8) as u32;
+        let bv_uv = buffer_views.len();
         buffer_views.push(json!({
             "buffer": 0,
-            "offset": uv_start,
-            "length": uv_len,
-            "viewType": 5,
+            "byteOffset": uv_start,
+            "byteLength": uv_len,
+            "target": 34962,
         }));
         accessors.push(json!({
-            "buffer": 0,
-            "offset": uv_start,
+            "bufferView": bv_uv,
+            "byteOffset": 0,
             "count": m.uvs.len() as u32,
             "type": "VEC2",
             "componentType": 5126,
@@ -190,15 +193,16 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
         }
         align4(&mut bin);
         let idx_len = (m.indices.len() * 4) as u32;
+        let bv_idx = buffer_views.len();
         buffer_views.push(json!({
             "buffer": 0,
-            "offset": idx_start,
-            "length": idx_len,
-            "viewType": 4,
+            "byteOffset": idx_start,
+            "byteLength": idx_len,
+            "target": 34963,
         }));
         accessors.push(json!({
-            "buffer": 0,
-            "offset": idx_start,
+            "bufferView": bv_idx,
+            "byteOffset": 0,
             "count": m.indices.len() as u32,
             "type": "SCALAR",
             "componentType": 5125,
@@ -227,13 +231,13 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
         }));
     }
 
-    let buffers: Vec<Value> = if bin.is_empty() { Vec::new() } else { vec![json!({ "offset": 0, "length": bin.len() as u32 })] };
+    let buffers: Vec<Value> = if bin.is_empty() { Vec::new() } else { vec![json!({ "byteLength": bin.len() as u32 })] };
     let node_refs: Vec<u32> = (0..scene.meshes.len() as u32).collect();
     let value = json!({
         "version": 2,
-        "asset": { "comment": "CADCraft arch3d GLB" },
+        "asset": { "version": "2.0", "generator": "CADCraft arch3d" },
         "scene": 0,
-        "scenes": [ { "id": 0, "nodes": node_refs } ],
+        "scenes": [ { "name": "arch3d", "nodes": node_refs } ],
         "nodes": nodes,
         "meshes": meshes,
         "materials": materials,
@@ -321,9 +325,8 @@ mod tests {
 
     /// Read the JSON chunk of a GLB byte slice and parse it.
     fn glb_json_chunk(bytes: &[u8]) -> Value {
-        let json_start = 12;
-        let json_len = le32(&bytes, json_start + 4) as usize;
-        glb_json(bytes, json_start + 8, json_len)
+        let json_len = le32(&bytes, 12) as usize;
+        glb_json(bytes, 20, json_len)
     }
 
     /// A little-endian `u32` stored at byte offset `off` (4 bytes, LE).
@@ -339,14 +342,13 @@ mod tests {
         let total = le32(&bytes, 8);
         assert_eq!(total as usize, bytes.len());
 
-        let json_start = 12;
-        assert_eq!(&bytes[json_start..json_start + 4], b"JSON");
-        let json_len = le32(&bytes, json_start + 4) as usize;
+        let json_len = le32(&bytes, 12) as usize;
+        assert_eq!(le32(&bytes, 16), 0x4E4F534A);
         let json_pad = (4 - json_len % 4) % 4;
-        let bin_start = json_start + 8 + json_len + json_pad;
+        let bin_start = 12 + 8 + json_len + json_pad;
         assert_eq!(bin_start % 4, 0);
-        assert_eq!(&bytes[bin_start..bin_start + 4], b"BIN\0");
-        let bin_len = le32(&bytes, bin_start + 4) as usize;
+        let bin_len = le32(&bytes, bin_start) as usize;
+        assert_eq!(le32(&bytes, bin_start + 4), 0x004E4942);
         let bin_pad = (4 - bin_len % 4) % 4;
         assert_eq!(bytes.len(), bin_start + 8 + bin_len + bin_pad);
     }
@@ -420,6 +422,70 @@ mod tests {
     }
 
     #[test]
+    fn glb_chunk_header_is_length_then_type() {
+        let bytes = write(&scene_with(1));
+        let json_len = le32(&bytes, 12);
+        assert_eq!(le32(&bytes, 16), 0x4E4F534A);
+        let json_pad = (4 - json_len as usize % 4) % 4;
+        let bin_start = 12 + 8 + json_len as usize + json_pad;
+        let bin_len = le32(&bytes, bin_start);
+        assert_eq!(le32(&bytes, bin_start + 4), 0x004E4942);
+    }
+
+    #[test]
+    fn glb_buffers_use_byte_length() {
+        let bytes = write(&scene_with(1));
+        let json = glb_json_chunk(&bytes);
+        assert!(json["buffers"][0].get("byteLength").is_some());
+        assert!(json["buffers"][0].get("offset").is_none());
+        assert!(json["buffers"][0].get("length").is_none());
+    }
+
+    #[test]
+    fn glb_buffer_views_use_byte_offset_and_length() {
+        let bytes = write(&scene_with(1));
+        let json = glb_json_chunk(&bytes);
+        for bv in json["bufferViews"].as_array().unwrap() {
+            assert!(bv.get("byteOffset").is_some());
+            assert!(bv.get("byteLength").is_some());
+            assert!(bv.get("target").is_some());
+            assert!(bv.get("offset").is_none());
+            assert!(bv.get("length").is_none());
+            assert!(bv.get("viewType").is_none());
+        }
+    }
+
+    #[test]
+    fn glb_accessors_reference_buffer_views() {
+        let bytes = write(&scene_with(1));
+        let json = glb_json_chunk(&bytes);
+        for acc in json["accessors"].as_array().unwrap() {
+            assert!(acc.get("bufferView").is_some());
+            assert!(acc.get("byteOffset").is_some());
+            assert!(acc.get("buffer").is_none());
+            assert!(acc.get("offset").is_none());
+        }
+    }
+
+    #[test]
+    fn glb_asset_declares_version_2_0() {
+        let bytes = write(&scene_with(1));
+        let json = glb_json_chunk(&bytes);
+        assert_eq!(json["asset"]["version"], "2.0");
+        assert_eq!(json["asset"]["generator"], "CADCraft arch3d");
+    }
+
+    #[test]
+    fn glb_json_chunk_is_space_padded() {
+        let bytes = write(&scene_with(1));
+        let json_len = le32(&bytes, 12) as usize;
+        let json_pad = (4 - json_len % 4) % 4;
+        for i in 0..json_pad {
+            assert_eq!(bytes[20 + json_len + i], 0x20);
+        }
+    }
+
+    #[test]
     fn empty_scene_writes_a_valid_empty_glb() {
         let scene = Scene3d { meshes: Vec::new(), bounds: Bounds3::empty(), revision: 0 };
         let bytes = write(&scene);
@@ -430,10 +496,10 @@ mod tests {
         let json = glb_json_chunk(&bytes);
         assert_eq!(json["meshes"].as_array().and_then(|a| Some(a.len())), Some(0));
         assert_eq!(json["scenes"][0]["nodes"].as_array().and_then(|a| Some(a.len())), Some(0));
-        let json_len = le32(&bytes, 16) as usize;
+        let json_len = le32(&bytes, 12) as usize;
         let json_pad = (4 - json_len % 4) % 4;
         let bin_start = 12 + 8 + json_len + json_pad;
-        assert_eq!(&bytes[bin_start..bin_start + 4], b"BIN\0");
+        assert_eq!(le32(&bytes, bin_start + 4), 0x004E4942);
         assert_eq!(bytes.len(), bin_start + 8);
     }
 }
