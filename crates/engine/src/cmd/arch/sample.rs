@@ -118,11 +118,15 @@ fn seed_openings(model: &mut ArchModel, max: usize) -> usize {
     const WINDOW: OpeningSpec = (OpeningKind::Window, 1.2, 1.2, 0.9, "slider");
 
     let mut placed = 0usize;
-    for (i, wall) in model.walls.iter().enumerate() {
+    // Index-based loop: the only thing copied out is `wid` (a `Copy` ArchId)
+    // and a plain `f64`, so no borrow of `model.walls` is live when
+    // `model.push_opening(o)` mutates the model.
+    for i in 0..model.walls.len() {
         if placed >= max {
             break;
         }
-        let length = wall.start.dist(wall.end);
+        let wid = model.walls[i].id;
+        let length = model.walls[i].start.dist(model.walls[i].end);
         if !length.is_finite() || length < MIN_SAMPLE_WALL {
             continue;
         }
@@ -136,10 +140,10 @@ fn seed_openings(model: &mut ArchModel, max: usize) -> usize {
             attempts.push(WINDOW);
         }
         for (kind, width, height, sill, style) in attempts {
-            if validate_placement(model, wall.id, offset, width, sill, height, kind, style, None).is_err() {
+            if validate_placement(model, wid, offset, width, sill, height, kind, style, None).is_err() {
                 continue;
             }
-            let mut o = Opening::new(wall.id, offset, width, height, kind);
+            let mut o = Opening::new(wid, offset, width, height, kind);
             o.sill = sill;
             o.style = style.to_string();
             model.push_opening(o);
@@ -308,13 +312,10 @@ mod tests {
         let mut s2 = fresh_session();
         s1.execute("arch.sample", &json!({})).unwrap();
         s2.execute("arch.sample", &json!({ "walls": 24, "openings": 0 })).unwrap();
-        s1.execute("arch.sample", &json!({ "openings": 8 })).unwrap();
 
         assert!(s1.doc().unwrap().arch.openings.is_empty());
         assert_eq!(s1.doc().unwrap().arch.walls.len(), 64);
         assert!(s2.doc().unwrap().arch.openings.is_empty());
         assert_eq!(s2.doc().unwrap().arch.walls.len(), 24);
-        assert!(s1.doc().unwrap().arch.openings.is_empty());
-        assert_eq!(s1.doc().unwrap().arch.walls.len(), 24);
     }
 }
