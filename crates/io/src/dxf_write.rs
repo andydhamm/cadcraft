@@ -2369,7 +2369,8 @@ fn tags_for(d: &Drawing, version: Version, target: Version) -> Vec<Tag> {
     if !d.arch.is_empty() {
         for tags in crate::dxf_arch::proxy_polylines(&d.arch) {
             w.s(0, "LWPOLYLINE");
-            w.s(5, w.h());
+            let h = w.h();
+            w.s(5, h);
             w.s(330, &ms_br);
             w.s(100, "AcDbEntity");
             w.s(8, crate::dxf_arch::ARCH_PROXY_LAYER);
