@@ -974,6 +974,24 @@ mod tests {
     }
 
     #[test]
+    fn push_opening_shares_the_id_counter_with_walls() {
+        let mut m = ArchModel::default();
+        let w0 = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        let w1 = m.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 0.2));
+        let o0 = m.push_opening(Opening::new(w0, 1.0, 0.9, 2.1, OpeningKind::Door));
+        let o1 = m.push_opening(Opening::new(w1, 1.0, 0.9, 2.1, OpeningKind::Window));
+        assert_eq!(w0, ArchId(0));
+        assert_eq!(w1, ArchId(1));
+        assert_eq!(o0, ArchId(0));
+        assert_eq!(o1, ArchId(1));
+        assert_eq!(m.next_wall_id(), ArchId(2));
+        assert_eq!(m.next_opening_id, 2);
+        assert!(m.opening(o0).is_some());
+        assert!(m.opening(o1).is_some());
+        assert!(m.opening(ArchId(2)).is_none());
+    }
+
+    #[test]
     fn opening_defaults_have_rough_larger_than_finished() {
         let o = Opening::new(ArchId(1), 0.5, 0.9, 2.1, OpeningKind::Door);
         assert!((o.rough_width - (o.width + 0.12)).abs() < 1e-12);
