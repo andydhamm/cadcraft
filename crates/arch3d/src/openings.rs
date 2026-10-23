@@ -3,10 +3,12 @@
 //! Each component (frame, casing, glass, leaf, sill, header) is a separate
 //! [`Mesh`] tagged with the opening's [`ArchId`] for picking.
 
+use std::collections::BTreeMap;
+
 use cadcraft_arch::opening::is_double;
 use cadcraft_doc::arch::{Opening, OpeningKind};
-use cadcraft_doc::{ArchId, ArchModel};
-use cadcraft_geom::{Vec2, Vec3};
+use cadcraft_doc::{ArchId, Wall};
+use cadcraft_geom::Vec2;
 
 use crate::mesh::Mesh;
 
@@ -19,9 +21,14 @@ fn band_offset(off: f64, depth: f64, wall_t: f64) -> f64 {
 
 /// Build all component meshes for a single opening.
 ///
+/// Components that share a material (e.g. all frame prisms) are merged into
+/// a single `Mesh`, keeping `io::glb` node names unchanged (`door-frame-o0`,
+/// `window-glass-o1`, …) while cutting the per-opening mesh count from ~10
+/// to ~5.
+///
 /// Returns an empty vector if the host wall is missing or degenerate.
-pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
-    let wall = match model.walls.iter().find(|w| w.id == o.host) {
+pub fn opening_meshes(walls: &BTreeMap<ArchId, &Wall>, o: &Opening) -> Vec<Mesh> {
+    let wall = match walls.get(&o.host) {
         Some(w) => w,
         None => return Vec::new(),
     };
@@ -34,7 +41,26 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
     let center = wall.start + dir * o.offset;
     // Offsets measured from the wall centre plane (along `normal`), each
     // clamped so the component stays inside the wall's thickness band.
-    let mut meshes = Vec::new();
+    let mut meshes: BTreeMap<String, Mesh> = BTreeMap::new();
+    let push_box = |material: &str, a: Vec2, b: Vec2, z0: f64, z1: f64, depth: f64| {
+        if depth <= 0.0 {
+            return;
+        }
+        let dir = b - a;
+        let len = dir.len();
+        if len < 1e-9 || (z1 - z0).abs() < 1e-9 {
+            return;
+        }
+        let d = dir / len;
+        let n = Vec2::new(-d.y, d.x);
+        let half = depth / 2.0;
+        let p0 = a + n * half;
+        let p1 = a - n * half;
+        let p2 = b - n * half;
+        let p3 = b + n * half;
+        let mesh = meshes.entry(material.to_string()).or_else(|| Mesh::new(material, o.id));
+        mesh.push_prism(&[p0, p1, p2, p3], z0, z1);
+    };
 
     let w = o.width;
     let h = o.height;
@@ -63,56 +89,77 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
 
     // Frame: left jamb
     let jamb_off = band_offset(o.recess - wall_t / 2.0 + fd / 2.0, fd, wall_t);
-    let left_a = center + dir * (-w / 2.0 - fw / 2.0) + normal * jamb_off;
-    let left_b = center + dir * (-w / 2.0 + fw / 2.0) + normal * jamb_off;
-    if let Some(mesh) = box_between(left_a, left_b, frame_z0, frame_z1, fd, &format!("{}-frame", kind_prefix), o.id) {
-        meshes.push(mesh);
-    }
+    push_box(
+        &format!("{}-frame", kind_prefix),
+        center + dir * (-w / 2.0 - fw / 2.0) + normal * jamb_off,
+        center + dir * (-w / 2.0 + fw / 2.0) + normal * jamb_off,
+        frame_z0,
+        frame_z1,
+        fd,
+    );
 
     // Frame: right jamb
-    let right_a = center + dir * (w / 2.0 - fw / 2.0) + normal * jamb_off;
-    let right_b = center + dir * (w / 2.0 + fw / 2.0) + normal * jamb_off;
-    if let Some(mesh) = box_between(right_a, right_b, frame_z0, frame_z1, fd, &format!("{}-frame", kind_prefix), o.id) {
-        meshes.push(mesh);
-    }
+    push_box(
+        &format!("{}-frame", kind_prefix),
+        center + dir * (w / 2.0 - fw / 2.0) + normal * jamb_off,
+        center + dir * (w / 2.0 + fw / 2.0) + normal * jamb_off,
+        frame_z0,
+        frame_z1,
+        fd,
+    );
 
     // Frame: head
     let head_off = band_offset(o.recess - wall_t / 2.0 + fd / 2.0, fw, wall_t);
-    let head_a = center + dir * (-w / 2.0) + normal * head_off;
-    let head_b = center + dir * (w / 2.0) + normal * head_off;
-    if let Some(mesh) = box_between(head_a, head_b, frame_z1 - fw, frame_z1, fw, &format!("{}-frame", kind_prefix), o.id) {
-        meshes.push(mesh);
-    }
+    push_box(
+        &format!("{}-frame", kind_prefix),
+        center + dir * (-w / 2.0) + normal * head_off,
+        center + dir * (w / 2.0) + normal * head_off,
+        frame_z1 - fw,
+        frame_z1,
+        fw,
+    );
 
     // Frame: sill
     let sill_off = band_offset(o.recess - wall_t / 2.0 + fd / 2.0, fw, wall_t);
-    let sill_a = center + dir * (-w / 2.0) + normal * sill_off;
-    let sill_b = center + dir * (w / 2.0) + normal * sill_off;
-    if let Some(mesh) = box_between(sill_a, sill_b, frame_z0, frame_z0 + fw, fw, &format!("{}-frame", kind_prefix), o.id) {
-        meshes.push(mesh);
-    }
+    push_box(
+        &format!("{}-frame", kind_prefix),
+        center + dir * (-w / 2.0) + normal * sill_off,
+        center + dir * (w / 2.0) + normal * sill_off,
+        frame_z0,
+        frame_z0 + fw,
+        fw,
+    );
 
-    // Casing (both faces)
+    // Casing (both faces + head)
     if cw > 0.0 {
         let casing_off = band_offset(o.recess - wall_t / 2.0 + cd / 2.0, cd, wall_t);
-        let cl_a = center + dir * (-w / 2.0 - fw / 2.0 - cw) + normal * casing_off;
-        let cl_b = center + dir * (-w / 2.0 - fw / 2.0) + normal * casing_off;
-        if let Some(mesh) = box_between(cl_a, cl_b, frame_z0, frame_z1, cd, &format!("{}-casing", kind_prefix), o.id) {
-            meshes.push(mesh);
-        }
+        push_box(
+            &format!("{}-casing", kind_prefix),
+            center + dir * (-w / 2.0 - fw / 2.0 - cw) + normal * casing_off,
+            center + dir * (-w / 2.0 - fw / 2.0) + normal * casing_off,
+            frame_z0,
+            frame_z1,
+            cd,
+        );
 
-        let cr_a = center + dir * (w / 2.0 + fw / 2.0) + normal * casing_off;
-        let cr_b = center + dir * (w / 2.0 + fw / 2.0 + cw) + normal * casing_off;
-        if let Some(mesh) = box_between(cr_a, cr_b, frame_z0, frame_z1, cd, &format!("{}-casing", kind_prefix), o.id) {
-            meshes.push(mesh);
-        }
+        push_box(
+            &format!("{}-casing", kind_prefix),
+            center + dir * (w / 2.0 + fw / 2.0) + normal * casing_off,
+            center + dir * (w / 2.0 + fw / 2.0 + cw) + normal * casing_off,
+            frame_z0,
+            frame_z1,
+            cd,
+        );
 
         let casing_head_off = band_offset(o.recess - wall_t / 2.0 + cd / 2.0, cw, wall_t);
-        let ch_a = center + dir * (-w / 2.0 - fw / 2.0) + normal * casing_head_off;
-        let ch_b = center + dir * (w / 2.0 + fw / 2.0) + normal * casing_head_off;
-        if let Some(mesh) = box_between(ch_a, ch_b, frame_z1 - cw, frame_z1, cw, &format!("{}-casing", kind_prefix), o.id) {
-            meshes.push(mesh);
-        }
+        push_box(
+            &format!("{}-casing", kind_prefix),
+            center + dir * (-w / 2.0 - fw / 2.0) + normal * casing_head_off,
+            center + dir * (w / 2.0 + fw / 2.0) + normal * casing_head_off,
+            frame_z1 - cw,
+            frame_z1,
+            cw,
+        );
     }
 
     // Glass: every window gets it; doors get it when the style indicates glazing.
@@ -124,11 +171,14 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
             || o.style.contains("glass"));
     if is_window || is_glazed_door {
         let glass_off = band_offset(o.recess - wall_t / 2.0 + fd / 2.0, 0.006, wall_t);
-        let glass_a = center + dir * (-w / 2.0 + fw) + normal * glass_off;
-        let glass_b = center + dir * (w / 2.0 - fw) + normal * glass_off;
-        if let Some(mesh) = box_between(glass_a, glass_b, frame_z0 + fw, frame_z1 - fw, 0.006, &format!("{}-glass", kind_prefix), o.id) {
-            meshes.push(mesh);
-        }
+        push_box(
+            &format!("{}-glass", kind_prefix),
+            center + dir * (-w / 2.0 + fw) + normal * glass_off,
+            center + dir * (w / 2.0 - fw) + normal * glass_off,
+            frame_z0 + fw,
+            frame_z1 - fw,
+            0.006,
+        );
     }
 
     // Leaf: doors (not windows, not cased openings) get a leaf.
@@ -141,23 +191,32 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
         let two_leaves = o.style.contains("sliding") || o.style.contains("bifold") || o.style.contains("french") || is_double(o);
         if two_leaves {
             let half_w = (w - 2.0 * fw) / 2.0;
-            let l_a = center + dir * (-w / 2.0 + fw) + normal * leaf_off;
-            let l_b = center + dir * (-w / 2.0 + fw + half_w) + normal * leaf_off;
-            if let Some(mesh) = box_between(l_a, l_b, leaf_z0, leaf_z1, leaf_t, &format!("{}-leaf", kind_prefix), o.id) {
-                meshes.push(mesh);
-            }
+            push_box(
+                &format!("{}-leaf", kind_prefix),
+                center + dir * (-w / 2.0 + fw) + normal * leaf_off,
+                center + dir * (-w / 2.0 + fw + half_w) + normal * leaf_off,
+                leaf_z0,
+                leaf_z1,
+                leaf_t,
+            );
 
-            let r_a = center + dir * (w / 2.0 - fw - half_w) + normal * leaf_off;
-            let r_b = center + dir * (w / 2.0 - fw) + normal * leaf_off;
-            if let Some(mesh) = box_between(r_a, r_b, leaf_z0, leaf_z1, leaf_t, &format!("{}-leaf", kind_prefix), o.id) {
-                meshes.push(mesh);
-            }
+            push_box(
+                &format!("{}-leaf", kind_prefix),
+                center + dir * (w / 2.0 - fw - half_w) + normal * leaf_off,
+                center + dir * (w / 2.0 - fw) + normal * leaf_off,
+                leaf_z0,
+                leaf_z1,
+                leaf_t,
+            );
         } else {
-            let l_a = center + dir * (-w / 2.0 + fw) + normal * leaf_off;
-            let l_b = center + dir * (w / 2.0 - fw) + normal * leaf_off;
-            if let Some(mesh) = box_between(l_a, l_b, leaf_z0, leaf_z1, leaf_t, &format!("{}-leaf", kind_prefix), o.id) {
-                meshes.push(mesh);
-            }
+            push_box(
+                &format!("{}-leaf", kind_prefix),
+                center + dir * (-w / 2.0 + fw) + normal * leaf_off,
+                center + dir * (w / 2.0 - fw) + normal * leaf_off,
+                leaf_z0,
+                leaf_z1,
+                leaf_t,
+            );
         }
     }
 

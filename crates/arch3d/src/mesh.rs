@@ -151,14 +151,16 @@ impl Mesh {
             self.normals.push([0.0, 0.0, 1.0]);
         }
 
+        // Triangulate the ring once; both caps share the same triangulation.
+        let tris = triangulate(&ring);
         // Bottom cap triangles: CW winding from above (reversed from the
         // CCW triangulation), giving outward -Z normals.
-        for tri in triangulate(&ring) {
+        for tri in &tris {
             self.indices.extend([(b_base + tri[0]) as u32, (b_base + tri[2]) as u32, (b_base + tri[1]) as u32]);
         }
 
         // Top cap triangles: CCW winding from above, giving +Z normals.
-        for tri in triangulate(&ring) {
+        for tri in &tris {
             self.indices.extend([(b_base + m + tri[0]) as u32, (b_base + m + tri[1]) as u32, (b_base + m + tri[2]) as u32]);
         }
 
