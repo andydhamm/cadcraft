@@ -5,7 +5,10 @@
 
 use serde_json::{Value, json};
 
-use crate::{EngineError, Session, cmd::CommandSpec};
+use crate::{
+    EngineError, Session,
+    cmd::{CommandSpec, bad},
+};
 
 /// `view3d` and `camera` command specs.
 pub fn specs() -> Vec<CommandSpec> {
@@ -31,39 +34,47 @@ fn run_view3d(s: &mut Session, _params: &Value) -> Result<Value, EngineError> {
     Ok(json!({ "ok": true, "meshes": meshes, "revision": revision }))
 }
 
-/// Set (or read) the orbit camera.
+/// Validate and echo orbit camera parameters.
 ///
-/// Accepts optional `azimuth`, `elevation`, `distance` (radians / meters)
-/// and an optional `target` (`[x,y,z]`). Omitted fields keep their current
-/// values. Always returns `{"ok":true,"azimuth":..,"elevation":..,
-/// "distance":..,"target":[x,y,z]}`.
+/// Accepts optional `azimuth`, `elevation`, `distance` (radians / meters) and an optional
+/// `target` (`[x,y,z]`); omitted fields take the defaults (0, 0.35, 10, origin). A field
+/// that is present but unusable (not a finite number, a non-positive distance, a target
+/// that is not three finite numbers) is an error, never silently replaced by the default.
+/// Returns `{"ok":true,"azimuth":..,"elevation":..,"distance":..,"target":[x,y,z]}`.
+///
+/// The engine holds no camera: the 3D pane owns its orbit in `ui-egui`, so this does not
+/// move the pane's view yet (see docs/arch3d/REVIEW-2026-10-23.md).
 fn run_camera(_s: &mut Session, params: &Value) -> Result<Value, EngineError> {
-    let azimuth = params.get("azimuth").and_then(Value::as_f64).filter(|v| v.is_finite()).unwrap_or_default();
-    let elevation = params.get("elevation").and_then(Value::as_f64).filter(|v| v.is_finite()).unwrap_or(0.35);
-    let distance = params.get("distance").and_then(Value::as_f64).filter(|v| v.is_finite() && *v > 0.0).unwrap_or(10.0);
-    let target = params
-        .get("target")
-        .and_then(|t| {
-            t.as_array().and_then(|a| {
-                a.get(0)
-                    .and_then(Value::as_f64)
-                    .filter(|x| x.is_finite())
-                    .zip(a.get(1).and_then(Value::as_f64).filter(|y| y.is_finite()))
-                    .zip(a.get(2).and_then(Value::as_f64).filter(|z| z.is_finite()))
-                    .map(|((x, y), z)| (x, y, z))
-            })
-        })
-        .unwrap_or((0.0, 0.0, 0.0));
-
-    // The pane reads its orbit from `ui-egui`; the command validates and
-    // returns the resulting camera so scripts/CLI can query it.
+    let num = |key: &str, default: f64| -> Result<f64, EngineError> {
+        match params.get(key) {
+            None | Some(Value::Null) => Ok(default),
+            Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("camera", format!("`{key}` must be a finite number"))),
+        }
+    };
+    let azimuth = num("azimuth", 0.0)?;
+    let elevation = num("elevation", 0.35)?;
+    let distance = num("distance", 10.0)?;
+    if distance <= 0.0 {
+        return Err(bad("camera", "`distance` must be positive"));
+    }
+    let target = match params.get("target") {
+        None | Some(Value::Null) => [0.0, 0.0, 0.0],
+        Some(t) => {
+            let xs: Option<Vec<f64>> =
+                t.as_array().filter(|a| a.len() == 3).map(|a| a.iter().filter_map(Value::as_f64).filter(|x| x.is_finite()).collect());
+            match xs.as_deref() {
+                Some([x, y, z]) => [*x, *y, *z],
+                _ => return Err(bad("camera", "`target` must be [x, y, z] of finite numbers")),
+            }
+        }
+    };
 
     Ok(json!({
         "ok": true,
         "azimuth": azimuth,
         "elevation": elevation,
         "distance": distance,
-        "target": [target.0, target.1, target.2],
+        "target": target,
     }))
 }
 
@@ -83,10 +94,10 @@ mod tests {
         assert_eq!(r["revision"].as_u64().unwrap(), 0);
     }
 
-    /// `camera` with explicit parameters returns them and sets the pane's
-    /// orbit; omitted fields fall back to the defaults.
+    /// `camera` with explicit parameters echoes them; omitted fields fall back to the
+    /// defaults. (It does not reach the pane's orbit: the engine holds no camera.)
     #[test]
-    fn camera_command_updates_the_orbit() {
+    fn camera_command_echoes_the_orbit() {
         let mut s = Session::new();
         let r = s.execute("camera", &json!({ "azimuth": 1.5, "elevation": 0.3, "distance": 25.0 })).unwrap();
         assert!(r["ok"].as_bool().unwrap());
@@ -99,5 +110,24 @@ mod tests {
         assert_eq!(r2["azimuth"].as_f64().unwrap(), 0.0);
         assert_eq!(r2["elevation"].as_f64().unwrap(), 0.35);
         assert_eq!(r2["distance"].as_f64().unwrap(), 10.0);
+    }
+
+    /// A present but unusable value is an error, not a silent default (it used to turn
+    /// `distance: -5` into 10 and `target: [1, 2]` into the origin).
+    #[test]
+    fn camera_command_rejects_unusable_values() {
+        let mut s = Session::new();
+        for p in [
+            json!({ "distance": -5.0 }),
+            json!({ "distance": 0.0 }),
+            json!({ "azimuth": "east" }),
+            json!({ "elevation": [1] }),
+            json!({ "target": [1.0, 2.0] }),
+            json!({ "target": [1.0, 2.0, "z"] }),
+        ] {
+            assert!(matches!(s.execute("camera", &p), Err(EngineError::BadParams { .. })), "{p} must be refused");
+        }
+        let r = s.execute("camera", &json!({ "target": [1.0, 2.0, 3.0] })).unwrap();
+        assert_eq!(r["target"], json!([1.0, 2.0, 3.0]));
     }
 }

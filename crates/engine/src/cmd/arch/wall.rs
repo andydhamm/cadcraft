@@ -8,20 +8,22 @@
 //! - `exterior`: optional bool (default `true`).
 //! - `closed`: optional bool (default `false`). If true and >2 points and last
 //!   differs from first, a closing segment is added.
-//! - `level`: optional string, level name. Defaults to the first level in the model.
+//! - `level`: optional string, level name (an unknown name is an error). Defaults to the
+//!   first level in the model.
 //! - `type`: optional string (`exterior|interior|knee|railing|retaining`).
 //!   Overrides the `exterior` flag and sets the wall kind.
 //!
-//! Returns JSON: `{"walls": [{"id": "w1", "handle": "a0000001"}, ...], "joins": 0}`
+//! Returns JSON: `{"walls": [{"id": "w1", "handle": "a0000001"}, ...], "joins": N}` where `N`
+//! counts the joined ends (L/T/X/butt/square) on the new walls.
 
-use cadcraft_arch::{JoinKind, Level, Wall};
-use cadcraft_doc::Handle;
+use cadcraft_arch::{ArchId, JoinKind, Wall};
+use cadcraft_doc::{Layer, arch_handle};
 use cadcraft_geom::Vec2;
 use serde_json::{Value, json};
 
 use crate::cmd::{CommandSpec, bad, bool_or, distinct_points, points_param, size_param, str_param};
 use crate::prompt::{Accept, Input, Interactive, Prompt, Step};
-use crate::{EngineError, Result, Session};
+use crate::{Result, Session};
 
 /// Command specs for the wall module.
 pub fn specs() -> Vec<CommandSpec> {
@@ -219,10 +221,8 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     if pts.len() > super::MAX_WALLS {
         return Err(bad("wall", format!("too many points ({} > {})", pts.len(), super::MAX_WALLS)));
     }
-    for i in 0..pts.len() {
-        if !pts[i].is_finite() {
-            return Err(bad("wall", "non-finite coordinate in `points`"));
-        }
+    if pts.iter().any(|p| !p.is_finite()) {
+        return Err(bad("wall", "non-finite coordinate in `points`"));
     }
     for i in 0..pts.len() - 1 {
         let d = pts[i + 1] - pts[i];
@@ -232,11 +232,10 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     }
 
     // --- Parse remaining parameters ---
+    // Everything is validated before `doc_mut`, so a refused call leaves no undo step.
     let closed = bool_or(p, "closed", false);
     let level_name = str_param(p, "level").map(|s| s.to_string());
     let type_str = str_param(p, "type").map(|s| s.to_string());
-
-    let d = s.doc_mut()?;
 
     // `type` overrides `exterior`; knee/railing/retaining are treated as interior
     let exterior = match &type_str {
@@ -261,9 +260,17 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
             }
         }
     };
+    if thickness < cadcraft_doc::arch::MIN_WALL_THICKNESS {
+        return Err(bad("wall", format!("thickness {thickness} is below the minimum {}", cadcraft_doc::arch::MIN_WALL_THICKNESS)));
+    }
 
-    // Level: from param, or the first level in the model when absent
-    let level = level_name.as_deref().and_then(|name| d.arch.levels.iter().find(|l| l.name == name)).or_else(|| d.arch.levels.first());
+    // Level: from param (an unknown name is an error, not a silent fallback), or the first
+    // level in the model when absent
+    let doc = s.doc()?;
+    let level = match level_name.as_deref() {
+        Some(name) => Some(doc.arch.levels.iter().find(|l| l.name == name).ok_or_else(|| bad("wall", format!("unknown level `{name}`")))?),
+        None => doc.arch.levels.first(),
+    };
 
     // Height: explicit or level floor_to_floor
     let height = size_param("wall", p, "height", false)?;
@@ -271,6 +278,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
         Some(h) => h,
         None => level.map(|l| l.floor_to_floor).unwrap_or(super::DEFAULT_EXT_THICKNESS * 5.0),
     };
+    let base_level_idx = level.and_then(|l| doc.arch.levels.iter().position(|lv| lv.name == l.name)).unwrap_or(0) as u32;
 
     // Apply closed flag
     let pts = if closed && pts.len() > 2 {
@@ -287,11 +295,23 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
         pts
     };
 
+    // The model-wide cap: the join graph and the stretch BFS stop at `MAX_WALLS`, so walls
+    // past it would silently never join.
+    let segments = pts.len().saturating_sub(1);
+    if doc.arch.walls.len().saturating_add(segments) > cadcraft_doc::MAX_WALLS {
+        return Err(bad("wall", format!("the drawing would have more than {} walls", cadcraft_doc::MAX_WALLS)));
+    }
+
     // --- Build wall objects ---
-    let base_level_idx = level.and_then(|l| d.arch.levels.iter().position(|lv| lv.name == l.name)).unwrap_or(0) as u32;
-    let layers = super::wall_layers(exterior);
-    let mut new_walls: Vec<Wall> = Vec::with_capacity(pts.len().saturating_sub(1));
-    for i in 0..pts.len().saturating_sub(1) {
+    let layers = scaled_layers(super::wall_layers(exterior), thickness);
+    let d = s.doc_mut()?;
+    // Proxy plan graphics go on A-WALL when the drawing is saved; a drawing opened from a
+    // file that predates arch3d has no such layer.
+    if d.layer(ARCH_WALL_LAYER).is_none() {
+        d.layers.push(Layer { name: ARCH_WALL_LAYER.into(), ..Layer::default() });
+    }
+    let mut new_walls: Vec<Wall> = Vec::with_capacity(segments);
+    for i in 0..segments {
         let id = d.arch.next_wall_id();
         d.arch.next_id = d.arch.next_id.saturating_add(1);
         new_walls.push(Wall {
@@ -311,31 +331,37 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     }
 
     // --- Build response: newly added walls only ---
-    let walls_json: Vec<Value> = new_walls
-        .iter()
-        .map(|w| {
-            let handle = Handle(0xA000_0000u64 + w.id.0 as u64);
-            json!({
-                "id": format!("w{}", w.id.0),
-                "handle": handle.hex(),
-            })
-        })
-        .collect();
+    let walls_json: Vec<Value> = new_walls.iter().map(|w| json!({ "id": format!("w{}", w.id.0), "handle": arch_handle(w.id).hex() })).collect();
+    let new_ids: std::collections::BTreeSet<ArchId> = new_walls.iter().map(|w| w.id).collect();
 
     d.arch.walls.extend(new_walls);
     d.touch_arch();
 
-    // --- Join solver (pending p1-join-solver merge) ---
-    let joins = 0usize;
-    // TODO(p1-join-solver): let joins = cadcraft_arch::join::solve_joins(&mut d.arch);
+    // How many wall ends the solver joined on the new walls (L, T, X, butt or square).
+    let joins: usize = cadcraft_arch::join::solve_joins(&d.arch).iter().filter(|sh| new_ids.contains(&sh.id)).map(|sh| sh.joins.len()).sum();
 
     Ok(json!({ "walls": walls_json, "joins": joins }))
+}
+
+/// Name of the layer the save-time wall proxy polylines are written on.
+const ARCH_WALL_LAYER: &str = "A-WALL";
+
+/// The default band build-up scaled so the bands sum to `thickness` exactly (the natural
+/// build-ups sum to 0.138 / 0.116, so unscaled bands left part of a 0.2 m wall unbanded and
+/// overflowed a 0.1 m one).
+fn scaled_layers(layers: Vec<(String, f64)>, thickness: f64) -> Vec<(String, f64)> {
+    let sum: f64 = layers.iter().map(|(_, t)| t).sum();
+    if sum.is_nan() || sum <= 0.0 || !thickness.is_finite() {
+        return layers;
+    }
+    layers.into_iter().map(|(n, t)| (n, t * thickness / sum)).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Session;
+    use crate::{EngineError, Session};
+    use cadcraft_arch::Level;
     use serde_json::json;
 
     fn new_session_with_level() -> Session {
@@ -479,6 +505,65 @@ mod tests {
     }
 
     #[test]
+    fn wall_command_rejects_an_unknown_level_without_an_undo_step() {
+        let mut s = new_session_with_level();
+        let undo = s.state().unwrap().undo.len();
+        let r = s.execute("wall", &json!({ "points": [[0.0, 0.0], [2.0, 0.0]], "level": "attic" }));
+        assert!(matches!(r, Err(EngineError::BadParams { .. })), "{r:?}");
+        assert!(s.doc().unwrap().arch.walls.is_empty());
+        // A refused call (bad type) does not leave an empty undo step either.
+        let r = s.execute("wall", &json!({ "points": [[0.0, 0.0], [2.0, 0.0]], "type": "bogus" }));
+        assert!(r.is_err());
+        assert_eq!(s.state().unwrap().undo.len(), undo);
+    }
+
+    #[test]
+    fn wall_command_rejects_a_thickness_below_the_model_minimum() {
+        let mut s = new_session_with_level();
+        let r = s.execute("wall", &json!({ "points": [[0.0, 0.0], [2.0, 0.0]], "thickness": 1e-12 }));
+        assert!(matches!(r, Err(EngineError::BadParams { .. })), "{r:?}");
+        assert!(s.doc().unwrap().arch.validate().is_empty());
+    }
+
+    #[test]
+    fn wall_command_caps_the_model_wall_count() {
+        let mut s = new_session_with_level();
+        let pts: Vec<Value> = (0..=4000).map(|i| json!([i as f64, 0.0])).collect();
+        s.execute("wall", &json!({ "points": pts })).unwrap();
+        let pts: Vec<Value> = (0..=200).map(|i| json!([i as f64, 5.0])).collect();
+        let r = s.execute("wall", &json!({ "points": pts }));
+        assert!(matches!(r, Err(EngineError::BadParams { .. })), "{r:?}");
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 4000);
+    }
+
+    #[test]
+    fn wall_command_reports_the_joins_it_made() {
+        let mut s = new_session_with_level();
+        let r = s.execute("wall", &json!({ "points": [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0]] })).unwrap();
+        // One L corner: both walls join at (4, 0).
+        assert_eq!(r["joins"], json!(2));
+    }
+
+    #[test]
+    fn wall_layer_bands_sum_to_the_wall_thickness() {
+        let mut s = new_session_with_level();
+        s.execute("wall", &json!({ "points": [[0.0, 0.0], [4.0, 0.0]], "thickness": 0.3 })).unwrap();
+        s.execute("wall", &json!({ "points": [[0.0, 2.0], [4.0, 2.0]], "type": "interior" })).unwrap();
+        for w in &s.doc().unwrap().arch.walls {
+            let sum: f64 = w.layers.iter().map(|(_, t)| t).sum();
+            assert!((sum - w.thickness).abs() < 1e-12, "bands sum {sum} != thickness {}", w.thickness);
+        }
+    }
+
+    #[test]
+    fn wall_command_adds_the_a_wall_layer_when_missing() {
+        let mut s = new_session_with_level();
+        s.doc_mut().unwrap().layers.retain(|l| l.name != "A-WALL");
+        s.execute("wall", &json!({ "points": [[0.0, 0.0], [4.0, 0.0]] })).unwrap();
+        assert!(s.doc().unwrap().layer("A-WALL").is_some());
+    }
+
+    #[test]
     fn wall_command_never_opens_a_dialog() {
         let mut s = new_session_with_level();
         let p = json!({ "points": [[0.0, 0.0], [1.0, 0.0]] });
@@ -505,7 +590,7 @@ mod tests {
         s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
         s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
         s.input(Input::Point(Vec2::new(3.0, 3.0))).unwrap();
-        s.input(Input::Text("".to_string()).into()).unwrap();
+        s.input(Input::Text("".to_string())).unwrap();
         let d = s.doc().unwrap();
         assert_eq!(d.arch.walls.len(), 2);
     }
@@ -517,14 +602,14 @@ mod tests {
         s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
         s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
         // Trigger the thickness prompt
-        s.input(Input::Text("Thickness".to_string()).into()).unwrap();
+        s.input(Input::Text("Thickness".to_string())).unwrap();
         // Submit zero, which must be rejected (re-prompt, not finish)
-        s.input(Input::Text("0".to_string()).into()).unwrap();
+        s.input(Input::Text("0".to_string())).unwrap();
         // The wall has not been created yet because we never finished.
         assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
         // Now submit a valid value and finish
-        s.input(Input::Text("4.0".to_string()).into()).unwrap();
-        s.input(Input::Text("".to_string()).into()).unwrap();
+        s.input(Input::Text("4.0".to_string())).unwrap();
+        s.input(Input::Text("".to_string())).unwrap();
         assert_eq!(s.doc().unwrap().arch.walls.len(), 1);
     }
 
@@ -535,8 +620,8 @@ mod tests {
         s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
         s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
         // Default exterior = true; toggle to interior
-        s.input(Input::Text("type".to_string()).into()).unwrap();
-        s.input(Input::Text("".to_string()).into()).unwrap();
+        s.input(Input::Text("type".to_string())).unwrap();
+        s.input(Input::Text("".to_string())).unwrap();
         let d = s.doc().unwrap();
         assert_eq!(d.arch.walls.len(), 1);
         assert!(!d.arch.walls[0].exterior);
@@ -563,11 +648,11 @@ mod tests {
         s.start("wall").unwrap();
         s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
         // Enter with only one point: must not finish.
-        s.input(Input::Text("".to_string()).into()).unwrap();
+        s.input(Input::Text("".to_string())).unwrap();
         assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
         // Add a second point and now finish.
         s.input(Input::Point(Vec2::new(4.0, 0.0))).unwrap();
-        s.input(Input::Text("".to_string()).into()).unwrap();
+        s.input(Input::Text("".to_string())).unwrap();
         assert_eq!(s.doc().unwrap().arch.walls.len(), 1);
     }
 
@@ -578,7 +663,7 @@ mod tests {
         s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
         s.input(Input::Point(Vec2::new(4.0, 0.0))).unwrap();
         s.input(Input::Point(Vec2::new(4.0, 3.0))).unwrap();
-        s.input(Input::Text("close".to_string()).into()).unwrap();
+        s.input(Input::Text("close".to_string())).unwrap();
         let d = s.doc().unwrap();
         assert_eq!(d.arch.walls.len(), 3);
         assert_eq!(d.arch.walls[2].start, Vec2::new(4.0, 3.0));

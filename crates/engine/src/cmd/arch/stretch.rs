@@ -41,8 +41,10 @@ pub(crate) fn run_stretch(s: &mut Session, p: &Value) -> Result<Value> {
     // `to` is the new world position of the moved end.
     let to = point_req("arch.wall.stretch", p, "to")?;
 
-    let d = s.doc_mut()?;
-    let w = d.arch.wall(id).ok_or_else(|| bad("arch.wall.stretch", format!("no wall {id}")))?;
+    // Stretch a copy and validate it before touching the drawing: a refused drag then
+    // leaves no (empty) undo step behind.
+    let mut arch = s.doc()?.arch.clone();
+    let w = arch.wall(id).ok_or_else(|| bad("arch.wall.stretch", format!("no wall {id}")))?;
 
     // Refuse to drag an end onto the wall's other end (would collapse it).
     let other = if end == join::End::Start { w.end } else { w.start };
@@ -50,8 +52,17 @@ pub(crate) fn run_stretch(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad("arch.wall.stretch", "the dragged end would collapse the wall"));
     }
 
-    let moved = join::stretch_wall(&mut d.arch, id, end, to).map_err(|e| EngineError::Other(e.to_string()))?;
+    let moved = join::stretch_wall(&mut arch, id, end, to).map_err(|e| EngineError::Other(e.to_string()))?;
 
+    // The ends that follow the drag can collapse a neighbour (drag a corner onto the far
+    // end of the next wall): refuse that too, or the neighbour silently drops out of the
+    // plan and the 3D model while staying in the drawing.
+    if let Some(w) = moved.iter().filter_map(|m| arch.wall(*m)).find(|w| w.start.near(w.end, MIN_WALL_LENGTH)) {
+        return Err(bad("arch.wall.stretch", format!("the drag would collapse wall {}", w.id)));
+    }
+
+    let d = s.doc_mut()?;
+    d.arch = arch;
     d.touch_arch();
 
     Ok(json!({
@@ -76,7 +87,7 @@ mod tests {
     fn arch_wall_stretch_moves_the_neighbour() {
         let mut s = make_l();
         let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [12.0, 0.0]}));
-        assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
+        assert!(res.is_ok(), "stretch should succeed: {:?}", res);
         let val = res.unwrap();
         let moved: Vec<String> = val["moved"]
             .as_array()
@@ -110,6 +121,19 @@ mod tests {
         // Invalid `end` value.
         let r = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "middle", "to": [1.0, 1.0]}));
         assert!(matches!(r, Err(EngineError::BadParams { .. })), "bad end should be BadParams: {:?}", r);
+    }
+
+    #[test]
+    fn arch_wall_stretch_refuses_to_collapse_a_neighbour() {
+        let mut s = make_l();
+        let undo_before = s.state().expect("state").undo.len();
+        // Dragging w0's end onto w1's far end would make w1 zero-length.
+        let r = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [10.0, 10.0]}));
+        assert!(matches!(r, Err(EngineError::BadParams { .. })), "collapsing a neighbour must be refused: {r:?}");
+        let d = s.doc().expect("doc");
+        let w1 = d.arch.wall(ArchId(1)).expect("w1 should exist");
+        assert_eq!(w1.start, cadcraft_geom::Vec2::new(10.0, 0.0), "w1 must be untouched");
+        assert_eq!(s.state().expect("state").undo.len(), undo_before, "a refused drag must not leave an undo step");
     }
 
     #[test]

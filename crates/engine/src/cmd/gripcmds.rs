@@ -42,15 +42,14 @@ fn stretch(s: &mut Session, cmd: &str, p: &Value) -> Result<Value> {
     let i = index_param(cmd, p)?;
     let to = point_req(cmd, p, "to")?;
     if let Some(id) = crate::grips::arch_id_from_handle(h) {
-        let end = if i == 0 { "start" } else { "end" };
-        return s.execute(
-            "arch.wall.stretch",
-            &json!({
-                "wall": format!("w{}", id.0),
-                "end": end,
-                "to": [to.x, to.y],
-            }),
-        );
+        // A wall has two grips. Run the stretch body directly: going through
+        // `Session::execute` would record a second undo step inside this command's own.
+        let end = match i {
+            0 => "start",
+            1 => "end",
+            _ => return Err(bad(cmd, "an arch wall has two grips: 0 (start) and 1 (end)")),
+        };
+        return crate::cmd::arch::stretch::run_stretch(s, &json!({ "wall": format!("w{}", id.0), "end": end, "to": [to.x, to.y] }));
     }
     if curves::is_locked(s, h) {
         return Err(EngineError::Other("The object is on a locked layer.".into()));
