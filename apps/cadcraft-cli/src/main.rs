@@ -57,8 +57,9 @@ fn stdout_failed(e: std::io::Error) {
 
 const USAGE: &str = "usage:
   cadcraft-cli info FILE.dxf
-  cadcraft-cli convert IN.dxf OUT.(dxf|dwg|svg|png|pdf) [FRAMING]
-  cadcraft-cli run [FILE | --sample | --metric] [--script TEXT] [--script-file F.scr] [--cmd 'id {json}']... [--save OUT.dxf] [--export OUT.(png|svg|pdf)] [FRAMING]
+  cadcraft-cli convert IN.dxf OUT.(dxf|dwg|svg|png|pdf|glb) [FRAMING]
+  cadcraft-cli run [FILE | --sample | --metric] [--script TEXT] [--script-file F.scr] [--cmd 'id {json}']... [--save OUT.dxf] [--export OUT.(png|svg|pdf|glb)] [FRAMING]
+  cadcraft-cli render FILE OUT.png [--camera SPEC] [--size WxH]
   cadcraft-cli commands [FILTER]
   cadcraft-cli mcp [--connect HOST:PORT [--lazy] [--launch]]
   cadcraft-cli perf [N | FILE]
@@ -73,7 +74,11 @@ image framing (png 2400x1600, svg, pdf; always model space):
                            scaled to fit the image without distortion.
   --view extents           always fit the drawing extents.
   --view current           the current view (as last set by zoom/pan/view.set; a freshly
-                           opened drawing's view is its extents plus a 10% margin).";
+                           opened drawing's view is its extents plus a 10% margin).
+
+  --camera SPEC            (render) 3D camera, defaults from Orbit::fit the arch scene:
+                           'orbit[,azimuth=A][,elevation=E][,distance=D][,fov=F]'
+  --size WxH               (render) PNG pixels (default 2400x1600).";
 
 /// What part of model space an image export shows.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -210,6 +215,9 @@ fn validate_options(command: &str, args: &[String], specs: &[OptionSpec]) -> Res
 
 const NO_OPTIONS: &[OptionSpec] = &[];
 
+/// Option specs for `render`.
+const RENDER_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--camera", takes_value: true }, OptionSpec { name: "--size", takes_value: true }];
+
 fn info(path: &str) -> Result<(), String> {
     let mut s = Session::empty();
     open(&mut s, path)?;
@@ -249,14 +257,139 @@ fn sample(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Reject an explicit framing option without an image output to apply it to.
+/// Whether `name` is a frameable output (2D image or 3D GLB).
+fn is_frameable_output(name: &str) -> bool {
+    cadcraft_io::is_image(name) || std::path::Path::new(name).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()) == Some("glb".to_string())
+}
+
+/// Reject an explicit framing option without a frameable output to apply it to.
 fn check_framed_output(framing: Framing, out: Option<&str>) -> Result<(), String> {
     match out {
         _ if framing == Framing::Auto => Ok(()),
-        Some(o) if !cadcraft_io::is_image(o) => Err(format!("--window/--view only apply to image output (png, svg, pdf), not `{o}`")),
+        Some(o) if !is_frameable_output(o) => Err(format!("--window/--view only apply to image output (png, svg, pdf) or glb, not `{o}`")),
         Some(_) => Ok(()),
-        None => Err("--window/--view need an image output (--export OUT.png|svg|pdf)".into()),
+        None => Err("--window/--view need a frameable output (--export OUT.png|svg|pdf|glb)".into()),
     }
+}
+
+/// Default pixel size for `render`.
+const RENDER_DEFAULT_SIZE: (u32, u32) = (2400, 1600);
+
+/// Parse `WxH` into a pixel size (positive whole numbers).
+fn parse_size(v: &str) -> Result<(u32, u32), String> {
+    let parts: Vec<&str> = v.split(['x', 'X']).map(str::trim).collect();
+    let [w, h] = parts.as_slice() else { return Err(format!("--size needs WxH, got `{v}`")) };
+    let num = |name: &str, t: &str| -> Result<u32, String> {
+        match t.parse::<u32>() {
+            Ok(n) if n > 0 => Ok(n),
+            _ => Err(format!("--size {name} must be a positive whole number, got `{t}`")),
+        }
+    };
+    Ok((num("width", w)?, num("height", h)?))
+}
+
+/// Parse `'orbit[,azimuth=A][,elevation=E][,distance=D][,fov=F]'` into a [`Camera`], seeded
+/// from `base` (the result of [`Orbit::fit`]). Field values must be finite; distance and fov
+/// must be positive. A malformed spec is an error, so a bad `--camera` never reaches the GPU.
+fn parse_camera(spec: &str, base: cadcraft_render3d::camera::Orbit) -> Result<cadcraft_render3d::camera::Camera, String> {
+    let tokens: Vec<&str> = spec.split(',').map(str::trim).collect();
+    if tokens.is_empty() || tokens[0] != "orbit" {
+        return Err("camera spec must begin with `orbit`".into());
+    }
+    let mut o = base;
+    for t in tokens[1..].iter() {
+        if t.is_empty() {
+            continue;
+        }
+        let (name, val) =
+            t.split_once('=').map(|(k, v)| (k.trim(), v.trim())).ok_or_else(|| format!("camera field must be `name=value`, got `{t}`"))?;
+        let v = val.parse::<f64>().map_err(|e| format!("camera {name}: {e}"))?;
+        if !v.is_finite() {
+            return Err(format!("camera {name} must be finite, got `{val}`"));
+        }
+        match name {
+            "azimuth" => o.azimuth = v,
+            "elevation" => o.elevation = v,
+            "distance" => {
+                if v <= 0.0 {
+                    return Err(format!("camera distance must be positive, got `{val}`"));
+                }
+                o.distance = v;
+            }
+            "fov" => {
+                if v <= 0.0 {
+                    return Err(format!("camera fov must be positive, got `{val}`"));
+                }
+                o.fov_deg = v;
+            }
+            other => return Err(format!("unknown camera field `{other}`")),
+        }
+    }
+    Ok(cadcraft_render3d::camera::Camera::Orbit(o))
+}
+
+/// Render the arch 3D scene in `FILE` to the PNG at `OUT`. `--camera` and `--size` are
+/// optional. With no GPU adapter the command prints "render: no GPU adapter available" to
+/// stderr and exits 0 (a SKIP, not a failure).
+fn render(args: &[String]) -> Result<(), String> {
+    let mut file: Option<String> = None;
+    let mut out: Option<String> = None;
+    let mut camera_spec: Option<String> = None;
+    let mut size: (u32, u32) = RENDER_DEFAULT_SIZE;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--camera" => {
+                i += 1;
+                let Some(v) = args.get(i) else { return Err("--camera needs a SPEC".into()) };
+                camera_spec = Some(v.clone());
+            }
+            "--size" => {
+                i += 1;
+                let Some(v) = args.get(i) else { return Err("--size needs WxH".into()) };
+                size = parse_size(v)?;
+            }
+            _ => {
+                if file.is_none() {
+                    file = Some(args[i].clone());
+                } else if out.is_none() {
+                    out = Some(args[i].clone());
+                } else {
+                    return Err("render: expected `FILE OUT.png`".to_string());
+                }
+            }
+        }
+        i += 1;
+    }
+    let (file, out) = match (file, out) {
+        (Some(f), Some(o)) => (f, o),
+        _ => return Err("render: expected `FILE OUT.png`".to_string()),
+    };
+
+    let mut s = Session::empty();
+    open(&mut s, &file)?;
+    let d = s.doc().map_err(|e| e.to_string())?;
+    let scene = cadcraft_arch3d::build(&d.arch);
+    let base = cadcraft_render3d::camera::Orbit::fit(&scene.bounds);
+    let camera = match camera_spec {
+        Some(spec) => parse_camera(&spec, base),
+        None => Ok(cadcraft_render3d::camera::Camera::Orbit(base)),
+    }?;
+
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| format!("render: tokio runtime: {e}"))?;
+    match rt.block_on(cadcraft_render3d::offscreen::headless_png(&scene, &camera, size)) {
+        Ok(png) => {
+            std::fs::write(&out, &png).map_err(|e| format!("{out}: {e}"))?;
+            eprintln!("wrote {out} ({} bytes)", png.len());
+        }
+        Err(cadcraft_render3d::Render3dError::NoAdapter) => {
+            eprintln!("render: no GPU adapter available");
+        }
+        Err(e) => {
+            return Err(format!("render: {e}"));
+        }
+    }
+    Ok(())
 }
 
 fn convert(args: &[String]) -> Result<(), String> {
@@ -673,6 +806,7 @@ fn cli() -> ExitCode {
         Some("info") => validate_options("info", &rest, NO_OPTIONS).and_then(|_| rest.first().ok_or_else(|| USAGE.to_string())).and_then(|p| info(p)),
         Some("convert") => convert(&rest),
         Some("run") => run(&rest),
+        Some("render") => validate_options("render", &rest, RENDER_OPTIONS).and_then(|_| render(&rest)),
         Some("perf") => validate_options("perf", &rest, NO_OPTIONS).and_then(|_| perf(&rest)),
         Some("sample") => validate_options("sample", &rest, NO_OPTIONS).and_then(|_| sample(&rest)),
         Some("commands") => validate_options("commands", &rest, NO_OPTIONS).map(|_| {
