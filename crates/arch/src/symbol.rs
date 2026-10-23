@@ -71,7 +71,7 @@ pub fn opening_symbol(model: &ArchModel, o: &Opening) -> Option<Symbol> {
         if p.is_finite() { Some(p) } else { None }
     };
 
-    let mut polys: Vec<Vec<Vec2>>> = Vec::new();
+    let mut polys: Vec<Vec<Vec2>> = Vec::new();
 
     match o.kind {
         OpeningKind::Door => {
@@ -299,7 +299,9 @@ mod tests {
     ) -> usize {
         let mut o = Opening::new(host, offset, width, 2.0, kind);
         o.style = style.to_string();
-        model.push_opening(o)
+        let idx = model.openings.len();
+        model.push_opening(o);
+        idx
     }
 
     fn assert_finite(s: &Symbol) {
@@ -340,14 +342,14 @@ mod tests {
         let i1 = opening_on(&mut m1, h1, 3.0, 0.9, OpeningKind::Door, "hinged");
         m1.openings[i1].hinge = Hinge::Left;
         m1.openings[i1].swing = Swing::In;
-        let s1 = opening_symbol(&mut m1, &m1.openings[i1]).unwrap();
+        let s1 = opening_symbol(&m1, &m1.openings[i1]).unwrap();
 
         let mut m2 = ArchModel::default();
         let h2 = test_wall(&mut m2, Vec2::ZERO, Vec2::new(10.0, 0.0), 0.2);
         let i2 = opening_on(&mut m2, h2, 3.0, 0.9, OpeningKind::Door, "hinged");
         m2.openings[i2].hinge = Hinge::Right;
         m2.openings[i2].swing = Swing::Out;
-        let s2 = opening_symbol(&mut m2, &m2.openings[i2]).unwrap();
+        let s2 = opening_symbol(&m2, &m2.openings[i2]).unwrap();
 
         assert_finite(&s1);
         assert_finite(&s2);
