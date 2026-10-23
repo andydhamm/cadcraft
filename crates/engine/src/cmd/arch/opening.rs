@@ -744,4 +744,23 @@ mod tests {
         let after = s.doc().expect("doc").arch.opening(ArchId(0)).map(|o| o.offset);
         assert_eq!(after, before, "offset should be restored after undo");
     }
+
+    #[test]
+    fn window_command_defaults_the_sill() {
+        let mut s = session_with_wall();
+        let r = s.execute("window", &json!({"wall": "w0", "offset": 2.0})).expect("window with default sill");
+        let d = s.doc().expect("doc");
+        let opening = &d.arch.openings[0];
+        assert!((opening.sill - 0.9).abs() < 1e-9, "sill should default to 0.9, got {}", opening.sill);
+    }
+
+    #[test]
+    fn opening_move_rejects_a_position_past_the_wall() {
+        let mut s = session_with_door();
+        let r = s.execute("arch.opening.move", &json!({"opening": "o0", "point": [15.0, 0.0]}));
+        let err = r.expect_err("point past the wall end must be rejected");
+        assert!(!err.to_string().is_empty(), "expected a placement error, got empty");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.opening(ArchId(0)).map(|o| o.offset), Some(3.0), "stored offset must be unchanged");
+    }
 }
