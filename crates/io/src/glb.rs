@@ -315,6 +315,7 @@ mod tests {
                 .collect(),
             bounds: Bounds3::empty(),
             revision: 0,
+            openings_built: 0,
         }
     }
 
@@ -487,7 +488,7 @@ mod tests {
 
     #[test]
     fn empty_scene_writes_a_valid_empty_glb() {
-        let scene = Scene3d { meshes: Vec::new(), bounds: Bounds3::empty(), revision: 0 };
+        let scene = Scene3d { meshes: Vec::new(), bounds: Bounds3::empty(), revision: 0, openings_built: 0 };
         let bytes = write(&scene);
         assert_eq!(&bytes[0..4], b"glTF");
         assert_eq!(&bytes[4..8], &[0x02, 0x00, 0x00, 0x00]);

@@ -9,6 +9,7 @@
 #![forbid(unsafe_code)]
 
 pub mod mesh;
+pub mod openings;
 pub mod walls;
 
 pub use crate::mesh::{Bounds3, Mesh};
@@ -24,6 +25,7 @@ pub struct Scene3d {
     pub meshes: Vec<Mesh>,
     pub bounds: Bounds3,
     pub revision: u64,
+    pub openings_built: usize,
 }
 
 impl Scene3d {
@@ -56,12 +58,19 @@ impl Scene3d {
             }
         }
 
+        let mut openings_built = 0;
+        for opening in &model.openings {
+            let o_meshes = openings::opening_meshes(model, opening);
+            openings_built += 1;
+            meshes.extend(o_meshes);
+        }
+
         let bounds = meshes.iter().fold(Bounds3::empty(), |mut b, m| {
             b.extend(&m.bounds());
             b
         });
 
-        Scene3d { meshes, bounds, revision: 0 }
+        Scene3d { meshes, bounds, revision: 0, openings_built }
     }
 
     /// Incremental rebuild: reuses meshes for ids not in `dirty`, recomputes bounds.
@@ -82,12 +91,26 @@ impl Scene3d {
             }
         }
 
+        let mut openings_built = 0;
+        for opening in &model.openings {
+            if dirty.contains(&opening.id) {
+                let o_meshes = openings::opening_meshes(model, opening);
+                openings_built += 1;
+                meshes.extend(o_meshes);
+            } else {
+                let prev_meshes: Vec<&Mesh> = prev.meshes.iter().filter(|m| m.object == opening.id).collect();
+                for m in prev_meshes {
+                    meshes.push(m.clone());
+                }
+            }
+        }
+
         let bounds = meshes.iter().fold(Bounds3::empty(), |mut b, m| {
             b.extend(&m.bounds());
             b
         });
 
-        Scene3d { meshes, bounds, revision: 0 }
+        Scene3d { meshes, bounds, revision: 0, openings_built }
     }
 }
 
