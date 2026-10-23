@@ -205,7 +205,7 @@ mod tests {
 
         let poly = list.prims.iter().find(|p| p.kind == Kind::Polyline && p.handle == arch_handle(id0));
         assert!(poly.is_some(), "no polyline prim for bottom wall");
-        let poly = *poly;
+        let Some(poly) = poly else { return };
         let pts = list.points(poly);
 
         let expected = [Vec2::new(-0.1, -0.1), Vec2::new(10.1, -0.1), Vec2::new(9.9, 0.1), Vec2::new(0.1, 0.1)];
@@ -235,7 +235,7 @@ mod tests {
 
         let poly = list.prims.iter().find(|p| p.kind == Kind::Polyline && p.handle == arch_handle(id_int));
         assert!(poly.is_some(), "no polyline prim for interior wall");
-        let poly = *poly;
+        let Some(poly) = poly else { return };
         let pts = list.points(poly);
 
         let min_x = pts.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
