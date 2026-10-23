@@ -4,7 +4,8 @@
 //! [`Mesh`] tagged with the opening's [`ArchId`] for picking.
 
 use cadcraft_arch::opening::is_double;
-use cadcraft_doc::{ArchId, ArchModel, Opening};
+use cadcraft_doc::arch::Opening;
+use cadcraft_doc::{ArchId, ArchModel};
 use cadcraft_geom::{Vec2, Vec3};
 
 use crate::mesh::Mesh;
@@ -133,18 +134,14 @@ fn box_between(a: Vec2, b: Vec2, z0: f64, z1: f64, depth: f64, material: &str, i
     let n = Vec2::new(-d.y, d.x);
     let half = depth / 2.0;
 
-    let p0 = Vec3::new(a.x + n.x * half, a.y + n.y * half, z0);
-    let p1 = Vec3::new(a.x - n.x * half, a.y - n.y * half, z0);
-    let p2 = Vec3::new(b.x - n.x * half, b.y - n.y * half, z0);
-    let p3 = Vec3::new(b.x + n.x * half, b.y + n.y * half, z0);
-    let p4 = Vec3::new(a.x + n.x * half, a.y + n.y * half, z1);
-    let p5 = Vec3::new(a.x - n.x * half, a.y - n.y * half, z1);
-    let p6 = Vec3::new(b.x - n.x * half, b.y - n.y * half, z1);
-    let p7 = Vec3::new(b.x + n.x * half, b.y + n.y * half, z1);
+    let p0 = a + n * half;
+    let p1 = a - n * half;
+    let p2 = b - n * half;
+    let p3 = b + n * half;
 
     let mut mesh =
         Mesh { object: id, material: material.to_string(), positions: Vec::new(), normals: Vec::new(), uvs: Vec::new(), indices: Vec::new() };
-    mesh.push_prism(&[p0, p1, p2, p3], &[p4, p5, p6, p7]);
+    mesh.push_prism(&[p0, p1, p2, p3], z0, z1);
     mesh
 }
 

@@ -97,7 +97,8 @@ impl Scene3d {
                 let o_meshes = openings::opening_meshes(model, opening);
                 openings_built += 1;
                 meshes.extend(o_meshes);
-            } else if let Some(prev_meshes) = prev.meshes.iter().filter(|m| m.object == opening.id).collect::<Vec<_>>() {
+            } else {
+                let prev_meshes: Vec<&Mesh> = prev.meshes.iter().filter(|m| m.object == opening.id).collect();
                 for m in prev_meshes {
                     meshes.push(m.clone());
                 }
