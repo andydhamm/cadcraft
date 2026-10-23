@@ -10,10 +10,18 @@
 //! segment.
 
 use cadcraft_doc::ArchModel;
+use cadcraft_dxf::Tag;
+use cadcraft_geom::Vec2;
 use serde::{Deserialize, Serialize};
 
 /// Named-object-dictionary key of the architectural model XRECORD.
 pub(crate) const ARCH_KEY: &str = "CADCRAFT_ARCH";
+
+/// Layer of the save-time proxy plan polylines.
+pub(crate) const ARCH_PROXY_LAYER: &str = "A-WALL";
+
+/// `CADCRAFT` xdata marker identifying a proxy polyline, so the reader drops it.
+pub(crate) const ARCH_PROXY_MARKER: &str = "ARCHWALL";
 
 /// Rejects payloads larger than this before they are even parsed.
 const MAX_ARCH_PAYLOAD: usize = 8 << 20;
@@ -56,10 +64,65 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     Some(p.model)
 }
 
+/// The four corners of a wall's poche ring (the offset centre-line rectangle), in order.
+///
+/// Returns `None` for a degenerate wall: a non-finite endpoint, `thickness <= 0`, or a
+/// centre-line shorter than `1e-12`.
+fn wall_ring(w: &cadcraft_doc::Wall) -> Option<Vec<Vec2>> {
+    if !w.start.is_finite() || !w.end.is_finite() {
+        return None;
+    }
+    if w.thickness <= 0.0 {
+        return None;
+    }
+    let dir = w.end - w.start;
+    let len = dir.len();
+    if len < 1e-12 {
+        return None;
+    }
+    let perp = dir.rotate(std::f64::consts::PI / 2.0) * (w.thickness / 2.0 / len);
+    Some([w.start + perp, w.end + perp, w.end - perp, w.start - perp].into_iter().collect())
+}
+
+/// The DXF groups (after the common entity groups) of one closed LWPOLYLINE per wall poche
+/// ring, on layer [`ARCH_PROXY_LAYER`], each tagged with the [`ARCH_PROXY_MARKER`] xdata and
+/// the wall's id. Returns `Vec::new()` for an empty model; the output is capped at
+/// [`cadcraft_doc::MAX_WALLS`] polylines.
+pub(crate) fn proxy_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
+    if m.is_empty() {
+        return Vec::new();
+    }
+    m.walls
+        .iter()
+        .take(cadcraft_doc::MAX_WALLS)
+        .filter_map(|w| wall_ring(w).map(|corners| (w, corners)))
+        .map(|(w, corners)| {
+            let mut t = Vec::new();
+            t.push(Tag::i(90, 4));
+            t.push(Tag::i(70, 1));
+            for c in &corners {
+                t.push(Tag::f(10, c.x));
+                t.push(Tag::f(20, c.y));
+            }
+            t.push(Tag::s(1001, crate::dxf_ext::APP));
+            t.push(Tag::s(1000, ARCH_PROXY_MARKER));
+            t.push(Tag::s(1000, &w.id.to_string()));
+            t
+        })
+        .collect()
+}
+
+/// True when the entity's `CADCRAFT` xdata carries the [`ARCH_PROXY_MARKER`] marker, i.e. the
+/// record is a save-time proxy polyline to be dropped on read.
+pub(crate) fn is_arch_proxy(tags: &[Tag]) -> bool {
+    crate::dxf_ext::xdata(tags, crate::dxf_ext::APP).iter().any(|t| t.code == 1000 && t.str().trim() == ARCH_PROXY_MARKER)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadcraft_doc::{ArchModel, Wall};
+    use crate::{read_dxf, write_dxf};
+    use cadcraft_doc::{ArchModel, Drawing, Wall};
     use cadcraft_geom::Vec2;
 
     /// A model with exactly one wall.
@@ -128,5 +191,71 @@ mod tests {
             assert!(m.is_empty());
         }
         assert!(parse_arch(&"a".repeat((8 << 20) + 1)).is_none());
+    }
+
+    #[test]
+    fn proxy_graphics_are_written_and_not_double_read() {
+        let mut d = Drawing::new_imperial();
+        d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        d.arch.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 0.2));
+        let text = write_dxf(&d);
+        assert!(text.contains("ARCHWALL"), "no ARCHWALL marker in DXF");
+        assert!(text.contains("A-WALL"), "no A-WALL layer in DXF");
+        let back = read_dxf(text.as_bytes()).unwrap();
+        assert_eq!(back.arch.walls.len(), 2, "arch walls lost on read");
+        let mut count = 0;
+        for e in back.model.iter() {
+            if let EntityKind::LwPolyline(_) = &e.kind {
+                count += e.common.xdata.iter().filter(|t| t.code == 1000 && t.str().trim() == ARCH_PROXY_MARKER).count();
+            }
+        }
+        assert_eq!(count, 0, "model LWPOLYLINE carries ARCHWALL xdata");
+    }
+
+    #[test]
+    fn proxy_rings_match_the_wall_poché() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        let rings = proxy_polylines(&m);
+        assert_eq!(rings.len(), 1, "expected one ring");
+        let tags = &rings[0];
+        let mut corners: Vec<(f64, f64)> = Vec::new();
+        let mut i = 0;
+        while i + 1 < tags.len() {
+            if tags[i].code == 10 && tags[i + 1].code == 20 {
+                corners.push((tags[i].f64(), tags[i + 1].f64()));
+                i += 2;
+            } else {
+                i += 1;
+            }
+        }
+        assert_eq!(corners.len(), 4, "expected four corners");
+        let expected = vec![(0.0, 0.1), (10.0, 0.1), (10.0, -0.1), (0.0, -0.1)];
+        for (got, want) in corners.iter().zip(expected.iter()) {
+            assert!((got.0 - want.0).abs() < 1e-9, "x: {} != {}", got.0, want.0);
+            assert!((got.1 - want.1).abs() < 1e-9, "y: {} != {}", got.1, want.1);
+        }
+    }
+
+    #[test]
+    fn degenerate_walls_write_no_proxy() {
+        let mut d = Drawing::new_imperial();
+        d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0), 0.2));
+        d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.0));
+        let text = write_dxf(&d);
+        assert!(!text.contains("ARCHWALL"), "degenerate walls write a proxy");
+    }
+
+    #[test]
+    fn proxy_graphics_survive_a_foreign_reader() {
+        let mut d = Drawing::new_imperial();
+        d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        let text1 = write_dxf(&d);
+        let count1 = text1.matches("ARCHWALL").count();
+        assert!(count1 > 0, "no ARCHWALL marker");
+        let back = read_dxf(text1.as_bytes()).unwrap();
+        let text2 = write_dxf(&back);
+        let count2 = text2.matches("ARCHWALL").count();
+        assert_eq!(count1, count2, "ARCHWALL count changed: {} -> {}", count1, count2);
     }
 }
