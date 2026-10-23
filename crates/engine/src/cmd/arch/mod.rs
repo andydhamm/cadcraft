@@ -16,6 +16,7 @@ pub const DEFAULT_INT_THICKNESS: f64 = 0.1;
 
 pub mod build3d;
 pub mod inspect;
+pub mod opening;
 pub mod sample;
 pub mod stretch;
 pub mod view;
