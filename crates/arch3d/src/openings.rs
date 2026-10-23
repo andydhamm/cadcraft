@@ -409,7 +409,8 @@ mod tests {
         for m in &meshes {
             if m.material.contains("header") {
                 for p in &m.positions {
-                    assert!(p[2].into() <= wall_height + 1e-6, "header exceeds wall height: z={}", p[2].into());
+                    let z = *p[2] as f64;
+                    assert!(z <= wall_height + 1e-6, "header exceeds wall height: z={}", z);
                 }
             }
         }
@@ -468,8 +469,8 @@ mod tests {
             let half_t = wall.thickness / 2.0;
             for m in opening_meshes(&model, &o) {
                 for p in &m.positions {
-                    let n = (Vec2::new(p[0].into(), p[1].into()) - center).dot(normal);
-                    assert!(n.abs() <= half_t + 1e-6, "vertex {} of {} leaves wall band (n={})", p[0].into(), m.material, n);
+                    let n = (Vec2::new(*p[0] as f64, *p[1] as f64) - center).dot(normal);
+                    assert!(n.abs() <= half_t + 1e-6, "vertex {} of {} leaves wall band (n={})", *p[0] as f64, m.material, n);
                 }
             }
         }
