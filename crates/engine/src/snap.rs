@@ -1,5 +1,6 @@
 //! Object snaps (OSNAP), polar tracking and ortho.
 
+mod arch;
 mod curves;
 pub mod iso;
 pub mod tracking;
@@ -191,6 +192,17 @@ pub(crate) fn osnap_with_neighborhood(
         Some((hit, prims)) => (hit, Some(prims)),
         None => (None, None),
     };
+    // Arch objects live in model space only.
+    if *space == Space::Model {
+        if let Some(arch_hit) = arch::arch_snap(d, cursor, aperture, osmode) {
+            if best
+                .as_ref()
+                .is_none_or(|b| snap_score(arch_hit.mode, arch_hit.point, cursor, aperture) < snap_score(b.mode, b.point, cursor, aperture))
+            {
+                best = Some(arch_hit);
+            }
+        }
+    }
     let views = viewport::near(d, space, cursor, aperture);
     if views.is_empty() {
         return (best, near_prims);
