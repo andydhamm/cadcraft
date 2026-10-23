@@ -132,7 +132,7 @@ fn drawing_layers_become_pdf_layers() {
     }
     let c = &contents(&objs)[0];
     assert_eq!(c.matches(" BDC\n").count(), c.matches("EMC\n").count());
-    assert!(c.contains("/OC /L7 BDC\n1 0 0 RG"), "the red wall line is on Walls: {c}");
+    assert!(c.contains("/OC /L2 BDC\n1 0 0 RG"), "the red wall line is on Walls: {c}");
     let (q, bdc, emc) = (c.find("re W n").unwrap(), c.find("BDC").unwrap(), c.rfind("EMC").unwrap());
     assert!(q < bdc && emc < c.rfind("Q\n").unwrap(), "marked content inside the clip's q/Q");
 }
