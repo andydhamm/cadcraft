@@ -131,7 +131,7 @@ mod tests {
         // This test verifies that headless_png returns NoAdapter instead of panicking
         // when no GPU is available. We can't easily test this without a real GPU,
         // but we can verify the function signature and error type exist.
-        let scene = cadcraft_arch3d::Scene3d { meshes: Vec::new(), bounds: cadcraft_arch3d::Bounds3::empty(), revision: 0 };
+        let scene = cadcraft_arch3d::Scene3d { meshes: Vec::new(), bounds: cadcraft_arch3d::Bounds3::empty(), revision: 0, openings_built: 0 };
         let camera = Camera::Orbit(crate::camera::Orbit::at_origin(30.0, 30.0, 10.0, 45.0));
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio runtime");
         let result = rt.block_on(headless_png(&scene, &camera, (64, 64)));
