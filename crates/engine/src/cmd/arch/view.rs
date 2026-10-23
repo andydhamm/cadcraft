@@ -5,8 +5,7 @@
 
 use serde_json::{Value, json};
 
-use crate::EngineError;
-use crate::cmd::CommandSpec;
+use crate::{EngineError, Session, cmd::CommandSpec};
 
 /// `view3d` and `camera` command specs.
 pub fn specs() -> Vec<CommandSpec> {
@@ -27,7 +26,7 @@ fn run_view3d(s: &mut Session, _params: &Value) -> Result<Value, EngineError> {
     // Count meshes by building the scene (empty ArchModel yields 0).
     let meshes: usize = {
         let arch = &doc.arch;
-        if arch.walls().is_empty() { 0 } else { crate::arch3d::build(arch).meshes.len() }
+        if arch.walls().is_empty() { 0 } else { cadcraft_arch3d::build(arch).meshes.len() }
     };
     Ok(json!({ "ok": true, "meshes": meshes, "revision": revision }))
 }
