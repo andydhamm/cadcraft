@@ -364,7 +364,7 @@ mod tests {
         let handle = arch_handle(wid);
         let wall_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
         assert_eq!(wall_prims.len(), 4, "expected 4 wall prims, got {}", wall_prims.len());
-        let gap_edges: Vec<&DPrim> = wall_prims.iter().filter(|p| p.kind == Kind::Polyline && p.len == 2).collect();
+        let gap_edges: Vec<&DPrim> = wall_prims.iter().copied().filter(|p| p.kind == Kind::Polyline && p.len == 2).collect();
         assert_eq!(gap_edges.len(), 2, "expected 2 gap-edge polylines, got {}", gap_edges.len());
     }
 
@@ -388,7 +388,7 @@ mod tests {
         d.arch.push_opening(Opening::new(ArchId(0), 5.0, 1.0, 2.1, OpeningKind::Door));
 
         if let Some(l) = d.layer_mut("A-DOOR") {
-            l.color = Rgb::from_u32(0xff0000);
+            l.color = Color::True(Rgb::from_u32(0xff0000));
         }
         d.touch_arch();
         let list = build_arch(&d, &Options::default());
@@ -408,7 +408,7 @@ mod tests {
         d.arch.push_opening(Opening::new(ArchId(0), 5.0, 1.0, 2.1, OpeningKind::Window));
 
         if let Some(l) = d.layer_mut("A-GLAZ") {
-            l.color = Rgb::from_u32(0x0000ff);
+            l.color = Color::True(Rgb::from_u32(0x0000ff));
         }
         d.touch_arch();
         let list = build_arch(&d, &Options::default());
