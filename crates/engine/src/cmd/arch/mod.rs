@@ -41,6 +41,7 @@ pub(crate) fn wall_layers(exterior: bool) -> Vec<(String, f64)> {
 pub fn specs() -> Vec<CommandSpec> {
     let mut v = Vec::new();
     v.extend(wall::specs());
+    v.extend(opening::specs());
     v.extend(inspect::specs());
     v.extend(build3d::specs());
     v.extend(sample::specs());
