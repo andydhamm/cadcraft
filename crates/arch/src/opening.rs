@@ -6,8 +6,8 @@
 //! are finite and panic-free, so hostile DXF/command input cannot crash the
 //! crate.
 
-use super::{ArchId, ArchModel};
-use cadcraft_doc::{Opening, OpeningKind};
+use super::{ArchId, ArchModel, Wall};
+use cadcraft_doc::arch::{Opening, OpeningKind};
 use cadcraft_geom::Vec2;
 
 /// Minimum width of a hinged/pocket/sliding opening, in metres.
@@ -105,11 +105,9 @@ pub fn validate_placement(
     style: &str,
     ignore: Option<ArchId>,
 ) -> Result<f64, PlacementError> {
-    let wall = model
-        .wall(host)
-        .ok_or_else(|| PlacementError(format!("host wall {host} not found")))
-        .and_then(|w| if w.start.is_finite() && w.end.is_finite() { Some(w) } else { None })
-        .ok_or_else(|| PlacementError("host wall has non-finite endpoints".into()))?;
+    let wall = model.wall(host).ok_or_else(|| PlacementError(format!("host wall {host} not found"))).and_then(|w| {
+        if w.start.is_finite() && w.end.is_finite() { Ok(w) } else { Err(PlacementError("host wall has non-finite endpoints".into())) }
+    })?;
     let len = wall.start.dist(wall.end);
     if !len.is_finite() || len < 1e-12 {
         return Err(PlacementError("host wall has zero or non-finite length".into()));
