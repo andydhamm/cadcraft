@@ -15,7 +15,7 @@ use crate::EngineError;
 use crate::Session;
 use crate::cmd::CommandSpec;
 
-use cadcraft_arch::opening::{place_opening, project_to_wall};
+use cadcraft_arch::opening::{place_opening, project_to_wall, validate_placement};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::arch::{Hinge, MAX_OPENINGS, Opening, OpeningKind, Swing, arch_handle};
 
@@ -169,6 +169,57 @@ fn run_garagedoor(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     place_from_params("garagedoor", OpeningKind::GarageDoor, s, p)
 }
 
+/// Move an existing opening along its host wall.
+///
+/// `opening` is the id of the opening to move (accepts `w{n}`, `o{n}` or a bare
+/// number); `offset` gives the new distance from the wall start, or `point`
+/// ([x,y]) which is projected onto the wall. The opening is re-validated against
+/// the host wall (a position that runs past either end, leaving less than the
+/// minimum wall segment, is rejected). Undoable by default.
+fn run_opening_move(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
+    let cmd = "arch.opening.move";
+
+    // 1. Host opening id.
+    let id_s = crate::cmd::str_param(p, "opening").ok_or_else(|| crate::cmd::bad(cmd, "`opening` (string id) is required"))?;
+    let id: ArchId = parse_arch_id(id_s).map_err(|e| crate::cmd::bad(cmd, e))?;
+
+    // 2. Copy the opening's data into locals before touching `d.arch` again:
+    // `d.arch.opening(id)` is a borrow that would conflict with the later
+    // `d.arch.openings[i].offset = ...` mutation, so nothing is kept alive.
+    let d = s.doc_mut()?;
+    let (host, width, sill, height, kind, style) = match d.arch.opening(id) {
+        Some(o) => (o.host, o.width, o.sill, o.height, o.kind, o.style.clone()),
+        None => return Err(crate::cmd::bad(cmd, format!("no opening {id}"))),
+    };
+
+    // 3. New offset: explicit number, or a point projected onto the host wall.
+    let new_offset = if let Some(off) = crate::cmd::f64_req(p, "offset") {
+        off
+    } else if let Some(pt) = crate::cmd::point_param(p, "point") {
+        cadcraft_arch::opening::project_to_wall(&d.arch, host, pt).ok_or_else(|| crate::cmd::bad(cmd, "point does not project onto the wall"))?
+    } else {
+        return Err(crate::cmd::bad(cmd, "`offset` (number) or `point` ([x,y]) is required"));
+    };
+
+    // 4. Re-validate on the host wall. `ignore = Some(id)` so the opening is
+    // not compared against itself.
+    cadcraft_arch::opening::validate_placement(&d.arch, host, new_offset, width, sill, height, kind, &style, Some(id))
+        .map_err(|e| crate::cmd::bad(cmd, e.to_string()))?;
+
+    // 5. Write the new offset back through the index (there is no setter).
+    if let Some(i) = d.arch.opening_index(id) {
+        d.arch.openings[i].offset = new_offset;
+    }
+    d.touch_arch();
+
+    // 6. Summary.
+    Ok(json!({
+        "moved": id.to_string(),
+        "offset": new_offset,
+        "revision": d.arch_revision,
+    }))
+}
+
 /// Command specs for the opening module.
 pub fn specs() -> Vec<CommandSpec> {
     vec![
@@ -184,6 +235,7 @@ pub fn specs() -> Vec<CommandSpec> {
             .menu(&["Architecture", "Garage Door"])
             .alias(&["gd"])
             .params("{wall:\"w0\", offset?|point?, width?, height?, style?, recess?, casing?, fit?, level?}"),
+        CommandSpec::new("arch.opening.move", "Move Opening", run_opening_move).params("{opening:\"w0\", offset?|point?}"),
     ]
 }
 
@@ -269,5 +321,50 @@ mod tests {
         s.undo().expect("undo after door");
         let after = s.doc().expect("doc").arch.openings.len();
         assert_eq!(after, before, "opening should be removed by undo");
+    }
+
+    /// A session with the 10 m wall `w0` and one 0.9 m door `w1` at offset 3.0.
+    fn session_with_door() -> Session {
+        let mut s = session_with_wall();
+        s.execute("door", &json!({"wall": "w0", "offset": 3.0, "width": 0.9, "height": 2.1})).expect("create door");
+        s
+    }
+
+    #[test]
+    fn opening_move_updates_the_offset() {
+        let mut s = session_with_door();
+        let r = s.execute("arch.opening.move", &json!({"opening": "w1", "offset": 6.5})).expect("move opening");
+        assert_eq!(r["moved"], json!("w1"), "moved should be the opening id");
+        assert_eq!(r["offset"], json!(6.5), "moved offset should be echoed");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.opening(ArchId(1)).map(|o| o.offset), Some(6.5), "stored offset should be 6.5");
+    }
+
+    #[test]
+    fn opening_move_rejects_a_position_past_the_wall() {
+        let mut s = session_with_door();
+        let r = s.execute("arch.opening.move", &json!({"opening": "w1", "offset": 9.5}));
+        let err = r.expect_err("moving the door past the wall end should be rejected");
+        assert!(!err.to_string().is_empty(), "expected a placement error");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.opening(ArchId(1)).map(|o| o.offset), Some(3.0), "stored offset must be unchanged");
+    }
+
+    #[test]
+    fn opening_move_rejects_an_unknown_id() {
+        let mut s = session_with_door();
+        let r = s.execute("arch.opening.move", &json!({"opening": "w99"}));
+        let err = r.expect_err("moving a non-existent opening should be rejected");
+        assert!(err.to_string().contains("no opening"), "expected 'no opening' error, got: {err}");
+    }
+
+    #[test]
+    fn opening_move_accepts_a_point_instead_of_an_offset() {
+        let mut s = session_with_door();
+        // Wall w0 runs (0,0) -> (10,0); (6,0) projects to offset 6.0.
+        let r = s.execute("arch.opening.move", &json!({"opening": "w1", "point": [6.0, 0.0]})).expect("move opening via point");
+        assert_eq!(r["offset"], json!(6.0), "projected offset should be 6.0");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.opening(ArchId(1)).map(|o| o.offset), Some(6.0), "stored offset should be 6.0");
     }
 }
