@@ -61,7 +61,7 @@ pub const TABLE: &[(&str, Class)] = &[
 /// `geom`, which the §3 diagram draws on one line. The GPU backend (`gpu`)
 /// reuses the CPU reference (`compose`) for LUTs and parity tests.
 pub const INTRA_LAYER_ORDER: &[&[&str]] =
-    &[&["geom", "color"], &["fonts", "render"], &["arch", "arch3d"], &["arch3d", "render3d"], &["render3d", "ui-egui"]];
+    &[&["geom", "color"], &["fonts", "render"], &["arch", "render"], &["arch", "arch3d"], &["arch3d", "render3d"], &["render3d", "ui-egui"]];
 
 fn intra_layer_allowed(from: &str, to: &str) -> bool {
     let (from, to) = (short_name(from), short_name(to));
