@@ -103,7 +103,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
         for o in &d.arch.openings {
             let mut obj = JsonMap::new();
             obj.insert("id".to_string(), json!(format!("o{}", o.id.0)));
-            obj.insert("handle".to_string(), json!(format!("{:x}", 0xA000_0000u64 + o.id.0)));
+            obj.insert("handle".to_string(), json!(format!("{:x}", 0xA000_0000u64 + o.id.0 as u64)));
             obj.insert("host".to_string(), json!(format!("w{}", o.host.0)));
             obj.insert("kind".to_string(), json!(o.kind));
             obj.insert("style".to_string(), json!(o.style));
