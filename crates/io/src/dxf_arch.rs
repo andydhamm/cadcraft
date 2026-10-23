@@ -397,7 +397,7 @@ mod tests {
 
     /// The per-opening `(layer, tags)` from `proxy_opening_polylines`, grouped by layer.
     fn poly_by_layer(polys: &[(String, Vec<Tag>)]) -> std::collections::HashMap<String, Vec<Vec<Tag>>> {
-        let mut map = std::collections::HashMap::new();
+        let mut map: std::collections::HashMap<String, Vec<Tag>> = std::collections::HashMap::new();
         for (l, t) in polys {
             map.entry(l.clone()).or_default().push(t.clone());
         }
@@ -455,8 +455,8 @@ mod tests {
         d.arch.push_opening(Opening::new(wid, 4.0, 0.9, 1.5, OpeningKind::Window));
 
         let want = d.arch.openings.len();
-        let first = read_dxf(&write_dxf(&d)).unwrap();
-        let second = read_dxf(&write_dxf(&first)).unwrap();
+        let first = read_dxf(write_dxf(&d).as_bytes()).unwrap();
+        let second = read_dxf(write_dxf(&first).as_bytes()).unwrap();
 
         assert_eq!(first.arch.openings.len(), want, "openings changed on first read");
         assert_eq!(second.arch.openings.len(), want, "openings changed on second read");
