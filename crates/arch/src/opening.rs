@@ -6,7 +6,7 @@
 //! are finite and panic-free, so hostile DXF/command input cannot crash the
 //! crate.
 
-use super::{ArchId, ArchModel, Wall};
+use super::{ArchId, ArchModel};
 use cadcraft_doc::arch::{Opening, OpeningKind};
 use cadcraft_geom::Vec2;
 
@@ -154,7 +154,7 @@ pub fn validate_placement(
         let gap = (b0 - c1).max(c0 - b1);
         let need = if other.mull_group.is_some() { 0.0 } else { MIN_SEPARATION };
         if gap < need - EPS {
-            return Err(PlacementError(format!("opening overlaps or is too close to opening {other:?}")));
+            return Err(PlacementError(format!("opening overlaps or is too close to opening {}", other.id)));
         }
     }
 
@@ -243,6 +243,7 @@ pub fn clamp_recess(model: &ArchModel, o: &mut Opening) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadcraft_doc::Wall;
     use cadcraft_geom::Vec2;
 
     fn wall(model: &mut ArchModel, start: Vec2, end: Vec2, thickness: f64) -> ArchId {
@@ -303,7 +304,7 @@ mod tests {
         let mut model = ArchModel::default();
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(1.5, 0.0), 0.2);
         let o = Opening::new(host, 0.5, 2.0, 2.0, OpeningKind::Door);
-        let placed = place_opening(&mut model, o, true).unwrap();
+        let placed = place_opening(&model, o, true).unwrap();
         assert!(placed.width >= min_width(OpeningKind::Door, "hinged"));
         assert!(placed.width < 2.0);
         assert!(
@@ -329,6 +330,16 @@ mod tests {
         let mut narrow = Opening::new(ArchId(2), 0.0, 0.9, 2.0, OpeningKind::Door);
         auto_panel(&mut narrow);
         assert!(!narrow.style.contains("double"));
+    }
+
+    #[test]
+    fn an_overlap_error_names_the_other_opening_by_id() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        let other = opening_on(&mut model, host, 0.5, 1.0);
+        let err = validate_placement(&model, host, 1.0, 1.0, 0.0, 2.0, OpeningKind::Door, "hinged", None).unwrap_err();
+        // The message used to be the whole `Opening` Debug dump (two dozen fields).
+        assert_eq!(err.0, format!("opening overlaps or is too close to opening {other}"));
     }
 
     #[test]

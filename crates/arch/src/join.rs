@@ -5,23 +5,9 @@ use cadcraft_geom::{Bounds2, Vec2};
 
 use crate::graph::WallGraph;
 
-/// Whether a point is on the open interior of the segment `[a, b]` (strictly between
-/// the endpoints, on the line). Used to decide whether a line intersection is a true
-/// X crossing rather than an endpoint join.
-fn point_in_open_segment(a: Vec2, b: Vec2, p: Vec2) -> bool {
-    let ab = b - a;
-    let ab2 = ab.len() * ab.len();
-    if ab2 < JOIN_EPS {
-        return false;
-    }
-    if (p - a).cross(ab).abs() > ENDPOINT_TOL {
-        return false;
-    }
-    let t = (p - a).dot(ab) / ab2;
-    t > ENDPOINT_TOL && t < 1.0 - ENDPOINT_TOL
-}
-
-pub const MAX_WALLS: usize = 4096;
+/// Wall cap of the join graph and the stretch BFS: the model-wide cap from `doc`, so the
+/// two never drift apart.
+pub use cadcraft_doc::MAX_WALLS;
 /// Max wall ends allowed to share one join point before we stop mitring.
 pub const MAX_JOIN_FAN: usize = 8;
 /// Endpoint clustering tolerance (world units).
@@ -30,6 +16,14 @@ pub const ENDPOINT_TOL: f64 = 1e-6;
 pub const JOIN_EPS: f64 = 1e-9;
 /// Parallelism test for "corresponding" (collinear) neighbour detection.
 const PARALLEL_EPS: f64 = 1e-9;
+/// How far (in multiples of the two walls' summed thickness) a T-join corner may sit from
+/// the join point before the solver gives up on following the host face and squares the
+/// end instead; keeps a near-parallel T from producing a long spike.
+const T_JOIN_REACH: f64 = 4.0;
+/// Longest mitre, as a multiple of the thicker wall's half thickness, measured from the
+/// join point to a mitred corner. 4 (like SVG's default `stroke-miterlimit`) keeps every
+/// corner of 29° or wider mitred; sharper corners square off.
+pub const MITRE_LIMIT: f64 = 4.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum End {
@@ -211,18 +205,18 @@ struct EndPlan {
 /// A neighbour wall relevant to a join at one end.
 enum Neighbour {
     /// Another wall's end meets this wall's end at the same point.
-    EndToEnd { id: ArchId, end: End },
+    EndToEnd { id: ArchId },
     /// Another wall's centre line passes through this wall's end (T-junction).
-    Mid { id: ArchId, end: End },
+    Mid { id: ArchId },
     /// A collinear wall that this wall should butt against.
     Collinear { id: ArchId, end: End },
     /// More than MAX_JOIN_FAN walls meet here; treat as no join.
-    Fan { count: usize },
+    Fan,
     /// A parallel (not collinear) neighbour whose end is aligned with this end;
     /// fall back to a square end.
-    Parallel { id: ArchId, end: End },
+    Parallel { id: ArchId },
     /// A crossing: two centre lines intersect at an interior point of both.
-    X { id: ArchId, end: End, pt: Vec2 },
+    X,
 }
 
 /// Classify the neighbours at one end of a wall.
@@ -241,7 +235,7 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
     if let Some(cluster_idx) = g.cluster_of(id, end) {
         let cluster = g.cluster(cluster_idx);
         if cluster.len() > MAX_JOIN_FAN {
-            return vec![Neighbour::Fan { count: cluster.len() }];
+            return vec![Neighbour::Fan];
         }
         for (nid, nend) in cluster {
             if *nid == id {
@@ -267,7 +261,7 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
 
             // EndToEnd: the neighbour's end is also at this point.
             if nend.point(nw).dist(pt) < ENDPOINT_TOL {
-                neighbours.push(Neighbour::EndToEnd { id: *nid, end: *nend });
+                neighbours.push(Neighbour::EndToEnd { id: *nid });
             }
         }
     }
@@ -288,8 +282,7 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
         let t = (pt - nw.start).dot(ndir);
         let nw_len = nw.start.dist(nw.end);
         if d.abs() < ENDPOINT_TOL && t > ENDPOINT_TOL && t < nw_len - ENDPOINT_TOL {
-            let nend = if nw.start.dist(pt) < nw.end.dist(pt) { End::Start } else { End::End };
-            neighbours.push(Neighbour::Mid { id: nw.id, end: nend });
+            neighbours.push(Neighbour::Mid { id: nw.id });
         }
     }
 
@@ -323,7 +316,7 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
         // This end is the nearest to the crossing (End wins the tie when equidistant).
         let this_is_nearest = if end == End::Start { pt.dist(cross_pt) < w.end.dist(cross_pt) } else { pt.dist(cross_pt) <= w.start.dist(cross_pt) };
         if this_is_nearest {
-            neighbours.push(Neighbour::X { id: nw.id, end, pt: cross_pt });
+            neighbours.push(Neighbour::X);
         }
     }
 
@@ -347,11 +340,10 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
             }
             // parallel but not collinear
             let nend_pt = if nw.start.dist(pt) < nw.end.dist(pt) { nw.start } else { nw.end };
-            let nend = if nw.start.dist(pt) < nw.end.dist(pt) { End::Start } else { End::End };
             let aligned = (nend_pt - pt).dot(dir).abs() < ENDPOINT_TOL;
             let close = pt.dist(nend_pt) < w.thickness + nw.thickness + ENDPOINT_TOL;
             if aligned && close {
-                neighbours.push(Neighbour::Parallel { id: nw.id, end: nend });
+                neighbours.push(Neighbour::Parallel { id: nw.id });
             }
         }
     }
@@ -370,7 +362,15 @@ fn plan_end(
     ov: &JoinOverrides,
 ) -> Result<EndPlan, ArchError> {
     let nbrs = classify(model, g, id, end);
-    let kind = ov.kind(id, end);
+    // An explicit override wins; otherwise the wall's own `join_start`/`join_end` (which
+    // the solver used to ignore, so a wall saved with a Butt end still mitred).
+    let kind = match ov.kind(id, end) {
+        JoinKind::Auto => match end {
+            End::Start => w.join_start,
+            End::End => w.join_end,
+        },
+        k => k,
+    };
 
     // Overrides win over L/T/X.
     match kind {
@@ -398,7 +398,7 @@ fn plan_end(
     // Fan: more than MAX_JOIN_FAN ends share this point; butt every end at the
     // cluster point (square end through the point, perpendicular to the wall's
     // own direction). Never mitre, never loop.
-    if nbrs.iter().any(|n| matches!(n, Neighbour::Fan { .. })) {
+    if nbrs.iter().any(|n| matches!(n, Neighbour::Fan)) {
         let pt = end.point(w);
         let Some(wdir) = wall_dir(w) else {
             return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
@@ -408,18 +408,6 @@ fn plan_end(
         let left = pt + wperp * whalf;
         let right = pt - wperp * whalf;
         return Ok(EndPlan { left, right, join: Some(Join::Butt(end)) });
-    }
-
-    // X: square end at the crossing centre.
-    if let Some(Neighbour::X { pt, .. }) = nbrs.iter().find(|n| matches!(n, Neighbour::X { .. })) {
-        let Some(wdir) = wall_dir(w) else {
-            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
-        };
-        let wperp = Vec2::new(-wdir.y, wdir.x);
-        let whalf = w.thickness / 2.0;
-        let left = *pt + wperp * whalf;
-        let right = *pt - wperp * whalf;
-        return Ok(EndPlan { left, right, join: Some(Join::X(end)) });
     }
 
     // Parallel neighbour: square end at the shared join point.
@@ -468,33 +456,25 @@ fn plan_end(
         let Some(nw) = model.walls.iter().find(|w| w.id == *nid) else {
             return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
         };
-        let pt = end.point(w);
-        let Some(wdir) = wall_dir(w) else {
-            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
-        };
-        let Some(ndir) = wall_dir(nw) else {
-            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
-        };
-        let perp = Vec2::new(-ndir.y, ndir.x);
-        let half = nw.thickness / 2.0;
-        // Determine which side of the host the incoming wall approaches from
-        // by looking at a point along the incoming wall away from the join.
-        let away = if end == End::End { -wdir } else { wdir };
-        let away_pt = pt + away * 1.0;
-        let side = (away_pt - nw.start).dot(perp);
-        let face_pt = if side > 0.0 {
-            nw.start + ndir * ((pt - nw.start).dot(ndir)) + perp * half
-        } else {
-            nw.start + ndir * ((pt - nw.start).dot(ndir)) - perp * half
-        };
-        let Some(wdir) = wall_dir(w) else {
-            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
-        };
-        let wperp = Vec2::new(-wdir.y, wdir.x);
-        let whalf = w.thickness / 2.0;
-        let left = face_pt + wperp * whalf;
-        let right = face_pt - wperp * whalf;
-        return Ok(EndPlan { left, right, join: Some(Join::T(end)) });
+        return Ok(t_join(w, end, raw, nw));
+    }
+
+    // A tee drawn as three ends at one point: two of the other ends are collinear, so they
+    // are one straight host wall split here and this end butts its face (mitring with one
+    // of them would run the end diagonally through the host).
+    let end_walls: Vec<&Wall> = nbrs
+        .iter()
+        .filter_map(|n| match n {
+            Neighbour::EndToEnd { id: nid } => model.walls.iter().find(|w| w.id == *nid),
+            _ => None,
+        })
+        .collect();
+    let through = end_walls.iter().enumerate().find_map(|(i, a)| {
+        let da = wall_dir(a)?;
+        end_walls.iter().skip(i + 1).any(|b| wall_dir(b).is_some_and(|db| da.cross(db).abs() < PARALLEL_EPS)).then_some(*a)
+    });
+    if let Some(host) = through {
+        return Ok(t_join(w, end, raw, host));
     }
 
     // EndToEnd (L or angled): mitre.
@@ -545,13 +525,63 @@ fn plan_end(
             (None, None) => raw.1,
         };
 
+        // Mitre limit: a very acute corner puts the mitre point far down the bisector (a
+        // spike metres past both walls). Beyond the limit both walls square off at the join
+        // point instead; the shared corners are the same points seen from either wall, so
+        // both walls make the same choice.
+        let reach = MITRE_LIMIT * (w.thickness.max(nw.thickness) / 2.0);
+        if left.dist(pt) > reach || right.dist(pt) > reach {
+            let wperp = Vec2::new(-wdir.y, wdir.x);
+            let whalf = w.thickness / 2.0;
+            return Ok(EndPlan { left: pt + wperp * whalf, right: pt - wperp * whalf, join: Some(Join::Square(end)) });
+        }
+
         return Ok(EndPlan { left, right, join: Some(Join::L(end)) });
+    }
+
+    // X: another wall crosses this one's interior. Both walls pass through the crossing,
+    // so the end keeps its own corners (trimming it to the crossing would delete the part
+    // of the wall beyond it); the join is only recorded.
+    if nbrs.iter().any(|n| matches!(n, Neighbour::X)) {
+        return Ok(EndPlan { left: raw.0, right: raw.1, join: Some(Join::X(end)) });
     }
 
     Ok(EndPlan { left: raw.0, right: raw.1, join: None })
 }
 
-/// Solve every wall's poché ring with explicit join overrides. Output order ==
+/// The end of `w` butting the face of `host`, whose centre line passes through the end.
+///
+/// Each face of the incoming wall ends where it meets the host's face line, so an angled T
+/// leaves neither a gap nor an overshoot. A face (nearly) parallel to the host, or a corner
+/// implausibly far from the join, falls back to a square end on the host face.
+fn t_join(w: &Wall, end: End, raw: (Vec2, Vec2), host: &Wall) -> EndPlan {
+    let (Some(wdir), Some(ndir)) = (wall_dir(w), wall_dir(host)) else {
+        return EndPlan { left: raw.0, right: raw.1, join: None };
+    };
+    let pt = end.point(w);
+    let perp = Vec2::new(-ndir.y, ndir.x);
+    let half = host.thickness / 2.0;
+    // Which side of the host the incoming wall approaches from: look at a point along the
+    // incoming wall away from the join.
+    let away = if end == End::End { -wdir } else { wdir };
+    let side = (pt + away - host.start).dot(perp);
+    let face_off = if side > 0.0 { perp * half } else { -(perp * half) };
+    let face_pt = host.start + ndir * ((pt - host.start).dot(ndir)) + face_off;
+    let face_a = host.start + face_off;
+    let face_b = face_a + ndir;
+    let limit = T_JOIN_REACH * (w.thickness + host.thickness);
+    let on_face = |p: Vec2| line_line_infinite(p, p + wdir, face_a, face_b).map(|(q, _, _)| q).filter(|q| q.is_finite() && q.dist(pt) <= limit);
+    let wperp = Vec2::new(-wdir.y, wdir.x);
+    let whalf = w.thickness / 2.0;
+    let (left, right) = match (on_face(raw.0), on_face(raw.1)) {
+        (Some(l), Some(r)) => (l, r),
+        _ => (face_pt + wperp * whalf, face_pt - wperp * whalf),
+    };
+    EndPlan { left, right, join: Some(Join::T(end)) }
+}
+
+/// Solve every wall's poché ring with explicit join overrides; an end without one
+/// (`JoinKind::Auto`) uses the wall's own `join_start`/`join_end`. Output order ==
 /// `model.walls` order; degenerate walls (`wall::wall_polygon` is `None`) are
 /// skipped and produce no shape.
 pub fn solve_joins_with(model: &cadcraft_doc::ArchModel, ov: &JoinOverrides) -> Vec<WallShape> {
@@ -579,29 +609,25 @@ pub fn solve_joins_with(model: &cadcraft_doc::ArchModel, ov: &JoinOverrides) -> 
             Err(_) => continue,
         };
 
-        let corners = ring_from_corners(plan_s.left, plan_s.right, plan_e.left, plan_e.right);
-        let mut ring = match corners {
-            Some(r) => r,
-            None => {
-                // Rule 6: crossed/degenerate → fall back to the raw (untrimmed) corners.
-                let raw = ring_from_corners(ls, rs, le, re);
-                let _ = raw;
-                continue;
-            }
+        // Rule 6: when trimming crosses the ring over (a wall shorter than its neighbour's
+        // mitre), fall back to the raw (untrimmed) corners so the wall still exists in the
+        // plan and in 3D; it then records no joins.
+        let (ring, joins) = match ring_from_corners(plan_s.left, plan_s.right, plan_e.left, plan_e.right) {
+            Some(r) => (r, [plan_s.join, plan_e.join].into_iter().flatten().collect()),
+            None => match ring_from_corners(ls, rs, le, re) {
+                Some(r) => (r, Vec::new()),
+                None => continue,
+            },
         };
 
-        out.push(WallShape {
-            id: w.id,
-            polygon: ring,
-            centre: (w.start, w.end),
-            joins: vec![plan_s.join, plan_e.join].into_iter().filter_map(|j| j).collect(),
-        });
+        out.push(WallShape { id: w.id, polygon: ring, centre: (w.start, w.end), joins });
     }
 
     out
 }
 
-/// Solve every wall's poché ring (no overrides).
+/// Solve every wall's poché ring (no overrides beyond each wall's own `join_start` /
+/// `join_end`).
 ///
 /// `solve_joins(m)` == `solve_joins_with(m, &JoinOverrides::default())`.
 pub fn solve_joins(model: &cadcraft_doc::ArchModel) -> Vec<WallShape> {
@@ -622,11 +648,9 @@ pub fn stretch_wall(
         return Err(ArchError::NotFinite);
     }
 
-    let wall_idx = model.walls.iter().position(|w| w.id == id);
-    let wall_idx = match wall_idx {
-        Some(i) => i,
-        None => return Err(ArchError::NoSuchWall(id)),
-    };
+    if !model.walls.iter().any(|w| w.id == id) {
+        return Err(ArchError::NoSuchWall(id));
+    }
 
     let graph = crate::graph::WallGraph::build(model);
 
@@ -671,10 +695,10 @@ pub fn stretch_wall(
 
     // Apply the new position to each affected end.
     for (w, e) in &moving {
-        if let Some(wall_idx) = model.walls.iter().position(|wall| wall.id == *w) {
+        if let Some(wall) = model.walls.iter_mut().find(|wall| wall.id == *w) {
             match e {
-                End::Start => model.walls[wall_idx].start = to,
-                End::End => model.walls[wall_idx].end = to,
+                End::Start => wall.start = to,
+                End::End => wall.end = to,
             }
         }
     }
@@ -682,10 +706,10 @@ pub fn stretch_wall(
     // Collect ids of walls whose geometry actually changed (sorted, deduped).
     let mut changed: BTreeSet<ArchId> = BTreeSet::new();
     for (w, (old_start, old_end)) in &originals {
-        if let Some(wall) = model.walls.iter().find(|wall| wall.id == *w) {
-            if wall.start != *old_start || wall.end != *old_end {
-                changed.insert(*w);
-            }
+        if let Some(wall) = model.walls.iter().find(|wall| wall.id == *w)
+            && (wall.start != *old_start || wall.end != *old_end)
+        {
+            changed.insert(*w);
         }
     }
 
@@ -1028,9 +1052,9 @@ mod tests {
         }
 
         // Outer corners of the ring.
-        let outer = vec![Vec2::new(10.15, -0.15), Vec2::new(10.15, 8.15), Vec2::new(-0.15, 8.15), Vec2::new(-0.15, -0.15)];
+        let outer = [Vec2::new(10.15, -0.15), Vec2::new(10.15, 8.15), Vec2::new(-0.15, 8.15), Vec2::new(-0.15, -0.15)];
         // Inner corners of the ring.
-        let inner = vec![Vec2::new(9.85, 0.15), Vec2::new(9.85, 7.85), Vec2::new(0.15, 7.85), Vec2::new(0.15, 0.15)];
+        let inner = [Vec2::new(9.85, 0.15), Vec2::new(9.85, 7.85), Vec2::new(0.15, 7.85), Vec2::new(0.15, 0.15)];
 
         // Each corner should appear in exactly two shapes' polygons.
         for c in outer.iter().chain(inner.iter()) {
@@ -1048,7 +1072,7 @@ mod tests {
     }
 
     #[test]
-    fn x_join_butts_both_at_the_crossing_centre() {
+    fn x_join_records_the_crossing_and_keeps_both_walls_whole() {
         let mut model = cadcraft_doc::ArchModel::default();
         wall(&mut model, 0, Vec2::new(0.0, 5.0), Vec2::new(10.0, 5.0), 1.0);
         wall(&mut model, 1, Vec2::new(5.0, 0.0), Vec2::new(5.0, 10.0), 1.0);
@@ -1062,19 +1086,116 @@ mod tests {
         assert!(s0.joins.iter().any(|j| matches!(j, Join::X(_))));
         assert!(s1.joins.iter().any(|j| matches!(j, Join::X(_))));
 
-        // Wall 0 (horizontal) end face centred on (5,5): corners (5, 5±0.5).
-        let c0 = s0.polygon.iter().filter(|p| (p.x - 5.0).abs() < 1e-9).cloned().collect::<Vec<_>>();
-        assert_eq!(c0.len(), 2, "wall 0 should have 2 corners at x=5");
-        for p in &c0 {
-            assert!((p.y - 5.5).abs() < 1e-9 || (p.y - 4.5).abs() < 1e-9, "wall 0 corner {:?} not at y=5±0.5", p,);
-        }
+        // Both walls pass through the crossing: neither is cut back to it.
+        let b0 = s0.bounds();
+        assert!((b0.min.x - 0.0).abs() < 1e-9 && (b0.max.x - 10.0).abs() < 1e-9, "wall 0 truncated: {b0:?}");
+        let b1 = s1.bounds();
+        assert!((b1.min.y - 0.0).abs() < 1e-9 && (b1.max.y - 10.0).abs() < 1e-9, "wall 1 truncated: {b1:?}");
+    }
 
-        // Wall 1 (vertical) end face centred on (5,5): corners (5±0.5, 5).
-        let c1 = s1.polygon.iter().filter(|p| (p.y - 5.0).abs() < 1e-9).cloned().collect::<Vec<_>>();
-        assert_eq!(c1.len(), 2, "wall 1 should have 2 corners at y=5");
-        for p in &c1 {
-            assert!((p.x - 5.5).abs() < 1e-9 || (p.x - 4.5).abs() < 1e-9, "wall 1 corner {:?} not at x=5±0.5", p,);
+    #[test]
+    fn an_off_centre_crossing_does_not_delete_part_of_either_wall() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+        wall(&mut model, 1, Vec2::new(7.0, -3.0), Vec2::new(7.0, 5.0), 0.2);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+        assert!((polygon_area(&shapes[0].polygon) - 2.0).abs() < 1e-9, "wall 0 lost area: {:?}", shapes[0].polygon);
+        assert!((polygon_area(&shapes[1].polygon) - 1.6).abs() < 1e-9, "wall 1 lost area: {:?}", shapes[1].polygon);
+    }
+
+    #[test]
+    fn a_crossing_wall_does_not_undo_the_corner_mitre() {
+        // A closed rectangle crossed near its bottom-left corner by a long wall: the corner
+        // at (0,0) still mitres even though the crossing at x=3 is nearest to that end.
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2);
+        wall(&mut model, 2, Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), 0.2);
+        wall(&mut model, 3, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2);
+        wall(&mut model, 4, Vec2::new(3.0, -2.0), Vec2::new(3.0, 2.0), 0.1);
+
+        let shapes = solve_joins(&model);
+        let bottom = shapes.iter().find(|s| s.id == ArchId(0)).unwrap();
+        assert!(bottom.joins.contains(&Join::L(End::Start)), "bottom wall lost its corner mitre: {:?}", bottom.joins);
+        assert!(bottom.polygon.iter().any(|p| p.dist(Vec2::new(-0.1, -0.1)) < 1e-9), "mitred corner missing: {:?}", bottom.polygon);
+    }
+
+    #[test]
+    fn a_wall_shorter_than_its_neighbours_mitre_keeps_its_raw_ring() {
+        // A 0.1 m stub mitred into a 1 m thick wall would cross over; it must fall back to
+        // its untrimmed ring instead of vanishing from the plan and the 3D model.
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(0.1, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(0.1, 0.0), Vec2::new(0.1, 10.0), 1.0);
+
+        let shapes = solve_joins(&model);
+        let stub = shapes.iter().find(|s| s.id == ArchId(0));
+        assert!(stub.is_some(), "the stub wall vanished: {shapes:?}");
+        let stub = stub.unwrap();
+        assert_eq!(stub.polygon, crate::wall::wall_polygon(&model.walls[0]).unwrap());
+        assert!(stub.joins.is_empty(), "a fallback ring records no joins: {:?}", stub.joins);
+    }
+
+    #[test]
+    fn an_acute_corner_squares_off_instead_of_spiking() {
+        // A 10° corner would mitre 0.5 / sin(5°) ≈ 5.7 m down the bisector.
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        let back = Vec2::new(-(10f64.to_radians().cos()), 10f64.to_radians().sin()) * 10.0;
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 0.0) + back, 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+        let corner = Vec2::new(10.0, 0.0);
+        for s in &shapes {
+            assert!(s.joins.contains(&Join::Square(if s.id == ArchId(0) { End::End } else { End::Start })), "{:?}", s.joins);
+            for p in &s.polygon {
+                assert!(p.dist(corner) < 10.1 + 1e-9, "spike vertex {p:?} in {:?}", s.id);
+                assert!(p.x <= 10.0 + 0.5 + 1e-9, "wall {:?} spikes past the corner: {p:?}", s.id);
+            }
         }
+    }
+
+    #[test]
+    fn a_right_angle_corner_is_within_the_mitre_limit() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 1.0);
+        let shapes = solve_joins(&model);
+        assert!(shapes[0].joins.contains(&Join::L(End::End)));
+        assert!(shapes[1].joins.contains(&Join::L(End::Start)));
+    }
+
+    #[test]
+    fn a_tee_of_three_ends_butts_the_straight_pair() {
+        // The host is drawn as two collinear segments split at the tee point.
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(5.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        wall(&mut model, 2, Vec2::new(5.0, 0.0), Vec2::new(5.0, 5.0), 0.5);
+
+        let shapes = solve_joins(&model);
+        let stem = shapes.iter().find(|s| s.id == ArchId(2)).unwrap();
+        assert!(stem.joins.contains(&Join::T(End::Start)), "{:?}", stem.joins);
+        let b = stem.bounds();
+        assert!((b.min.y - 0.5).abs() < 1e-9, "the stem must stop at the host face y=0.5, not run through it: {:?}", stem.polygon);
+        assert!((b.min.x - 4.75).abs() < 1e-9 && (b.max.x - 5.25).abs() < 1e-9, "{:?}", stem.polygon);
+    }
+
+    #[test]
+    fn an_angled_t_join_meets_the_host_face_with_both_corners() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(20.0, 0.0), 1.0); // host
+        wall(&mut model, 1, Vec2::new(5.0, 5.0), Vec2::new(10.0, 0.0), 0.5); // 45° incoming
+
+        let shapes = solve_joins(&model);
+        let incoming = shapes.iter().find(|s| s.id == ArchId(1)).unwrap();
+        assert!(incoming.joins.contains(&Join::T(End::End)));
+        let on_face = incoming.polygon.iter().filter(|p| (p.y - 0.5).abs() < 1e-9).count();
+        assert_eq!(on_face, 2, "both end corners must sit on the host face y=0.5: {:?}", incoming.polygon);
+        assert!(incoming.polygon.iter().all(|p| p.y >= 0.5 - 1e-9), "incoming wall overshoots into the host: {:?}", incoming.polygon);
     }
 
     #[test]
@@ -1100,6 +1221,21 @@ mod tests {
 
         // Wall b still mitres.
         assert!(b.joins.iter().any(|j| matches!(j, Join::L(End::Start))));
+    }
+
+    #[test]
+    fn a_walls_own_join_kind_is_honoured_without_overrides() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 1.0);
+        model.walls[0].join_end = JoinKind::Butt;
+
+        let shapes = solve_joins(&model);
+        assert!(shapes[0].joins.contains(&Join::Butt(End::End)), "the stored Butt end was ignored: {:?}", shapes[0].joins);
+        // An explicit override still wins over the stored kind.
+        let mut ov = JoinOverrides::new();
+        ov.set(ArchId(0), JoinKind::Auto, JoinKind::Square);
+        assert!(solve_joins_with(&model, &ov)[0].joins.contains(&Join::Square(End::End)));
     }
 
     #[test]
