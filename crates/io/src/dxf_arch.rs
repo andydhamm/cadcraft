@@ -191,8 +191,8 @@ pub(crate) fn proxy_opening_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
         .iter()
         .take(cadcraft_doc::arch::MAX_OPENINGS)
         .filter_map(|o| {
-            let symbol = cadcraft_arch::symbol::opening_symbol(m, o).as_ref();
-            let mut corners: Option<Vec<Vec2>> = symbol.and_then(|s| s.polylines.first().cloned());
+            let symbol = cadcraft_arch::symbol::opening_symbol(m, o);
+            let mut corners: Option<Vec<Vec2>> = symbol.as_ref().and_then(|s| s.polylines.first().cloned());
             if corners.as_ref().map_or(true, |c| c.is_empty()) {
                 corners = m.wall(o.host).and_then(|w| opening_ring(w, o));
             }
@@ -390,8 +390,10 @@ mod tests {
         let text = crate::dxf_ext::json_chunks(&json).join("");
         let parsed = parse_arch(&text);
         assert!(parsed.is_some(), "a version-1 payload must still parse");
-        assert!(parsed.unwrap().openings.is_empty(), "version 1 must yield no openings");
-        assert_eq!(parsed.unwrap().walls.len(), 1, "version 1 lost its wall");
+        if let Some(m) = parsed {
+            assert!(m.openings.is_empty(), "version 1 must yield no openings");
+            assert_eq!(m.walls.len(), 1, "version 1 lost its wall");
+        }
     }
 
     #[test]
