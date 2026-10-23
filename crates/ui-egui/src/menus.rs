@@ -233,7 +233,7 @@ fn run_ui_command_inner(app: &mut CadApp, id: &str, params: &Value) -> Option<Re
         }
         "ui.show3d" => {
             app.ui.show_three_d = true;
-            let _ = app.run("view3d", &json!({}));
+            let _ = app.run("view3d", json!({}));
             Ok(json!({"showThreeD": true}))
         }
         "ui.toggle.viewcube" => {

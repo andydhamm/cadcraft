@@ -9,7 +9,7 @@
 use std::cell::RefCell;
 
 /// Orbit-camera parameters for the 3D pane.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct Orbit {
     /// Angle around the vertical axis (radians).
     pub azimuth: f64,

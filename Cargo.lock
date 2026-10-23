@@ -763,6 +763,7 @@ dependencies = [
  "cadcraft-fonts",
  "cadcraft-geom",
  "cadcraft-render",
+ "cadcraft-render3d",
  "craft-ui",
  "egui",
  "egui-wgpu",
