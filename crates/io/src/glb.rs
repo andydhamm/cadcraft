@@ -89,25 +89,30 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
             *idx
         } else {
             let rgb = base_color_for(&m.material);
-            materials.push(json!({
+            let is_glass = m.material.contains("glass");
+            let mut mat = json!({
                 "name": m.material,
                 "pbrMetallicRoughness": {
                     "baseColorFactor": [
                         rgb.0 as f64 / 255.0,
                         rgb.1 as f64 / 255.0,
                         rgb.2 as f64 / 255.0,
-                        1.0
+                        if is_glass { 0.35 } else { 1.0 }
                     ],
                     "metallicFactor": 0.0,
-                    "roughnessFactor": 1.0,
+                    "roughnessFactor": if is_glass { 0.05 } else { 1.0 },
                 },
-            }));
+            });
+            if is_glass {
+                mat["alphaMode"] = json!("BLEND");
+            }
+            materials.push(mat);
             let idx = (materials.len() - 1) as u32;
             material_index.insert(m.material.clone(), idx);
             idx
         };
 
-        let name = format!("wall-{}", m.object);
+        let name = if m.material == "wall" { format!("wall-{}", m.object) } else { format!("{}-o{}", m.material, m.object.0) };
 
         // POSITION (VEC3, f32).
         let pos_start = bin.len();
@@ -502,5 +507,112 @@ mod tests {
         let bin_start = 12 + 8 + json_len + json_pad;
         assert_eq!(le32(&bytes, bin_start + 4), 0x004E4942);
         assert_eq!(bytes.len(), bin_start + 8);
+    }
+
+    #[test]
+    fn glb_wall_names_are_unchanged() {
+        let scene = scene_with(3);
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let meshes = json["meshes"].as_array().unwrap();
+        assert_eq!(meshes[0]["name"], "wall-w1");
+        assert_eq!(meshes[1]["name"], "wall-w2");
+        assert_eq!(meshes[2]["name"], "wall-w3");
+    }
+
+    #[test]
+    fn glb_names_opening_meshes_by_component() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "glass".into();
+            m.object = ArchId(2);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "frame".into();
+            m.object = ArchId(0);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "leaf".into();
+            m.object = ArchId(1);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "casing".into();
+            m.object = ArchId(2);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "sill".into();
+            m.object = ArchId(2);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "header".into();
+            m.object = ArchId(0);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let meshes = json["meshes"].as_array().unwrap();
+        assert_eq!(meshes[0]["name"], "glass-o2");
+        assert_eq!(meshes[1]["name"], "frame-o0");
+        assert_eq!(meshes[2]["name"], "leaf-o1");
+        assert_eq!(meshes[3]["name"], "casing-o2");
+        assert_eq!(meshes[4]["name"], "sill-o2");
+        assert_eq!(meshes[5]["name"], "header-o0");
+    }
+
+    #[test]
+    fn glb_glass_material_blends() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "glass".into();
+            m.object = ArchId(2);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mat = &json["materials"][0];
+        let pbr = &mat["pbrMetallicRoughness"];
+        let base = &pbr["baseColorFactor"];
+        assert_eq!(base[3].as_f64().unwrap(), 0.35);
+        assert_eq!(pbr["metallicFactor"].as_f64().unwrap(), 0.0);
+        assert_eq!(pbr["roughnessFactor"].as_f64().unwrap(), 0.05);
+        assert_eq!(mat["alphaMode"], "BLEND");
+    }
+
+    #[test]
+    fn glb_is_byte_deterministic_with_openings() {
+        let mut scene = scene_with(2);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "glass".into();
+            m.object = ArchId(5);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "frame".into();
+            m.object = ArchId(3);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "leaf".into();
+            m.object = ArchId(4);
+            m
+        });
+        let a = write(&scene);
+        let b = write(&scene);
+        assert_eq!(a, b);
     }
 }
