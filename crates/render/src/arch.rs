@@ -434,6 +434,35 @@ mod tests {
         assert!(list.prims.iter().all(|p| p.handle != handle), "prims drawn for a missing-host opening");
     }
 
+    /// The wall poché and the opening symbol must not share a handle when the wall and opening
+    /// carry the same id.
+    #[test]
+    fn plan_symbol_prims_use_the_opening_handle() {
+        let mut d = Drawing::new_metric();
+        let wid = d.arch.push_wall(Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            height: 2.7,
+            ..Wall::default(),
+        });
+        let oid = d.arch.push_opening(Opening::new(wid, 5.0, 1.0, 2.1, OpeningKind::Door));
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        // In this fixture the wall and opening share id 0, so their proxy handles differ only
+        // by range. Picking the opening must never land on the wall handle.
+        assert_ne!(opening_handle(oid), arch_handle(wid), "opening and wall handles must differ");
+
+        let open_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == opening_handle(oid)).collect();
+        assert!(!open_prims.is_empty(), "no prims tagged with the opening handle");
+
+        // One wall with one opening draws exactly four poché prims on the wall handle. If the
+        // opening symbols mistakenly used the wall handle, this count would be larger.
+        let wall_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == arch_handle(wid)).collect();
+        assert_eq!(wall_prims.len(), 4, "wall poché prims should be untouched: {}", wall_prims.len());
+    }
+
     #[test]
     fn walls_without_openings_are_unchanged() {
         let mut d = Drawing::new_metric();
