@@ -18,7 +18,7 @@ use crate::cmd::CommandSpec;
 use crate::prompt::{Accept, Input, Interactive, Prompt, Step};
 use cadcraft_arch::opening::{place_opening, project_to_wall, validate_placement};
 use cadcraft_doc::ArchId;
-use cadcraft_doc::arch::{Hinge, MAX_OPENINGS, Opening, OpeningKind, Swing, arch_handle};
+use cadcraft_doc::arch::{Hinge, MAX_OPENINGS, Opening, OpeningKind, Swing, arch_handle, opening_handle, opening_label, wall_label};
 use cadcraft_doc::{ARCH_HANDLE_BASE, Handle, is_arch_handle};
 use cadcraft_geom::Vec2;
 
@@ -308,15 +308,25 @@ impl Interactive for OpeningM {
 
 /// Parse a user-supplied id string into an [`ArchId`](cadcraft_doc::ArchId).
 ///
-/// Accepts an optional leading `w`/`W`/`o`/`O` followed by a decimal; `Display`
-/// prints `w{n}` but the bare `n` is also accepted.
-fn parse_arch_id(s: &str) -> Result<ArchId, String> {
+/// For the **wall** space: accepts `w{n}`, `W{n}`, or bare `{n}`.
+/// For the **opening** space: accepts `o{n}`, `O{n}` only.
+///
+/// The caller validates that the returned id exists in the correct collection
+/// (wall vs opening); this function only parses the prefix and numeric part.
+fn parse_arch_id(s: &str, space: &str) -> Result<ArchId, String> {
     let s = s.trim();
-    let start = match s.as_bytes().first() {
-        Some(b) if *b == b'w' || *b == b'W' || *b == b'o' || *b == b'O' => 1,
-        _ => 0,
+    let digits = if space == "opening" {
+        match s.as_bytes().first() {
+            Some(b) if *b == b'o' || *b == b'O' => &s[1..],
+            _ => return Err(format!("opening id requires an `o` prefix, got `{s}`")),
+        }
+    } else {
+        let start = match s.as_bytes().first() {
+            Some(b) if *b == b'w' || *b == b'W' => 1,
+            _ => 0,
+        };
+        &s[start..]
     };
-    let digits = &s[start..];
     if digits.is_empty() {
         return Err(format!("empty id `{s}`"));
     }
@@ -330,7 +340,7 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
 
     // 1. Host wall.
     let wall_s = crate::cmd::str_param(p, "wall").ok_or_else(|| crate::cmd::bad(cmd, "`wall` (string id) is required"))?;
-    let host: ArchId = parse_arch_id(wall_s).map_err(|e| crate::cmd::bad(cmd, e))?;
+    let host: ArchId = parse_arch_id(wall_s, "wall").map_err(|e| crate::cmd::bad(cmd, e))?;
     if d.arch.wall(host).is_none() {
         return Err(crate::cmd::bad(cmd, format!("no wall {host}")));
     }
@@ -408,7 +418,9 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
     let requested_width = width;
     let mut o = Opening::new(host, offset, width, height, kind);
     o.style = style;
+    o.sill = sill;
     o.sill_depth = sill;
+    o.recess = recess;
     o.casing_width = casing;
     o.hinge = hinge;
     o.swing = swing;
@@ -423,9 +435,9 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
     Ok(json!({
         "openings": [
             {
-                "id": id.to_string(),
-                "handle": arch_handle(id).hex(),
-                "host": host.to_string(),
+                "id": opening_label(id),
+                "handle": format!("{:x}", opening_handle(id)),
+                "host": wall_label(host),
                 "offset": offset,
                 "width": placed_width,
                 "resized": resized,
@@ -459,7 +471,7 @@ fn run_opening_move(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
 
     // 1. Host opening id.
     let id_s = crate::cmd::str_param(p, "opening").ok_or_else(|| crate::cmd::bad(cmd, "`opening` (string id) is required"))?;
-    let id: ArchId = parse_arch_id(id_s).map_err(|e| crate::cmd::bad(cmd, e))?;
+    let id: ArchId = parse_arch_id(id_s, "opening").map_err(|e| crate::cmd::bad(cmd, e))?;
 
     // 2. Copy the opening's data into locals before touching `d.arch` again:
     // `d.arch.opening(id)` is a borrow that would conflict with the later
@@ -537,6 +549,24 @@ mod tests {
         s
     }
 
+    /// A session with the 10 m wall `w0` and one 0.9 m door `o0` at offset 3.0.
+    fn session_with_door() -> Session {
+        let mut s = session_with_wall();
+        s.execute("door", &json!({"wall": "w0", "offset": 3.0, "width": 0.9, "height": 2.1})).expect("create door");
+        s
+    }
+
+    #[test]
+    fn door_reports_an_o_prefixed_id_and_a000_handle() {
+        let mut s = session_with_wall();
+        let r = s.execute("door", &json!({"wall": "w0", "offset": 3.0, "width": 0.9, "height": 2.1})).expect("door execute");
+        let one = &r["openings"].as_array().expect("openings")[0];
+        assert_eq!(one["id"], json!("o0"), "id should be o0");
+        let handle = one["handle"].as_str().expect("handle is a string");
+        assert!(handle.starts_with("a000"), "handle should start with a000, got {handle}");
+        assert_eq!(one["host"], json!("w0"), "host should be w0");
+    }
+
     #[test]
     fn door_command_places_an_opening_and_bumps_revision() {
         let mut s = session_with_wall();
@@ -545,7 +575,6 @@ mod tests {
         let rev_after = s.doc().expect("doc").arch_revision;
         assert_ne!(rev_before, rev_after, "arch revision did not change");
         let one = &r["openings"].as_array().expect("openings")[0];
-        assert_eq!(one["id"], json!("w0"));
         assert_eq!(one["host"], json!("w0"));
         assert_eq!(one["offset"], json!(3.0));
         assert_eq!(one["width"], json!(0.9));
@@ -554,13 +583,14 @@ mod tests {
     }
 
     #[test]
-    fn window_command_defaults_the_sill() {
+    fn window_stores_the_sill_and_recess() {
         let mut s = session_with_wall();
-        let r = s.execute("window", &json!({"wall": "w0", "offset": 2.0})).expect("window execute");
-        let _ = r["openings"].as_array().expect("openings");
+        s.execute("window", &json!({"wall": "w0", "offset": 2.0, "sill": 0.9, "recess": 0.05})).expect("window execute");
         let d = s.doc().expect("doc");
         let opening = &d.arch.openings[0];
-        assert!((opening.sill_depth - 0.9).abs() < 1e-9, "window sill should default to 0.9, got {}", opening.sill_depth);
+        assert!((opening.sill - 0.9).abs() < 1e-9, "sill should be 0.9, got {}", opening.sill);
+        assert!((opening.sill_depth - 0.9).abs() < 1e-9, "sill_depth should be 0.9, got {}", opening.sill_depth);
+        assert!((opening.recess - 0.05).abs() < 1e-9, "recess should be 0.05, got {}", opening.recess);
     }
 
     #[test]
@@ -606,13 +636,6 @@ mod tests {
         s.undo().expect("undo after door");
         let after = s.doc().expect("doc").arch.openings.len();
         assert_eq!(after, before, "opening should be removed by undo");
-    }
-
-    /// A session with the 10 m wall `w0` and one 0.9 m door `w1` at offset 3.0.
-    fn session_with_door() -> Session {
-        let mut s = session_with_wall();
-        s.execute("door", &json!({"wall": "w0", "offset": 3.0, "width": 0.9, "height": 2.1})).expect("create door");
-        s
     }
 
     #[test]
@@ -676,19 +699,18 @@ mod tests {
     #[test]
     fn opening_move_updates_the_offset() {
         let mut s = session_with_door();
-        let r = s.execute("arch.opening.move", &json!({"opening": "w0", "offset": 6.5})).expect("move opening");
-        assert_eq!(r["moved"], json!("w0"), "moved should be the opening id");
+        let r = s.execute("arch.opening.move", &json!({"opening": "o0", "offset": 6.5})).expect("move opening");
         assert_eq!(r["offset"], json!(6.5), "moved offset should be echoed");
         let d = s.doc().expect("doc");
         assert_eq!(d.arch.opening(ArchId(0)).map(|o| o.offset), Some(6.5), "stored offset should be 6.5");
     }
 
     #[test]
-    fn opening_move_rejects_a_position_past_the_wall() {
+    fn opening_move_rejects_an_offset_past_the_wall_end() {
         let mut s = session_with_door();
-        let r = s.execute("arch.opening.move", &json!({"opening": "w0", "offset": 9.5}));
-        let err = r.expect_err("moving the door past the wall end should be rejected");
-        assert!(!err.to_string().is_empty(), "expected a placement error");
+        let r = s.execute("arch.opening.move", &json!({"opening": "o0", "offset": 9.9}));
+        let err = r.expect_err("offset 9.9 on a 10 m wall must fail (rough span exceeds wall)");
+        assert!(!err.to_string().is_empty(), "expected a placement error, got empty");
         let d = s.doc().expect("doc");
         assert_eq!(d.arch.opening(ArchId(0)).map(|o| o.offset), Some(3.0), "stored offset must be unchanged");
     }
@@ -696,7 +718,7 @@ mod tests {
     #[test]
     fn opening_move_rejects_an_unknown_id() {
         let mut s = session_with_door();
-        let r = s.execute("arch.opening.move", &json!({"opening": "w99"}));
+        let r = s.execute("arch.opening.move", &json!({"opening": "o99"}));
         let err = r.expect_err("moving a non-existent opening should be rejected");
         assert!(err.to_string().contains("no opening"), "expected 'no opening' error, got: {err}");
     }
@@ -705,9 +727,20 @@ mod tests {
     fn opening_move_accepts_a_point_instead_of_an_offset() {
         let mut s = session_with_door();
         // Wall w0 runs (0,0) -> (10,0); (6,0) projects to offset 6.0.
-        let r = s.execute("arch.opening.move", &json!({"opening": "w0", "point": [6.0, 0.0]})).expect("move opening via point");
+        let r = s.execute("arch.opening.move", &json!({"opening": "o0", "point": [6.0, 0.0]})).expect("move opening via point");
         assert_eq!(r["offset"], json!(6.0), "projected offset should be 6.0");
         let d = s.doc().expect("doc");
         assert_eq!(d.arch.opening(ArchId(0)).map(|o| o.offset), Some(6.0), "stored offset should be 6.0");
     }
-}
+
+    #[test]
+    fn opening_move_is_undoable() {
+        let mut s = session_with_door();
+        let before = s.doc().expect("doc").arch.opening(ArchId(0)).map(|o| o.offset);
+        s.execute("arch.opening.move", &json!({"opening": "o0", "offset": 5.0})).expect("move opening");
+        let mid = s.doc().expect("doc").arch.opening(ArchId(0)).map(|o| o.offset);
+        assert_eq!(mid, Some(5.0), "offset should be 5.0 after move");
+        s.undo().expect("undo after move");
+        let after = s.doc().expect("doc").arch.opening(ArchId(0)).map(|o| o.offset);
+        assert_eq!(after, before, "offset should be restored after undo");
+    }
