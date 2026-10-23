@@ -15,9 +15,15 @@ use crate::EngineError;
 use crate::Session;
 use crate::cmd::CommandSpec;
 
+use crate::prompt::{Accept, Input, Interactive, Prompt, Step};
+use crate::prompt::{Accept, Input, Interactive, Prompt, Step};
 use cadcraft_arch::opening::{place_opening, project_to_wall, validate_placement};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::arch::{Hinge, MAX_OPENINGS, Opening, OpeningKind, Swing, arch_handle};
+use cadcraft_doc::{ARCH_HANDLE_BASE, Handle, is_arch_handle};
+use cadcraft_doc::{ARCH_HANDLE_BASE, is_arch_handle};
+use cadcraft_geom::Vec2;
+use cadcraft_geom::Vec2;
 
 /// Allowed door styles.
 const DOOR_STYLES: [&str; 4] = ["hinged", "sliding", "pocket", "bifold"];
@@ -27,6 +33,276 @@ const WINDOW_STYLES: [&str; 10] = ["single-hung", "double-hung", "slider", "case
 
 /// Allowed garage-door styles.
 const GARAGE_STYLES: [&str; 2] = ["one-piece", "sectional"];
+
+/// Which number the machine is currently prompting for.
+#[derive(Clone, Copy, PartialEq)]
+enum NumTarget {
+    Width,
+    Height,
+    Sill,
+}
+
+/// Interactive machine shared by the `door`, `window` and `garagedoor` commands.
+///
+/// Stage 1: select a host wall (pick an arch handle, or click near a wall's centre line).
+/// Stage 2: specify the offset (as a point or number) and optionally set
+/// `width`/`height`/`sill`/`hinge`/`swing` via keywords.
+///
+/// The machine delegates to the JSON command on finish, so the whole interaction is
+/// one undo step and there is a single implementation path.
+pub struct OpeningM {
+    id: &'static str,
+    kind: OpeningKind,
+    host: Option<ArchId>,
+    host_point: Option<Vec2>,
+    offset: Option<f64>,
+    point: Option<Vec2>,
+    width: Option<f64>,
+    height: Option<f64>,
+    sill: Option<f64>,
+    hinge: Option<&'static str>,
+    swing: Option<&'static str>,
+    num_target: Option<NumTarget>,
+}
+
+impl OpeningM {
+    /// Create a new machine for the given opening kind.
+    pub fn new(kind: OpeningKind) -> Self {
+        let id = match kind {
+            OpeningKind::Door => "door",
+            OpeningKind::Window => "window",
+            OpeningKind::GarageDoor => "garagedoor",
+            _ => "door",
+        };
+        Self {
+            id,
+            kind,
+            host: None,
+            host_point: None,
+            offset: None,
+            point: None,
+            width: None,
+            height: None,
+            sill: None,
+            hinge: None,
+            swing: None,
+            num_target: None,
+        }
+    }
+
+    /// Toggle the hinge value between `"left"` and `"right"`.
+    fn toggle_hinge(current: Option<&'static str>) -> Option<&'static str> {
+        match current {
+            None => Some("left"),
+            Some("left") => Some("right"),
+            _ => Some("left"),
+        }
+    }
+
+    /// Toggle the swing value between `"in"` and `"out"`.
+    fn toggle_swing(current: Option<&'static str>) -> Option<&'static str> {
+        match current {
+            None => Some("in"),
+            Some("in") => Some("out"),
+            _ => Some("in"),
+        }
+    }
+
+    /// Parse `txt` as the number requested by `num_target`.
+    /// Accepts only finite values: `> 0.0` for width/height, `>= 0.0` for sill.
+    /// Re-prompts (`Step::Continue`) on invalid input, mirroring `WallM::parse_number`.
+    fn parse_number(&mut self, txt: &str) -> Result<Step> {
+        let v = match txt.trim().parse::<f64>() {
+            Ok(v) if v.is_finite() => v,
+            _ => return Ok(Step::Continue),
+        };
+        let ok = match self.num_target {
+            Some(NumTarget::Sill) => v >= 0.0,
+            _ => v > 0.0,
+        };
+        if !ok {
+            return Ok(Step::Continue);
+        }
+        match self.num_target {
+            Some(NumTarget::Width) => self.width = Some(v),
+            Some(NumTarget::Height) => self.height = Some(v),
+            Some(NumTarget::Sill) => self.sill = Some(v),
+            None => {}
+        }
+        self.num_target = None;
+        Ok(Step::Continue)
+    }
+
+    /// Build the JSON parameter map and execute the JSON command.
+    /// Prefers `offset` over `point` when both are set.
+    fn finish(&self, s: &mut Session) -> Result<Step> {
+        let Some(host) = self.host else {
+            return Ok(Step::Continue);
+        };
+        let mut map = serde_json::Map::new();
+        map.insert("wall".to_string(), json!(host.to_string()));
+        if let Some(off) = self.offset {
+            map.insert("offset".to_string(), json!(off));
+        } else if let Some(pt) = self.point {
+            map.insert("point".to_string(), json!([pt.x, pt.y]));
+        }
+        if let Some(w) = self.width {
+            map.insert("width".to_string(), json!(w));
+        }
+        if let Some(h) = self.height {
+            map.insert("height".to_string(), json!(h));
+        }
+        if let Some(s) = self.sill {
+            map.insert("sill".to_string(), json!(s));
+        }
+        if let Some(h) = self.hinge {
+            map.insert("hinge".to_string(), json!(h));
+        }
+        if let Some(s) = self.swing {
+            map.insert("swing".to_string(), json!(s));
+        }
+        s.execute(self.id, &Value::Object(map)).map(|_| Step::Done)
+    }
+}
+
+impl Interactive for OpeningM {
+    fn name(&self) -> &'static str {
+        self.id
+    }
+
+    fn prompt(&self, _s: &Session) -> Prompt {
+        // Stage 1: select a wall.
+        if self.host.is_none() {
+            return Prompt::new("Select wall:", Accept::SELECT);
+        }
+        // Stage 2: specify offset or params.
+        if let Some(target) = self.num_target {
+            let msg = match target {
+                NumTarget::Width => "Specify width:".to_string(),
+                NumTarget::Height => "Specify height:".to_string(),
+                NumTarget::Sill => "Specify sill:".to_string(),
+            };
+            return Prompt::new(msg, Accept::TEXT);
+        }
+        Prompt::new("Specify offset or [Width/Height/Sill/Hinge/Swing]:", Accept::POINT)
+            .kw(&["Width", "Height", "Sill", "Hinge", "Swing"])
+            .base_opt(self.host_point)
+    }
+
+    fn input(&mut self, s: &mut Session, i: Input) -> Result<Step> {
+        match i {
+            // --- Stage 1: wall selection ---
+            Input::Pick(handles) if self.host.is_none() => {
+                for h in &handles {
+                    if !is_arch_handle(*h) {
+                        continue;
+                    }
+                    let id = ArchId((*h).0 - ARCH_HANDLE_BASE);
+                    if let Some(d) = s.doc()
+                        && d.arch.wall(id).is_some()
+                    {
+                        self.host = Some(id);
+                        return Ok(Step::Continue);
+                    }
+                }
+                Ok(Step::Continue)
+            }
+            Input::Point(pt) if self.host.is_none() => {
+                if !pt.is_finite() {
+                    return Ok(Step::Continue);
+                }
+                let Some(d) = s.doc() else {
+                    return Ok(Step::Continue);
+                };
+                let mut best: Option<(f64, ArchId)> = None;
+                for w in &d.arch.walls {
+                    let dir = w.end - w.start;
+                    let dir_len = dir.len();
+                    if dir_len < 1e-12 {
+                        continue;
+                    }
+                    let to_pt = pt - w.start;
+                    let cross = to_pt.x * dir.y - to_pt.y * dir.x;
+                    let perp_dist = cross.abs() / dir_len;
+                    if perp_dist <= w.thickness / 2.0 + 1e-6 && project_to_wall(&d.arch, w.id, pt).is_some() {
+                        let candidate = (perp_dist, w.id);
+                        if best.map_or(true, |b| candidate.0 < b.0) {
+                            best = Some(candidate);
+                        }
+                    }
+                }
+                match best {
+                    Some((_dist, id)) => {
+                        self.host = Some(id);
+                        self.host_point = Some(pt);
+                        self.point = Some(pt);
+                        Ok(Step::Continue)
+                    }
+                    None => Ok(Step::Continue),
+                }
+            }
+            Input::Cancel => Ok(Step::Cancel),
+            Input::Enter if self.host.is_none() => Ok(Step::Continue),
+
+            // --- Stage 2: offset and params ---
+            Input::Point(pt) if self.host.is_some() && self.num_target.is_none() => {
+                if !pt.is_finite() {
+                    return Ok(Step::Continue);
+                }
+                self.point = Some(pt);
+                self.host_point = Some(pt);
+                self.finish(s)
+            }
+            Input::Text(txt) if self.host.is_some() => {
+                if self.num_target.is_some() {
+                    return self.parse_number(&txt);
+                }
+                if txt.trim().is_empty() {
+                    return self.finish(s);
+                }
+                let lower = txt.to_ascii_lowercase().trim().to_string();
+                match lower.as_str() {
+                    "width" => {
+                        self.num_target = Some(NumTarget::Width);
+                        Ok(Step::Continue)
+                    }
+                    "height" => {
+                        self.num_target = Some(NumTarget::Height);
+                        Ok(Step::Continue)
+                    }
+                    "sill" => {
+                        self.num_target = Some(NumTarget::Sill);
+                        Ok(Step::Continue)
+                    }
+                    "hinge" => {
+                        self.hinge = Self::toggle_hinge(self.hinge);
+                        Ok(Step::Continue)
+                    }
+                    "swing" => {
+                        self.swing = Self::toggle_swing(self.swing);
+                        Ok(Step::Continue)
+                    }
+                    _ => {
+                        if let Ok(v) = txt.trim().parse::<f64>()
+                            && v.is_finite()
+                        {
+                            self.offset = Some(v);
+                            return self.finish(s);
+                        }
+                        Ok(Step::Continue)
+                    }
+                }
+            }
+            Input::Enter if self.host.is_some() => self.finish(s),
+            _ => Ok(Step::Continue),
+        }
+    }
+
+    /// Returns an empty preview (the opening is only committed via the JSON command).
+    fn preview(&self, _s: &Session, _cursor: Vec2) -> Vec<cadcraft_doc::EntityKind> {
+        Vec::new()
+    }
+}
 
 /// Parse a user-supplied id string into an [`ArchId`](cadcraft_doc::ArchId).
 ///
@@ -230,15 +506,18 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("door", "Door", run_door)
             .menu(&["Architecture", "Door"])
             .alias(&["dr"])
-            .params("{wall:\"w0\", offset?|point?, width?, height?, style?, hinge?, swing?, recess?, casing?, fit?, level?}"),
+            .params("{wall:\"w0\", offset?|point?, width?, height?, style?, hinge?, swing?, recess?, casing?, fit?, level?}")
+            .interactive(|_| Ok(Box::new(OpeningM::new(OpeningKind::Door)))),
         CommandSpec::new("window", "Window", run_window)
             .menu(&["Architecture", "Window"])
             .alias(&["wn"])
-            .params("{wall:\"w0\", offset?|point?, width?, height?, style?, recess?, casing?, fit?, level?}"),
+            .params("{wall:\"w0\", offset?|point?, width?, height?, style?, recess?, casing?, fit?, level?}")
+            .interactive(|_| Ok(Box::new(OpeningM::new(OpeningKind::Window)))),
         CommandSpec::new("garagedoor", "Garage Door", run_garagedoor)
             .menu(&["Architecture", "Garage Door"])
             .alias(&["gd"])
-            .params("{wall:\"w0\", offset?|point?, width?, height?, style?, recess?, casing?, fit?, level?}"),
+            .params("{wall:\"w0\", offset?|point?, width?, height?, style?, recess?, casing?, fit?, level?}")
+            .interactive(|_| Ok(Box::new(OpeningM::new(OpeningKind::GarageDoor)))),
         CommandSpec::new("arch.opening.move", "Move Opening", run_opening_move).params("{opening:\"w0\", offset?|point?}"),
     ]
 }
@@ -332,6 +611,122 @@ mod tests {
         let mut s = session_with_wall();
         s.execute("door", &json!({"wall": "w0", "offset": 3.0, "width": 0.9, "height": 2.1})).expect("create door");
         s
+    }
+
+    #[test]
+    fn each_opening_command_is_one_undo_step() {
+        for id in ["door", "window", "garagedoor"] {
+            let mut s = session_with_wall();
+            let before = s.doc().expect("doc").arch.openings.len();
+            s.start(id).expect("start");
+            s.input(Input::Pick(vec![cadcraft_doc::arch_handle(ArchId(0))])).expect("pick");
+            s.input(Input::Text("3.0".into())).expect("offset");
+            s.input(Input::Enter).expect("finish");
+            let after = s.doc().expect("doc").arch.openings.len();
+            assert_eq!(after, before + 1, "should have added one opening for {id}");
+            s.undo().expect("undo");
+            let after_undo = s.doc().expect("doc").arch.openings.len();
+            assert_eq!(after_undo, before, "undo should remove the opening for {id}");
+        }
+    }
+
+    #[test]
+    fn opening_machine_selects_a_wall_then_an_offset() {
+        let mut s = session_with_wall();
+        let before = s.doc().expect("doc").arch.openings.len();
+        s.start("door").expect("start");
+        s.input(Input::Pick(vec![cadcraft_doc::arch_handle(ArchId(0))])).expect("pick");
+        s.input(Input::Text("3.0".into())).expect("offset");
+        s.input(Input::Enter).expect("finish");
+        let after = s.doc().expect("doc").arch.openings.len();
+        assert_eq!(after, before + 1, "should have added one opening");
+        let opening = &s.doc().expect("doc").arch.openings[after - 1];
+        assert_eq!(opening.offset, 3.0, "offset should be 3.0");
+    }
+
+    #[test]
+    fn opening_machine_cancel_leaves_the_model_unchanged() {
+        let mut s = session_with_wall();
+        let before = s.doc().expect("doc").arch.openings.len();
+        s.start("door").expect("start");
+        s.input(Input::Pick(vec![cadcraft_doc::arch_handle(ArchId(0))])).expect("pick");
+        s.input(Input::Cancel).expect("cancel");
+        let after = s.doc().expect("doc").arch.openings.len();
+        assert_eq!(after, before, "cancel should not add any opening");
+    }
+
+    #[test]
+    fn opening_machine_keyword_changes_the_width() {
+        let mut s = session_with_wall();
+        let before = s.doc().expect("doc").arch.openings.len();
+        s.start("door").expect("start");
+        s.input(Input::Pick(vec![cadcraft_doc::arch_handle(ArchId(0))])).expect("pick");
+        s.input(Input::Text("Width".into())).expect("width keyword");
+        s.input(Input::Text("1.5".into())).expect("width value");
+        s.input(Input::Text("3.0".into())).expect("offset");
+        s.input(Input::Enter).expect("finish");
+        let after = s.doc().expect("doc").arch.openings.len();
+        assert_eq!(after, before + 1, "should have added one opening");
+        let opening = &s.doc().expect("doc").arch.openings[after - 1];
+        assert_eq!(opening.width, 1.5, "width should be 1.5 (user-set), not the default 0.9");
+    }
+
+    #[test]
+    fn each_opening_command_is_one_undo_step() {
+        for id in ["door", "window", "garagedoor"] {
+            let mut s = session_with_wall();
+            let before = s.doc().expect("doc").arch.openings.len();
+            s.start(id).expect("start");
+            s.input(Input::Pick(vec![cadcraft_doc::arch_handle(ArchId(0))])).expect("pick");
+            s.input(Input::Text("3.0".into())).expect("offset");
+            s.input(Input::Enter).expect("finish");
+            let after = s.doc().expect("doc").arch.openings.len();
+            assert_eq!(after, before + 1, "should have added one opening for {id}");
+            s.undo().expect("undo");
+            let after_undo = s.doc().expect("doc").arch.openings.len();
+            assert_eq!(after_undo, before, "undo should remove the opening for {id}");
+        }
+    }
+
+    #[test]
+    fn opening_machine_selects_a_wall_then_an_offset() {
+        let mut s = session_with_wall();
+        let before = s.doc().expect("doc").arch.openings.len();
+        s.start("door").expect("start");
+        s.input(Input::Pick(vec![cadcraft_doc::arch_handle(ArchId(0))])).expect("pick");
+        s.input(Input::Text("3.0".into())).expect("offset");
+        s.input(Input::Enter).expect("finish");
+        let after = s.doc().expect("doc").arch.openings.len();
+        assert_eq!(after, before + 1, "should have added one opening");
+        let opening = &s.doc().expect("doc").arch.openings[after - 1];
+        assert_eq!(opening.offset, 3.0, "offset should be 3.0");
+    }
+
+    #[test]
+    fn opening_machine_cancel_leaves_the_model_unchanged() {
+        let mut s = session_with_wall();
+        let before = s.doc().expect("doc").arch.openings.len();
+        s.start("door").expect("start");
+        s.input(Input::Pick(vec![cadcraft_doc::arch_handle(ArchId(0))])).expect("pick");
+        s.input(Input::Cancel).expect("cancel");
+        let after = s.doc().expect("doc").arch.openings.len();
+        assert_eq!(after, before, "cancel should not add any opening");
+    }
+
+    #[test]
+    fn opening_machine_keyword_changes_the_width() {
+        let mut s = session_with_wall();
+        let before = s.doc().expect("doc").arch.openings.len();
+        s.start("door").expect("start");
+        s.input(Input::Pick(vec![cadcraft_doc::arch_handle(ArchId(0))])).expect("pick");
+        s.input(Input::Text("Width".into())).expect("width keyword");
+        s.input(Input::Text("1.5".into())).expect("width value");
+        s.input(Input::Text("3.0".into())).expect("offset");
+        s.input(Input::Enter).expect("finish");
+        let after = s.doc().expect("doc").arch.openings.len();
+        assert_eq!(after, before + 1, "should have added one opening");
+        let opening = &s.doc().expect("doc").arch.openings[after - 1];
+        assert_eq!(opening.width, 1.5, "width should be 1.5 (user-set), not the default 0.9");
     }
 
     #[test]
