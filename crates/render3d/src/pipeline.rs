@@ -1,7 +1,6 @@
 //! GPU mesh upload and render pipeline for the 3D viewport.
 
-use crate::types::{Mesh, Scene3d, Vertex};
-use futures::FutureExt;
+use crate::types::{Mesh, Scene3d};
 use wgpu::util::DeviceExt;
 
 /// GPU-side mesh buffers for a scene.
@@ -23,7 +22,7 @@ pub fn upload(device: &wgpu::Device, scene: &Scene3d) -> GpuMeshes {
     let mut vertex_offset: u32 = 0;
 
     for mesh in &scene.meshes {
-        upload_mesh(device, mesh, &mut vertices, &mut indices, &mut vertex_offset);
+        upload_mesh(mesh, &mut vertices, &mut indices, &mut vertex_offset);
     }
 
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -41,12 +40,12 @@ pub fn upload(device: &wgpu::Device, scene: &Scene3d) -> GpuMeshes {
     GpuMeshes {
         vertex_buffer,
         index_buffer,
-        vertex_count: vertices.len() as u32 / 10, // 10 f32s per vertex
-        index_count: indices.len() as u32,
+        vertex_count: u32::try_from(vertices.len() / 10).unwrap_or(u32::MAX), // 10 f32s per vertex
+        index_count: u32::try_from(indices.len()).unwrap_or(u32::MAX),
     }
 }
 
-fn upload_mesh(device: &wgpu::Device, mesh: &Mesh, vertices: &mut Vec<f32>, indices: &mut Vec<u32>, vertex_offset: &mut u32) {
+fn upload_mesh(mesh: &Mesh, vertices: &mut Vec<f32>, indices: &mut Vec<u32>, vertex_offset: &mut u32) {
     for v in &mesh.vertices {
         vertices.push(v.position[0]);
         vertices.push(v.position[1]);
@@ -60,16 +59,20 @@ fn upload_mesh(device: &wgpu::Device, mesh: &Mesh, vertices: &mut Vec<f32>, indi
         vertices.push(0.0); // padding for alignment
     }
 
+    // Saturating: a scene past u32::MAX vertices cannot be drawn with u32 indices anyway,
+    // and an overflow must not panic (debug) or wrap into other meshes' vertices (release).
     for &i in &mesh.indices {
-        indices.push(i + *vertex_offset);
+        indices.push(i.saturating_add(*vertex_offset));
     }
 
-    *vertex_offset += mesh.vertices.len() as u32;
+    *vertex_offset = vertex_offset.saturating_add(u32::try_from(mesh.vertices.len()).unwrap_or(u32::MAX));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::Vertex;
+    use futures::FutureExt;
 
     #[test]
     fn gpu_mesh_vertex_count_matches_the_scene() {
@@ -91,7 +94,9 @@ mod tests {
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions::default()).now_or_never().and_then(Result::ok);
 
         if let Some(adapter) = adapter {
-            let (device, _queue) = adapter.request_device(&wgpu::DeviceDescriptor::default()).now_or_never().and_then(Result::ok).expect("device");
+            let device = adapter.request_device(&wgpu::DeviceDescriptor::default()).now_or_never().and_then(Result::ok);
+            assert!(device.is_some(), "an adapter without a device");
+            let Some((device, _queue)) = device else { return };
             let meshes = upload(&device, &scene);
             assert_eq!(meshes.vertex_count, 3);
             assert_eq!(meshes.index_count, 3);
