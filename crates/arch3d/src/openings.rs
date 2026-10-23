@@ -46,8 +46,11 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
     let sd = o.sill_depth;
     let wall_t = wall.thickness;
 
+    // The opening top is clamped to the host wall height so the frame, casing,
+    // glass and leaf can never rise above the wall top and push the scene
+    // envelope out of the host wall.
     let frame_z0 = sill_h;
-    let frame_z1 = sill_h + h;
+    let frame_z1 = (sill_h + h).min(wall.height);
 
     let is_window = matches!(o.kind, OpeningKind::Window);
     let kind_prefix = if is_window {
@@ -172,7 +175,7 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
     // Header: centred on the wall centre plane (full thickness) and clipped
     // to stay inside the host wall height.
     let header_h = 0.2;
-    let header_top = (sill_h + h + header_h).min(wall.height);
+    let header_top = (frame_z1 + header_h).min(wall.height);
     if header_top > frame_z1 + 1e-9 {
         let header_off = band_offset(0.0, wall_t, wall_t);
         let h_a = center + dir * (-w / 2.0 - fw) + normal * header_off;
