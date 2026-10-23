@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use cadcraft_arch::opening::is_double;
 use cadcraft_doc::arch::{Opening, OpeningKind};
 use cadcraft_doc::{ArchId, ArchModel, Wall};
-use cadcraft_geom::Vec2;
+use cadcraft_geom::{Vec2, Vec3};
 
 use crate::mesh::Mesh;
 
@@ -42,7 +42,7 @@ pub fn opening_meshes(walls: &BTreeMap<ArchId, &Wall>, o: &Opening) -> Vec<Mesh>
     // Offsets measured from the wall centre plane (along `normal`), each
     // clamped so the component stays inside the wall's thickness band.
     let mut meshes: BTreeMap<String, Mesh> = BTreeMap::new();
-    let push_box = |material: &str, a: Vec2, b: Vec2, z0: f64, z1: f64, depth: f64| {
+    let mut push_box = |material: &str, a: Vec2, b: Vec2, z0: f64, z1: f64, depth: f64| {
         if depth <= 0.0 {
             return;
         }
