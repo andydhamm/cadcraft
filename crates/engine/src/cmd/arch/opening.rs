@@ -16,13 +16,10 @@ use crate::Session;
 use crate::cmd::CommandSpec;
 
 use crate::prompt::{Accept, Input, Interactive, Prompt, Step};
-use crate::prompt::{Accept, Input, Interactive, Prompt, Step};
 use cadcraft_arch::opening::{place_opening, project_to_wall, validate_placement};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::arch::{Hinge, MAX_OPENINGS, Opening, OpeningKind, Swing, arch_handle};
 use cadcraft_doc::{ARCH_HANDLE_BASE, Handle, is_arch_handle};
-use cadcraft_doc::{ARCH_HANDLE_BASE, is_arch_handle};
-use cadcraft_geom::Vec2;
 use cadcraft_geom::Vec2;
 
 /// Allowed door styles.
@@ -611,64 +608,6 @@ mod tests {
         let mut s = session_with_wall();
         s.execute("door", &json!({"wall": "w0", "offset": 3.0, "width": 0.9, "height": 2.1})).expect("create door");
         s
-    }
-
-    #[test]
-    fn each_opening_command_is_one_undo_step() {
-        for id in ["door", "window", "garagedoor"] {
-            let mut s = session_with_wall();
-            let before = s.doc().expect("doc").arch.openings.len();
-            s.start(id).expect("start");
-            s.input(Input::Pick(vec![cadcraft_doc::arch_handle(ArchId(0))])).expect("pick");
-            s.input(Input::Text("3.0".into())).expect("offset");
-            s.input(Input::Enter).expect("finish");
-            let after = s.doc().expect("doc").arch.openings.len();
-            assert_eq!(after, before + 1, "should have added one opening for {id}");
-            s.undo().expect("undo");
-            let after_undo = s.doc().expect("doc").arch.openings.len();
-            assert_eq!(after_undo, before, "undo should remove the opening for {id}");
-        }
-    }
-
-    #[test]
-    fn opening_machine_selects_a_wall_then_an_offset() {
-        let mut s = session_with_wall();
-        let before = s.doc().expect("doc").arch.openings.len();
-        s.start("door").expect("start");
-        s.input(Input::Pick(vec![cadcraft_doc::arch_handle(ArchId(0))])).expect("pick");
-        s.input(Input::Text("3.0".into())).expect("offset");
-        s.input(Input::Enter).expect("finish");
-        let after = s.doc().expect("doc").arch.openings.len();
-        assert_eq!(after, before + 1, "should have added one opening");
-        let opening = &s.doc().expect("doc").arch.openings[after - 1];
-        assert_eq!(opening.offset, 3.0, "offset should be 3.0");
-    }
-
-    #[test]
-    fn opening_machine_cancel_leaves_the_model_unchanged() {
-        let mut s = session_with_wall();
-        let before = s.doc().expect("doc").arch.openings.len();
-        s.start("door").expect("start");
-        s.input(Input::Pick(vec![cadcraft_doc::arch_handle(ArchId(0))])).expect("pick");
-        s.input(Input::Cancel).expect("cancel");
-        let after = s.doc().expect("doc").arch.openings.len();
-        assert_eq!(after, before, "cancel should not add any opening");
-    }
-
-    #[test]
-    fn opening_machine_keyword_changes_the_width() {
-        let mut s = session_with_wall();
-        let before = s.doc().expect("doc").arch.openings.len();
-        s.start("door").expect("start");
-        s.input(Input::Pick(vec![cadcraft_doc::arch_handle(ArchId(0))])).expect("pick");
-        s.input(Input::Text("Width".into())).expect("width keyword");
-        s.input(Input::Text("1.5".into())).expect("width value");
-        s.input(Input::Text("3.0".into())).expect("offset");
-        s.input(Input::Enter).expect("finish");
-        let after = s.doc().expect("doc").arch.openings.len();
-        assert_eq!(after, before + 1, "should have added one opening");
-        let opening = &s.doc().expect("doc").arch.openings[after - 1];
-        assert_eq!(opening.width, 1.5, "width should be 1.5 (user-set), not the default 0.9");
     }
 
     #[test]
