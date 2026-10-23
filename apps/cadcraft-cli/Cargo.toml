@@ -16,5 +16,4 @@ cadcraft-mcp = { workspace = true }
 cadcraft-render = { workspace = true }
 cadcraft-arch3d = { workspace = true }
 cadcraft-render3d = { workspace = true }
-tokio = { workspace = true }
 serde_json = { workspace = true }
