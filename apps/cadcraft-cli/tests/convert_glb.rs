@@ -8,7 +8,7 @@ use std::process::{Command, Output};
 fn binary() -> PathBuf {
     match std::env::current_exe() {
         Ok(exe) => {
-            let base = exe.parent().and_then(Path::parent).and_then(Path::parent);
+            let base = exe.parent().and_then(Path::parent);
             base.map_or_else(|| PathBuf::from("target/debug/cadcraft-cli"), |b| b.join("cadcraft-cli"))
         }
         Err(_) => PathBuf::from("target/debug/cadcraft-cli"),

@@ -272,6 +272,126 @@ fn check_framed_output(framing: Framing, out: Option<&str>) -> Result<(), String
     }
 }
 
+/// Default pixel size for `render`.
+const RENDER_DEFAULT_SIZE: (u32, u32) = (2400, 1600);
+
+/// Parse `WxH` into a pixel size (positive whole numbers).
+fn parse_size(v: &str) -> Result<(u32, u32), String> {
+    let parts: Vec<&str> = v.split(['x', 'X']).map(str::trim).collect();
+    let [w, h] = parts.as_slice() else { return Err(format!("--size needs WxH, got `{v}`")) };
+    let num = |name: &str, t: &str| -> Result<u32, String> {
+        match t.parse::<u32>() {
+            Ok(n) if n > 0 => Ok(n),
+            _ => Err(format!("--size {name} must be a positive whole number, got `{t}`")),
+        }
+    };
+    Ok((num("width", w)?, num("height", h)?))
+}
+
+/// Parse `'orbit[,azimuth=A][,elevation=E][,distance=D][,fov=F]'` into a [`Camera`], seeded
+/// from `base` (the result of [`Orbit::fit`]). Field values must be finite; distance and fov
+/// must be positive. A malformed spec is an error, so a bad `--camera` never reaches the GPU.
+fn parse_camera(spec: &str, base: cadcraft_render3d::camera::Orbit) -> Result<cadcraft_render3d::camera::Camera, String> {
+    let tokens: Vec<&str> = spec.split(',').map(str::trim).collect();
+    if tokens.is_empty() || tokens[0] != "orbit" {
+        return Err("camera spec must begin with `orbit`".into());
+    }
+    let mut o = base;
+    for t in tokens[1..].iter() {
+        if t.is_empty() {
+            continue;
+        }
+        let (name, val) =
+            t.split_once('=').map(|(k, v)| (k.trim(), v.trim())).ok_or_else(|| format!("camera field must be `name=value`, got `{t}`"))?;
+        let v = val.parse::<f64>().map_err(|e| format!("camera {name}: {e}"))?;
+        if !v.is_finite() {
+            return Err(format!("camera {name} must be finite, got `{val}`"));
+        }
+        match name {
+            "azimuth" => o.azimuth = v,
+            "elevation" => o.elevation = v,
+            "distance" => {
+                if v <= 0.0 {
+                    return Err(format!("camera distance must be positive, got `{val}`"));
+                }
+                o.distance = v;
+            }
+            "fov" => {
+                if v <= 0.0 {
+                    return Err(format!("camera fov must be positive, got `{val}`"));
+                }
+                o.fov_deg = v;
+            }
+            other => return Err(format!("unknown camera field `{other}`")),
+        }
+    }
+    Ok(cadcraft_render3d::camera::Camera::Orbit(o))
+}
+
+/// Render the arch 3D scene in `FILE` to the PNG at `OUT`. `--camera` and `--size` are
+/// optional. With no GPU adapter the command prints "render: no GPU adapter available" to
+/// stderr and exits 0 (a SKIP, not a failure).
+fn render(args: &[String]) -> Result<(), String> {
+    let mut file: Option<String> = None;
+    let mut out: Option<String> = None;
+    let mut camera_spec: Option<String> = None;
+    let mut size: (u32, u32) = RENDER_DEFAULT_SIZE;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--camera" => {
+                i += 1;
+                let Some(v) = args.get(i) else { return Err("--camera needs a SPEC".into()) };
+                camera_spec = Some(v.clone());
+            }
+            "--size" => {
+                i += 1;
+                let Some(v) = args.get(i) else { return Err("--size needs WxH".into()) };
+                size = parse_size(v)?;
+            }
+            _ => {
+                if file.is_none() {
+                    file = Some(args[i].clone());
+                } else if out.is_none() {
+                    out = Some(args[i].clone());
+                } else {
+                    return Err("render: expected `FILE OUT.png`").into();
+                }
+            }
+        }
+        i += 1;
+    }
+    let (file, out) = match (file, out) {
+        (Some(f), Some(o)) => (f, o),
+        _ => return Err("render: expected `FILE OUT.png`").into(),
+    };
+
+    let mut s = Session::empty();
+    open(&mut s, &file)?;
+    let d = s.doc().map_err(|e| e.to_string())?;
+    let scene = cadcraft_arch3d::build(&d.arch);
+    let base = cadcraft_render3d::camera::Orbit::fit(&scene.bounds);
+    let camera = match camera_spec {
+        Some(spec) => parse_camera(&spec, base),
+        None => Ok(cadcraft_render3d::camera::Camera::Orbit(base)),
+    }?;
+
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| format!("render: tokio runtime: {e}"))?;
+    match rt.block_on(cadcraft_render3d::offscreen::headless_png(&scene, &camera, size)) {
+        Ok(png) => {
+            std::fs::write(&out, &png).map_err(|e| format!("{out}: {e}"))?;
+            eprintln!("wrote {out} ({} bytes)", png.len());
+        }
+        Err(cadcraft_render3d::Render3dError::NoAdapter) => {
+            eprintln!("render: no GPU adapter available");
+        }
+        Err(e) => {
+            return Err(format!("render: {e}"));
+        }
+    }
+    Ok(())
+}
+
 fn convert(args: &[String]) -> Result<(), String> {
     let mut framing = Framing::Auto;
     let mut files = Vec::new();
