@@ -7,6 +7,7 @@ use cadcraft_arch::symbol::opening_symbol;
 use cadcraft_arch::wall::{wall_layer_polygons, wall_polygon};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::Handle;
+use cadcraft_doc::arch::OpeningKind;
 use serde_json::json;
 use serde_json::{Map as JsonMap, Value};
 
