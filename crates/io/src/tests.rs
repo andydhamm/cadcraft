@@ -1310,18 +1310,51 @@ fn garbage_arch_xrecord_is_ignored_not_fatal() {
     d.arch.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.15));
     let chunks = crate::dxf_arch::arch_chunks(&d.arch).unwrap();
     let text = write_dxf(&d);
-    // Not JSON at all.
+    // Not JSON at all: the walls survive as their two proxy polylines (they used to be
+    // dropped unconditionally, losing the walls altogether).
     let bad = text.replace(&chunks[0], "not json at all");
     let back = read_dxf(bad.as_bytes()).unwrap();
     assert!(back.arch.is_empty());
     assert_eq!(back.arch_revision, 0);
-    assert_eq!(back.model.len(), d.model.len());
+    assert_eq!(back.model.len(), d.model.len() + 2);
     // Empty payload.
     let empty = text.replace(&chunks[0], "");
     let back2 = read_dxf(empty.as_bytes()).unwrap();
     assert!(back2.arch.is_empty());
     assert_eq!(back2.arch_revision, 0);
-    assert_eq!(back2.model.len(), d.model.len());
+    assert_eq!(back2.model.len(), d.model.len() + 2);
+}
+
+#[test]
+fn arch_proxies_are_kept_as_linework_when_the_arch_record_is_gone() {
+    // Another program that drops unknown dictionary entries, or a payload version this
+    // build does not read, must not make the walls vanish.
+    let mut d = sample();
+    d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    d.arch.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.15));
+    let text = write_dxf(&d);
+    let newer = text.replace("{\"version\":1,", "{\"version\":99,");
+    assert_ne!(newer, text, "the payload version was not found to rewrite");
+    let back = read_dxf(newer.as_bytes()).unwrap();
+    assert!(back.arch.is_empty());
+    let rings: Vec<_> = back.model.iter().filter(|e| e.common.layer == "A-WALL" && matches!(e.kind, EntityKind::LwPolyline(_))).collect();
+    assert_eq!(rings.len(), 2, "both walls must survive as A-WALL polylines");
+    // With the record intact they are dropped again: one source of truth.
+    let back = read_dxf(text.as_bytes()).unwrap();
+    assert_eq!(back.arch.walls.len(), 2);
+    assert_eq!(back.model.len(), d.model.len());
+}
+
+#[test]
+fn arch_next_id_is_repaired_on_read() {
+    let mut d = sample();
+    d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    d.arch.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.15));
+    d.arch.next_id = 0;
+    let mut back = roundtrip(&d);
+    assert_eq!(back.arch.next_id, 2, "next_id must move past the ids in use");
+    let id = back.arch.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2));
+    assert!(back.arch.walls.iter().filter(|w| w.id == id).count() == 1, "a new wall must get a fresh id");
 }
 
 #[test]

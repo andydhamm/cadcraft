@@ -285,9 +285,6 @@ fn entity(kind: &str, tags: &[Tag]) -> Option<(Common, EntityKind)> {
             EntityKind::Ellipse(e)
         }
         "LWPOLYLINE" => {
-            if crate::dxf_arch::is_arch_proxy(tags) {
-                return None;
-            }
             let mut verts = Vec::new();
             let mut cur: Option<PolyVertex> = None;
             for tg in tags {
@@ -988,6 +985,9 @@ struct Rx {
     block_arrays: HashMap<String, cadcraft_doc::ArrayParams>,
     /// LAYER record handle (upper case) → layer name (VIEWPORT group 341 frozen layers).
     layers: HashMap<String, String>,
+    /// LWPOLYLINEs carrying CADCraft's arch proxy marker: dropped once the `CADCRAFT_ARCH`
+    /// record they stand for has been read, kept as plain linework when it is missing.
+    arch_proxies: Vec<Handle>,
 }
 
 /// The plot style names of a file: the entries of the `ACAD_PLOTSTYLENAME` dictionary of the
@@ -1110,6 +1110,12 @@ fn parse_entities(recs: &[(String, Vec<Tag>)], d: &mut Drawing, rx: &mut Rx, ski
         let paper = t.i(67) == Some(1);
         let handle = t.s(5).and_then(|h| Handle::parse_hex(&h));
         let mut kindent = entity(kind, tags);
+        if kind == "LWPOLYLINE"
+            && crate::dxf_arch::is_arch_proxy(tags)
+            && let Some(h) = handle
+        {
+            rx.arch_proxies.push(h);
+        }
         if let Some((c, _)) = kindent.as_mut()
             && let Some(n) = entity_plot_style(tags, rx)
         {
@@ -2043,10 +2049,24 @@ impl Objects {
             d.constraints = c;
             d.parametric = p;
         }
-        // The architectural object model (CADCraft arch objects).
-        if let Some(m) = self.xrecord_text(crate::dxf_arch::ARCH_KEY).and_then(|t| crate::dxf_arch::parse_arch(&t)) {
+        // The architectural object model (CADCraft arch objects). Its save-time proxy
+        // polylines are dropped only when the model itself was read: if the record is
+        // missing (another program dropped it), unreadable or from a newer version, the
+        // proxies are the only copy of the walls, so they stay as ordinary linework.
+        if let Some(mut m) = self.xrecord_text(crate::dxf_arch::ARCH_KEY).and_then(|t| crate::dxf_arch::parse_arch(&t)) {
+            // A `next_id` at or below an id in use (hand-edited or foreign payload) would hand
+            // out duplicate ids, and with them duplicate proxy handles.
+            let max_id = m.walls.iter().map(|w| w.id.0).chain(m.openings.iter().map(|o| o.id.0)).max();
+            if let Some(max_id) = max_id
+                && m.next_id <= max_id
+            {
+                m.next_id = max_id.saturating_add(1);
+            }
             d.arch = m;
             d.arch_revision = 1;
+            for h in &rx.arch_proxies {
+                d.remove_entity(*h);
+            }
         }
         // The annotation scale list (a metric drawing without one gets the metric defaults),
         // then CADCraft's annotative scaling record.
