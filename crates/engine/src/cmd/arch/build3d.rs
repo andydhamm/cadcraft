@@ -25,6 +25,7 @@ fn run_build3d(s: &mut Session, _params: &Value) -> crate::Result<Value> {
             "min": [scene.bounds.min[0], scene.bounds.min[1], scene.bounds.min[2]],
             "max": [scene.bounds.max[0], scene.bounds.max[1], scene.bounds.max[2]]
         },
+        "openings": scene.openings_built,
         "revision": d.arch_revision
     }))
 }
@@ -51,6 +52,7 @@ pub fn specs() -> Vec<crate::cmd::CommandSpec> {
 mod tests {
     use super::*;
 
+    use cadcraft_doc::arch::{Opening, OpeningKind};
     use cadcraft_doc::{ArchId, Wall};
     use cadcraft_geom::Vec2;
     use serde_json::json;
@@ -106,5 +108,22 @@ mod tests {
         let before = s.doc().unwrap().arch_revision;
         let _ = s.execute("build3d", &json!({})).unwrap();
         assert_eq!(s.doc().unwrap().arch_revision, before, "build3d must not bump arch_revision");
+    }
+
+    /// A session whose arch model holds one 10 m wall with a single hinged door on it.
+    fn wall_with_opening_session() -> Session {
+        let mut s = fresh_session();
+        let d = s.doc_mut().unwrap();
+        let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+        d.arch.push_opening(Opening::new(wid, 3.0, 0.9, 2.0, OpeningKind::Door));
+        d.touch_arch();
+        s
+    }
+
+    #[test]
+    fn build3d_reports_the_openings_it_cut() {
+        let mut s = wall_with_opening_session();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["openings"].as_u64(), Some(1), "expected 1 cut opening");
     }
 }
