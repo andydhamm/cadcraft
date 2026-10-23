@@ -73,7 +73,7 @@ fn golden_opening_scene_is_deterministic() {
 /// openings (the hole really cuts).
 #[test]
 fn cutting_an_opening_reduces_the_wall_triangle_count() {
-    let model = load_model();
+    let model = golden_model();
     let scene = build(&model);
 
     // Find the host wall that carries the most openings (the south wall has the
@@ -116,7 +116,7 @@ fn all_opening_meshes_are_manifold() {
 /// `build_dirty` after moving one opening equals a full `build`.
 #[test]
 fn build_dirty_after_an_opening_move_equals_build() {
-    let model = load_model();
+    let model = golden_model();
     let full = build(&model);
 
     // Move the first opening along its host wall (a small offset change).

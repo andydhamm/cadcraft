@@ -60,7 +60,7 @@ fn house_model() -> (ArchModel, Vec<ArchId>) {
 /// A 10 × 8 m house with a hinged door (south), a sliding door (east) and two
 /// windows (north), all placed validly (non-overlapping, in range).
 fn house_with_openings() -> (ArchModel, Vec<ArchId>) {
-    let (model, hosts) = house_model();
+    let (mut model, hosts) = house_model();
     let south = hosts[0];
     let east = hosts[1];
     let north = hosts[2];
@@ -88,7 +88,7 @@ fn random_openings_never_panic() {
     let styles = ["hinged", "slider", "garage", "cased"];
 
     for _ in 0..200 {
-        let host = hosts[rng.next() % hosts.len()];
+        let host = hosts[(rng.next() as usize) % hosts.len()];
         let kind = kinds[(rng.next() as usize) % kinds.len()];
         let style = styles[(rng.next() as usize) % styles.len()];
         let offset = rng.in_range(-10.0, 30.0);
@@ -154,12 +154,12 @@ fn opening_gaps_never_overlap() {
         let gaps = poché_gaps(&model, *host);
         for (i, (s, e)) in gaps.iter().enumerate() {
             assert!(s.is_finite() && e.is_finite(), "non-finite gap in host {}", host.0);
-            assert!(s >= -1e-9, "gap {} start {} < 0 in host {}", i, s, host.0);
-            assert!(e <= len + 1e-9, "gap {} end {} > wall length {} in host {}", i, e, len, host.0);
+            assert!(*s >= -1e-9, "gap {} start {} < 0 in host {}", i, s, host.0);
+            assert!(*e <= len + 1e-9, "gap {} end {} > wall length {} in host {}", i, e, len, host.0);
             assert!(s < e, "gap {} is empty or reversed in host {}", i, host.0);
             if i + 1 < gaps.len() {
                 let (ns, _) = gaps[i + 1];
-                assert!(e <= ns + 1e-9, "gaps overlap in host {}: [{}..{}] vs [{}..{}]", host.0, s, e, ns, gaps[i + 1].1);
+                assert!(*e <= ns + 1e-9, "gaps overlap in host {}: [{}..{}] vs [{}..{}]", host.0, s, e, ns, gaps[i + 1].1);
             }
         }
     }
