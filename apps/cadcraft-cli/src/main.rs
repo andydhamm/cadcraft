@@ -806,6 +806,7 @@ fn cli() -> ExitCode {
         Some("info") => validate_options("info", &rest, NO_OPTIONS).and_then(|_| rest.first().ok_or_else(|| USAGE.to_string())).and_then(|p| info(p)),
         Some("convert") => convert(&rest),
         Some("run") => run(&rest),
+        Some("render") => validate_options("render", &rest, RENDER_OPTIONS).and_then(|_| render(&rest)),
         Some("perf") => validate_options("perf", &rest, NO_OPTIONS).and_then(|_| perf(&rest)),
         Some("sample") => validate_options("sample", &rest, NO_OPTIONS).and_then(|_| sample(&rest)),
         Some("commands") => validate_options("commands", &rest, NO_OPTIONS).map(|_| {
