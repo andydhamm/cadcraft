@@ -33,7 +33,7 @@ impl std::str::FromStr for ArchId {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
         let digits = if s.starts_with('w') || s.starts_with('W') { &s[1..] } else { s };
-        let n = u32::from_str_radix(digits, 10).map_err(|_| format!("invalid arch id `{s}`"))?;
+        let n = digits.parse::<u32>().map_err(|_| format!("invalid arch id `{s}`"))?;
         Ok(ArchId(n))
     }
 }
@@ -71,6 +71,11 @@ pub const MAX_OPENINGS: usize = 8192;
 
 /// Minimum opening width, in metres.
 pub const MIN_OPENING_WIDTH: f64 = 0.1;
+
+/// `v > min`, false for NaN (the validation checks must reject NaN, not let it through).
+fn above(v: f64, min: f64) -> bool {
+    v.partial_cmp(&min) == Some(std::cmp::Ordering::Greater)
+}
 
 /// A wall: centre-line segment, thickness, height, and layer bands.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -151,8 +156,11 @@ impl Default for Wall {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum RefSide {
+    /// The reference line is the left face (looking from start to end).
     Left,
+    /// The reference line is the right face.
     Right,
+    /// The reference line is the centre line.
     #[default]
     Centre,
 }
@@ -161,8 +169,11 @@ pub enum RefSide {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct WallLayer {
+    /// Display name of the layer (e.g. "stud").
     pub name: String,
+    /// Layer thickness in metres.
     pub thickness: f64,
+    /// Material name used for its plan fill and 3D surface.
     pub material: String,
 }
 
@@ -170,8 +181,11 @@ pub struct WallLayer {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct WallType {
+    /// Type name walls refer to through [`Wall::wall_type`] (matched case-insensitively).
     pub name: String,
+    /// The build-up, outside face first.
     pub layers: Vec<WallLayer>,
+    /// Which line of the wall its centre-line points describe.
     pub reference: RefSide,
 }
 
@@ -231,11 +245,17 @@ pub enum Swing {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Level {
+    /// The number [`Wall::base_level`] refers to.
     pub index: u32,
+    /// Display name (e.g. "Level 1").
     pub name: String,
+    /// Height of the finished floor above the drawing's zero, in metres.
     pub elevation: f64,
+    /// Finished floor to the finished floor above, in metres (the default wall height).
     pub floor_to_floor: f64,
+    /// Finished floor to the ceiling, in metres.
     pub ceiling_height: f64,
+    /// Depth of the floor structure below the finished floor, in metres.
     pub structure: f64,
 }
 
@@ -243,28 +263,52 @@ pub struct Level {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Opening {
+    /// Stable identifier, from the same counter as walls ([`ArchModel::push_opening`]).
     pub id: ArchId,
+    /// The wall the opening is cut into.
     pub host: ArchId,
+    /// Distance along the host's centre line from its start to the finished opening's
+    /// near edge, in metres.
     pub offset: f64,
+    /// Finished (frame) width, in metres.
     pub width: f64,
+    /// Finished (frame) height, in metres.
     pub height: f64,
+    /// Height of the bottom of the finished opening above the host's base, in metres.
     pub sill: f64,
+    /// Door, window, garage door or cased opening.
     pub kind: OpeningKind,
+    /// Style name ("hinged", "slider", "bifold", "garage", … plus " double").
     pub style: String,
+    /// Which jamb the leaf is hinged on.
     pub hinge: Hinge,
+    /// Which way the leaf swings.
     pub swing: Swing,
+    /// How far the unit sits back from the host's outside face, in metres.
     pub recess: f64,
+    /// Frame member width (in the plane of the wall), in metres.
     pub frame_width: f64,
+    /// Frame depth (through the wall), in metres.
     pub frame_depth: f64,
+    /// Casing (trim) width, in metres.
     pub casing_width: f64,
+    /// Casing depth, in metres.
     pub casing_depth: f64,
+    /// Sill depth, in metres.
     pub sill_depth: f64,
+    /// Rough (structural cut) width, at least `width`, in metres.
     pub rough_width: f64,
+    /// Rough (structural cut) height, at least `height`, in metres.
     pub rough_height: f64,
+    /// Plan-symbol swing arc angle, in degrees.
     pub swing_angle: f64,
+    /// How far the leaf is drawn open, 0–100.
     pub percent_open: f64,
+    /// Glazing rule ("automatic", …).
     pub glass_mode: String,
+    /// Mulled-unit group: openings sharing one casing and label.
     pub mull_group: Option<ArchId>,
+    /// Drawing layer of the opening's plan symbol and proxy graphics.
     pub layer: String,
 }
 
@@ -349,13 +393,18 @@ impl Opening {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArchModel {
+    /// Every wall, in creation order (the order solvers and builders report them in).
     pub walls: Vec<Wall>,
+    /// Every opening, each hosted by a wall.
     #[serde(default)]
     pub openings: Vec<Opening>,
+    /// The id the next wall or opening gets; above every id in use.
     #[serde(default)]
     pub next_id: u32,
+    /// The building levels.
     #[serde(default)]
     pub levels: Vec<Level>,
+    /// The wall types walls can name.
     #[serde(default)]
     pub types: Vec<WallType>,
 }
@@ -534,12 +583,17 @@ impl ArchModel {
                 continue;
             }
 
-            if !(w.thickness > MIN_WALL_THICKNESS) {
+            if !above(w.thickness, MIN_WALL_THICKNESS) {
                 messages.push(format!("{}: thickness {} below minimum {}", id, w.thickness, MIN_WALL_THICKNESS));
             }
 
+            // A NaN or non-positive height extrudes nothing (or garbage) in 3D.
+            if !above(w.height, 0.0) || !w.height.is_finite() {
+                messages.push(format!("{}: height {} is not a positive finite value", id, w.height));
+            }
+
             let length = w.start.dist(w.end);
-            if !(length > MIN_WALL_LENGTH) {
+            if !above(length, MIN_WALL_LENGTH) {
                 messages.push(format!("{}: zero or near-zero length", id));
             }
 
@@ -593,7 +647,7 @@ impl ArchModel {
                 continue;
             }
 
-            if !(o.width >= MIN_OPENING_WIDTH) {
+            if o.width.partial_cmp(&MIN_OPENING_WIDTH).is_none_or(std::cmp::Ordering::is_lt) {
                 messages.push(format!("{}: width {} below minimum {}", id, o.width, MIN_OPENING_WIDTH));
             }
 
@@ -632,6 +686,23 @@ impl ArchModel {
         }
         for id in &dupe_ops {
             messages.push(format!("duplicate opening id {}", id));
+        }
+
+        // Walls and openings share one id counter and one proxy-handle range: an opening
+        // with a wall's id would pick, select and grip-edit as that wall.
+        let wall_ids: std::collections::HashSet<ArchId> = self.walls.iter().map(|w| w.id).collect();
+        let mut shared: Vec<ArchId> = self.openings.iter().map(|o| o.id).filter(|id| wall_ids.contains(id)).collect();
+        shared.sort();
+        shared.dedup();
+        for id in &shared {
+            messages.push(format!("id {} is used by both a wall and an opening", id));
+        }
+
+        // The next id must be above every id in use, or the next push duplicates one.
+        if let Some(max) = self.walls.iter().map(|w| w.id.0).chain(self.openings.iter().map(|o| o.id.0)).max()
+            && self.next_id <= max
+        {
+            messages.push(format!("next id {} is not above the largest id in use {}", self.next_id, max));
         }
 
         messages
@@ -863,6 +934,37 @@ mod tests {
         let msgs = m.validate();
         assert!(msgs.iter().any(|m| m.contains("unknown wall type")));
         assert!(msgs.iter().any(|m| m.contains("unknown level")));
+    }
+
+    #[test]
+    fn validate_reports_a_non_positive_or_nan_height() {
+        for height in [0.0, -2.0, f64::NAN, f64::INFINITY] {
+            let mut m = ArchModel::default();
+            m.push_wall(Wall { height, ..Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2) });
+            assert!(m.validate().iter().any(|e| e.contains("height")), "height {height} not reported");
+        }
+    }
+
+    #[test]
+    fn validate_reports_a_wall_and_an_opening_sharing_an_id() {
+        let mut m = ArchModel::default();
+        let wid = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        let oid = m.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
+        assert!(m.validate().is_empty());
+        if let Some(o) = m.openings.iter_mut().find(|o| o.id == oid) {
+            o.id = wid;
+        }
+        assert!(m.validate().iter().any(|e| e.contains("both a wall and an opening")));
+    }
+
+    #[test]
+    fn validate_reports_a_stale_next_id() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), 0.2));
+        assert!(m.validate().is_empty());
+        m.next_id = 1;
+        assert!(m.validate().iter().any(|e| e.contains("next id")));
     }
 
     #[test]
