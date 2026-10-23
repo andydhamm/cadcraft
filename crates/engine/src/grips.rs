@@ -617,9 +617,9 @@ mod arch_grips_tests {
     #[test]
     fn normal_entity_grips_still_work() {
         let mut s = setup();
-        let val = s.execute("line", &json!({"points": [[0, 0], [10, 0]]})).unwrap();
-        let hex = val["handle"].as_str().unwrap();
-        let h = Handle(u64::from_str_radix(hex, 16).unwrap());
+        s.execute("line", &json!({"points": [[0, 0], [10, 0]]})).unwrap();
+        let d = s.doc().unwrap();
+        let h = d.model.iter().find(|e| matches!(&e.kind, EntityKind::Line(_))).map(|e| e.handle).unwrap();
         let grips = s.grips_of(h).unwrap();
         assert_eq!(grips.len(), 2);
         s.grip_edit(h, 0, Vec2::new(1.0, 1.0), GripMode::Stretch).unwrap();
