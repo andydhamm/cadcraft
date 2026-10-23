@@ -507,6 +507,16 @@ pub fn mode_matrix(mode: GripMode, base: Vec2, to: Vec2) -> Option<Mat3> {
     }
 }
 
+/// The [`ArchId`] for a wall proxy handle, or `None` if `h` is not a wall arch handle.
+///
+/// Opening handles return `None` (they route to `arch.opening.move`, not `arch.wall.stretch`).
+pub fn arch_id_from_handle(h: Handle) -> Option<ArchId> {
+    if is_opening_handle(h) {
+        return None;
+    }
+    if is_arch_handle(h) { Some(ArchId((h.0 - ARCH_HANDLE_BASE) as u32)) } else { None }
+}
+
 impl Session {
     /// Drag grip `grip_index` of `handle` to `new_point` in `mode` (one undo step).
     /// The base point of the rotate/scale/mirror modes is the grip itself. As in AutoCAD the edit
