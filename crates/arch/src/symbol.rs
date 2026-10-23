@@ -416,3 +416,268 @@ mod tests {
         assert!(s.is_none(), "expected None for missing host wall");
     }
 }
+//! Generated 2D plan symbols for architectural openings.
+//!
+//! A [`Symbol`] is a set of world-space polylines (each a [`Vec<Vec2>`]).
+//! The symbol is generated from [`Opening`] data together with its host wall
+//! and is consumed at draw time by the plan renderer (`render::arch`) so that
+//! generated symbols follow the one-source-of-truth rule.
+
+use super::{ArchId, ArchModel};
+use cadcraft_doc::arch::{Hinge, Opening, OpeningKind, Swing};
+use cadcraft_geom::Vec2;
+
+/// A world-space 2D plan symbol.
+///
+/// `polylines` is a list of polylines; each polyline is a list of world-space
+/// `Vec2` vertices.  The symbol renders on the named [`Symbol::layer`].
+pub struct Symbol {
+    pub polylines: Vec<Vec<Vec2>>,
+    pub layer: String,
+}
+
+const PI: f64 = std::f64::consts::PI;
+const MAX_POLYLINES: usize = 64;
+const MAX_POINTS: usize = 128;
+
+/// Build the 2D plan symbol for `o` in world space.
+///
+/// Returns `None` when:
+/// * the host wall is missing or degenerate (non-finite endpoints, zero/negative thickness);
+/// * any generated vertex is non-finite;
+/// * the output exceeds 64 polylines or 128 total vertices.
+pub fn opening_symbol(model: &ArchModel, o: &Opening) -> Option<Symbol> {
+    let w = model.wall(o.host)?;
+    if !w.start.is_finite() || !w.end.is_finite() || w.thickness <= 0.0 || !w.thickness.is_finite() {
+        return None;
+    }
+    let dir = crate::wall::wall_dir(w)?;
+    if !dir.is_finite() {
+        return None;
+    }
+    let perp = dir.perp();
+    let half = (w.thickness / 2.0).abs();
+    if !half.is_finite() {
+        return None;
+    }
+
+    let offset = if o.offset.is_finite() { o.offset } else { 0.0 };
+    let width = if o.width.is_finite() && o.width > 0.0 { o.width } else { 0.9 };
+    let rough_width = if o.rough_width.is_finite() && o.rough_width > 0.0 { o.rough_width } else { width + 0.12 };
+
+    let rough_start = offset - (rough_width - width) / 2.0;
+    let rough_end = rough_start + rough_width;
+    let finished_start = offset - width / 2.0;
+    let finished_end = finished_start + width;
+
+    if !rough_start.is_finite() || !rough_end.is_finite() || !finished_start.is_finite() || !finished_end.is_finite() {
+        return None;
+    }
+
+    let base = w.start;
+
+    let wp = |t: f64, off: f64| -> Option<Vec2> {
+        let p = base + dir * t + perp * off;
+        if p.is_finite() { Some(p) } else { None }
+    };
+
+    let mut polys: Vec<Vec<Vec2>> = Vec::new();
+
+    match o.kind {
+        OpeningKind::Door => {
+            let style_lower = o.style.to_ascii_lowercase();
+            let is_sliding = style_lower.contains("slider") || style_lower.contains("bifold") || style_lower.contains("pocket");
+            if is_sliding {
+                if let (Some(a), Some(b)) = (wp(rough_start, -half), wp(rough_start, half)) {
+                    polys.push(vec![a, b]);
+                } else {
+                    return None;
+                }
+                if let (Some(a), Some(b)) = (wp(rough_end, -half), wp(rough_end, half)) {
+                    polys.push(vec![a, b]);
+                } else {
+                    return None;
+                }
+                let leaf_offset = (half * 0.15).max(1e-4);
+                if let (Some(a), Some(b)) = (wp(finished_start, -leaf_offset), wp(finished_end, -leaf_offset)) {
+                    polys.push(vec![a, b]);
+                } else {
+                    return None;
+                }
+                if let (Some(a), Some(b)) = (wp(finished_start, leaf_offset), wp(finished_end, leaf_offset)) {
+                    polys.push(vec![a, b]);
+                } else {
+                    return None;
+                }
+            } else {
+                if let (Some(a), Some(b)) = (wp(rough_start, -half), wp(rough_start, half)) {
+                    polys.push(vec![a, b]);
+                } else {
+                    return None;
+                }
+                if let (Some(a), Some(b)) = (wp(rough_end, -half), wp(rough_end, half)) {
+                    polys.push(vec![a, b]);
+                } else {
+                    return None;
+                }
+
+                let hinge_t = match o.hinge {
+                    Hinge::Left => finished_start,
+                    Hinge::Right => finished_end,
+                };
+                let closed_t = match o.hinge {
+                    Hinge::Left => finished_end,
+                    Hinge::Right => finished_start,
+                };
+                let hinge_pt = wp(hinge_t, 0.0)?;
+                let leaf_tip = wp(closed_t, 0.0)?;
+                polys.push(vec![hinge_pt, leaf_tip]);
+
+                let (start_ang, sweep) = match (o.hinge, o.swing) {
+                    (Hinge::Left, Swing::In) => (0.0, PI / 2.0),
+                    (Hinge::Left, Swing::Out) => (0.0, -PI / 2.0),
+                    (Hinge::Right, Swing::In) => (PI, -PI / 2.0),
+                    (Hinge::Right, Swing::Out) => (PI, PI / 2.0),
+                };
+                let mut arc: Vec<Vec2> = Vec::with_capacity(17);
+                for i in 0..=16usize {
+                    let t = i as f64 / 16.0;
+                    let ang = start_ang + t * sweep;
+                    let px = hinge_pt.x + dir.x * (width * ang.cos()) + perp.x * (width * ang.sin());
+                    let py = hinge_pt.y + dir.y * (width * ang.cos()) + perp.y * (width * ang.sin());
+                    let p = Vec2::new(px, py);
+                    if !p.is_finite() {
+                        return None;
+                    }
+                    arc.push(p);
+                }
+                polys.push(arc);
+            }
+        }
+        OpeningKind::Window => {
+            if let (Some(a), Some(b)) = (wp(rough_start, -half), wp(rough_start, half)) {
+                polys.push(vec![a, b]);
+            } else {
+                return None;
+            }
+            if let (Some(a), Some(b)) = (wp(rough_end, -half), wp(rough_end, half)) {
+                polys.push(vec![a, b]);
+            } else {
+                return None;
+            }
+            if let (Some(a), Some(b)) = (wp(rough_start, half), wp(rough_end, half)) {
+                polys.push(vec![a, b]);
+            } else {
+                return None;
+            }
+            if let (Some(a), Some(b)) = (wp(rough_start, -half), wp(rough_end, -half)) {
+                polys.push(vec![a, b]);
+            } else {
+                return None;
+            }
+            let style_lower = o.style.to_ascii_lowercase();
+            let is_slider = style_lower.contains("slider") || style_lower.contains("casement");
+            if is_slider {
+                let mid = finished_start + width / 2.0;
+                if let (Some(a), Some(b)) = (wp(finished_start, 0.0), wp(mid, 0.0)) {
+                    polys.push(vec![a, b]);
+                } else {
+                    return None;
+                }
+                if let (Some(a), Some(b)) = (wp(mid, 0.0), wp(finished_end, 0.0)) {
+                    polys.push(vec![a, b]);
+                } else {
+                    return None;
+                }
+            } else {
+                if let (Some(a), Some(b)) = (wp(finished_start, 0.0), wp(finished_end, 0.0)) {
+                    polys.push(vec![a, b]);
+                } else {
+                    return None;
+                }
+            }
+        }
+        OpeningKind::GarageDoor => {
+            let n = 4usize;
+            for i in 0..n {
+                let frac = if n == 1 { 0.0 } else { 2.0 * i as f64 / (n as f64 - 1.0) - 1.0 };
+                let off = frac * half;
+                if let (Some(a), Some(b)) = (wp(rough_start, off), wp(rough_end, off)) {
+                    polys.push(vec![a, b]);
+                } else {
+                    return None;
+                }
+            }
+        }
+        OpeningKind::CasedOpening => {
+            if let (Some(a), Some(b)) = (wp(rough_start, -half), wp(rough_start, half)) {
+                polys.push(vec![a, b]);
+            } else {
+                return None;
+            }
+            if let (Some(a), Some(b)) = (wp(rough_end, -half), wp(rough_end, half)) {
+                polys.push(vec![a, b]);
+            } else {
+                return None;
+            }
+        }
+    }
+
+    if polys.len() > MAX_POLYLINES {
+        return None;
+    }
+    let total_pts: usize = polys.iter().map(|p| p.len()).sum();
+    if total_pts > MAX_POINTS {
+        return None;
+    }
+    for poly in &polys {
+        for p in poly {
+            if !p.is_finite() {
+                return None;
+            }
+        }
+    }
+
+    Some(Symbol { polylines: polys, layer: o.layer.clone() })
+}
+
+/// Merged, sorted rough (cut) spans of every opening on `host`.
+///
+/// Returns `(start, end)` pairs in metres from the wall start.  Overlapping
+/// or touching rough spans are merged into a single interval.  Openings with
+/// non-finite values are silently skipped.
+pub fn poché_gaps(model: &ArchModel, host: ArchId) -> Vec<(f64, f64)> {
+    let mut intervals: Vec<(f64, f64)> = Vec::new();
+    for o in model.openings_on(host) {
+        if !o.offset.is_finite() || !o.width.is_finite() || !o.rough_width.is_finite() {
+            continue;
+        }
+        if o.width <= 0.0 || o.rough_width <= 0.0 {
+            continue;
+        }
+        let rough_start = o.offset - (o.rough_width - o.width) / 2.0;
+        let rough_end = rough_start + o.rough_width;
+        if rough_start.is_finite() && rough_end.is_finite() {
+            intervals.push((rough_start, rough_end));
+        }
+    }
+    if intervals.is_empty() {
+        return Vec::new();
+    }
+    intervals.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut merged: Vec<(f64, f64)> = Vec::new();
+    for &(s, e) in &intervals {
+        if let Some(last) = merged.last_mut() {
+            if s <= last.1 {
+                if e > last.1 {
+                    last.1 = e;
+                }
+            } else {
+                merged.push((s, e));
+            }
+        } else {
+            merged.push((s, e));
+        }
+    }
+    merged
+}
