@@ -48,8 +48,21 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
             _ => vec![a, b, c, e],
         };
 
-        // Filled poché
-        let tris = crate::triangulate_evenodd(&[ring.clone()]);
+        // Poché gaps: rectangular holes from openings, in wall coordinate space.
+        let gaps = cadcraft_arch::symbol::poché_gaps(&d.arch, wall.id);
+        let mut polys: Vec<Vec<Vec2>> = vec![ring.clone()];
+        for &(gs, ge) in &gaps {
+            let p1 = wall.start + dir * gs - perp * half;
+            let p2 = wall.start + dir * gs + perp * half;
+            let p3 = wall.start + dir * ge + perp * half;
+            let p4 = wall.start + dir * ge - perp * half;
+            if p1.is_finite() && p2.is_finite() && p3.is_finite() && p4.is_finite() {
+                polys.push(vec![p1, p2, p3, p4]);
+            }
+        }
+
+        // Filled poché with holes
+        let tris = crate::triangulate_evenodd(&polys);
         if tris.len() >= 3 {
             let start = u32::try_from(list.tris.len()).unwrap_or(u32::MAX);
             for q in &tris {
@@ -88,6 +101,81 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
             start,
             len: u32::try_from(closed.len()).unwrap_or(u32::MAX),
         });
+
+        // Gap edge outlines: one polyline per side of each cut.
+        for &(gs, ge) in &gaps {
+            let p1 = wall.start + dir * gs - perp * half;
+            let p2 = wall.start + dir * gs + perp * half;
+            if p1.is_finite() && p2.is_finite() {
+                let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+                list.bounds.add(p1);
+                list.bounds.add(p2);
+                list.verts.push(p1);
+                list.verts.push(p2);
+                list.prims.push(DPrim {
+                    handle: arch_handle(wall.id),
+                    color: ink.rgb,
+                    aci7: ink.aci7,
+                    lw: 0.0,
+                    transparency: 0,
+                    kind: Kind::Polyline,
+                    start,
+                    len: 2,
+                });
+            }
+            let p3 = wall.start + dir * ge - perp * half;
+            let p4 = wall.start + dir * ge + perp * half;
+            if p3.is_finite() && p4.is_finite() {
+                let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+                list.bounds.add(p3);
+                list.bounds.add(p4);
+                list.verts.push(p3);
+                list.verts.push(p4);
+                list.prims.push(DPrim {
+                    handle: arch_handle(wall.id),
+                    color: ink.rgb,
+                    aci7: ink.aci7,
+                    lw: 0.0,
+                    transparency: 0,
+                    kind: Kind::Polyline,
+                    start,
+                    len: 2,
+                });
+            }
+        }
+    }
+
+    // Opening symbols: each opening emits its generated 2D plan symbol,
+    // tagged with the opening's proxy handle so picking and selection work.
+    for o in &d.arch.openings {
+        if let Some(sym) = cadcraft_arch::symbol::opening_symbol(&d.arch, o) {
+            let all_finite = sym.polylines.iter().all(|p| p.iter().all(|pt| pt.is_finite()));
+            if !all_finite {
+                continue;
+            }
+            let sym_layer = d.layer(&sym.layer).map(|l| l.color).unwrap_or(Color::Index(7));
+            let sym_ink = crate::ink(Color::ByLayer, sym_layer, Color::Index(7));
+            for poly in &sym.polylines {
+                if poly.len() < 2 {
+                    continue;
+                }
+                let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+                for q in poly {
+                    list.bounds.add(*q);
+                    list.verts.push(*q);
+                }
+                list.prims.push(DPrim {
+                    handle: arch_handle(o.id),
+                    color: sym_ink.rgb,
+                    aci7: sym_ink.aci7,
+                    lw: 0.0,
+                    transparency: 0,
+                    kind: Kind::Polyline,
+                    start,
+                    len: u32::try_from(poly.len()).unwrap_or(u32::MAX),
+                });
+            }
+        }
     }
 
     list
@@ -97,6 +185,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
 mod tests {
     use super::*;
     use cadcraft_color::Rgb;
+    use cadcraft_doc::arch::{Opening, OpeningKind};
     use cadcraft_doc::{Drawing, Layer};
 
     fn wall(start: Vec2, end: Vec2, thickness: f64) -> Wall {
@@ -262,5 +351,109 @@ mod tests {
 
         let tris_count = list.prims.iter().filter(|p| p.kind == Kind::Tris).count();
         assert_eq!(tris_count, 4, "expected 4 tris prims, got {}", tris_count);
+    }
+
+    #[test]
+    fn openings_cut_gaps_in_the_wall_poché() {
+        let mut d = Drawing::new_metric();
+        let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+        d.arch.push_opening(Opening::new(wid, 5.0, 1.0, 2.1, OpeningKind::Door));
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = arch_handle(wid);
+        let wall_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert_eq!(wall_prims.len(), 4, "expected 4 wall prims, got {}", wall_prims.len());
+        let gap_edges: Vec<&DPrim> = wall_prims.iter().filter(|p| p.kind == Kind::Polyline && p.len == 2).collect();
+        assert_eq!(gap_edges.len(), 2, "expected 2 gap-edge polylines, got {}", gap_edges.len());
+    }
+
+    #[test]
+    fn opening_symbols_are_tagged_with_the_opening_handle() {
+        let mut d = Drawing::new_metric();
+        let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+        let oid = d.arch.push_opening(Opening::new(wid, 5.0, 1.0, 2.1, OpeningKind::Door));
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = arch_handle(oid);
+        let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(!symbol_prims.is_empty(), "no prims tagged with the opening handle");
+    }
+
+    #[test]
+    fn door_symbols_use_the_a_door_layer_colour() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+        d.arch.push_opening(Opening::new(ArchId(0), 5.0, 1.0, 2.1, OpeningKind::Door));
+
+        if let Some(l) = d.layer_mut("A-DOOR") {
+            l.color = Rgb::from_u32(0xff0000);
+        }
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = arch_handle(ArchId(1));
+        let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(!symbol_prims.is_empty(), "no prims for the door opening");
+        for p in &symbol_prims {
+            assert_eq!(p.color, Rgb::from_u32(0xff0000));
+        }
+    }
+
+    #[test]
+    fn window_symbols_use_the_a_glaz_layer_colour() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+        d.arch.push_opening(Opening::new(ArchId(0), 5.0, 1.0, 2.1, OpeningKind::Window));
+
+        if let Some(l) = d.layer_mut("A-GLAZ") {
+            l.color = Rgb::from_u32(0x0000ff);
+        }
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = arch_handle(ArchId(1));
+        let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(!symbol_prims.is_empty(), "no prims for the window opening");
+        for p in &symbol_prims {
+            assert_eq!(p.color, Rgb::from_u32(0x0000ff));
+        }
+    }
+
+    #[test]
+    fn a_missing_host_draws_nothing() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+        // Opening whose host wall does not exist.
+        d.arch.push_opening(Opening::new(ArchId(999), 5.0, 1.0, 2.1, OpeningKind::Door));
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = arch_handle(ArchId(999));
+        assert!(list.prims.iter().all(|p| p.handle != handle), "prims drawn for a missing-host opening");
+    }
+
+    #[test]
+    fn walls_without_openings_are_unchanged() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 3.0, ..Wall::default() });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let tris_prim = list.prims.iter().find(|p| p.kind == Kind::Tris).expect("no tris prim");
+        assert!(tris_prim.len >= 3);
+
+        let poly_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.kind == Kind::Polyline).collect();
+        assert_eq!(poly_prims.len(), 1);
+        let poly = &poly_prims[0];
+        assert_eq!(poly.len, 5);
+
+        let pts = list.points(poly);
+        let expected = [Vec2::new(0.0, -0.1), Vec2::new(10.0, -0.1), Vec2::new(10.0, 0.1), Vec2::new(0.0, 0.1), Vec2::new(0.0, -0.1)];
+        for (i, (got, exp)) in pts.iter().zip(expected.iter()).enumerate() {
+            assert!((got.x - exp.x).abs() < 1e-9, "x[{}]: {} != {}", i, got.x, exp.x);
+            assert!((got.y - exp.y).abs() < 1e-9, "y[{}]: {} != {}", i, got.y, exp.y);
+        }
     }
 }
