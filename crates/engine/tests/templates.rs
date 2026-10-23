@@ -35,7 +35,7 @@ fn path(name: &str) -> String {
 
 /// A drawing with an office layer and a title block circle, saved as a template.
 fn office_template(s: &mut Session, name: &str) -> String {
-    s.execute("layer.new", &json!({ "name": "A-WALL", "color": 3 })).unwrap();
+    s.execute("layer.new", &json!({ "name": "A-OFFICE", "color": 3 })).unwrap();
     s.execute("circle", &json!({ "center": [5, 5], "radius": 2 })).unwrap();
     let p = path(name);
     s.execute("saveas", &json!({ "path": p })).unwrap();
@@ -59,7 +59,7 @@ fn saveas_dwt_then_new_from_the_template() {
     assert!(st.title.starts_with("Drawing"), "{}", st.title);
     assert!(st.path.is_none(), "an untitled drawing: saving asks for a name");
     assert!(!st.is_dirty());
-    assert!(st.doc.layers.iter().any(|l| l.name == "A-WALL"));
+    assert!(st.doc.layers.iter().any(|l| l.name == "A-OFFICE"));
     assert_eq!(st.doc.model.iter().count(), 1);
     assert!(s.execute("qsave", &json!({})).is_err(), "QSAVE needs a name: the template stays as it is");
 }
@@ -75,21 +75,21 @@ fn qnewtemplate_is_the_default_for_new_and_qnew() {
     assert_eq!(s.execute("getvar", &json!({ "name": "qnewtemplate" })).unwrap()["value"], json!(dwt));
     s.cmdline("qnew").unwrap();
     assert_eq!(s.docs.len(), docs + 1);
-    assert!(s.doc().unwrap().layers.iter().any(|l| l.name == "A-WALL"), "QNEW starts from the default template");
+    assert!(s.doc().unwrap().layers.iter().any(|l| l.name == "A-OFFICE"), "QNEW starts from the default template");
     s.execute("new", &json!({})).unwrap();
     assert!(s.doc().unwrap().layers.iter().any(|l| l.name == "A-WALL"));
 
     // Units asked for, or "." for no template: a blank drawing.
     s.execute("new", &json!({ "metric": true })).unwrap();
-    assert!(s.doc().unwrap().layers.iter().all(|l| l.name != "A-WALL"));
+    assert!(s.doc().unwrap().layers.iter().all(|l| l.name != "A-OFFICE"));
     assert_eq!(s.doc().unwrap().header.i64("MEASUREMENT", 0), 1);
     s.execute("new", &json!({ "template": "." })).unwrap();
-    assert!(s.doc().unwrap().layers.iter().all(|l| l.name != "A-WALL"));
+    assert!(s.doc().unwrap().layers.iter().all(|l| l.name != "A-OFFICE"));
 
     s.execute("setvar", &json!({ "name": "QNEWTEMPLATE", "value": "." })).unwrap();
     assert_eq!(s.execute("getvar", &json!({ "name": "QNEWTEMPLATE" })).unwrap()["value"], json!(""));
     s.execute("new", &json!({})).unwrap();
-    assert!(s.doc().unwrap().layers.iter().all(|l| l.name != "A-WALL"));
+    assert!(s.doc().unwrap().layers.iter().all(|l| l.name != "A-OFFICE"));
 }
 
 #[test]

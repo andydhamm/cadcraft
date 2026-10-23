@@ -19,6 +19,8 @@ mod plotter;
 mod refedit;
 mod store;
 mod tables;
+#[cfg(test)]
+mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -163,7 +165,15 @@ impl Drawing {
         Drawing {
             header: Header::default(),
             foreign: std::sync::Arc::default(),
-            layers: vec![Layer::default(), Layer { name: "Defpoints".into(), plot: false, ..Layer::default() }],
+            layers: vec![
+                Layer::default(),
+                Layer { name: "Defpoints".into(), plot: false, ..Layer::default() },
+                Layer { name: "A-WALL".into(), ..Layer::default() },
+                Layer { name: "A-DOOR".into(), ..Layer::default() },
+                Layer { name: "A-GLAZ".into(), ..Layer::default() },
+                Layer { name: "A-ROOF".into(), ..Layer::default() },
+                Layer { name: "A-STAIR".into(), ..Layer::default() },
+            ],
             linetypes: vec![
                 Linetype { name: "ByBlock".into(), description: String::new(), pattern: Vec::new() },
                 Linetype { name: "ByLayer".into(), description: String::new(), pattern: Vec::new() },
@@ -397,6 +407,3 @@ impl Drawing {
 
 mod anno;
 pub use anno::*;
-
-#[cfg(test)]
-mod tests;
