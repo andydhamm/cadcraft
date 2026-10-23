@@ -731,6 +731,7 @@ dependencies = [
 name = "cadcraft-render"
 version = "0.10.0"
 dependencies = [
+ "cadcraft-arch",
  "cadcraft-color",
  "cadcraft-doc",
  "cadcraft-fonts",

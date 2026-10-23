@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use cadcraft_color::{Color, Rgb};
 use cadcraft_doc::{ArchId, Drawing, Handle, Wall};
 use cadcraft_geom::Vec2;
@@ -19,6 +21,9 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
     let layer = d.layer("A-WALL").map(|l| l.color).unwrap_or(Color::Index(7));
     let ink = crate::ink(Color::ByLayer, layer, Color::Index(7));
 
+    let shapes = cadcraft_arch::join::solve_joins(&d.arch);
+    let solved: BTreeMap<ArchId, &Vec<Vec2>> = shapes.iter().map(|s| (s.id, &s.polygon)).collect();
+
     for wall in &d.arch.walls {
         if !wall.start.is_finite() || !wall.end.is_finite() {
             continue;
@@ -37,10 +42,14 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
         let b = wall.end - perp * half;
         let c = wall.end + perp * half;
         let e = wall.start + perp * half;
-        let ring = [a, b, c, e];
+
+        let ring: Vec<Vec2> = match solved.get(&wall.id) {
+            Some(r) if !r.is_empty() => r.iter().map(|p| p.clone()).collect(),
+            _ => vec![a, b, c, e],
+        };
 
         // Filled poché
-        let tris = crate::triangulate_evenodd(&[ring.to_vec()]);
+        let tris = crate::triangulate_evenodd(&[ring.clone()]);
         if tris.len() >= 3 {
             let start = u32::try_from(list.tris.len()).unwrap_or(u32::MAX);
             for q in &tris {
@@ -60,7 +69,10 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
         }
 
         // Outline
-        let closed = [a, b, c, e, a];
+        let mut closed = ring;
+        if !closed.is_empty() {
+            closed.push(closed[0]);
+        }
         let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
         for q in &closed {
             list.bounds.add(*q);
@@ -74,7 +86,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
             transparency: 0,
             kind: Kind::Polyline,
             start,
-            len: 5,
+            len: u32::try_from(closed.len()).unwrap_or(u32::MAX),
         });
     }
 
@@ -178,5 +190,77 @@ mod tests {
         assert_eq!(list.prims[0].handle, arch_handle(id0));
         assert_eq!(list.prims[2].handle, arch_handle(id1));
         assert_ne!(list.prims[0].handle, list.prims[2].handle);
+    }
+
+    #[test]
+    fn plan_poché_mitres_exterior_corners() {
+        let mut d = Drawing::new_metric();
+        let t = 0.2;
+        let id0 = d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), t));
+        d.arch.add_wall(wall(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), t));
+        d.arch.add_wall(wall(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), t));
+        d.arch.add_wall(wall(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), t));
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let poly = list.prims.iter().find(|p| p.kind == Kind::Polyline && p.handle == arch_handle(id0));
+        assert!(poly.is_some(), "no polyline prim for bottom wall");
+        let Some(poly) = poly else { return };
+        let pts = list.points(poly);
+
+        let expected = [Vec2::new(-0.1, -0.1), Vec2::new(10.1, -0.1), Vec2::new(9.9, 0.1), Vec2::new(0.1, 0.1)];
+        for exp in &expected {
+            assert!(
+                pts.iter().any(|p| (p.x - exp.x).abs() < 1e-6 && (p.y - exp.y).abs() < 1e-6),
+                "expected point ({}, {}) not in polyline",
+                exp.x,
+                exp.y
+            );
+        }
+        assert!(!pts.iter().any(|p| (p.x - 10.0).abs() < 1e-6 && (p.y - 0.1).abs() < 1e-6), "unexpected point at (10.0, 0.1)");
+        assert!(!pts.iter().any(|p| (p.x - 10.0).abs() < 1e-6 && (p.y + 0.1).abs() < 1e-6), "unexpected point at (10.0, -0.1)");
+    }
+
+    #[test]
+    fn plan_poché_butts_interior_walls() {
+        let mut d = Drawing::new_metric();
+        let t = 0.2;
+        d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), t));
+        d.arch.add_wall(wall(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), t));
+        d.arch.add_wall(wall(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), t));
+        d.arch.add_wall(wall(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), t));
+        let id_int = d.arch.add_wall(wall(Vec2::new(0.0, 3.0), Vec2::new(10.0, 3.0), 0.1));
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let poly = list.prims.iter().find(|p| p.kind == Kind::Polyline && p.handle == arch_handle(id_int));
+        assert!(poly.is_some(), "no polyline prim for interior wall");
+        let Some(poly) = poly else { return };
+        let pts = list.points(poly);
+
+        let min_x = pts.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+        let max_x = pts.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+        assert!((min_x - 0.1).abs() < 1e-6, "min_x {} != 0.1", min_x);
+        assert!((max_x - 9.9).abs() < 1e-6, "max_x {} != 9.9", max_x);
+    }
+
+    #[test]
+    fn plan_poché_envelope_is_the_joined_envelope() {
+        let mut d = Drawing::new_metric();
+        let t = 0.2;
+        d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), t));
+        d.arch.add_wall(wall(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), t));
+        d.arch.add_wall(wall(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), t));
+        d.arch.add_wall(wall(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), t));
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        assert!((list.bounds.min.x - (-0.1)).abs() < 1e-6);
+        assert!((list.bounds.min.y - (-0.1)).abs() < 1e-6);
+        assert!((list.bounds.max.x - 10.1).abs() < 1e-6);
+        assert!((list.bounds.max.y - 8.1).abs() < 1e-6);
+
+        let tris_count = list.prims.iter().filter(|p| p.kind == Kind::Tris).count();
+        assert_eq!(tris_count, 4, "expected 4 tris prims, got {}", tris_count);
     }
 }
