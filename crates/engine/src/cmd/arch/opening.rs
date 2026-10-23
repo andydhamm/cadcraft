@@ -366,9 +366,10 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
     let recess = crate::cmd::size_param(cmd, p, "recess", true)?.unwrap_or(0.0);
     let casing = crate::cmd::size_param(cmd, p, "casing", true)?.unwrap_or(0.0);
 
-    // 4. Style (validated against the per-kind whitelist).
-    let mut style = String::new();
-    if let Some(st) = crate::cmd::str_param(p, "style") {
+    // 4. Style (validated against the per-kind whitelist). Only an explicit
+    // `style` param overrides the kind default (`hinged` / `slider` /
+    // `garage` / `cased`) that `Opening::new` stores; an omitted style keeps it.
+    let style: Option<String> = if let Some(st) = crate::cmd::str_param(p, "style") {
         let lower = st.to_ascii_lowercase();
         let valid: &[&str] = match kind {
             OpeningKind::Door => DOOR_STYLES.as_slice(),
@@ -378,8 +379,10 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
         if !valid.contains(&lower.as_str()) {
             return Err(crate::cmd::bad(cmd, format!("unknown style `{lower}` for {kind:?}")));
         }
-        style = lower;
-    }
+        Some(lower)
+    } else {
+        None
+    };
 
     // 5. Hinge and swing (case-insensitive; unknown is a bad-params error).
     let mut hinge = Hinge::Left;
@@ -414,12 +417,15 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
         return Err(crate::cmd::bad(cmd, "max number of openings reached"));
     }
 
-    // 8. Construct, place, persist.
+    // 8. Construct, place, persist. The kind default style stands unless the
+    // `style` param was supplied; `sill_depth` is the sill board's projection,
+    // not the sill height, so it keeps its `Opening::new` value (0.03).
     let requested_width = width;
     let mut o = Opening::new(host, offset, width, height, kind);
-    o.style = style;
+    if let Some(s) = style {
+        o.style = s;
+    }
     o.sill = sill;
-    o.sill_depth = sill;
     o.recess = recess;
     o.casing_width = casing;
     o.hinge = hinge;
@@ -589,8 +595,39 @@ mod tests {
         let d = s.doc().expect("doc");
         let opening = &d.arch.openings[0];
         assert!((opening.sill - 0.9).abs() < 1e-9, "sill should be 0.9, got {}", opening.sill);
-        assert!((opening.sill_depth - 0.9).abs() < 1e-9, "sill_depth should be 0.9, got {}", opening.sill_depth);
+        assert!((opening.sill_depth - 0.03).abs() < 1e-9, "sill_depth should stay at the default 0.03, got {}", opening.sill_depth);
         assert!((opening.recess - 0.05).abs() < 1e-9, "recess should be 0.05, got {}", opening.recess);
+    }
+
+    /// A door with no `style` param keeps the kind default (`"hinged"`).
+    #[test]
+    fn door_without_style_keeps_the_hinged_default() {
+        let mut s = session_with_wall();
+        s.execute("door", &json!({"wall": "w0", "offset": 3.0, "width": 0.9, "height": 2.1})).expect("door execute");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.openings[0].style, "hinged");
+    }
+
+    /// A garage door with no `style` param keeps the kind default (`"garage"`).
+    #[test]
+    fn garagedoor_without_style_keeps_the_garage_style() {
+        let mut s = session_with_wall();
+        s.execute("garagedoor", &json!({"wall": "w0", "offset": 4.0, "width": 1.8, "height": 2.1})).expect("garage door execute");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.openings[0].style, "garage");
+    }
+
+    /// A window's `sill` height is stored separately from `sill_depth`; the
+    /// latter is the sill board's projection and keeps the `Opening::new`
+    /// default (0.03).
+    #[test]
+    fn window_sill_does_not_overwrite_sill_depth() {
+        let mut s = session_with_wall();
+        s.execute("window", &json!({"wall": "w0", "offset": 2.0, "width": 1.2, "height": 1.2, "sill": 0.9, "recess": 0.05})).expect("window execute");
+        let d = s.doc().expect("doc");
+        let opening = &d.arch.openings[0];
+        assert!((opening.sill - 0.9).abs() < 1e-9, "sill should be 0.9, got {}", opening.sill);
+        assert!((opening.sill_depth - 0.03).abs() < 1e-9, "sill_depth should stay at the default 0.03, got {}", opening.sill_depth);
     }
 
     #[test]
