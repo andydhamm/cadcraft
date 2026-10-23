@@ -10,6 +10,13 @@ use cadcraft_geom::{Vec2, Vec3};
 
 use crate::mesh::Mesh;
 
+/// Clamp a component centre offset (from the wall centre plane, measured along
+/// the wall normal) so that a component of depth `depth` fits inside the wall's
+/// `[-wall_t/2, +wall_t/2]` thickness band.
+fn band_offset(off: f64, depth: f64, wall_t: f64) -> f64 {
+    off.clamp(-wall_t / 2.0 + depth / 2.0, wall_t / 2.0 - depth / 2.0)
+}
+
 /// Build all component meshes for a single opening.
 ///
 /// Returns an empty vector if the host wall is missing or degenerate.
@@ -25,8 +32,8 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
     let dir = dir.normalized();
     let normal = Vec2::new(-dir.y, dir.x);
     let center = wall.start + dir * o.offset;
-    let recessed = center + normal * o.recess;
-
+    // Offsets measured from the wall centre plane (along `normal`), each
+    // clamped so the component stays inside the wall's thickness band.
     let mut meshes = Vec::new();
 
     let w = o.width;
@@ -52,49 +59,54 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
     };
 
     // Frame: left jamb
-    let left_a = recessed + dir * (-w / 2.0 - fw / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
-    let left_b = recessed + dir * (-w / 2.0 + fw / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
+    let jamb_off = band_offset(o.recess - wall_t / 2.0 + fd / 2.0, fd, wall_t);
+    let left_a = center + dir * (-w / 2.0 - fw / 2.0) + normal * jamb_off;
+    let left_b = center + dir * (-w / 2.0 + fw / 2.0) + normal * jamb_off;
     if let Some(mesh) = box_between(left_a, left_b, frame_z0, frame_z1, fd, &format!("{}-frame", kind_prefix), o.id) {
         meshes.push(mesh);
     }
 
     // Frame: right jamb
-    let right_a = recessed + dir * (w / 2.0 - fw / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
-    let right_b = recessed + dir * (w / 2.0 + fw / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
+    let right_a = center + dir * (w / 2.0 - fw / 2.0) + normal * jamb_off;
+    let right_b = center + dir * (w / 2.0 + fw / 2.0) + normal * jamb_off;
     if let Some(mesh) = box_between(right_a, right_b, frame_z0, frame_z1, fd, &format!("{}-frame", kind_prefix), o.id) {
         meshes.push(mesh);
     }
 
     // Frame: head
-    let head_a = recessed + dir * (-w / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
-    let head_b = recessed + dir * (w / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
+    let head_off = band_offset(o.recess - wall_t / 2.0 + fd / 2.0, fw, wall_t);
+    let head_a = center + dir * (-w / 2.0) + normal * head_off;
+    let head_b = center + dir * (w / 2.0) + normal * head_off;
     if let Some(mesh) = box_between(head_a, head_b, frame_z1 - fw, frame_z1, fw, &format!("{}-frame", kind_prefix), o.id) {
         meshes.push(mesh);
     }
 
     // Frame: sill
-    let sill_a = recessed + dir * (-w / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
-    let sill_b = recessed + dir * (w / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
+    let sill_off = band_offset(o.recess - wall_t / 2.0 + fd / 2.0, fw, wall_t);
+    let sill_a = center + dir * (-w / 2.0) + normal * sill_off;
+    let sill_b = center + dir * (w / 2.0) + normal * sill_off;
     if let Some(mesh) = box_between(sill_a, sill_b, frame_z0, frame_z0 + fw, fw, &format!("{}-frame", kind_prefix), o.id) {
         meshes.push(mesh);
     }
 
     // Casing (both faces)
     if cw > 0.0 {
-        let cl_a = recessed + dir * (-w / 2.0 - fw / 2.0 - cw) + normal * (-wall_t / 2.0 + cd / 2.0);
-        let cl_b = recessed + dir * (-w / 2.0 - fw / 2.0) + normal * (-wall_t / 2.0 + cd / 2.0);
+        let casing_off = band_offset(o.recess - wall_t / 2.0 + cd / 2.0, cd, wall_t);
+        let cl_a = center + dir * (-w / 2.0 - fw / 2.0 - cw) + normal * casing_off;
+        let cl_b = center + dir * (-w / 2.0 - fw / 2.0) + normal * casing_off;
         if let Some(mesh) = box_between(cl_a, cl_b, frame_z0, frame_z1, cd, &format!("{}-casing", kind_prefix), o.id) {
             meshes.push(mesh);
         }
 
-        let cr_a = recessed + dir * (w / 2.0 + fw / 2.0) + normal * (-wall_t / 2.0 + cd / 2.0);
-        let cr_b = recessed + dir * (w / 2.0 + fw / 2.0 + cw) + normal * (-wall_t / 2.0 + cd / 2.0);
+        let cr_a = center + dir * (w / 2.0 + fw / 2.0) + normal * casing_off;
+        let cr_b = center + dir * (w / 2.0 + fw / 2.0 + cw) + normal * casing_off;
         if let Some(mesh) = box_between(cr_a, cr_b, frame_z0, frame_z1, cd, &format!("{}-casing", kind_prefix), o.id) {
             meshes.push(mesh);
         }
 
-        let ch_a = recessed + dir * (-w / 2.0 - fw / 2.0) + normal * (-wall_t / 2.0 + cd / 2.0);
-        let ch_b = recessed + dir * (w / 2.0 + fw / 2.0) + normal * (-wall_t / 2.0 + cd / 2.0);
+        let casing_head_off = band_offset(o.recess - wall_t / 2.0 + cd / 2.0, cw, wall_t);
+        let ch_a = center + dir * (-w / 2.0 - fw / 2.0) + normal * casing_head_off;
+        let ch_b = center + dir * (w / 2.0 + fw / 2.0) + normal * casing_head_off;
         if let Some(mesh) = box_between(ch_a, ch_b, frame_z1 - cw, frame_z1, cw, &format!("{}-casing", kind_prefix), o.id) {
             meshes.push(mesh);
         }
@@ -108,8 +120,9 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
             || o.style.contains("pocket")
             || o.style.contains("glass"));
     if is_window || is_glazed_door {
-        let glass_a = recessed + dir * (-w / 2.0 + fw) + normal * (-wall_t / 2.0 + fd / 2.0);
-        let glass_b = recessed + dir * (w / 2.0 - fw) + normal * (-wall_t / 2.0 + fd / 2.0);
+        let glass_off = band_offset(o.recess - wall_t / 2.0 + fd / 2.0, 0.006, wall_t);
+        let glass_a = center + dir * (-w / 2.0 + fw) + normal * glass_off;
+        let glass_b = center + dir * (w / 2.0 - fw) + normal * glass_off;
         if let Some(mesh) = box_between(glass_a, glass_b, frame_z0 + fw, frame_z1 - fw, 0.006, &format!("{}-glass", kind_prefix), o.id) {
             meshes.push(mesh);
         }
@@ -118,26 +131,27 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
     // Leaf: doors (not windows, not cased openings) get a leaf.
     if !is_window && !matches!(o.kind, OpeningKind::CasedOpening) {
         let leaf_t = 0.045;
+        let leaf_off = band_offset(o.recess - wall_t / 2.0 + leaf_t / 2.0, leaf_t, wall_t);
         let leaf_z0 = frame_z0 + fw;
         let leaf_z1 = frame_z1 - fw;
 
         let two_leaves = o.style.contains("sliding") || o.style.contains("bifold") || o.style.contains("french") || is_double(o);
         if two_leaves {
             let half_w = (w - 2.0 * fw) / 2.0;
-            let l_a = recessed + dir * (-w / 2.0 + fw) + normal * (-wall_t / 2.0 + leaf_t / 2.0);
-            let l_b = recessed + dir * (-w / 2.0 + fw + half_w) + normal * (-wall_t / 2.0 + leaf_t / 2.0);
+            let l_a = center + dir * (-w / 2.0 + fw) + normal * leaf_off;
+            let l_b = center + dir * (-w / 2.0 + fw + half_w) + normal * leaf_off;
             if let Some(mesh) = box_between(l_a, l_b, leaf_z0, leaf_z1, leaf_t, &format!("{}-leaf", kind_prefix), o.id) {
                 meshes.push(mesh);
             }
 
-            let r_a = recessed + dir * (w / 2.0 - fw - half_w) + normal * (-wall_t / 2.0 + leaf_t / 2.0);
-            let r_b = recessed + dir * (w / 2.0 - fw) + normal * (-wall_t / 2.0 + leaf_t / 2.0);
+            let r_a = center + dir * (w / 2.0 - fw - half_w) + normal * leaf_off;
+            let r_b = center + dir * (w / 2.0 - fw) + normal * leaf_off;
             if let Some(mesh) = box_between(r_a, r_b, leaf_z0, leaf_z1, leaf_t, &format!("{}-leaf", kind_prefix), o.id) {
                 meshes.push(mesh);
             }
         } else {
-            let l_a = recessed + dir * (-w / 2.0 + fw) + normal * (-wall_t / 2.0 + leaf_t / 2.0);
-            let l_b = recessed + dir * (w / 2.0 - fw) + normal * (-wall_t / 2.0 + leaf_t / 2.0);
+            let l_a = center + dir * (-w / 2.0 + fw) + normal * leaf_off;
+            let l_b = center + dir * (w / 2.0 - fw) + normal * leaf_off;
             if let Some(mesh) = box_between(l_a, l_b, leaf_z0, leaf_z1, leaf_t, &format!("{}-leaf", kind_prefix), o.id) {
                 meshes.push(mesh);
             }
@@ -146,20 +160,23 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
 
     // Exterior sill (for windows)
     if is_window && sd > 0.0 {
-        let s_a = recessed + dir * (-w / 2.0 - fw / 2.0 - sd) + normal * (-wall_t / 2.0);
-        let s_b = recessed + dir * (w / 2.0 + fw / 2.0 + sd) + normal * (-wall_t / 2.0);
+        let ext_sill_off = band_offset(o.recess - wall_t / 2.0, 0.04, wall_t);
+        let s_a = center + dir * (-w / 2.0 - fw / 2.0 - sd) + normal * ext_sill_off;
+        let s_b = center + dir * (w / 2.0 + fw / 2.0 + sd) + normal * ext_sill_off;
         let sill_bottom = (frame_z0 - 0.02).max(0.0);
         if let Some(mesh) = box_between(s_a, s_b, sill_bottom, frame_z0, 0.04, &format!("{}-sill", kind_prefix), o.id) {
             meshes.push(mesh);
         }
     }
 
-    // Header: must stay inside the host wall height.
+    // Header: centred on the wall centre plane (full thickness) and clipped
+    // to stay inside the host wall height.
     let header_h = 0.2;
     let header_top = (sill_h + h + header_h).min(wall.height);
     if header_top > frame_z1 + 1e-9 {
-        let h_a = recessed + dir * (-w / 2.0 - fw) + normal * (-wall_t / 2.0);
-        let h_b = recessed + dir * (w / 2.0 + fw) + normal * (-wall_t / 2.0);
+        let header_off = band_offset(0.0, wall_t, wall_t);
+        let h_a = center + dir * (-w / 2.0 - fw) + normal * header_off;
+        let h_b = center + dir * (w / 2.0 + fw) + normal * header_off;
         if let Some(mesh) = box_between(h_a, h_b, frame_z1, header_top, wall_t, &format!("{}-header", kind_prefix), o.id) {
             meshes.push(mesh);
         }
@@ -396,5 +413,213 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A wall model of a single 10 m long wall, thickness `t`.
+    fn band_wall(t: f64) -> ArchModel {
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: t,
+            height: 2.5,
+            ..Default::default()
+        });
+        model
+    }
+
+    /// One of each opening type on the wall in `model`.
+    fn all_openings(model: &ArchModel) -> Vec<Opening> {
+        let base = |style: &str, kind: OpeningKind| Opening {
+            id: ArchId(100),
+            host: ArchId(1),
+            offset: 5.0,
+            width: 1.2,
+            height: 1.5,
+            sill: 0.9,
+            frame_width: 0.05,
+            frame_depth: 0.1,
+            casing_width: 0.05,
+            casing_depth: 0.02,
+            sill_depth: 0.05,
+            swing_angle: 0.0,
+            style: style.to_string(),
+            recess: 0.0,
+            kind,
+            ..Default::default()
+        };
+        vec![
+            base("window", OpeningKind::Window),
+            base("hinged", OpeningKind::Door),
+            base("window", OpeningKind::Window),
+            base("garage", OpeningKind::GarageDoor),
+        ]
+    }
+
+    #[test]
+    fn opening_meshes_stay_inside_the_host_wall_thickness() {
+        let model = band_wall(0.3);
+        for o in all_openings(&model) {
+            let wall = &model.walls[0];
+            let dir = (wall.end - wall.start).normalized();
+            let normal = Vec2::new(-dir.y, dir.x);
+            let center = wall.start + dir * o.offset;
+            let half_t = wall.thickness / 2.0;
+            for m in opening_meshes(&model, &o) {
+                for p in &m.positions {
+                    let n = (Vec2::new(p[0], p[1]) - center).dot(normal);
+                    assert!(n.abs() <= half_t + 1e-6, "vertex {} of {} leaves wall band (n={})", p[0], m.material, n);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn house_with_openings_bounds_match_the_wall_envelope() {
+        // 10 m x 8 m floor, walls 0.2 m thick, 2.4 m tall, centre lines at
+        // x = 0/10 and y = 0/8.
+        let t = 0.2;
+        let h = 2.4;
+        let mut model = ArchModel::default();
+        for (a, b, id) in [((0.0, 0.0), (10.0, 0.0), 1), ((10.0, 0.0), (10.0, 8.0), 2), ((10.0, 8.0), (0.0, 8.0), 3), ((0.0, 8.0), (0.0, 0.0), 4)] {
+            model.walls.push(Wall {
+                id: ArchId(id),
+                start: Vec2::new(a.0, a.1),
+                end: Vec2::new(b.0, b.1),
+                thickness: t,
+                height: h,
+                ..Default::default()
+            });
+        }
+        // Hinged door on the south wall, two windows, a garage door.
+        let windows = vec![
+            Opening {
+                id: ArchId(100),
+                host: ArchId(1),
+                offset: 3.0,
+                width: 1.2,
+                height: 1.5,
+                sill: 0.9,
+                frame_width: 0.05,
+                frame_depth: 0.1,
+                casing_width: 0.05,
+                casing_depth: 0.02,
+                sill_depth: 0.05,
+                swing_angle: 0.0,
+                style: "window".to_string(),
+                recess: 0.0,
+                kind: OpeningKind::Window,
+                ..Default::default()
+            },
+            Opening {
+                id: ArchId(101),
+                host: ArchId(1),
+                offset: 7.0,
+                width: 1.0,
+                height: 1.2,
+                sill: 0.9,
+                frame_width: 0.05,
+                frame_depth: 0.1,
+                casing_width: 0.05,
+                casing_depth: 0.02,
+                sill_depth: 0.05,
+                swing_angle: 0.0,
+                style: "window".to_string(),
+                recess: 0.0,
+                kind: OpeningKind::Window,
+                ..Default::default()
+            },
+            Opening {
+                id: ArchId(102),
+                host: ArchId(1),
+                offset: 5.0,
+                width: 0.9,
+                height: 2.1,
+                sill: 0.0,
+                frame_width: 0.05,
+                frame_depth: 0.1,
+                casing_width: 0.05,
+                casing_depth: 0.02,
+                sill_depth: 0.0,
+                swing_angle: 0.0,
+                style: "hinged".to_string(),
+                recess: 0.0,
+                kind: OpeningKind::Door,
+                ..Default::default()
+            },
+            Opening {
+                id: ArchId(103),
+                host: ArchId(2),
+                offset: 4.0,
+                width: 3.0,
+                height: 2.2,
+                sill: 0.0,
+                frame_width: 0.05,
+                frame_depth: 0.1,
+                casing_width: 0.05,
+                casing_depth: 0.02,
+                sill_depth: 0.0,
+                swing_angle: 0.0,
+                style: "garage".to_string(),
+                recess: 0.0,
+                kind: OpeningKind::GarageDoor,
+                ..Default::default()
+            },
+        ];
+        model.openings.clear();
+        model.openings.extend(windows.into_iter().map(|o| o));
+
+        // The scene envelope is the union of the wall solids and the
+        // opening component meshes; the openings must not push it past the
+        // wall outer faces (10.2 x 8.2) or above the wall tops (2.4).
+        let expected = Vec3::new(10.2 + 1e-3, 8.2 + 1e-3, h + 1e-3);
+        let eps = 1e-3;
+
+        // Wall solid bounds (full extrusion to the host wall height).
+        let mut x_min = f64::INFINITY;
+        let mut x_max = f64::NEG_INFINITY;
+        let mut y_min = f64::INFINITY;
+        let mut y_max = f64::NEG_INFINITY;
+        let mut z_min = f64::INFINITY;
+        let mut z_max = f64::NEG_INFINITY;
+        for w in &model.walls {
+            let (dx, dy) = (w.end.x - w.start.x, w.end.y - w.start.y);
+            let (nx, ny) = (-dy, dx);
+            let l = (nx * nx + ny * ny).max(1e-9).sqrt();
+            let n = Vec2::new(nx / l, ny / l);
+            for s in [w.start, w.end] {
+                for (off, p) in [(-w.thickness / 2.0, s.clone()), (w.thickness / 2.0, s)] {
+                    let pt = s + n * off;
+                    x_min = x_min.min(pt.x);
+                    x_max = x_max.max(pt.x);
+                    y_min = y_min.min(pt.y);
+                    y_max = y_max.max(pt.y);
+                }
+            }
+            z_min = z_min.min(0.0);
+            z_max = z_max.max(w.height);
+        }
+
+        // Opening component meshes: they must fit inside the wall envelope.
+        for o in &model.openings {
+            for m in opening_meshes(&model, o) {
+                for p in &m.positions {
+                    x_min = x_min.min(p[0]);
+                    x_max = x_max.max(p[0]);
+                    y_min = y_min.min(p[1]);
+                    y_max = y_max.max(p[1]);
+                    z_min = z_min.min(p[2]);
+                    z_max = z_max.max(p[2]);
+                }
+            }
+        }
+
+        assert!(x_min >= -eps, "scene x_min too low: {}", x_min);
+        assert!(x_max - x_min <= expected[0], "scene width too large: {}", x_max - x_min);
+        assert!(y_min >= -eps, "scene y_min too low: {}", y_min);
+        assert!(y_max - y_min <= expected[1], "scene depth too large: {}", y_max - y_min);
+        assert!((z_max - z_min).abs() <= expected[2], "scene height off: {}", z_max - z_min);
+        assert!((z_max - z_min).abs() >= expected[2] - 1e-3, "scene height too small: {}", z_max - z_min);
     }
 }
