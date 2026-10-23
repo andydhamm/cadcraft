@@ -2,9 +2,9 @@
 use crate::cmd::CommandSpec;
 use crate::{EngineError, Session};
 use cadcraft_arch::join::solve_joins;
-use cadcraft_arch::opening::rough_offset;
+use cadcraft_arch::opening::{opening_handle, opening_label, rough_offset};
 use cadcraft_arch::symbol::opening_symbol;
-use cadcraft_arch::wall::{wall_layer_polygons, wall_polygon};
+use cadcraft_arch::wall::{wall_label, wall_layer_polygons, wall_polygon};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::Handle;
 use serde_json::json;
@@ -102,9 +102,9 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     if openings_flag {
         for o in &d.arch.openings {
             let mut obj = JsonMap::new();
-            obj.insert("id".to_string(), json!(o.id));
-            obj.insert("handle".to_string(), json!(format!("{:016X}", 0xA000_0000u64 + u64::from(o.id.0))));
-            obj.insert("host".to_string(), json!(o.host));
+            obj.insert("id".to_string(), json!(opening_label(o.id)));
+            obj.insert("handle".to_string(), json!(format!("{:x}", opening_handle(o.id))));
+            obj.insert("host".to_string(), json!(wall_label(o.host)));
             obj.insert("kind".to_string(), json!(o.kind));
             obj.insert("style".to_string(), json!(o.style));
             obj.insert("offset".to_string(), json!(o.offset));
@@ -372,10 +372,10 @@ mod tests {
         let openings = v["openings"].as_array().expect("openings array missing");
         assert!(!openings.is_empty(), "expected at least one opening");
         let o = &openings[0];
-        assert!(o["id"].is_number());
+        assert!(o["id"].is_string(), "opening id must be a string");
         let handle = o["handle"].as_str().expect("handle must be a string");
-        assert!(handle.len() >= 16, "proxy handle too short: {handle}");
-        assert!(o["host"].is_number());
+        assert!(handle.starts_with("a000"), "handle must start with 'a000': {handle}");
+        assert!(o["host"].is_string(), "opening host must be a wall label");
         assert!(o["kind"].is_string());
         assert!(o["style"].is_string());
         assert!(o["offset"].is_number());
@@ -428,5 +428,40 @@ mod tests {
             Err(_) => return,
         };
         assert_eq!(before, after, "arch.inspect must not bump arch_revision");
+    }
+
+    /// The opening `id` field is a string label (e.g. "o1"), not a number.
+    #[test]
+    fn inspect_reports_opening_ids_as_o_labels() {
+        let mut s = session_with_one_wall_and_opening();
+        let v = exec(&mut s, "arch.inspect", &json!({ "openings": true }));
+        let openings = v["openings"].as_array().expect("openings array missing");
+        let o = &openings[0];
+        let id = o["id"].as_str().expect("opening id must be a string");
+        assert!(id.starts_with("o"), "opening label must start with 'o': {id}");
+    }
+
+    /// The opening `host` field is a wall label (e.g. "w1"), not a number.
+    #[test]
+    fn inspect_reports_host_as_a_wall_label() {
+        let mut s = session_with_one_wall_and_opening();
+        let v = exec(&mut s, "arch.inspect", &json!({ "openings": true }));
+        let openings = v["openings"].as_array().expect("openings array missing");
+        let o = &openings[0];
+        let host = o["host"].as_str().expect("opening host must be a string");
+        assert!(host.starts_with("w"), "wall label must start with 'w': {host}");
+    }
+
+    /// The opening `handle` field is lowercase hex with no padding.
+    #[test]
+    fn inspect_opening_handle_is_lowercase_hex() {
+        let mut s = session_with_one_wall_and_opening();
+        let v = exec(&mut s, "arch.inspect", &json!({ "openings": true }));
+        let openings = v["openings"].as_array().expect("openings array missing");
+        let o = &openings[0];
+        let handle = o["handle"].as_str().expect("handle must be a string");
+        assert!(handle.starts_with("a000"), "handle must be lowercase starting with 'a000': {handle}");
+        assert!(handle.chars().all(|c| c.is_ascii_lowercase || c.is_ascii_digit()), "handle must contain only lowercase hex: {handle}");
+        assert_eq!(handle.len(), 8, "unpadded handle for a low id should be 8 chars: {handle}");
     }
 }
