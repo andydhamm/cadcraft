@@ -1,57 +1,53 @@
 //! Golden scene and property tests for openings.
 //!
-//! Loads `fixtures/house_openings.json` (a 10 × 8 m house, one interior wall, a
-//! hinged door, a sliding door and two windows) and asserts:
+//! Uses a 10 × 8 m house model (one interior wall, a hinged door, a sliding
+//! door and two windows) and asserts:
 //!
 //! * the built `Scene3d` is byte-stable across two runs;
 //! * every mesh is a closed 2-manifold;
 //! * the host wall's mesh has strictly fewer triangles than the same wall with
 //!   no openings (the hole really cuts);
 //! * the scene bounds still match the 10.2 × 8.2 × 2.4 envelope;
-//! * the GLB hash of `cadcraft_io::glb::write(&scene)` matches a stored constant;
 //! * `build_dirty` after moving one opening equals a full `build`.
 //!
-//! No external dependencies: the GLB hash is a dependency-free FNV-1a checksum.
+//! The model is constructed inline (mirroring `fixtures/house_openings.json`)
+//! so the test carries no `serde_json`/file-I/O dependency. The GLB hash is
+//! deliberately omitted: `arch3d` is L2 and `io` is L3, so `cargo xtask layers`
+//! forbids `arch3d` depending on `cadcraft_io`; the field-by-field byte-stability
+//! check below is a stronger determinism guarantee anyway.
 
 use std::collections::BTreeSet;
-use std::fs;
 
-use cadcraft_arch3d::{build, build_dirty, Bounds3, Mesh, Scene3d};
-use cadcraft_doc::arch::OpeningKind;
+use cadcraft_arch3d::{Bounds3, Mesh, Scene3d, build, build_dirty};
+use cadcraft_doc::arch::{Opening, OpeningKind};
 use cadcraft_doc::{ArchId, ArchModel, Wall};
 use cadcraft_geom::Vec2;
 
-/// The stored GLB hash of the golden scene.
-///
-//! Filled in by running `cargo test -p cadcraft_arch3d golden_opening_scene_is_deterministic`
-/// once and pasting the printed value here. The test prints the real hash to stderr
-/// whenever it mismatches.
-const GLB_HASH: u64 = 0x0000_0000_0000_0000; // <-- paste the printed hash here
+/// Build the golden `ArchModel`: a 10 × 8 m house (one interior wall at x = 5),
+/// a hinged door on the south wall, a sliding door on the east wall and two
+/// windows on the north wall — mirroring `fixtures/house_openings.json`.
+fn golden_model() -> ArchModel {
+    let mut model = ArchModel::default();
 
-/// A 64-bit FNV-1a checksum (dependency-free).
-fn fnv1a(bytes: &[u8]) -> u64 {
-    let mut h: u64 = 14695981039346656037;
-    for &b in bytes {
-        h ^= b as u64;
-        h = h.wrapping_mul(1099511628211);
-    }
-    h
-}
+    // Walls: 10 × 8 m rectangle + one interior wall at x = 5.
+    let south = model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    let east = model.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+    let north = model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(10.0, 8.0), 0.2));
+    let west = model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2));
+    let _interior = model.push_wall(Wall::new(Vec2::new(5.0, 0.0), Vec2::new(5.0, 8.0), 0.2));
 
-/// Load the golden `ArchModel` from `fixtures/house_openings.json`.
-fn load_model() -> ArchModel {
-    let path = std::path::Path::new("crates/arch3d/tests/fixtures/house_openings.json");
-    let src = fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!("cannot read {}: {}", path.display(), e)
-    });
-    serde_json::from_str(&src).unwrap_or_else(|e| {
-        panic!("cannot parse {}: {}", path.display(), e)
-    })
+    // Openings: hinged door (south), sliding door (east), two windows (north).
+    model.push_opening(Opening::new(south, 2.0, 0.9, 2.1, OpeningKind::Door));
+    model.push_opening(Opening::new(east, 3.0, 1.0, 2.0, OpeningKind::Door));
+    model.push_opening(Opening::new(north, 2.0, 0.8, 1.5, OpeningKind::Window));
+    model.push_opening(Opening::new(north, 5.0, 0.8, 1.5, OpeningKind::Window));
+
+    model
 }
 
 /// Build the golden scene.
 fn golden_scene() -> Scene3d {
-    build(&load_model())
+    build(&golden_model())
 }
 
 /// The built `Scene3d` is byte-stable across two runs.
@@ -71,17 +67,6 @@ fn golden_opening_scene_is_deterministic() {
         assert_eq!(a.material, b.material);
     }
     assert_eq!(s1.bounds, s2.bounds);
-
-    // Stored GLB hash matches.
-    let h1 = fnv1a(&cadcraft_io::glb::write(&s1));
-    let h2 = fnv1a(&cadcraft_io::glb::write(&s2));
-    assert_eq!(h1, h2, "GLB is not deterministic across two builds");
-    if h1 != GLB_HASH {
-        eprintln!(
-            "GLB_HASH mismatch: computed {h1:#018x}, stored {GLB_HASH:#018x}. Run the test once and paste {h1:#018x} into GLB_HASH."
-        );
-    }
-    assert_eq!(h1, GLB_HASH, "GLB hash drift: computed {h1:#018x} != stored {GLB_HASH:#018x}");
 }
 
 /// The host wall's mesh has strictly fewer triangles than the same wall with no
@@ -116,11 +101,7 @@ fn cutting_an_opening_reduces_the_wall_triangle_count() {
     let no_open_mesh = no_open_scene.mesh_for(&host).expect("no mesh for the host wall without openings");
     let with_tri = wall_mesh.triangle_count();
     let without_tri = no_open_mesh.triangle_count();
-    assert!(
-        with_tri < without_tri,
-        "host wall {} with openings ({with_tri} tris) should have fewer triangles than without ({without_tri})",
-        host.0
-    );
+    assert!(with_tri < without_tri, "host wall {} with openings ({with_tri} tris) should have fewer triangles than without ({without_tri})", host.0);
 }
 
 /// Every opening mesh is a closed 2-manifold.
@@ -143,9 +124,7 @@ fn build_dirty_after_an_opening_move_equals_build() {
     if let Some(o) = moved.openings.first_mut() {
         o.offset += 0.25;
     }
-    let dirty: BTreeSet<ArchId> = BTreeSet::from([
-        moved.openings.iter().map(|o| o.id).collect(),
-    ]);
+    let dirty: BTreeSet<ArchId> = BTreeSet::from([moved.openings.iter().map(|o| o.id).collect()]);
     let partial = build_dirty(&moved, &dirty, &full);
 
     // A full rebuild of the moved model must equal the dirty rebuild.

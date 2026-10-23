@@ -15,6 +15,7 @@ use cadcraft_arch::opening::{place_opening, validate_placement};
 use cadcraft_arch::symbol::{opening_symbol, poché_gaps};
 use cadcraft_arch::wall::wall_bounds;
 use cadcraft_arch::{ArchModel, Wall};
+use cadcraft_doc::ArchId;
 use cadcraft_doc::arch::{Hinge, Opening, OpeningKind, Swing};
 use cadcraft_geom::Vec2;
 
@@ -88,8 +89,8 @@ fn random_openings_never_panic() {
 
     for _ in 0..200 {
         let host = hosts[rng.next() % hosts.len()];
-        let kind = kinds[rng.next() % kinds.len()];
-        let style = styles[rng.next() % styles.len()];
+        let kind = kinds[(rng.next() as usize) % kinds.len()];
+        let style = styles[(rng.next() as usize) % styles.len()];
         let offset = rng.in_range(-10.0, 30.0);
         let width = rng.in_range(-3.0, 8.0);
         let sill = rng.in_range(-3.0, 6.0);
@@ -158,7 +159,7 @@ fn opening_gaps_never_overlap() {
             assert!(s < e, "gap {} is empty or reversed in host {}", i, host.0);
             if i + 1 < gaps.len() {
                 let (ns, _) = gaps[i + 1];
-                assert!(e <= ns + 1e-9, "gaps overlap in host {}: [{}..{}] vs [{}..]", host.0, s, e, ns, gaps[i + 1].1);
+                assert!(e <= ns + 1e-9, "gaps overlap in host {}: [{}..{}] vs [{}..{}]", host.0, s, e, ns, gaps[i + 1].1);
             }
         }
     }
