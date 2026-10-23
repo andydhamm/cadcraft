@@ -7,6 +7,7 @@ use cadcraft_arch::symbol::opening_symbol;
 use cadcraft_arch::wall::{wall_layer_polygons, wall_polygon};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::Handle;
+use cadcraft_doc::arch::OpeningKind;
 use serde_json::json;
 use serde_json::{Map as JsonMap, Value};
 
@@ -15,6 +16,16 @@ pub fn specs() -> Vec<CommandSpec> {
     let mut v = Vec::new();
     v.push(CommandSpec::new("arch.inspect", "Arch Inspect", run_inspect).noundo().params("{poché?: bool}"));
     v
+}
+
+/// Map an [`OpeningKind`] to its plain plan label. Garage doors report as `door` in
+/// plan; their identity is the `style` field (`garage`), not the kind.
+fn kind_label(k: OpeningKind) -> &'static str {
+    match k {
+        OpeningKind::Door | OpeningKind::GarageDoor => "door",
+        OpeningKind::Window => "window",
+        OpeningKind::CasedOpening => "cased",
+    }
 }
 
 /// Reports walls (optionally with poché polygons), join count, revision, bounds and
@@ -105,7 +116,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
             obj.insert("id".to_string(), json!(format!("o{}", o.id.0)));
             obj.insert("handle".to_string(), json!(format!("{:x}", 0xA000_0000u64 + o.id.0 as u64)));
             obj.insert("host".to_string(), json!(format!("w{}", o.host.0)));
-            obj.insert("kind".to_string(), json!(o.kind));
+            obj.insert("kind".to_string(), json!(kind_label(o.kind)));
             obj.insert("style".to_string(), json!(o.style));
             obj.insert("offset".to_string(), json!(o.offset));
             obj.insert("width".to_string(), json!(o.width));
@@ -463,5 +474,59 @@ mod tests {
         assert!(handle.starts_with("a000"), "handle must be lowercase starting with 'a000': {handle}");
         assert!(handle.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle must contain only lowercase hex: {handle}");
         assert_eq!(handle.len(), 8, "unpadded handle for a low id should be 8 chars: {handle}");
+    }
+
+    /// A fresh session holding one 10 m wall with a single opening of the given kind.
+    fn session_with_one_wall_and_opening_of(kind: OpeningKind) -> Session {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                let wid =
+                    d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+                let o = match kind {
+                    OpeningKind::GarageDoor => Opening::new(wid, 4.0, 2.0, 2.2, kind),
+                    _ => Opening::new(wid, 4.0, 1.0, 1.5, kind),
+                };
+                d.arch.push_opening(o);
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        s
+    }
+
+    #[test]
+    fn inspect_reports_garage_door_as_a_door_kind() {
+        let mut s = session_with_one_wall_and_opening_of(OpeningKind::GarageDoor);
+        let v = exec(&mut s, "arch.inspect", &json!({ "openings": true }));
+        let openings = v["openings"].as_array().expect("openings array missing");
+        assert!(!openings.is_empty(), "expected at least one opening");
+        let o = &openings[0];
+        assert_eq!(o["kind"].as_str().expect("kind should be a string"), "door");
+        assert_eq!(o["style"].as_str().expect("style should be a string"), "garage");
+    }
+
+    #[test]
+    fn inspect_reports_window_and_cased_kind_labels() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                let wid =
+                    d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+                d.arch.push_opening(Opening::new(wid, 1.0, 1.0, 1.5, OpeningKind::Window));
+                d.arch.push_opening(Opening::new(wid, 5.0, 1.0, 1.5, OpeningKind::CasedOpening));
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "openings": true }));
+        let openings = v["openings"].as_array().expect("openings array missing");
+        assert_eq!(openings.len(), 2, "expected two openings");
+        let window = openings.iter().find(|o| o["offset"].as_f64().unwrap_or(f64::NAN) == 1.0);
+        let cased = openings.iter().find(|o| o["offset"].as_f64().unwrap_or(f64::NAN) == 5.0);
+        assert!(window.is_some(), "window opening not found");
+        assert!(cased.is_some(), "cased opening not found");
+        assert_eq!(window.unwrap()["kind"].as_str().expect("kind should be a string"), "window");
+        assert_eq!(cased.unwrap()["kind"].as_str().expect("kind should be a string"), "cased");
     }
 }
