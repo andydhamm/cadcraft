@@ -7,7 +7,7 @@ use cadcraft_arch::join::End;
 use cadcraft_arch::join::WallShape;
 use cadcraft_arch::join::{solve_joins, stretch_wall};
 use cadcraft_doc::geom::Vec2;
-use cadcraft_doc::{ArchId, ArchModel, JoinKind, Wall, WallType};
+use cadcraft_doc::{ArchId, ArchModel, JoinKind, Wall};
 
 /// A minimal xorshift64* PRNG with a fixed non-zero initial state.
 #[derive(Clone, Copy)]
@@ -43,9 +43,10 @@ impl Xorshift64 {
 
 /// Build a random `ArchModel` with the given number of walls.
 ///
-/// Endpoints lie on a 20×20 m grid ([-10, 10) in each axis).  Thickness is
-/// sampled in [0.05, 0.40).  About 5 % of coordinates are replaced with `NaN`
-/// or `INFINITY`.  10 % of walls are collinear with their neighbour (end is
+/// Endpoints lie in a 20×20 m square ([-10, 10) in each axis); half of them are snapped
+/// to the 1 m grid so ends coincide and L/T/collinear joins actually occur, the rest are
+/// arbitrary reals. Thickness is sampled in [0.05, 0.40).  About 5 % of coordinates are
+/// replaced with `NaN` or `INFINITY`.  10 % of walls are collinear with their neighbour (end is
 /// offset along the start direction), and 5 % overlap by up to 2.5 m, to
 /// exercise the collinear/overlap join paths.
 fn build_random_model(seed: u64, num_walls: usize) -> (ArchModel, Vec<ArchId>) {
@@ -55,13 +56,16 @@ fn build_random_model(seed: u64, num_walls: usize) -> (ArchModel, Vec<ArchId>) {
 
     for _ in 0..num_walls {
         // 5 % chance of injecting NaN or inf in each coordinate.
-        let corrupt = rng.next_u64() % 20 == 0;
+        let corrupt = rng.next_u64().is_multiple_of(20);
 
         let pick = |rng: &mut Xorshift64| {
-            if corrupt && rng.next_u64() % 3 == 0 {
-                if rng.next_u64() % 2 == 0 { f64::NAN } else { f64::INFINITY }
+            if corrupt && rng.next_u64().is_multiple_of(3) {
+                if rng.next_u64().is_multiple_of(2) { f64::NAN } else { f64::INFINITY }
             } else {
-                (rng.next_u64() as f64) % 20.0 - 10.0
+                // `(u64 as f64) % 20.0` only ever yields five values (the cast rounds to a
+                // multiple of 2048), so sample through `next_f64`.
+                let v = rng.next_f64(-10.0, 10.0);
+                if rng.next_u64().is_multiple_of(2) { v.round() } else { v }
             }
         };
 
@@ -70,15 +74,15 @@ fn build_random_model(seed: u64, num_walls: usize) -> (ArchModel, Vec<ArchId>) {
         let x2 = pick(&mut rng);
         let y2 = pick(&mut rng);
 
-        let thickness = 0.05 + (rng.next_u64() as f64) % 35.0 / 100.0; // [0.05, 0.40)
-        let height = 2.4 + (rng.next_u64() as f64) % 0.5; // [2.4, 2.9)
-        let exterior = rng.next_u64() % 3 == 0;
+        let thickness = rng.next_f64(0.05, 0.40);
+        let height = rng.next_f64(2.4, 2.9);
+        let exterior = rng.next_u64().is_multiple_of(3);
 
         // 10 % collinear: end is along the start→end direction by a small amount.
         // 5 % overlap: end is shifted perpendicular to the start→end vector.
-        let collinear = rng.next_u64() % 10 == 0;
-        let overlap = rng.next_u64() % 20 == 0;
-        let shift = (rng.next_u64() as f64) % 5.0 - 2.5;
+        let collinear = rng.next_u64().is_multiple_of(10);
+        let overlap = rng.next_u64().is_multiple_of(20);
+        let shift = rng.next_f64(-2.5, 2.5);
 
         let (ex, ey) = if collinear || overlap {
             let dx = x2 - x1;
@@ -164,11 +168,11 @@ fn random_wall_graphs_never_panic() {
 /// and stay inside the wall's own bounds envelope (± tolerance).
 #[test]
 fn random_wall_rings_stay_in_their_envelope() {
-    // Generous tolerance: the join solver legitimately trims/extends a wall's
-    // centre line to meet a neighbour, so resolved rings can sit a few metres
-    // outside the raw centre-line envelope. This still catches NaN/infinity and
-    // any polygon that exploded far from its own wall.
-    const TOL: f64 = 5.0;
+    // The join solver legitimately trims/extends a wall's centre line to meet a
+    // neighbour, but never further than the mitre limit (4 half-thicknesses, ≤ 0.8 m
+    // here) or the T-join reach (4 summed thicknesses, ≤ 3.2 m). This catches
+    // NaN/infinity and any polygon that exploded far from its own wall.
+    const TOL: f64 = 3.5;
     for seed in 0..2000u64 {
         let (model, _ids) = build_random_model(seed, 50);
         let shapes = solve_joins(&model);
@@ -178,6 +182,23 @@ fn random_wall_rings_stay_in_their_envelope() {
 
         for shape in &shapes {
             assert_in_envelope(&model, shape, TOL);
+        }
+    }
+}
+
+/// 2000 random wall graphs; every wall that has a poché ring of its own (finite, non-zero
+/// length, positive thickness) must come out of the solver: joins may reshape a wall but
+/// never delete it from the plan or the 3D model.
+#[test]
+fn random_wall_graphs_keep_every_valid_wall() {
+    for seed in 0..2000u64 {
+        let (model, _ids) = build_random_model(seed, 50);
+        let shapes = solve_joins(&model);
+        let solved: std::collections::BTreeSet<ArchId> = shapes.iter().map(|s| s.id).collect();
+        for w in &model.walls {
+            if cadcraft_arch::wall::wall_polygon(w).is_some() {
+                assert!(solved.contains(&w.id), "seed {seed}: wall {} {:?}->{:?} vanished from the solve", w.id, w.start, w.end);
+            }
         }
     }
 }

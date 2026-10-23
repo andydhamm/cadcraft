@@ -73,17 +73,22 @@ pub fn offset_line(a: Vec2, b: Vec2, d: f64) -> Option<(Vec2, Vec2)> {
 /// from the outer edge inward. Bands are clamped so their total thickness does not
 /// exceed the wall thickness. Returns an empty vec when the wall is degenerate.
 pub fn wall_layer_polygons(w: &Wall) -> Vec<(String, Vec<Vec2>)> {
-    let Some(poly) = wall_polygon(w) else {
+    if wall_polygon(w).is_none() {
         return Vec::new();
-    };
+    }
     let dir = (w.end - w.start).normalized();
     let perp = dir.perp();
     let half = w.thickness / 2.0;
-    let outer = half;
     let mut out: Vec<(String, Vec<Vec2>)> = Vec::new();
     let mut consumed = 0.0;
     for (name, t) in &w.layers {
-        let t = t.clamp(0.0, w.thickness - consumed);
+        // `min`/`max` rather than `clamp`: rounding can leave `remaining` one ulp below
+        // zero, and `f64::clamp` panics when its bounds cross. Non-finite bands are skipped.
+        let remaining = (w.thickness - consumed).max(0.0);
+        if !t.is_finite() {
+            continue;
+        }
+        let t = t.min(remaining).max(0.0);
         if t < 1e-12 {
             continue;
         }
@@ -161,8 +166,6 @@ mod tests {
             // The band spans from outer edge to inner edge; its thickness is the
             // perpendicular distance between the two long edges.
             let a = pts[0];
-            let b = pts[1];
-            let c = pts[2];
             let d = pts[3];
             // Width of the band = |perp component of (a - d)|.
             let width = (a - d).dot(perp).abs();
@@ -172,6 +175,51 @@ mod tests {
         // Sum of band thicknesses = wall thickness.
         let sum: f64 = w.layers.iter().map(|(_, t)| t).sum();
         assert!((sum - w.thickness).abs() < 1e-9);
+    }
+
+    #[test]
+    fn layer_bands_thicker_than_the_wall_are_clipped_without_panicking() {
+        // The `wall` command's interior build-up (0.013 + 0.09 + 0.013 = 0.116) on a 0.1 m
+        // wall: rounding leaves `thickness - consumed` a hair below zero for the last band,
+        // and `f64::clamp` panics when its upper bound is below its lower bound.
+        for thickness in [0.1, 0.103, 0.0999, 0.3 - 0.2, 1e-4] {
+            let w = Wall {
+                start: Vec2::new(0.0, 0.0),
+                end: Vec2::new(10.0, 0.0),
+                thickness,
+                layers: vec![("drywall".into(), 0.013), ("stud".into(), 0.09), ("drywall".into(), 0.013)],
+                ..Wall::default()
+            };
+            let bands = wall_layer_polygons(&w);
+            let perp = Vec2::new(0.0, 1.0);
+            let total: f64 = bands.iter().map(|(_, p)| (p[0] - p[3]).dot(perp).abs()).sum();
+            assert!(total <= thickness + 1e-12, "bands {total} exceed thickness {thickness}");
+        }
+        // 0.937076180931465 - 0.395546415468281 added back to 0.395546415468281 rounds one
+        // ulp past the thickness, so the band after an over-thick one saw a negative bound.
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.937076180931465,
+            layers: vec![("a".into(), 0.395546415468281), ("b".into(), 5.0), ("c".into(), 0.01)],
+            ..Wall::default()
+        };
+        assert_eq!(wall_layer_polygons(&w).len(), 2);
+    }
+
+    #[test]
+    fn hostile_layer_band_thicknesses_are_skipped() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            layers: vec![("nan".into(), f64::NAN), ("neg".into(), -1.0), ("inf".into(), f64::INFINITY), ("ok".into(), 0.05)],
+            ..Wall::default()
+        };
+        let bands = wall_layer_polygons(&w);
+        let names: Vec<&str> = bands.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, vec!["ok"]);
+        assert!(bands.iter().all(|(_, p)| p.iter().all(|v| v.is_finite())));
     }
 
     #[test]
