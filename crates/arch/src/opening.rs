@@ -383,7 +383,7 @@ mod tests {
         let mut model = ArchModel::default();
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(1.5, 0.0), 0.2);
         // Opening width 2.0 is too wide for a 1.5m wall with min segments
-        let o = Opening::new(host, 0.5, 2.0, 0.1, 2.0, OpeningKind::Door);
+        let o = Opening::new(host, 0.5, 2.0, 2.0, OpeningKind::Door);
         let placed = place_opening(&model, o, true).unwrap();
         // Should be shrunk to fit but still >= min_width
         assert!(placed.width >= min_width(OpeningKind::Door, "hinged"));
@@ -395,7 +395,7 @@ mod tests {
         let mut model = ArchModel::default();
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(3.0, 0.0), 0.2);
         // Place at offset 0 with a width that fits but is too close to the start
-        let o = Opening::new(host, 0.0, 1.0, 0.1, 2.0, OpeningKind::Door);
+        let o = Opening::new(host, 0.0, 1.0, 2.0, OpeningKind::Door);
         let placed = place_opening(&model, o, true).unwrap();
         // Should be slid away from the wall start
         assert!(placed.offset > 0.0);
@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn rough_span_is_centred_on_the_offset() {
-        let o = Opening::new(ArchId(1), 1.0, 1.0, 0.1, 2.0, OpeningKind::Door);
+        let o = Opening::new(ArchId(1), 1.0, 1.0, 2.0, OpeningKind::Door);
         let rough_w = o.width + ROUGH_ALLOWANCE;
         let o_rough = Opening { rough_width: rough_w, ..o };
         let off = rough_offset(&o_rough);
