@@ -417,10 +417,6 @@ mod tests {
     }
 }
 
-use super::{ArchId, ArchModel};
-use cadcraft_doc::arch::{Hinge, Opening, OpeningKind, Swing};
-use cadcraft_geom::Vec2;
-
 /// A world-space 2D plan symbol.
 ///
 /// `polylines` is a list of polylines; each polyline is a list of world-space
