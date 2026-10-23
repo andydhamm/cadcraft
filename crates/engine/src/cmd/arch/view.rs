@@ -22,11 +22,11 @@ pub fn specs() -> Vec<CommandSpec> {
 /// render3d pane which re-renders when the revision changes.
 fn run_view3d(s: &mut Session, _params: &Value) -> Result<Value, EngineError> {
     let doc = s.doc()?;
-    let revision = doc.arch_revision();
+    let revision = doc.arch_revision;
     // Count meshes by building the scene (empty ArchModel yields 0).
     let meshes: usize = {
         let arch = &doc.arch;
-        if arch.walls().is_empty() { 0 } else { cadcraft_arch3d::build(arch).meshes.len() }
+        if arch.walls.is_empty() { 0 } else { cadcraft_arch3d::build(arch).meshes.len() }
     };
     Ok(json!({ "ok": true, "meshes": meshes, "revision": revision }))
 }
@@ -55,8 +55,8 @@ fn run_camera(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
         })
         .unwrap_or((0.0, 0.0, 0.0));
 
-    // Persist the camera on the drawing so the pane picks it up on next build.
-    s.doc()?.set_arch_camera(azimuth, elevation, distance, target);
+    // The pane reads its orbit from `ui-egui`; the command validates and
+    // returns the resulting camera so scripts/CLI can query it.
 
     Ok(json!({
         "ok": true,
