@@ -58,7 +58,7 @@ fn stretch(s: &mut Session, cmd: &str, p: &Value) -> Result<Value> {
                 let d = s.doc()?;
                 let o = d.arch.opening(id).ok_or_else(|| bad(cmd, "no such opening"))?;
                 if d.arch.wall(o.host).is_none() {
-                    return bad(cmd, "no such wall");
+                    return Err(bad(cmd, "no such wall"));
                 }
                 let off = cadcraft_arch::opening::project_to_wall(&d.arch, o.host, to).ok_or_else(|| bad(cmd, "could not project point to wall"))?;
                 s.execute(
