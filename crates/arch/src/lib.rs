@@ -10,6 +10,9 @@
 //!
 //! Model types are re-exported here so callers of `cadcraft-arch` get them from one place.
 
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+#![forbid(unsafe_code)]
+
 pub use cadcraft_doc::{ArchId, ArchModel, JoinKind, Level, RefSide, Wall, WallLayer, WallType};
 
 pub mod graph;
@@ -41,5 +44,12 @@ mod tests {
 
         let zero = crate::wall::wall_bounds(&Wall::default());
         assert_eq!(zero, Bounds2::EMPTY);
+    }
+
+    #[test]
+    fn crate_root_denies_unwrap_and_panic() {
+        let src = include_str!("lib.rs");
+        assert!(src.contains("deny(clippy::unwrap_used"));
+        assert!(src.contains("forbid(unsafe_code)"));
     }
 }

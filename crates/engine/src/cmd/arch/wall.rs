@@ -42,7 +42,7 @@ enum NumTarget {
 }
 
 /// Interactive `WALL` machine: collects points for wall segments with
-/// `Type`/`Thickness`/`Height` keyword support.
+/// `Type`/`Thickness`/`Height`/`Close` keyword support.
 ///
 /// The machine delegates to the JSON `wall` command on finish so there is
 /// exactly one implementation path and one undo step.
@@ -91,7 +91,10 @@ impl Interactive for WallM {
         let (message, keywords) = if self.pts.is_empty() {
             ("Specify start point:".to_string(), Vec::new())
         } else {
-            ("Specify next point or [Type/Thickness/Height]:".to_string(), vec!["Type".to_string(), "Thickness".to_string(), "Height".to_string()])
+            (
+                "Specify next point or [Type/Thickness/Height/Close]:".to_string(),
+                vec!["Type".to_string(), "Thickness".to_string(), "Height".to_string(), "Close".to_string()],
+            )
         };
 
         Prompt {
@@ -151,6 +154,15 @@ impl Interactive for WallM {
                         self.num_target = Some(NumTarget::Height);
                         Ok(Step::Continue)
                     }
+                    "close" => {
+                        self.closed = true;
+                        if self.pts.len() >= 2 {
+                            let params = self.build_params();
+                            s.execute("wall", &params).map(|_| Step::Done)
+                        } else {
+                            Ok(Step::Continue)
+                        }
+                    }
                     _ => Ok(Step::Continue),
                 }
             }
@@ -168,6 +180,7 @@ impl WallM {
         let mut map = serde_json::Map::new();
         map.insert("points".to_string(), json!(points));
         map.insert("exterior".to_string(), json!(self.exterior));
+        map.insert("closed".to_string(), json!(self.closed));
         if let Some(t) = self.thickness {
             map.insert("thickness".to_string(), json!(t));
         }
@@ -556,5 +569,19 @@ mod tests {
         s.input(Input::Point(Vec2::new(4.0, 0.0))).unwrap();
         s.input(Input::Text("".to_string()).into()).unwrap();
         assert_eq!(s.doc().unwrap().arch.walls.len(), 1);
+    }
+
+    #[test]
+    fn wall_machine_close_keyword_adds_the_closing_segment() {
+        let mut s = new_session_with_level();
+        s.start("wall").unwrap();
+        s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
+        s.input(Input::Point(Vec2::new(4.0, 0.0))).unwrap();
+        s.input(Input::Point(Vec2::new(4.0, 3.0))).unwrap();
+        s.input(Input::Text("close".to_string()).into()).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 3);
+        assert_eq!(d.arch.walls[2].start, Vec2::new(4.0, 3.0));
+        assert_eq!(d.arch.walls[2].end, Vec2::new(0.0, 0.0));
     }
 }
