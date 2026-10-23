@@ -45,22 +45,14 @@ pub fn opening_symbol(model: &ArchModel, o: &Opening) -> Option<Symbol> {
 
     let offset = if o.offset.is_finite() { o.offset } else { 0.0 };
     let width = if o.width.is_finite() && o.width > 0.0 { o.width } else { 0.9 };
-    let rough_width = if o.rough_width.is_finite() && o.rough_width > 0.0 {
-        o.rough_width
-    } else {
-        width + 0.12
-    };
+    let rough_width = if o.rough_width.is_finite() && o.rough_width > 0.0 { o.rough_width } else { width + 0.12 };
 
     let rough_start = offset - (rough_width - width) / 2.0;
     let rough_end = rough_start + rough_width;
     let finished_start = offset - width / 2.0;
     let finished_end = finished_start + width;
 
-    if !rough_start.is_finite()
-        || !rough_end.is_finite()
-        || !finished_start.is_finite()
-        || !finished_end.is_finite()
-    {
+    if !rough_start.is_finite() || !rough_end.is_finite() || !finished_start.is_finite() || !finished_end.is_finite() {
         return None;
     }
 
@@ -76,10 +68,7 @@ pub fn opening_symbol(model: &ArchModel, o: &Opening) -> Option<Symbol> {
     match o.kind {
         OpeningKind::Door => {
             let style_lower = o.style.to_ascii_lowercase();
-            let is_sliding =
-                style_lower.contains("slider")
-                    || style_lower.contains("bifold")
-                    || style_lower.contains("pocket");
+            let is_sliding = style_lower.contains("slider") || style_lower.contains("bifold") || style_lower.contains("pocket");
             if is_sliding {
                 if let (Some(a), Some(b)) = (wp(rough_start, -half), wp(rough_start, half)) {
                     polys.push(vec![a, b]);
@@ -132,7 +121,7 @@ pub fn opening_symbol(model: &ArchModel, o: &Opening) -> Option<Symbol> {
                     (Hinge::Right, Swing::In) => (PI, -PI / 2.0),
                     (Hinge::Right, Swing::Out) => (PI, PI / 2.0),
                 };
-                let mut arc: Vec<Vec2>> = Vec::with_capacity(17);
+                let mut arc: Vec<Vec2> = Vec::with_capacity(17);
                 for i in 0..=16usize {
                     let t = i as f64 / 16.0;
                     let ang = start_ang + t * sweep;
@@ -169,8 +158,7 @@ pub fn opening_symbol(model: &ArchModel, o: &Opening) -> Option<Symbol> {
                 return None;
             }
             let style_lower = o.style.to_ascii_lowercase();
-            let is_slider =
-                style_lower.contains("slider") || style_lower.contains("casement");
+            let is_slider = style_lower.contains("slider") || style_lower.contains("casement");
             if is_slider {
                 let mid = finished_start + width / 2.0;
                 if let (Some(a), Some(b)) = (wp(finished_start, 0.0), wp(mid, 0.0)) {
@@ -232,10 +220,7 @@ pub fn opening_symbol(model: &ArchModel, o: &Opening) -> Option<Symbol> {
         }
     }
 
-    Some(Symbol {
-        polylines: polys,
-        layer: o.layer.clone(),
-    })
+    Some(Symbol { polylines: polys, layer: o.layer.clone() })
 }
 
 /// Merged, sorted rough (cut) spans of every opening on `host`.
@@ -282,21 +267,14 @@ pub fn poché_gaps(model: &ArchModel, host: ArchId) -> Vec<(f64, f64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadcraft_geom::Vec2;
     use crate::{ArchModel, Wall};
+    use cadcraft_geom::Vec2;
 
     fn test_wall(model: &mut ArchModel, start: Vec2, end: Vec2, thickness: f64) -> ArchId {
         model.push_wall(Wall { start, end, thickness, ..Wall::default() })
     }
 
-    fn opening_on(
-        model: &mut ArchModel,
-        host: ArchId,
-        offset: f64,
-        width: f64,
-        kind: OpeningKind,
-        style: &str,
-    ) -> usize {
+    fn opening_on(model: &mut ArchModel, host: ArchId, offset: f64, width: f64, kind: OpeningKind, style: &str) -> usize {
         let mut o = Opening::new(host, offset, width, 2.0, kind);
         o.style = style.to_string();
         let idx = model.openings.len();
@@ -328,10 +306,7 @@ mod tests {
         let arc = &s.polylines[3];
         for pt in arc {
             let d = hinge.dist(*pt);
-            assert!(
-                (d - o.width).abs() < 0.02,
-                "arc radius {} != expected ~{} (width)", d, o.width
-            );
+            assert!((d - o.width).abs() < 0.02, "arc radius {} != expected ~{} (width)", d, o.width);
         }
     }
 
@@ -361,11 +336,7 @@ mod tests {
 
         let arc1_end = s1.polylines[3].last().unwrap();
         let arc2_end = s2.polylines[3].last().unwrap();
-        assert!(
-            (arc1_end.y - arc2_end.y).abs() > 0.4,
-            "swing flip not reflected: arc-end y diff = {:.6}",
-            (arc1_end.y - arc2_end.y).abs()
-        );
+        assert!((arc1_end.y - arc2_end.y).abs() > 0.4, "swing flip not reflected: arc-end y diff = {:.6}", (arc1_end.y - arc2_end.y).abs());
     }
 
     #[test]
