@@ -8,7 +8,7 @@
 use std::time::Instant;
 
 use cadcraft_doc::geom::Vec2;
-use cadcraft_doc::{ArchId, ArchModel, Wall};
+use cadcraft_doc::{ArchId, ArchModel, Opening, Wall};
 
 /// Build a deterministic 300-wall grid: 20 rows × 15 columns of small rooms.
 fn build_300_wall_grid() -> ArchModel {
@@ -114,4 +114,114 @@ fn three_hundred_walls_rebuild_under_50ms() {
     println!("build_dirty (1 wall):  {:.1} ms", dirty_ms);
 
     assert!(dirty_ms < 5.0, "build_dirty took {dirty_ms:.1} ms (budget 5 ms)");
+}
+
+/// 300 walls + 150 openings: full build < 50 ms; one-opening dirty rebuild < 5 ms
+/// and identical to a full build of the edited model.
+#[test]
+fn three_hundred_walls_150_openings_rebuild() {
+    if cfg!(debug) {
+        println!("three_hundred_walls_150_openings_rebuild: skipped in debug");
+        return;
+    }
+
+    // Build 300 walls
+    let mut model = build_300_wall_grid();
+    assert_eq!(model.walls.len(), 300);
+
+    // Add 150 openings, one per each of the first 150 walls
+    for i in 0..150 {
+        let mut open = Opening::default();
+        open.id = ArchId(1000 + i);
+        open.wall = ArchId(i);
+        open.offset = 0.5;
+        open.width = 0.5;
+        open.height = 1.5;
+        model.openings.push(open);
+    }
+    assert_eq!(model.openings.len(), 150);
+
+    // Full build
+    let t0 = Instant::now();
+    let scene = cadcraft_arch3d::build(&model);
+    let ms = t0.elapsed().as_millis() as f64 / 1_000.0;
+    println!("full build (300 walls, 150 openings): {:.1} ms, meshes: {}, openings: {}", ms, scene.meshes.len(), scene.openings_built);
+    assert!(ms < 50.0, "full build took {ms:.1} ms (budget 50 ms)");
+    assert!(scene.meshes.len() >= 300, "expected >=300 meshes, got {}", scene.meshes.len());
+    assert!(scene.openings_built >= 150, "expected >=150 openings, got {}", scene.openings_built);
+
+    // Edit opening #0
+    let open_id = model.openings[0].id;
+    let mut edited = model.clone();
+    edited.openings[0].width = 1.0;
+
+    let mut dirty: std::collections::BTreeSet<ArchId> = std::collections::BTreeSet::new();
+    dirty.insert(open_id);
+
+    let t1 = Instant::now();
+    let partial = cadcraft_arch3d::build_dirty(&edited, &dirty, &scene);
+    let dirty_ms = t1.elapsed().as_millis() as f64 / 1_000.0;
+    println!("build_dirty (1 opening): {:.1} ms", dirty_ms);
+    assert!(dirty_ms < 5.0, "build_dirty took {dirty_ms:.1} ms (budget 5 ms)");
+
+    // Compare with full build of the edited model
+    let full_edited = cadcraft_arch3d::build(&edited);
+    assert_eq!(partial.meshes.len(), full_edited.meshes.len());
+    assert_eq!(partial.openings_built, full_edited.openings_built);
+    assert_eq!(partial.bounds, full_edited.bounds);
+}
+
+/// 300 walls + 150 openings: full build < 50 ms; one-opening dirty rebuild < 5 ms
+/// and identical to a full build of the edited model.
+#[test]
+fn three_hundred_walls_150_openings_rebuild() {
+    if cfg!(debug) {
+        println!("three_hundred_walls_150_openings_rebuild: skipped in debug");
+        return;
+    }
+
+    // Build 300 walls
+    let mut model = build_300_wall_grid();
+    assert_eq!(model.walls.len(), 300);
+
+    // Add 150 openings, one per each of the first 150 walls
+    for i in 0..150 {
+        let mut open = Opening::default();
+        open.id = ArchId(1000 + i);
+        open.wall = ArchId(i);
+        open.offset = 0.5;
+        open.width = 0.5;
+        open.height = 1.5;
+        model.openings.push(open);
+    }
+    assert_eq!(model.openings.len(), 150);
+
+    // Full build
+    let t0 = Instant::now();
+    let scene = cadcraft_arch3d::build(&model);
+    let ms = t0.elapsed().as_millis() as f64 / 1_000.0;
+    println!("full build (300 walls, 150 openings): {:.1} ms, meshes: {}, openings: {}", ms, scene.meshes.len(), scene.openings_built);
+    assert!(ms < 50.0, "full build took {ms:.1} ms (budget 50 ms)");
+    assert!(scene.meshes.len() >= 300, "expected >=300 meshes, got {}", scene.meshes.len());
+    assert!(scene.openings_built >= 150, "expected >=150 openings, got {}", scene.openings_built);
+
+    // Edit opening #0
+    let open_id = model.openings[0].id;
+    let mut edited = model.clone();
+    edited.openings[0].width = 1.0;
+
+    let mut dirty: std::collections::BTreeSet<ArchId> = std::collections::BTreeSet::new();
+    dirty.insert(open_id);
+
+    let t1 = Instant::now();
+    let partial = cadcraft_arch3d::build_dirty(&edited, &dirty, &scene);
+    let dirty_ms = t1.elapsed().as_millis() as f64 / 1_000.0;
+    println!("build_dirty (1 opening): {:.1} ms", dirty_ms);
+    assert!(dirty_ms < 5.0, "build_dirty took {dirty_ms:.1} ms (budget 5 ms)");
+
+    // Compare with full build of the edited model
+    let full_edited = cadcraft_arch3d::build(&edited);
+    assert_eq!(partial.meshes.len(), full_edited.meshes.len());
+    assert_eq!(partial.openings_built, full_edited.openings_built);
+    assert_eq!(partial.bounds, full_edited.bounds);
 }
