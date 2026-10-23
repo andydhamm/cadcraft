@@ -153,11 +153,12 @@ fn build_dirty_after_an_opening_move_equals_build() {
 fn golden_scene_bounds_match_envelope() {
     let scene = golden_scene();
     let b = scene.bounds;
-    // 10 × 8 m house with 0.2 m walls: x extends to ~10.2, y to ~8.1, z to 2.7.
-    assert!((b.max[0] - 10.2).abs() < 1e-4, "x max {} != 10.2", b.max[0]);
+    // 10 × 8 m house (centre lines at 0/10, 0/8) with 0.2 m walls, 2.4 m tall:
+    // outer faces at x = -0.1/10.1, y = -0.1/8.1, z = 0/2.4.
+    assert!((b.max[0] - 10.1).abs() < 1e-4, "x max {} != 10.1", b.max[0]);
     assert!((b.max[1] - 8.1).abs() < 1e-4, "y max {} != 8.1", b.max[1]);
-    assert!((b.max[2] - 2.7).abs() < 1e-4, "z max {} != 2.7", b.max[2]);
+    assert!((b.max[2] - 2.4).abs() < 1e-4, "z max {} != 2.4", b.max[2]);
     assert!((b.min[0] + 0.1).abs() < 1e-4, "x min {} != -0.1", b.min[0]);
-    assert!((b.min[1] + 0.2).abs() < 1e-4, "y min {} != -0.2", b.min[1]);
+    assert!((b.min[1] + 0.1).abs() < 1e-4, "y min {} != -0.1", b.min[1]);
     assert!((b.min[2] + 0.0).abs() < 1e-4, "z min {} != 0.0", b.min[2]);
 }
