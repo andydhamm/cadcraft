@@ -355,7 +355,7 @@ fn render(args: &[String]) -> Result<(), String> {
                 } else if out.is_none() {
                     out = Some(args[i].clone());
                 } else {
-                    return Err("render: expected `FILE OUT.png`").into();
+                    return Err("render: expected `FILE OUT.png`".to_string());
                 }
             }
         }
@@ -363,7 +363,7 @@ fn render(args: &[String]) -> Result<(), String> {
     }
     let (file, out) = match (file, out) {
         (Some(f), Some(o)) => (f, o),
-        _ => return Err("render: expected `FILE OUT.png`").into(),
+        _ => return Err("render: expected `FILE OUT.png`".to_string()),
     };
 
     let mut s = Session::empty();

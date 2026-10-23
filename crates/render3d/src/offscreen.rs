@@ -45,7 +45,7 @@ impl Offscreen {
     }
 
     /// Render a scene with the given camera.
-    pub fn render(&self, scene: &Scene3d, camera: &Camera, size: (u32, u32)) {
+    pub fn render(&self, scene: &cadcraft_arch3d::Scene3d, camera: &Camera, size: (u32, u32)) {
         // Rendering logic would go here
         let _ = (scene, camera, size);
     }
@@ -96,7 +96,7 @@ impl Offscreen {
 }
 
 /// Render a scene headlessly and return a PNG. Returns `Render3dError::NoAdapter` if no GPU is available.
-pub async fn headless_png(scene: &Scene3d, camera: &Camera, size: (u32, u32)) -> Result<Vec<u8>, Render3dError> {
+pub async fn headless_png(scene: &cadcraft_arch3d::Scene3d, camera: &Camera, size: (u32, u32)) -> Result<Vec<u8>, Render3dError> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let offscreen = Offscreen::new(&instance, size).await?;
     offscreen.render(scene, camera, size);
@@ -112,7 +112,7 @@ mod tests {
         // This test verifies that headless_png returns NoAdapter instead of panicking
         // when no GPU is available. We can't easily test this without a real GPU,
         // but we can verify the function signature and error type exist.
-        let scene = Scene3d::default();
+        let scene = cadcraft_arch3d::Scene3d { meshes: Vec::new(), bounds: cadcraft_arch3d::Bounds3::empty(), revision: 0 };
         let camera = Camera::Orbit(crate::camera::Orbit::at_origin(30.0, 30.0, 10.0, 45.0));
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio runtime");
         let result = rt.block_on(headless_png(&scene, &camera, (64, 64)));

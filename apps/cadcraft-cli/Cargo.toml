@@ -17,3 +17,5 @@ cadcraft-render = { workspace = true }
 cadcraft-arch3d = { workspace = true }
 cadcraft-render3d = { workspace = true }
 serde_json = { workspace = true }
+
+tokio = { version = "1", features = ["full"] }
