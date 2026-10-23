@@ -29,12 +29,13 @@ use cadcraft_geom::Vec2;
 fn golden_model() -> ArchModel {
     let mut model = ArchModel::default();
 
-    // Walls: 10 × 8 m rectangle + one interior wall at x = 5.
-    let south = model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
-    let east = model.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
-    let north = model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(10.0, 8.0), 0.2));
-    let west = model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2));
-    let _interior = model.push_wall(Wall::new(Vec2::new(5.0, 0.0), Vec2::new(5.0, 8.0), 0.2));
+    // Walls: 10 × 8 m rectangle + one interior wall at x = 5, 2.4 m high
+    // (Level 1 floor-to-floor) so the scene envelope is 10.2 × 8.2 × 2.4.
+    let south = model.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.4, ..Default::default() });
+    let east = model.push_wall(Wall { start: Vec2::new(10.0, 0.0), end: Vec2::new(10.0, 8.0), thickness: 0.2, height: 2.4, ..Default::default() });
+    let north = model.push_wall(Wall { start: Vec2::new(0.0, 8.0), end: Vec2::new(10.0, 8.0), thickness: 0.2, height: 2.4, ..Default::default() });
+    let west = model.push_wall(Wall { start: Vec2::new(0.0, 8.0), end: Vec2::new(0.0, 0.0), thickness: 0.2, height: 2.4, ..Default::default() });
+    let _interior = model.push_wall(Wall { start: Vec2::new(5.0, 0.0), end: Vec2::new(5.0, 8.0), thickness: 0.2, height: 2.4, ..Default::default() });
 
     // Openings: hinged door (south), sliding door (east), two windows (north).
     model.push_opening(Opening::new(south, 2.0, 0.9, 2.1, OpeningKind::Door));
