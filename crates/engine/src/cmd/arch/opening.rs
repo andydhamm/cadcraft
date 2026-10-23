@@ -9,7 +9,9 @@
 
 use serde_json::Value;
 use serde_json::json;
+use std::str::FromStr;
 
+use crate::EngineError;
 use crate::Session;
 use crate::cmd::CommandSpec;
 
@@ -21,7 +23,7 @@ use cadcraft_doc::arch::{Hinge, MAX_OPENINGS, Opening, OpeningKind, Swing, arch_
 const DOOR_STYLES: [&str; 4] = ["hinged", "sliding", "pocket", "bifold"];
 
 /// Allowed window styles.
-const WINDOW_STYLES: [&str; 11] = ["single-hung", "double-hung", "slider", "casement", "picture", "bay", "box", "bow", "awning", "fixed"];
+const WINDOW_STYLES: [&str; 10] = ["single-hung", "double-hung", "slider", "casement", "picture", "bay", "box", "bow", "awning", "fixed"];
 
 /// Allowed garage-door styles.
 const GARAGE_STYLES: [&str; 2] = ["one-piece", "sectional"];
@@ -40,11 +42,12 @@ fn parse_arch_id(s: &str) -> Result<ArchId, String> {
     if digits.is_empty() {
         return Err(format!("empty id `{s}`"));
     }
-    ArchId::from_str(digits).map_err(|e| e)
+    let n: ArchId = digits.parse().map_err(|_| format!("invalid id `{s}`"))?;
+    Ok(n)
 }
 
 /// Place an opening on a wall from JSON parameters and return a summary.
-fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &Value) -> Result<Value> {
+fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     let d = s.doc_mut()?;
 
     // 1. Host wall.
@@ -56,7 +59,7 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
 
     // 2. Offset: explicit number or projection of a point.
     let offset: f64 = if let Some(off) = p.get("offset").and_then(Value::as_f64) {
-        *off
+        off
     } else if let Some(pt) = crate::cmd::point_param(p, "point") {
         project_to_wall(&d.arch, host, pt).ok_or_else(|| crate::cmd::bad(cmd, "point does not project onto the wall"))?
     } else {
@@ -128,7 +131,6 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
     let mut o = Opening::new(host, offset, width, height, kind);
     o.style = style;
     o.sill_depth = sill;
-    o.recess_depth = recess;
     o.casing_width = casing;
     o.hinge = hinge;
     o.swing = swing;
@@ -154,15 +156,15 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
     }))
 }
 
-fn run_door(s: &mut Session, p: &Value) -> Result<Value> {
+fn run_door(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     place_from_params("door", OpeningKind::Door, s, p)
 }
 
-fn run_window(s: &mut Session, p: &Value) -> Result<Value> {
+fn run_window(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     place_from_params("window", OpeningKind::Window, s, p)
 }
 
-fn run_garagedoor(s: &mut Session, p: &Value) -> Result<Value> {
+fn run_garagedoor(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     place_from_params("garagedoor", OpeningKind::GarageDoor, s, p)
 }
 
