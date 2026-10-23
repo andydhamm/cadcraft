@@ -122,7 +122,7 @@ pub(crate) fn is_arch_proxy(tags: &[Tag]) -> bool {
 mod tests {
     use super::*;
     use crate::{read_dxf, write_dxf};
-    use cadcraft_doc::{ArchModel, Drawing, Wall};
+    use cadcraft_doc::{ArchModel, Drawing, EntityKind, Wall};
     use cadcraft_geom::Vec2;
 
     /// A model with exactly one wall.
@@ -206,7 +206,7 @@ mod tests {
         let mut count = 0;
         for e in back.model.iter() {
             if let EntityKind::LwPolyline(_) = &e.kind {
-                count += e.common.xdata.iter().filter(|t| t.code == 1000 && t.str().trim() == ARCH_PROXY_MARKER).count();
+                count += e.common.xdata.iter().filter(|t| t.code == 1000 && t.value.trim() == ARCH_PROXY_MARKER).count();
             }
         }
         assert_eq!(count, 0, "model LWPOLYLINE carries ARCHWALL xdata");
