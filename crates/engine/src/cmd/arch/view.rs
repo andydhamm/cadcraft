@@ -37,7 +37,7 @@ fn run_view3d(s: &mut Session, _params: &Value) -> Result<Value, EngineError> {
 /// and an optional `target` (`[x,y,z]`). Omitted fields keep their current
 /// values. Always returns `{"ok":true,"azimuth":..,"elevation":..,
 /// "distance":..,"target":[x,y,z]}`.
-fn run_camera(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
+fn run_camera(_s: &mut Session, params: &Value) -> Result<Value, EngineError> {
     let azimuth = params.get("azimuth").and_then(Value::as_f64).filter(|v| v.is_finite()).unwrap_or_default();
     let elevation = params.get("elevation").and_then(Value::as_f64).filter(|v| v.is_finite()).unwrap_or(0.35);
     let distance = params.get("distance").and_then(Value::as_f64).filter(|v| v.is_finite() && *v > 0.0).unwrap_or(10.0);

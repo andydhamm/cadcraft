@@ -5,6 +5,9 @@
 //! once and extrudes every wall; `build_dirty` reuses unchanged meshes and
 //! only re-extrudes walls whose id is in the `dirty` set.
 
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+#![forbid(unsafe_code)]
+
 pub mod mesh;
 pub mod walls;
 
@@ -186,5 +189,12 @@ mod tests {
         }
         // Wall 2 (dirty) must also be present.
         assert!(partial.mesh_for(&ArchId(2)).is_some(), "wall 2 mesh missing from partial");
+    }
+
+    #[test]
+    fn crate_root_denies_unwrap_and_panic() {
+        let src = include_str!("lib.rs");
+        assert!(src.contains("deny(clippy::unwrap_used"));
+        assert!(src.contains("forbid(unsafe_code)"));
     }
 }
