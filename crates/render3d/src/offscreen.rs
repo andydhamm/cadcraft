@@ -52,9 +52,21 @@ impl Offscreen {
 
     /// Read the rendered color attachment back as a PNG.
     pub async fn read_png(&self) -> Result<Vec<u8>, Render3dError> {
+        let row_bytes = self.width as u64 * 4;
+        // `COPY_BYTES_PER_ROW_ALIGNMENT` is a power of two (>= 4). Round `bytes_per_row` up
+        // to the next aligned value so the readback copy always respects the alignment
+        // check (raw `width*4` is already 4-aligned; larger powers may still be required).
+        let mut align: u64 = 4;
+        while row_bytes % align != 0 && align < row_bytes {
+            align *= 2;
+        }
+        // Align to at least `row_bytes` (so we never read past the valid pixels) and round
+        // up to the next aligned multiple.
+        let bytes_per_row = ((row_bytes + align - 1) / align) * align;
+        let buffer_size = bytes_per_row * self.height as u64;
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("offscreen readback"),
-            size: (self.width as u64) * (self.height as u64) * 4,
+            size: buffer_size,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -65,7 +77,11 @@ impl Offscreen {
             wgpu::TexelCopyTextureInfo { texture: &self.texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::TexelCopyBufferInfo {
                 buffer: &buffer,
-                layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(self.width * 4), rows_per_image: Some(self.height) },
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some((bytes_per_row as u32).try_into().unwrap()),
+                    rows_per_image: Some(self.height),
+                },
             },
             wgpu::Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
         );
@@ -81,9 +97,14 @@ impl Offscreen {
         self.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(std::time::Duration::from_secs(5)) });
         rx.await.map_err(|e| Render3dError::Wgpu(format!("channel error: {e}")))?.map_err(|e| Render3dError::Wgpu(e.to_string()))?;
 
-        let data = slice.get_mapped_range();
-        let img = image::RgbaImage::from_raw(self.width, self.height, data.to_vec())
-            .ok_or_else(|| Render3dError::Buffer("invalid image data".to_string()))?;
+        let full = slice.get_mapped_range().to_vec();
+        // Each row is `bytes_per_row` bytes; the first `row_bytes` are the valid pixels.
+        // Re-pack into a tight contiguous RGBA buffer (dropping per-row padding).
+        let row = self.width as u64 * 4;
+        let pixels: Vec<u8> =
+            (0..self.height as u64).flat_map(|r| &full[(r * bytes_per_row) as usize..(r * bytes_per_row) as usize + row as usize]).collect();
+        let img =
+            image::RgbaImage::from_raw(self.width, self.height, pixels).ok_or_else(|| Render3dError::Buffer("invalid image data".to_string()))?;
 
         let mut png_data = Vec::new();
         let mut encoder = image::codecs::png::PngEncoder::new(&mut png_data);
