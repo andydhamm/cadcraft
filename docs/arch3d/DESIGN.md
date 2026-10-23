@@ -290,3 +290,21 @@ symbols in `render::arch`, and 3D cutouts by 2D boolean on the wall elevation pl
 leaf/casing meshes in `arch3d`. Commands `door`, `window`, `garagedoor` (click a wall to place, grips
 slide along it), arch-aware snapping to wall faces and ends, and the `uk.tsv` rows for every new
 label and menu path in the same segment.
+
+## Phase 2 plan
+
+Phase 2 — openings (ARCH-7 closed for doors/windows/garage doors).
+
+Model. `Opening` joins `Wall` in `doc::ArchModel.openings`, sharing the `next_id` counter, so openings undo, autosave, audit and round-trip with the drawing. Rough vs finished dimensions are separate fields (Chief's rule: the 3D cut uses rough, the 2D symbol and the 3D frame use finished); `recess` offsets the unit into the wall build-up; `mull_group` reserves the mulled-unit grouping for later. `MAX_OPENINGS = 8192` bounds every loop.
+
+Placement. `arch::opening` encodes Chief's placement rules as data: min widths (hinged/pocket/sliding 0.3 m, garage 1.8 m), min wall segment (0.15 m standard, 0.725 m bay/box/bow), min separation 0.05 m, auto-panel to double leaves at ≥1.2 m hinged / >0.9 m bifold, auto-resize when `fit:true`. All limits are constants in `arch`, not the commands, so the CLI, MCP and the future detection code share them.
+
+One source of truth holds. The plan symbol is generated (`arch::symbol`) into the display list, and the wall poché is cut by even-odd holes at draw time — no duplicate linework. DXF save writes proxy polylines on `A-DOOR`/`A-GLAZ` with `CADCRAFT` XDATA, dropped on read while the `CADCRAFT_ARCH` XRECORD (now version 2, accepting 1) is present.
+
+3D. No CSG. `arch3d::mesh::push_prism_with_holes` triangulates the wall *elevation* (region minus opening rectangles) and extrudes it — the phase-1 decision 3, now exercised. Components (frame, casing, glass, leaf, sill, header) are separate meshes with `object: ArchId` for picking and material names that become GLB node names (`glass-o2`), with glass as a `BLEND` material. `Scene3d.openings_built` makes the cut count observable from `build3d`.
+
+Interaction. `door`/`window`/`garagedoor`/`arch.opening.move` are ordinary `CommandSpec`s — MCP-reachable through `execute` with no new tool. Grips on an opening handle run `arch.opening.move`, so dragging is undoable and scriptable; offsets are measured from the wall start, so stretching the host wall keeps the opening in place. Snapping to wall faces/ends and opening edges (carried over from phase 1) is now implemented in `snap::arch`.
+
+Verification. 9 acceptance scripts: demo plan with 6 openings, limits/auto-resize, GLB component names and blending glass, drag-along-wall in both views, generated symbols + SVG growth, DXF round-trip idempotence, hostile params, layers/wasm/i18n, and the 300-wall + 150-opening rebuild under 50 ms.
+
+Remaining gaps for this area: bay/box/bow geometry beyond the plan symbol, mulled units sharing one casing/label, per-face interior/exterior jamb and casing profiles, hardware (hinge counts), display states (`percent_open` driving 3D animation), window level stacking / Select-Next-Object, opening schedules, pocket-door pockets cut in the wall, and openings on arc walls.
