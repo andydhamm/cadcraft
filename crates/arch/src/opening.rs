@@ -405,10 +405,7 @@ mod tests {
     fn rough_span_is_centred_on_the_offset() {
         let o = Opening::new(ArchId(1), 1.0, 1.0, 0.1, 2.0, OpeningKind::Door);
         let rough_w = o.width + ROUGH_ALLOWANCE;
-        let o_rough = Opening {
-            ..o,
-            rough_width: rough_w,
-        };
+        let o_rough = Opening { rough_width: rough_w, ..o };
         let off = rough_offset(&o_rough);
         // Rough span [off, off + rough_w] should be centred on offset 1.0
         let centre = (off + off + rough_w) / 2.0;
