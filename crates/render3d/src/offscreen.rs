@@ -23,7 +23,7 @@ impl Offscreen {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, ..Default::default() })
             .await
-            .map_err(|e| Render3dError::Wgpu(e.to_string()))?;
+            .map_err(|_| Render3dError::NoAdapter)?;
 
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor::default()).await.map_err(|e| Render3dError::Wgpu(e.to_string()))?;
 

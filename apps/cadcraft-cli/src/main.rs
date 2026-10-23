@@ -57,8 +57,9 @@ fn stdout_failed(e: std::io::Error) {
 
 const USAGE: &str = "usage:
   cadcraft-cli info FILE.dxf
-  cadcraft-cli convert IN.dxf OUT.(dxf|dwg|svg|png|pdf) [FRAMING]
-  cadcraft-cli run [FILE | --sample | --metric] [--script TEXT] [--script-file F.scr] [--cmd 'id {json}']... [--save OUT.dxf] [--export OUT.(png|svg|pdf)] [FRAMING]
+  cadcraft-cli convert IN.dxf OUT.(dxf|dwg|svg|png|pdf|glb) [FRAMING]
+  cadcraft-cli run [FILE | --sample | --metric] [--script TEXT] [--script-file F.scr] [--cmd 'id {json}']... [--save OUT.dxf] [--export OUT.(png|svg|pdf|glb)] [FRAMING]
+  cadcraft-cli render FILE OUT.png [--camera SPEC] [--size WxH]
   cadcraft-cli commands [FILTER]
   cadcraft-cli mcp [--connect HOST:PORT [--lazy] [--launch]]
   cadcraft-cli perf [N | FILE]
@@ -73,7 +74,11 @@ image framing (png 2400x1600, svg, pdf; always model space):
                            scaled to fit the image without distortion.
   --view extents           always fit the drawing extents.
   --view current           the current view (as last set by zoom/pan/view.set; a freshly
-                           opened drawing's view is its extents plus a 10% margin).";
+                           opened drawing's view is its extents plus a 10% margin).
+
+  --camera SPEC            (render) 3D camera, defaults from Orbit::fit the arch scene:
+                           'orbit[,azimuth=A][,elevation=E][,distance=D][,fov=F]'
+  --size WxH               (render) PNG pixels (default 2400x1600).";
 
 /// What part of model space an image export shows.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -210,6 +215,9 @@ fn validate_options(command: &str, args: &[String], specs: &[OptionSpec]) -> Res
 
 const NO_OPTIONS: &[OptionSpec] = &[];
 
+/// Option specs for `render`.
+const RENDER_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--camera", takes_value: true }, OptionSpec { name: "--size", takes_value: true }];
+
 fn info(path: &str) -> Result<(), String> {
     let mut s = Session::empty();
     open(&mut s, path)?;
@@ -249,13 +257,18 @@ fn sample(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Reject an explicit framing option without an image output to apply it to.
+/// Whether `name` is a frameable output (2D image or 3D GLB).
+fn is_frameable_output(name: &str) -> bool {
+    cadcraft_io::is_image(name) || std::path::Path::new(name).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()) == Some("glb".to_string())
+}
+
+/// Reject an explicit framing option without a frameable output to apply it to.
 fn check_framed_output(framing: Framing, out: Option<&str>) -> Result<(), String> {
     match out {
         _ if framing == Framing::Auto => Ok(()),
-        Some(o) if !cadcraft_io::is_image(o) => Err(format!("--window/--view only apply to image output (png, svg, pdf), not `{o}`")),
+        Some(o) if !is_frameable_output(o) => Err(format!("--window/--view only apply to image output (png, svg, pdf) or glb, not `{o}`")),
         Some(_) => Ok(()),
-        None => Err("--window/--view need an image output (--export OUT.png|svg|pdf)".into()),
+        None => Err("--window/--view need a frameable output (--export OUT.png|svg|pdf|glb)".into()),
     }
 }
 
