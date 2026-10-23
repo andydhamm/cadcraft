@@ -27,6 +27,9 @@ pub(crate) const ARCH_PROXY_MARKER: &str = "ARCHWALL";
 /// drops it (the opening's model data is the one source of truth).
 pub(crate) const ARCH_OPENING_MARKER: &str = "ARCHOPENING";
 
+/// Layer of the save-time opening proxy polylines.
+pub(crate) const ARCH_OPENING_LAYER: &str = "A-DOOR";
+
 /// Rejects payloads larger than this before they are even parsed.
 const MAX_ARCH_PAYLOAD: usize = 8 << 20;
 
@@ -76,7 +79,7 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     } else {
         p.model
     };
-    if model.openings.len() > cadcraft_doc::MAX_OPENINGS {
+    if model.openings.len() > cadcraft_arch::MAX_OPENINGS {
         return None;
     }
     Some(model)
@@ -114,7 +117,7 @@ fn wall_ring(w: &cadcraft_doc::Wall) -> Option<Vec<Vec2>> {
 /// The rough span is centred on `o.offset` (measured from the wall start in metres) and uses
 /// `o.rough_width`, mirroring `arch::symbol::opening_symbol`'s rough geometry. Returns `None`
 /// for a degenerate wall (as [`wall_ring`] does) or when any input is non-finite.
-fn opening_ring(w: &cadcraft_doc::Wall, o: &cadcraft_doc::Opening) -> Option<Vec<Vec2>> {
+fn opening_ring(w: &cadcraft_doc::Wall, o: &cadcraft_arch::Opening) -> Option<Vec<Vec2>> {
     if !w.start.is_finite() || !w.end.is_finite() {
         return None;
     }
@@ -179,10 +182,39 @@ pub(crate) fn proxy_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
         .collect()
 }
 
-/// True when the entity's `CADCRAFT` xdata carries the [`ARCH_PROXY_MARKER`] marker, i.e. the
-/// record is a save-time proxy polyline to be dropped on read.
-pub(crate) fn is_arch_proxy(tags: &[Tag]) -> bool {
-    crate::dxf_ext::xdata(tags, crate::dxf_ext::APP).iter().any(|t| t.code == 1000 && t.str().trim() == ARCH_PROXY_MARKER)
+/// The DXF groups of one closed LWPOLYLINE per opening proxy ring, on layer
+/// [`ARCH_OPENING_LAYER`], each tagged with the [`ARCH_OPENING_MARKER`] xdata and the
+/// opening's id. Returns `Vec::new()` when there are no openings; the output is capped at
+/// [`cadcraft_arch::MAX_OPENINGS`] polylines.
+pub(crate) fn proxy_opening_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
+    m.openings
+        .iter()
+        .take(cadcraft_arch::MAX_OPENINGS)
+        .filter_map(|o| {
+            let w = m.walls.iter().find(|w| w.id == o.wall_id)?;
+            let mut corners = cadcraft_arch::symbol::opening_symbol(w, o).first().cloned();
+            if corners.as_ref().map_or(true, |c| c.is_empty()) {
+                corners = opening_ring(w, o);
+            }
+            let Some(corners) = corners else {
+                return None;
+            };
+            if corners.is_empty() {
+                return None;
+            }
+            let mut t = Vec::new();
+            t.push(Tag::i(90, 4));
+            t.push(Tag::i(70, 1));
+            for c in &corners {
+                t.push(Tag::f(10, c.x));
+                t.push(Tag::f(20, c.y));
+            }
+            t.push(Tag::s(1001, crate::dxf_ext::APP));
+            t.push(Tag::s(1000, ARCH_OPENING_MARKER));
+            t.push(Tag::s(1000, &o.id.to_string()));
+            Some(t)
+        })
+        .collect()
 }
 
 #[cfg(test)]
