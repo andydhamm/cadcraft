@@ -362,8 +362,10 @@ mod tests {
         let mut o = door_opening();
         o.style = "sliding".to_string();
         let meshes = opening_meshes(&walls_map(&model), &o);
-        let leaf_count = meshes.iter().filter(|m| m.material == "door-leaf").count();
-        assert_eq!(leaf_count, 2, "expected 2 leaves, got {}", leaf_count);
+        let leaf_meshes: Vec<&Mesh> = meshes.iter().filter(|m| m.material == "door-leaf").collect();
+        assert_eq!(leaf_meshes.len(), 1, "expected 1 merged leaf mesh, got {}", leaf_meshes.len());
+        // Each leaf prism (4-vertex ring extrusion) has 12 triangles; two leaves = 24.
+        assert_eq!(leaf_meshes[0].triangle_count(), 24, "expected 24 triangles (2 leaves), got {}", leaf_meshes[0].triangle_count(),);
     }
 
     #[test]
@@ -372,8 +374,10 @@ mod tests {
         let mut o = door_opening();
         o.style = "french".to_string();
         let meshes = opening_meshes(&walls_map(&model), &o);
-        let leaf_count = meshes.iter().filter(|m| m.material == "door-leaf").count();
-        assert_eq!(leaf_count, 2, "expected 2 leaves, got {}", leaf_count);
+        let leaf_meshes: Vec<&Mesh> = meshes.iter().filter(|m| m.material == "door-leaf").collect();
+        assert_eq!(leaf_meshes.len(), 1, "expected 1 merged leaf mesh, got {}", leaf_meshes.len());
+        // Each leaf prism (4-vertex ring extrusion) has 12 triangles; two leaves = 24.
+        assert_eq!(leaf_meshes[0].triangle_count(), 24, "expected 24 triangles (2 leaves), got {}", leaf_meshes[0].triangle_count(),);
     }
 
     #[test]
