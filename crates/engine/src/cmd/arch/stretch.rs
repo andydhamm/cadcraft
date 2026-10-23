@@ -30,7 +30,7 @@ fn run_stretch(s: &mut Session, p: &Value) -> Result<Value> {
 
     let arch_id = parse_arch_id(wall_str).ok_or_else(|| bad("arch.wall.stretch", format!("invalid wall id `{wall_str}`")))?;
 
-    let end = match end_str.as_str() {
+    let end = match end_str {
         "start" => join::End::Start,
         "end" => join::End::End,
         _ => return Err(bad("arch.wall.stretch", "`end` must be \"start\" or \"end\"")),
