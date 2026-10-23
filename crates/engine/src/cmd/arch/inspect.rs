@@ -2,6 +2,8 @@
 use crate::cmd::CommandSpec;
 use crate::{EngineError, Session};
 use cadcraft_arch::join::solve_joins;
+use cadcraft_arch::opening::rough_offset;
+use cadcraft_arch::symbol::opening_symbol;
 use cadcraft_arch::wall::{wall_layer_polygons, wall_polygon};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::Handle;
@@ -24,6 +26,9 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     // Accept both the Unicode `poché` key and the ASCII `poche` key (JSON clients that
     // cannot emit the acute accent).
     let poché = p.get("poché").and_then(Value::as_bool).or_else(|| p.get("poche").and_then(Value::as_bool)).unwrap_or(false);
+
+    let openings_flag = p.get("openings").and_then(Value::as_bool).unwrap_or(false);
+    let symbols_flag = p.get("symbols").and_then(Value::as_bool).unwrap_or(false);
 
     let shapes = solve_joins(&d.arch);
     let mut solved: std::collections::BTreeMap<ArchId, &Vec<cadcraft_geom::Vec2>> = std::collections::BTreeMap::new();
@@ -92,19 +97,67 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
         })
         .collect::<Vec<Value>>();
 
-    Ok(json!({
-        "walls": walls,
-        "joins": joins,
-        "revision": d.arch_revision,
-        "bounds": bounds_json,
-        "levels": levels_json,
-    }))
+    // Arch openings are reported read-only: no `doc_mut`, no `touch_arch`.
+    let mut opening_objects = Vec::new();
+    if openings_flag {
+        for o in &d.arch.openings {
+            let mut obj = JsonMap::new();
+            obj.insert("id".to_string(), json!(o.id));
+            obj.insert("handle".to_string(), json!(Handle(0xA000_0000u64 + u64::from(o.id.0)).hex()));
+            obj.insert("host".to_string(), json!(o.host));
+            obj.insert("kind".to_string(), json!(o.kind));
+            obj.insert("style".to_string(), json!(o.style));
+            obj.insert("offset".to_string(), json!(o.offset));
+            obj.insert("width".to_string(), json!(o.width));
+            obj.insert("height".to_string(), json!(o.height));
+            obj.insert("sill".to_string(), json!(o.sill));
+            obj.insert(
+                "rough".to_string(),
+                json!({
+                    "width": o.rough_width,
+                    "height": o.rough_height,
+                }),
+            );
+            obj.insert("recess".to_string(), json!(o.recess));
+            obj.insert("hinge".to_string(), json!(o.hinge));
+            obj.insert("swing".to_string(), json!(o.swing));
+            obj.insert("layer".to_string(), json!(o.layer));
+
+            if symbols_flag {
+                if let Some(sym) = opening_symbol(&d.arch, o) {
+                    let polys: Vec<Value> =
+                        sym.polylines.iter().map(|poly| Value::Array(poly.iter().map(|pt| json!([pt.x, pt.y])).collect())).collect();
+                    obj.insert("symbol".to_string(), Value::Array(polys));
+                }
+                let start = rough_offset(o);
+                let end = start + o.rough_width;
+                obj.insert("gap".to_string(), json!([start, end]));
+            }
+
+            opening_objects.push(Value::Object(obj));
+        }
+    }
+
+    let mut out = JsonMap::new();
+    out.insert("walls".to_string(), Value::Array(walls));
+    out.insert("joins".to_string(), json!(joins));
+    out.insert("revision".to_string(), json!(d.arch_revision));
+    out.insert("bounds".to_string(), bounds_json);
+    out.insert("levels".to_string(), Value::Array(levels_json));
+    if openings_flag {
+        out.insert("openings".to_string(), Value::Array(opening_objects));
+    }
+
+    Ok(Value::Object(out))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Session;
+
+    use cadcraft_doc::{Opening, OpeningKind, Wall};
+    use cadcraft_geom::Vec2;
 
     /// Helper that runs a command and returns its Value, asserting it succeeded.
     /// (Avoids `unwrap`/`expect`/`panic!` which are denied by the crate lints.)
@@ -294,5 +347,80 @@ mod tests {
         let bounds = v["bounds"].as_array().unwrap_or(&empty);
         assert_eq!(bounds.len(), 2, "bounds should be [[min],[max]]");
         assert!(v["levels"].is_array(), "levels should be an array");
+    }
+
+    /// A fresh session holding one 10 m wall with a single hinged door on it.
+    fn session_with_one_wall_and_opening() -> Session {
+        let mut s = Session::new();
+        let d = match s.doc_mut() {
+            Ok(d) => d,
+            Err(_) => {
+                let e = Session::empty();
+                e
+            }
+        };
+        let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+        d.arch.push_opening(Opening::new(wid, 3.0, 0.9, 2.0, OpeningKind::Door));
+        d.touch_arch();
+        s
+    }
+
+    #[test]
+    fn inspect_lists_openings_with_proxy_handles() {
+        let mut s = session_with_one_wall_and_opening();
+        let v = exec(&mut s, "arch.inspect", &json!({ "openings": true }));
+        let openings = v["openings"].as_array().expect("openings array missing");
+        assert!(!openings.is_empty(), "expected at least one opening");
+        let o = &openings[0];
+        assert!(o["id"].is_number());
+        let handle = o["handle"].as_str().expect("handle must be a string");
+        assert!(handle.len() >= 16, "proxy handle too short: {handle}");
+        assert!(o["host"].is_number());
+        assert!(o["kind"].is_string());
+        assert!(o["style"].is_string());
+        assert!(o["offset"].is_number());
+        assert!(o["width"].is_number());
+        assert!(o["height"].is_number());
+        assert!(o["sill"].is_number());
+        assert!(o["rough"].is_object());
+        assert!(o["rough"]["width"].is_number());
+        assert!(o["rough"]["height"].is_number());
+        assert!(o["recess"].is_number());
+        assert!(o["hinge"].is_string());
+        assert!(o["swing"].is_string());
+        assert!(o["layer"].is_string());
+    }
+
+    #[test]
+    fn inspect_symbols_are_requested_only_with_the_flag() {
+        let mut s = session_with_one_wall_and_opening();
+
+        // Without the `symbols` flag there must be no per-opening `symbol`.
+        let v_no = exec(&mut s, "arch.inspect", &json!({ "openings": true }));
+        let open_no = v_no["openings"].as_array().expect("openings array missing");
+        let o = &open_no[0];
+        assert!(!o.contains_key("symbol"), "symbol present without the `symbols` flag");
+        assert!(!o.contains_key("gap"), "gap present without the `symbols` flag");
+
+        // With the `symbols` flag the `symbol` and `gap` keys appear.
+        let v_yes = exec(&mut s, "arch.inspect", &json!({ "openings": true, "symbols": true }));
+        let open_yes = v_yes["openings"].as_array().expect("openings array missing");
+        let o = &open_yes[0];
+        assert!(o["symbol"].is_array(), "symbol must be an array when requested");
+        assert!(o["gap"].is_array(), "gap must be an array when requested");
+        let gap = o["gap"].as_array().expect("gap must be an array");
+        assert_eq!(gap.len(), 2, "gap must be [start, end]");
+        assert!(gap[0].is_number());
+        assert!(gap[1].is_number());
+        assert!(o["symbol"].as_array().unwrap().is_empty() == false);
+    }
+
+    #[test]
+    fn inspect_does_not_bump_the_revision() {
+        let mut s = session_with_one_wall_and_opening();
+        let before = s.doc().map(|d| d.arch_revision);
+        exec(&mut s, "arch.inspect", &json!({ "openings": true, "symbols": true }));
+        let after = s.doc().map(|d| d.arch_revision);
+        assert_eq!(before, after, "arch.inspect must not bump arch_revision");
     }
 }
