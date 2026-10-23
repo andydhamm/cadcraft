@@ -4,7 +4,7 @@
 //! [`Mesh`] tagged with the opening's [`ArchId`] for picking.
 
 use cadcraft_arch::opening::is_double;
-use cadcraft_doc::arch::Opening;
+use cadcraft_doc::arch::{Opening, OpeningKind};
 use cadcraft_doc::{ArchId, ArchModel};
 use cadcraft_geom::{Vec2, Vec3};
 
@@ -42,94 +42,139 @@ pub fn opening_meshes(model: &ArchModel, o: &Opening) -> Vec<Mesh> {
     let frame_z0 = sill_h;
     let frame_z1 = sill_h + h;
 
+    let is_window = matches!(o.kind, OpeningKind::Window);
+    let kind_prefix = if is_window {
+        "window"
+    } else if matches!(o.kind, OpeningKind::GarageDoor) {
+        "garage"
+    } else {
+        "door"
+    };
+
     // Frame: left jamb
     let left_a = recessed + dir * (-w / 2.0 - fw / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
     let left_b = recessed + dir * (-w / 2.0 + fw / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
-    meshes.push(box_between(left_a, left_b, frame_z0, frame_z1, fd, "frame", o.id));
+    if let Some(mesh) = box_between(left_a, left_b, frame_z0, frame_z1, fd, &format!("{}-frame", kind_prefix), o.id) {
+        meshes.push(mesh);
+    }
 
     // Frame: right jamb
     let right_a = recessed + dir * (w / 2.0 - fw / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
     let right_b = recessed + dir * (w / 2.0 + fw / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
-    meshes.push(box_between(right_a, right_b, frame_z0, frame_z1, fd, "frame", o.id));
+    if let Some(mesh) = box_between(right_a, right_b, frame_z0, frame_z1, fd, &format!("{}-frame", kind_prefix), o.id) {
+        meshes.push(mesh);
+    }
 
     // Frame: head
     let head_a = recessed + dir * (-w / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
     let head_b = recessed + dir * (w / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
-    meshes.push(box_between(head_a, head_b, frame_z1 - fw, frame_z1, fw, "frame", o.id));
+    if let Some(mesh) = box_between(head_a, head_b, frame_z1 - fw, frame_z1, fw, &format!("{}-frame", kind_prefix), o.id) {
+        meshes.push(mesh);
+    }
 
     // Frame: sill
     let sill_a = recessed + dir * (-w / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
     let sill_b = recessed + dir * (w / 2.0) + normal * (-wall_t / 2.0 + fd / 2.0);
-    meshes.push(box_between(sill_a, sill_b, frame_z0, frame_z0 + fw, fw, "frame", o.id));
+    if let Some(mesh) = box_between(sill_a, sill_b, frame_z0, frame_z0 + fw, fw, &format!("{}-frame", kind_prefix), o.id) {
+        meshes.push(mesh);
+    }
 
     // Casing (both faces)
     if cw > 0.0 {
         let cl_a = recessed + dir * (-w / 2.0 - fw / 2.0 - cw) + normal * (-wall_t / 2.0 + cd / 2.0);
         let cl_b = recessed + dir * (-w / 2.0 - fw / 2.0) + normal * (-wall_t / 2.0 + cd / 2.0);
-        meshes.push(box_between(cl_a, cl_b, frame_z0, frame_z1, cd, "casing", o.id));
+        if let Some(mesh) = box_between(cl_a, cl_b, frame_z0, frame_z1, cd, &format!("{}-casing", kind_prefix), o.id) {
+            meshes.push(mesh);
+        }
 
         let cr_a = recessed + dir * (w / 2.0 + fw / 2.0) + normal * (-wall_t / 2.0 + cd / 2.0);
         let cr_b = recessed + dir * (w / 2.0 + fw / 2.0 + cw) + normal * (-wall_t / 2.0 + cd / 2.0);
-        meshes.push(box_between(cr_a, cr_b, frame_z0, frame_z1, cd, "casing", o.id));
+        if let Some(mesh) = box_between(cr_a, cr_b, frame_z0, frame_z1, cd, &format!("{}-casing", kind_prefix), o.id) {
+            meshes.push(mesh);
+        }
 
         let ch_a = recessed + dir * (-w / 2.0 - fw / 2.0) + normal * (-wall_t / 2.0 + cd / 2.0);
         let ch_b = recessed + dir * (w / 2.0 + fw / 2.0) + normal * (-wall_t / 2.0 + cd / 2.0);
-        meshes.push(box_between(ch_a, ch_b, frame_z1 - cw, frame_z1, cw, "casing", o.id));
+        if let Some(mesh) = box_between(ch_a, ch_b, frame_z1 - cw, frame_z1, cw, &format!("{}-casing", kind_prefix), o.id) {
+            meshes.push(mesh);
+        }
     }
 
-    // Glass (for windows and glazed doors)
-    let is_glazed = o.style == "window" || o.style == "sliding" || o.style == "bifold" || o.style == "french";
-    if is_glazed {
+    // Glass: every window gets it; doors get it when the style indicates glazing.
+    let is_glazed_door = !is_window
+        && (o.style.contains("sliding")
+            || o.style.contains("bifold")
+            || o.style.contains("french")
+            || o.style.contains("pocket")
+            || o.style.contains("glass"));
+    if is_window || is_glazed_door {
         let glass_a = recessed + dir * (-w / 2.0 + fw) + normal * (-wall_t / 2.0 + fd / 2.0);
         let glass_b = recessed + dir * (w / 2.0 - fw) + normal * (-wall_t / 2.0 + fd / 2.0);
-        meshes.push(box_between(glass_a, glass_b, frame_z0 + fw, frame_z1 - fw, 0.006, "glass", o.id));
+        if let Some(mesh) = box_between(glass_a, glass_b, frame_z0 + fw, frame_z1 - fw, 0.006, &format!("{}-glass", kind_prefix), o.id) {
+            meshes.push(mesh);
+        }
     }
 
-    // Leaf (door panel)
-    if o.style != "window" {
+    // Leaf: doors (not windows, not cased openings) get a leaf.
+    if !is_window && !matches!(o.kind, OpeningKind::CasedOpening) {
         let leaf_t = 0.045;
         let leaf_z0 = frame_z0 + fw;
         let leaf_z1 = frame_z1 - fw;
 
-        let two_leaves = o.style == "sliding" || o.style == "bifold" || o.style == "french" || is_double(o);
+        let two_leaves = o.style.contains("sliding") || o.style.contains("bifold") || o.style.contains("french") || is_double(o);
         if two_leaves {
             let half_w = (w - 2.0 * fw) / 2.0;
             let l_a = recessed + dir * (-w / 2.0 + fw) + normal * (-wall_t / 2.0 + leaf_t / 2.0);
             let l_b = recessed + dir * (-w / 2.0 + fw + half_w) + normal * (-wall_t / 2.0 + leaf_t / 2.0);
-            meshes.push(box_between(l_a, l_b, leaf_z0, leaf_z1, leaf_t, "leaf", o.id));
+            if let Some(mesh) = box_between(l_a, l_b, leaf_z0, leaf_z1, leaf_t, &format!("{}-leaf", kind_prefix), o.id) {
+                meshes.push(mesh);
+            }
 
             let r_a = recessed + dir * (w / 2.0 - fw - half_w) + normal * (-wall_t / 2.0 + leaf_t / 2.0);
             let r_b = recessed + dir * (w / 2.0 - fw) + normal * (-wall_t / 2.0 + leaf_t / 2.0);
-            meshes.push(box_between(r_a, r_b, leaf_z0, leaf_z1, leaf_t, "leaf", o.id));
+            if let Some(mesh) = box_between(r_a, r_b, leaf_z0, leaf_z1, leaf_t, &format!("{}-leaf", kind_prefix), o.id) {
+                meshes.push(mesh);
+            }
         } else {
             let l_a = recessed + dir * (-w / 2.0 + fw) + normal * (-wall_t / 2.0 + leaf_t / 2.0);
             let l_b = recessed + dir * (w / 2.0 - fw) + normal * (-wall_t / 2.0 + leaf_t / 2.0);
-            meshes.push(box_between(l_a, l_b, leaf_z0, leaf_z1, leaf_t, "leaf", o.id));
+            if let Some(mesh) = box_between(l_a, l_b, leaf_z0, leaf_z1, leaf_t, &format!("{}-leaf", kind_prefix), o.id) {
+                meshes.push(mesh);
+            }
         }
     }
 
     // Exterior sill (for windows)
-    if o.style == "window" && sd > 0.0 {
+    if is_window && sd > 0.0 {
         let s_a = recessed + dir * (-w / 2.0 - fw / 2.0 - sd) + normal * (-wall_t / 2.0);
         let s_b = recessed + dir * (w / 2.0 + fw / 2.0 + sd) + normal * (-wall_t / 2.0);
-        meshes.push(box_between(s_a, s_b, frame_z0 - 0.02, frame_z0, 0.04, "sill", o.id));
+        if let Some(mesh) = box_between(s_a, s_b, frame_z0 - 0.02, frame_z0, 0.04, &format!("{}-sill", kind_prefix), o.id) {
+            meshes.push(mesh);
+        }
     }
 
-    // Header
+    // Header: must stay inside the host wall height.
     let header_h = 0.2;
-    let h_a = recessed + dir * (-w / 2.0 - fw) + normal * (-wall_t / 2.0);
-    let h_b = recessed + dir * (w / 2.0 + fw) + normal * (-wall_t / 2.0);
-    meshes.push(box_between(h_a, h_b, frame_z1, frame_z1 + header_h, wall_t, "header", o.id));
+    let header_top = (sill_h + h + header_h).min(wall.height);
+    if header_top > frame_z1 + 1e-9 {
+        let h_a = recessed + dir * (-w / 2.0 - fw) + normal * (-wall_t / 2.0);
+        let h_b = recessed + dir * (w / 2.0 + fw) + normal * (-wall_t / 2.0);
+        if let Some(mesh) = box_between(h_a, h_b, frame_z1, header_top, wall_t, &format!("{}-header", kind_prefix), o.id) {
+            meshes.push(mesh);
+        }
+    }
 
     meshes
 }
 
 /// Create a box mesh between two 2D points, from z0 to z1, with given depth.
-fn box_between(a: Vec2, b: Vec2, z0: f64, z1: f64, depth: f64, material: &str, id: ArchId) -> Mesh {
+///
+/// Returns `None` for degenerate boxes (zero length or zero height).
+fn box_between(a: Vec2, b: Vec2, z0: f64, z1: f64, depth: f64, material: &str, id: ArchId) -> Option<Mesh> {
     let dir = b - a;
     let len = dir.len();
-    if len < 1e-9 {
-        return Mesh { object: id, material: material.to_string(), positions: Vec::new(), normals: Vec::new(), uvs: Vec::new(), indices: Vec::new() };
+    if len < 1e-9 || (z1 - z0).abs() < 1e-9 {
+        return None;
     }
     let d = dir / len;
     let n = Vec2::new(-d.y, d.x);
@@ -143,7 +188,7 @@ fn box_between(a: Vec2, b: Vec2, z0: f64, z1: f64, depth: f64, material: &str, i
     let mut mesh =
         Mesh { object: id, material: material.to_string(), positions: Vec::new(), normals: Vec::new(), uvs: Vec::new(), indices: Vec::new() };
     mesh.push_prism(&[p0, p1, p2, p3], z0, z1);
-    mesh
+    if mesh.positions.is_empty() { None } else { Some(mesh) }
 }
 
 #[cfg(test)]
@@ -180,6 +225,7 @@ mod tests {
             swing_angle: 0.0,
             style: "window".to_string(),
             recess: 0.0,
+            kind: OpeningKind::Window,
             ..Default::default()
         }
     }
@@ -200,6 +246,7 @@ mod tests {
             swing_angle: 0.0,
             style: "hinged".to_string(),
             recess: 0.0,
+            kind: OpeningKind::Door,
             ..Default::default()
         }
     }
@@ -209,12 +256,12 @@ mod tests {
         let model = wall_model();
         let o = window_opening();
         let meshes = opening_meshes(&model, &o);
-        let has_frame = meshes.iter().any(|m| m.material == "frame");
-        let has_glass = meshes.iter().any(|m| m.material == "glass");
-        let has_sill = meshes.iter().any(|m| m.material == "sill");
-        assert!(has_frame, "missing frame mesh");
-        assert!(has_glass, "missing glass mesh");
-        assert!(has_sill, "missing sill mesh");
+        let has_frame = meshes.iter().any(|m| m.material == "window-frame");
+        let has_glass = meshes.iter().any(|m| m.material == "window-glass");
+        let has_sill = meshes.iter().any(|m| m.material == "window-sill");
+        assert!(has_frame, "missing window-frame mesh");
+        assert!(has_glass, "missing window-glass mesh");
+        assert!(has_sill, "missing window-sill mesh");
     }
 
     #[test]
@@ -222,9 +269,9 @@ mod tests {
         let model = wall_model();
         let o = door_opening();
         let meshes = opening_meshes(&model, &o);
-        let has_frame = meshes.iter().any(|m| m.material == "frame");
-        let leaf_count = meshes.iter().filter(|m| m.material == "leaf").count();
-        assert!(has_frame, "missing frame mesh");
+        let has_frame = meshes.iter().any(|m| m.material == "door-frame");
+        let leaf_count = meshes.iter().filter(|m| m.material == "door-leaf").count();
+        assert!(has_frame, "missing door-frame mesh");
         assert_eq!(leaf_count, 1, "expected 1 leaf, got {}", leaf_count);
     }
 
@@ -234,7 +281,7 @@ mod tests {
         let mut o = door_opening();
         o.style = "sliding".to_string();
         let meshes = opening_meshes(&model, &o);
-        let leaf_count = meshes.iter().filter(|m| m.material == "leaf").count();
+        let leaf_count = meshes.iter().filter(|m| m.material == "door-leaf").count();
         assert_eq!(leaf_count, 2, "expected 2 leaves, got {}", leaf_count);
     }
 
@@ -244,7 +291,7 @@ mod tests {
         let mut o = door_opening();
         o.style = "french".to_string();
         let meshes = opening_meshes(&model, &o);
-        let leaf_count = meshes.iter().filter(|m| m.material == "leaf").count();
+        let leaf_count = meshes.iter().filter(|m| m.material == "door-leaf").count();
         assert_eq!(leaf_count, 2, "expected 2 leaves, got {}", leaf_count);
     }
 
@@ -255,8 +302,8 @@ mod tests {
         o.recess = 0.05;
         let meshes = opening_meshes(&model, &o);
         assert!(!meshes.is_empty(), "no meshes for recessed window");
-        let frame = meshes.iter().find(|m| m.material == "frame");
-        assert!(frame.is_some(), "missing frame");
+        let frame = meshes.iter().find(|m| m.material == "window-frame");
+        assert!(frame.is_some(), "missing window-frame");
     }
 
     #[test]
@@ -265,7 +312,7 @@ mod tests {
         let mut o = window_opening();
         o.casing_width = 0.0;
         let meshes = opening_meshes(&model, &o);
-        let has_casing = meshes.iter().any(|m| m.material == "casing");
+        let has_casing = meshes.iter().any(|m| m.material == "window-casing");
         assert!(!has_casing, "casing should be skipped");
     }
 
@@ -274,8 +321,8 @@ mod tests {
         let model = wall_model();
         let o = window_opening();
         let meshes = opening_meshes(&model, &o);
-        let glass = meshes.iter().find(|m| m.material == "glass");
-        assert!(glass.is_some(), "missing glass mesh");
+        let glass = meshes.iter().find(|m| m.material == "window-glass");
+        assert!(glass.is_some(), "missing window-glass mesh");
     }
 
     #[test]
@@ -298,5 +345,55 @@ mod tests {
         o.host = ArchId(999);
         let meshes = opening_meshes(&model, &o);
         assert!(meshes.is_empty(), "expected empty for missing host");
+    }
+
+    #[test]
+    fn a_window_produces_window_glass_meshes() {
+        let model = wall_model();
+        let o = window_opening();
+        let meshes = opening_meshes(&model, &o);
+        let has_window_glass = meshes.iter().any(|m| m.material == "window-glass");
+        let has_window_frame = meshes.iter().any(|m| m.material == "window-frame");
+        assert!(has_window_glass, "missing window-glass mesh");
+        assert!(has_window_frame, "missing window-frame mesh");
+    }
+
+    #[test]
+    fn a_hinged_door_produces_door_leaf_and_frame() {
+        let model = wall_model();
+        let o = door_opening();
+        let meshes = opening_meshes(&model, &o);
+        let has_door_frame = meshes.iter().any(|m| m.material == "door-frame");
+        let has_door_leaf = meshes.iter().any(|m| m.material == "door-leaf");
+        assert!(has_door_frame, "missing door-frame mesh");
+        assert!(has_door_leaf, "missing door-leaf mesh");
+    }
+
+    #[test]
+    fn opening_meshes_are_never_empty() {
+        let model = wall_model();
+        let window = window_opening();
+        let door = door_opening();
+        for o in [&window, &door] {
+            let meshes = opening_meshes(&model, o);
+            for m in &meshes {
+                assert!(!m.positions.is_empty(), "mesh {} has no positions", m.material);
+            }
+        }
+    }
+
+    #[test]
+    fn header_stays_inside_the_wall_height() {
+        let model = wall_model();
+        let o = window_opening();
+        let meshes = opening_meshes(&model, &o);
+        let wall_height = 2.5;
+        for m in &meshes {
+            if m.material.contains("header") {
+                for p in &m.positions {
+                    assert!(p[2] <= wall_height + 1e-6, "header exceeds wall height: z={}", p[2]);
+                }
+            }
+        }
     }
 }

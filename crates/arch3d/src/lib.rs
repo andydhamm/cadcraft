@@ -62,8 +62,10 @@ impl Scene3d {
         for opening in &model.openings {
             let o_meshes = openings::opening_meshes(model, opening);
             openings_built += 1;
-            meshes.extend(o_meshes);
+            meshes.extend(o_meshes.into_iter().filter(|m| !m.positions.is_empty()));
         }
+
+        meshes.retain(|m| !m.positions.is_empty());
 
         let bounds = meshes.iter().fold(Bounds3::empty(), |mut b, m| {
             b.extend(&m.bounds());
@@ -96,7 +98,7 @@ impl Scene3d {
             if dirty.contains(&opening.id) {
                 let o_meshes = openings::opening_meshes(model, opening);
                 openings_built += 1;
-                meshes.extend(o_meshes);
+                meshes.extend(o_meshes.into_iter().filter(|m| !m.positions.is_empty()));
             } else {
                 let prev_meshes: Vec<&Mesh> = prev.meshes.iter().filter(|m| m.object == opening.id).collect();
                 for m in prev_meshes {
@@ -104,6 +106,8 @@ impl Scene3d {
                 }
             }
         }
+
+        meshes.retain(|m| !m.positions.is_empty());
 
         let bounds = meshes.iter().fold(Bounds3::empty(), |mut b, m| {
             b.extend(&m.bounds());
