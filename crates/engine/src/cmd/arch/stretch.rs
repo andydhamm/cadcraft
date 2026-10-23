@@ -5,6 +5,7 @@ use cadcraft_arch::join;
 use cadcraft_doc::ArchId;
 use serde_json::{Value, json};
 
+use crate::cmd::arch::MIN_WALL_LENGTH;
 use crate::cmd::{CommandSpec, bad, point_req, str_param};
 use crate::{EngineError, Result, Session};
 
@@ -32,8 +33,8 @@ pub(crate) fn run_stretch(s: &mut Session, p: &Value) -> Result<Value> {
 
     // `end` selects which end of the wall to move.
     let end = match str_param(p, "end").map(|s| s.to_ascii_lowercase()) {
-        Some("start") => join::End::Start,
-        Some("end") => join::End::End,
+        Some(e) if e == "start" => join::End::Start,
+        Some(e) if e == "end" => join::End::End,
         _ => return Err(bad("arch.wall.stretch", "`end` must be \"start\" or \"end\"")),
     };
 
@@ -45,7 +46,7 @@ pub(crate) fn run_stretch(s: &mut Session, p: &Value) -> Result<Value> {
 
     // Refuse to drag an end onto the wall's other end (would collapse it).
     let other = if end == join::End::Start { w.end } else { w.start };
-    if to.near(other, cadcraft_doc::MIN_WALL_LENGTH) {
+    if to.near(other, MIN_WALL_LENGTH) {
         return Err(bad("arch.wall.stretch", "the dragged end would collapse the wall"));
     }
 
@@ -74,7 +75,7 @@ mod tests {
     #[test]
     fn arch_wall_stretch_moves_the_neighbour() {
         let mut s = make_l();
-        let res: Result<Value, EngineError> = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [12.0, 0.0]}));
+        let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [12.0, 0.0]}));
         assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
         let val = res.unwrap();
         let moved: Vec<String> = val["moved"].as_array().expect("moved should be an array").iter().map(|v| v.to_string()).collect();
