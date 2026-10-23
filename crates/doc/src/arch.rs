@@ -464,7 +464,7 @@ impl ArchModel {
     /// All openings on a given host wall, sorted by offset.
     pub fn openings_on(&self, host: ArchId) -> Vec<&Opening> {
         let mut v: Vec<&Opening> = self.openings.iter().filter(|o| o.host == host).collect();
-        v.sort_by(|a, b| a.offset.partial_cmp(&b.offset).unwrap_or(std::cmp::Ordering::EQUAL));
+        v.sort_by(|a, b| a.offset.partial_cmp(&b.offset).unwrap_or(std::cmp::Ordering::Equal));
         v
     }
 
