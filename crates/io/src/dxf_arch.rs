@@ -27,9 +27,6 @@ pub(crate) const ARCH_PROXY_MARKER: &str = "ARCHWALL";
 /// drops it (the opening's model data is the one source of truth).
 pub(crate) const ARCH_OPENING_MARKER: &str = "ARCHOPENING";
 
-/// Layer of the save-time opening proxy polylines.
-pub(crate) const ARCH_OPENING_LAYER: &str = "A-DOOR";
-
 /// Rejects payloads larger than this before they are even parsed.
 const MAX_ARCH_PAYLOAD: usize = 8 << 20;
 
