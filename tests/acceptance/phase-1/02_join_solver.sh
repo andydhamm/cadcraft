@@ -2,14 +2,14 @@
 set -uo pipefail
 out=$(cargo run -q -p cadcraft-cli -- run --metric \
   --cmd 'wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.4,"exterior":true}' \
-  --cmd 'wall {"points":[[0,3],[10,3]],"thickness":0.1}' \
-  --cmd 'wall {"points":[[6,3],[6,8]],"thickness":0.1}' \
-  --cmd 'arch.inspect {"poché":true}' 2>/dev/null | tail -n 1) || { echo "FAIL: cli run failed"; exit 1; }
+  --cmd 'wall {"points":[[0,3],[10,3]],"thickness":0.1,"type":"interior"}' \
+  --cmd 'wall {"points":[[6,3],[6,8]],"thickness":0.1,"type":"interior"}' \
+  --cmd 'arch.inspect {"poche":true}' 2>/dev/null | tail -n 1) || { echo "FAIL: cli run failed"; exit 1; }
 python3 - "$out" <<'PY' || exit 1
 import json,sys
 d=json.loads(sys.argv[1])
 sh=[(w,w["polygon"]) for w in d.get("walls",[]) if w.get("polygon")]
-assert len(sh)==6, f"expected 6 poché polygons, got {len(sh)}"
+assert len(sh)==6, f"expected 6 poche polygons, got {len(sh)}"
 for w,p in sh:
     assert len(p)>=4 and p[0]!=p[-1], f"open ring: {p}"
     xs=[a[0] for a in p]; ys=[a[1] for a in p]

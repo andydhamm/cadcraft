@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -uo pipefail
+# The closed rectangle makes walls w0..w3; w3 is (0,8)-(0,0), so stretching its
+# start to (0,4) must drag w2's end along with it.
 out=$(cargo run -q -p cadcraft-cli -- run --metric \
   --cmd 'wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.4,"exterior":true}' \
-  --cmd 'arch.wall.stretch {"wall":"w4","end":"start","to":[0,4]}' \
+  --cmd 'arch.wall.stretch {"wall":"w3","end":"start","to":[0,4]}' \
   --cmd 'arch.inspect {}' 2>/dev/null | tail -n 1) || { echo "FAIL: stretch run failed"; exit 1; }
 python3 - "$out" <<'PY' || exit 1
 import json,sys
@@ -14,7 +16,7 @@ print("ok:",len(m),"walls follow the corner")
 PY
 out2=$(cargo run -q -p cadcraft-cli -- run --metric \
   --cmd 'wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.4,"exterior":true}' \
-  --cmd 'arch.wall.stretch {"wall":"w4","end":"start","to":[0,4]}' \
+  --cmd 'arch.wall.stretch {"wall":"w3","end":"start","to":[0,4]}' \
   --cmd 'undo {"count":1}' --cmd 'arch.inspect {}' 2>/dev/null | tail -n 1) || { echo "FAIL: undo run failed"; exit 1; }
 python3 - "$out2" <<'PY' || exit 1
 import json,sys
