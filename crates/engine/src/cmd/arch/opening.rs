@@ -193,12 +193,16 @@ fn run_opening_move(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     };
 
     // 3. New offset: explicit number, or a point projected onto the host wall.
-    let new_offset = if let Some(off) = crate::cmd::f64_req(p, "offset") {
-        off
-    } else if let Some(pt) = crate::cmd::point_param(p, "point") {
-        cadcraft_arch::opening::project_to_wall(&d.arch, host, pt).ok_or_else(|| crate::cmd::bad(cmd, "point does not project onto the wall"))?
-    } else {
-        return Err(crate::cmd::bad(cmd, "`offset` (number) or `point` ([x,y]) is required"));
+    let new_offset = match crate::cmd::f64_req(cmd, p, "offset") {
+        Ok(off) => off,
+        Err(_) => {
+            if let Some(pt) = crate::cmd::point_param(p, "point") {
+                cadcraft_arch::opening::project_to_wall(&d.arch, host, pt)
+                    .ok_or_else(|| crate::cmd::bad(cmd, "point does not project onto the wall"))?
+            } else {
+                return Err(crate::cmd::bad(cmd, "`offset` (number) or `point` ([x,y]) is required"));
+            }
+        }
     };
 
     // 4. Re-validate on the host wall. `ignore = Some(id)` so the opening is
