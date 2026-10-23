@@ -134,7 +134,7 @@ fn three_hundred_walls_150_openings_rebuild() {
     for i in 0..150 {
         let mut open = Opening::default();
         open.id = ArchId(1000 + i);
-        open.wall = ArchId(i);
+        open.host = ArchId(i);
         open.offset = 0.5;
         open.width = 0.5;
         open.height = 1.5;

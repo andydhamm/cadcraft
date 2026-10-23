@@ -341,7 +341,7 @@ mod tests {
         let open_id = ArchId(1);
         let mut opening = Opening::default();
         opening.id = open_id;
-        opening.wall = ArchId(0);
+        opening.host = ArchId(0);
         opening.offset = 2.0;
         opening.width = 0.8;
         opening.height = 2.0;
