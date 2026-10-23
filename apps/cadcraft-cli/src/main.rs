@@ -257,32 +257,35 @@ fn sample(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether `name` is a frameable output (2D image or 3D GLB).
-fn is_frameable_output(name: &str) -> bool {
-    cadcraft_io::is_image(name) || std::path::Path::new(name).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()) == Some("glb".to_string())
-}
-
-/// Reject an explicit framing option without a frameable output to apply it to.
+/// Reject an explicit framing option without an image output to apply it to. A `.glb`
+/// always holds the whole arch model, so a window or view would be silently ignored there.
 fn check_framed_output(framing: Framing, out: Option<&str>) -> Result<(), String> {
     match out {
         _ if framing == Framing::Auto => Ok(()),
-        Some(o) if !is_frameable_output(o) => Err(format!("--window/--view only apply to image output (png, svg, pdf) or glb, not `{o}`")),
+        Some(o) if !cadcraft_io::is_image(o) => Err(format!("--window/--view only apply to image output (png, svg, pdf), not `{o}`")),
         Some(_) => Ok(()),
-        None => Err("--window/--view need a frameable output (--export OUT.png|svg|pdf|glb)".into()),
+        None => Err("--window/--view need an image output (--export OUT.png|svg|pdf)".into()),
     }
+}
+
+/// Whether `size` is a size `render` accepts (the remaining `NotAvailable` reason is then the
+/// missing draw pass, not the request).
+fn size_ok(size: (u32, u32)) -> bool {
+    cadcraft_render3d::offscreen::check_size(size).is_ok()
 }
 
 /// Default pixel size for `render`.
 const RENDER_DEFAULT_SIZE: (u32, u32) = (2400, 1600);
 
-/// Parse `WxH` into a pixel size (positive whole numbers).
+/// Parse `WxH` into a pixel size (whole numbers in `1..=render3d::offscreen::MAX_SIZE`; a
+/// bigger target fails wgpu validation, which panics).
 fn parse_size(v: &str) -> Result<(u32, u32), String> {
     let parts: Vec<&str> = v.split(['x', 'X']).map(str::trim).collect();
     let [w, h] = parts.as_slice() else { return Err(format!("--size needs WxH, got `{v}`")) };
     let num = |name: &str, t: &str| -> Result<u32, String> {
         match t.parse::<u32>() {
-            Ok(n) if n > 0 => Ok(n),
-            _ => Err(format!("--size {name} must be a positive whole number, got `{t}`")),
+            Ok(n) if n > 0 && n <= cadcraft_render3d::offscreen::MAX_SIZE => Ok(n),
+            _ => Err(format!("--size {name} must be a whole number in 1..={}, got `{t}`", cadcraft_render3d::offscreen::MAX_SIZE)),
         }
     };
     Ok((num("width", w)?, num("height", h)?))
@@ -309,16 +312,23 @@ fn parse_camera(spec: &str, base: cadcraft_render3d::camera::Orbit) -> Result<ca
         }
         match name {
             "azimuth" => o.azimuth = v,
-            "elevation" => o.elevation = v,
+            "elevation" => {
+                // ±90° degenerates the view basis; the orbit control stops at ±89°.
+                if v.abs() > 89.0 {
+                    return Err(format!("camera elevation must be within ±89°, got `{val}`"));
+                }
+                o.elevation = v;
+            }
             "distance" => {
-                if v <= 0.0 {
-                    return Err(format!("camera distance must be positive, got `{val}`"));
+                if v <= 0.0 || v > cadcraft_render3d::camera::MAX_DISTANCE {
+                    return Err(format!("camera distance must be in (0, {}], got `{val}`", cadcraft_render3d::camera::MAX_DISTANCE));
                 }
                 o.distance = v;
             }
             "fov" => {
-                if v <= 0.0 {
-                    return Err(format!("camera fov must be positive, got `{val}`"));
+                // A 180° (or wider) frustum has no finite projection.
+                if v <= 0.0 || v >= 180.0 {
+                    return Err(format!("camera fov must be between 0 and 180 degrees, got `{val}`"));
                 }
                 o.fov_deg = v;
             }
@@ -384,6 +394,11 @@ fn render(args: &[String]) -> Result<(), String> {
         }
         Err(cadcraft_render3d::Render3dError::NoAdapter) => {
             eprintln!("render: no GPU adapter available");
+        }
+        // An adapter but no draw pass in this build: a SKIP like the no-adapter case, never
+        // a blank picture written as if it were the render.
+        Err(e @ cadcraft_render3d::Render3dError::NotAvailable(_)) if size_ok(size) => {
+            eprintln!("render: {e}");
         }
         Err(e) => {
             return Err(format!("render: {e}"));
@@ -1017,5 +1032,46 @@ mod tests {
         assert_eq!(validate_options("info", &args(&["missing.dxf", "--typo"]), NO_OPTIONS), Err("info: unknown option --typo".into()));
         assert_eq!(validate_options("perf", &args(&["1", "--typo"]), NO_OPTIONS), Err("perf: unknown option --typo".into()));
         assert_eq!(validate_options("sample", &args(&["bracket", "out.dxf", "--typo"]), NO_OPTIONS), Err("sample: unknown option --typo".into()));
+    }
+}
+
+#[cfg(test)]
+mod render_args_tests {
+    use super::*;
+    use cadcraft_render3d::camera::{Camera, Orbit};
+
+    fn base() -> Orbit {
+        Orbit::at_origin(30.0, 30.0, 25.0, 45.0)
+    }
+
+    #[test]
+    fn size_must_fit_a_wgpu_texture() {
+        assert_eq!(parse_size("640x480"), Ok((640, 480)));
+        assert_eq!(parse_size("8192X8192"), Ok((8192, 8192)));
+        // Bigger targets fail wgpu validation, which panics instead of returning an error.
+        for bad in ["0x10", "10x0", "8193x10", "100000x100000", "4294967295x1", "x", "10", "-5x5"] {
+            assert!(parse_size(bad).is_err(), "`{bad}` must be refused");
+        }
+    }
+
+    #[test]
+    fn camera_fields_outside_a_finite_projection_are_refused() {
+        for bad in ["orbit,fov=180", "orbit,fov=360", "orbit,elevation=90", "orbit,elevation=-120", "orbit,distance=1e300"] {
+            assert!(parse_camera(bad, base()).is_err(), "`{bad}` must be refused");
+        }
+        match parse_camera("orbit,azimuth=35,elevation=30,distance=25,fov=60", base()) {
+            Ok(Camera::Orbit(o)) => {
+                assert_eq!((o.azimuth, o.elevation, o.distance, o.fov_deg), (35.0, 30.0, 25.0, 60.0));
+            }
+            other => panic!("a valid spec was refused: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn framing_does_not_apply_to_glb() {
+        // A .glb always holds the whole model; a window would be silently ignored.
+        assert!(check_framed_output(Framing::Extents, Some("house.glb")).is_err());
+        assert!(check_framed_output(Framing::Extents, Some("house.png")).is_ok());
+        assert!(check_framed_output(Framing::Auto, Some("house.glb")).is_ok());
     }
 }
