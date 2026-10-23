@@ -266,8 +266,26 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
         }
     }
 
+    // Mid, X and Parallel neighbours all touch this wall's centre-line box grown by the
+    // two thicknesses; a cheap box test first keeps the three scans below from running
+    // line intersections against every wall in the model.
+    let reach = |nw: &Wall| w.thickness.max(0.0) + nw.thickness.max(0.0) + ENDPOINT_TOL;
+    let candidates: Vec<&Wall> = model
+        .walls
+        .iter()
+        .filter(|nw| {
+            let r = reach(nw);
+            let (lo_x, hi_x) = (w.start.x.min(w.end.x) - r, w.start.x.max(w.end.x) + r);
+            let (lo_y, hi_y) = (w.start.y.min(w.end.y) - r, w.start.y.max(w.end.y) + r);
+            nw.start.x.max(nw.end.x) >= lo_x
+                && nw.start.x.min(nw.end.x) <= hi_x
+                && nw.start.y.max(nw.end.y) >= lo_y
+                && nw.start.y.min(nw.end.y) <= hi_y
+        })
+        .collect();
+
     // Check all walls for Mid (centre line passes through this point)
-    for nw in &model.walls {
+    for nw in candidates.iter().copied() {
         if nw.id == id {
             continue;
         }
@@ -288,7 +306,7 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
 
     // X: this wall's centre line is crossed by another wall's centre line at a point
     // interior to both, and this end is the nearest to the crossing.
-    for nw in &model.walls {
+    for nw in candidates.iter().copied() {
         if nw.id == id {
             continue;
         }
@@ -322,7 +340,7 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
 
     // Parallel: parallel (not collinear) neighbour whose end is aligned with this end
     // along the wall direction and close in the perpendicular direction.
-    for nw in &model.walls {
+    for nw in candidates.iter().copied() {
         if nw.id == id {
             continue;
         }
