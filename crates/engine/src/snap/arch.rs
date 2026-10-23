@@ -3,7 +3,8 @@
 use super::SnapHit;
 use super::mode;
 use cadcraft_arch::{join::face_lines, wall::wall_dir};
-use cadcraft_doc::{Drawing, Opening, Wall};
+use cadcraft_doc::arch::Opening;
+use cadcraft_doc::{Drawing, Wall};
 use cadcraft_geom::{Segment, Vec2};
 
 /// Maximum walls scanned by a single arch-snap query.
@@ -26,7 +27,7 @@ pub fn arch_snap(d: &Drawing, cursor: Vec2, aperture: f64, osmode: u32) -> Optio
         return None;
     }
 
-    let model = d.arch();
+    let model = d.arch;
     let walls: Vec<&Wall> = model.walls.iter().take(MAX_ARCH_WALLS).collect();
     let face_lines = face_lines(model);
 
@@ -35,10 +36,12 @@ pub fn arch_snap(d: &Drawing, cursor: Vec2, aperture: f64, osmode: u32) -> Optio
 
     // 1. Wall face-line endpoints.
     if osmode & mode::END != 0 {
-        for (_, seg) in &face_lines {
-            for p in [seg.start(), seg.end()] {
-                if p.is_finite() && p.dist(cursor) <= aperture {
-                    cands.push((p.dist(cursor), 0, mode::END, p, "wall end"));
+        for face_pair in &face_lines {
+            for (start, end) in face_pair {
+                for p in [start, end] {
+                    if p.is_finite() && p.dist(cursor) <= aperture {
+                        cands.push((p.dist(cursor), 0, mode::END, p, "wall end"));
+                    }
                 }
             }
         }
@@ -46,10 +49,12 @@ pub fn arch_snap(d: &Drawing, cursor: Vec2, aperture: f64, osmode: u32) -> Optio
 
     // 2. Wall face-line midpoints.
     if osmode & mode::MID != 0 {
-        for (_, seg) in &face_lines {
-            let m = seg.mid();
-            if m.is_finite() && m.dist(cursor) <= aperture {
-                cands.push((m.dist(cursor), 1, mode::MID, m, "wall mid"));
+        for face_pair in &face_lines {
+            for (start, end) in face_pair {
+                let m = (start + end) * 0.5;
+                if m.is_finite() && m.dist(cursor) <= aperture {
+                    cands.push((m.dist(cursor), 1, mode::MID, m, "wall mid"));
+                }
             }
         }
     }
@@ -63,8 +68,10 @@ pub fn arch_snap(d: &Drawing, cursor: Vec2, aperture: f64, osmode: u32) -> Optio
             let Some(wl) = walls.iter().find(|w| w.id == op.wall) else {
                 continue;
             };
-            let start = wl.start.xy();
-            let dir = wall_dir(wl);
+            let start = wl.start;
+            let Some(dir) = wall_dir(wl) else {
+                continue;
+            };
             let perp = Vec2::new(-dir.y, dir.x);
             let half_t = wl.thickness / 2.0;
             let o1 = op.offset;
@@ -85,10 +92,13 @@ pub fn arch_snap(d: &Drawing, cursor: Vec2, aperture: f64, osmode: u32) -> Optio
 
     // 4. Nearest point on any wall face line.
     if osmode & mode::NEA != 0 {
-        for (_, seg) in &face_lines {
-            let closest = seg.closest(cursor);
-            if closest.is_finite() && closest.dist(cursor) <= aperture {
-                cands.push((closest.dist(cursor), 3, mode::NEA, closest, "wall end"));
+        for face_pair in &face_lines {
+            for (start, end) in face_pair {
+                let seg = Segment::Line(cadcraft_geom::Line::new(*start, *end));
+                let closest = seg.closest(cursor);
+                if closest.is_finite() && closest.dist(cursor) <= aperture {
+                    cands.push((closest.dist(cursor), 3, mode::NEA, closest, "wall nearest"));
+                }
             }
         }
     }
@@ -103,34 +113,30 @@ pub fn arch_snap(d: &Drawing, cursor: Vec2, aperture: f64, osmode: u32) -> Optio
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadcraft_doc::{Common, Drawing, EntityKind, Line, Opening, Space};
-    use cadcraft_geom::Vec3;
+    use crate::snap::osnap;
+    use cadcraft_doc::arch::Opening;
+    use cadcraft_doc::{Common, Drawing, EntityKind, Line, Space};
+    use cadcraft_geom::{Vec2, Vec3};
 
     /// A drawing with one wall (0,0)→(10,0), thickness 0.3.
     fn wall_drawing() -> Drawing {
         let mut d = Drawing::new_imperial();
         let wall = cadcraft_doc::Wall {
-            id: cadcraft_arch::ArchId::from(1u32),
-            start: Vec3::new(0.0, 0.0, 0.0),
-            end: Vec3::new(10.0, 0.0, 0.0),
+            id: cadcraft_arch::ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
             thickness: 0.3,
             ..Default::default()
         };
-        d.arch().walls.push(wall);
+        d.arch.walls.push(wall);
         d
     }
 
     /// A drawing with one wall and one opening (offset 2.0, rough width 1.0).
     fn opening_drawing() -> Drawing {
         let mut d = wall_drawing();
-        let opening = Opening {
-            id: cadcraft_arch::ArchId::from(100u32),
-            wall: cadcraft_arch::ArchId::from(1u32),
-            offset: 2.0,
-            rough_width: 1.0,
-            ..Default::default()
-        };
-        d.arch().openings.push(opening);
+        let opening = Opening { id: cadcraft_arch::ArchId(100), wall: cadcraft_arch::ArchId(1), offset: 2.0, rough_width: 1.0, ..Default::default() };
+        d.arch.openings.push(opening);
         d
     }
 
@@ -165,13 +171,13 @@ mod tests {
     fn arch_snap_ignores_non_finite_walls() {
         let mut d = Drawing::new_imperial();
         let bad_wall = cadcraft_doc::Wall {
-            id: cadcraft_arch::ArchId::from(1u32),
-            start: Vec3::new(f64::NAN, 0.0, 0.0),
-            end: Vec3::new(f64::INFINITY, 0.0, 0.0),
+            id: cadcraft_arch::ArchId(1),
+            start: Vec2::new(f64::NAN, 0.0),
+            end: Vec2::new(f64::INFINITY, 0.0),
             thickness: f64::NAN,
             ..Default::default()
         };
-        d.arch().walls.push(bad_wall);
+        d.arch.walls.push(bad_wall);
         assert!(arch_snap(&d, Vec2::new(0.0, 0.0), 1.0, mode::END | mode::MID | mode::NEA).is_none());
     }
 
@@ -182,15 +188,15 @@ mod tests {
         d.add(&Space::Model, Common::default(), EntityKind::Line(line)).unwrap();
         // Arch objects far away – must not affect entity snap results.
         let wall = cadcraft_doc::Wall {
-            id: cadcraft_arch::ArchId::from(1u32),
-            start: Vec3::new(100.0, 100.0, 0.0),
-            end: Vec3::new(110.0, 100.0, 0.0),
+            id: cadcraft_arch::ArchId(1),
+            start: Vec2::new(100.0, 100.0),
+            end: Vec2::new(110.0, 100.0),
             thickness: 0.3,
             ..Default::default()
         };
-        d.arch().walls.push(wall);
+        d.arch.walls.push(wall);
 
-        let hit = super::osnap(&d, &Space::Model, Vec2::new(9.8, 0.1), 0.5, mode::END, None, false).unwrap();
+        let hit = osnap(&d, &Space::Model, Vec2::new(9.8, 0.1), 0.5, mode::END, None, false).unwrap();
         assert!((hit.point - Vec2::new(10.0, 0.0)).len() < 1e-9);
         assert_eq!(hit.name, "Endpoint");
     }
