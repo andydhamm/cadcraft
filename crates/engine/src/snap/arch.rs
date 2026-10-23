@@ -29,16 +29,15 @@ pub fn arch_snap(d: &Drawing, cursor: Vec2, aperture: f64, osmode: u32) -> Optio
 
     let model = d.arch;
     let walls: Vec<&Wall> = model.walls.iter().take(MAX_ARCH_WALLS).collect();
-    let face_lines = face_lines(model);
 
     let mut cands: Vec<(f64, u8, u32, Vec2, &'static str)> = Vec::with_capacity(256);
     // (dist, priority, osmode, point, name)
 
     // 1. Wall face-line endpoints.
     if osmode & mode::END != 0 {
-        for face_pair in &face_lines {
-            for (start, end) in face_pair {
-                for p in [start, end] {
+        for w in &walls {
+            if let Some([(s1, e1), (s2, e2)]) = face_lines(w) {
+                for p in [s1, e1, s2, e2] {
                     if p.is_finite() && p.dist(cursor) <= aperture {
                         cands.push((p.dist(cursor), 0, mode::END, p, "wall end"));
                     }
@@ -49,11 +48,13 @@ pub fn arch_snap(d: &Drawing, cursor: Vec2, aperture: f64, osmode: u32) -> Optio
 
     // 2. Wall face-line midpoints.
     if osmode & mode::MID != 0 {
-        for face_pair in &face_lines {
-            for (start, end) in face_pair {
-                let m = (start + end) * 0.5;
-                if m.is_finite() && m.dist(cursor) <= aperture {
-                    cands.push((m.dist(cursor), 1, mode::MID, m, "wall mid"));
+        for w in &walls {
+            if let Some([(s1, e1), (s2, e2)]) = face_lines(w) {
+                for (s, e) in [(s1, e1), (s2, e2)] {
+                    let m = (s + e) * 0.5;
+                    if m.is_finite() && m.dist(cursor) <= aperture {
+                        cands.push((m.dist(cursor), 1, mode::MID, m, "wall mid"));
+                    }
                 }
             }
         }
@@ -62,10 +63,10 @@ pub fn arch_snap(d: &Drawing, cursor: Vec2, aperture: f64, osmode: u32) -> Optio
     // 3. Opening rough-opening edges on both wall faces.
     if osmode & mode::END != 0 {
         for op in model.openings.iter().take(MAX_ARCH_OPENINGS) {
-            if !op.offset.is_finite() || !op.rough_width.is_finite() {
+            if !op.offset.is_finite() || !op.width.is_finite() {
                 continue;
             }
-            let Some(wl) = walls.iter().find(|w| w.id == op.wall) else {
+            let Some(wl) = walls.iter().find(|w| w.id == op.host) else {
                 continue;
             };
             let start = wl.start;
@@ -75,7 +76,7 @@ pub fn arch_snap(d: &Drawing, cursor: Vec2, aperture: f64, osmode: u32) -> Optio
             let perp = Vec2::new(-dir.y, dir.x);
             let half_t = wl.thickness / 2.0;
             let o1 = op.offset;
-            let o2 = o1 + op.rough_width;
+            let o2 = o1 + op.width;
             for o in [o1, o2] {
                 if !o.is_finite() {
                     continue;
@@ -92,12 +93,14 @@ pub fn arch_snap(d: &Drawing, cursor: Vec2, aperture: f64, osmode: u32) -> Optio
 
     // 4. Nearest point on any wall face line.
     if osmode & mode::NEA != 0 {
-        for face_pair in &face_lines {
-            for (start, end) in face_pair {
-                let seg = Segment::Line(cadcraft_geom::Line::new(*start, *end));
-                let closest = seg.closest(cursor);
-                if closest.is_finite() && closest.dist(cursor) <= aperture {
-                    cands.push((closest.dist(cursor), 3, mode::NEA, closest, "wall nearest"));
+        for w in &walls {
+            if let Some([(s1, e1), (s2, e2)]) = face_lines(w) {
+                for (s, e) in [(s1, e1), (s2, e2)] {
+                    let seg = Segment::Line(cadcraft_geom::Line::new(s, e));
+                    let closest = seg.closest(cursor);
+                    if closest.is_finite() && closest.dist(cursor) <= aperture {
+                        cands.push((closest.dist(cursor), 3, mode::NEA, closest, "wall nearest"));
+                    }
                 }
             }
         }
@@ -132,10 +135,10 @@ mod tests {
         d
     }
 
-    /// A drawing with one wall and one opening (offset 2.0, rough width 1.0).
+    /// A drawing with one wall and one opening (offset 2.0, width 1.0).
     fn opening_drawing() -> Drawing {
         let mut d = wall_drawing();
-        let opening = Opening { id: cadcraft_arch::ArchId(100), wall: cadcraft_arch::ArchId(1), offset: 2.0, rough_width: 1.0, ..Default::default() };
+        let opening = Opening { id: cadcraft_arch::ArchId(100), host: cadcraft_arch::ArchId(1), offset: 2.0, width: 1.0, ..Default::default() };
         d.arch.openings.push(opening);
         d
     }
