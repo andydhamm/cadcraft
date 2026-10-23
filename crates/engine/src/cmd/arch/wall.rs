@@ -280,6 +280,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let mut new_walls: Vec<Wall> = Vec::with_capacity(pts.len().saturating_sub(1));
     for i in 0..pts.len().saturating_sub(1) {
         let id = d.arch.next_wall_id();
+        d.arch.next_id = d.arch.next_id.saturating_add(1);
         new_walls.push(Wall {
             id,
             start: pts[i],

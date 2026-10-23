@@ -4,7 +4,7 @@
 //! The UI calls [`Session::grip_edit`]; every edit runs through a `grip.*` command so it is
 //! undoable and reachable from scripts, the control channel and MCP.
 
-use cadcraft_doc::{DimKind, EntityKind, Handle, LwPolyline};
+use cadcraft_doc::{ARCH_HANDLE_BASE, ArchId, DimKind, EntityKind, Handle, LwPolyline, is_arch_handle};
 use cadcraft_geom::{Arc, EPS, Mat3, Polyline, Vec2, Vec3, norm_angle};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -37,6 +37,11 @@ fn translated(k: &EntityKind, d: Vec2) -> EntityKind {
     let mut k = k.clone();
     k.transform(&Mat3::translate(d));
     k
+}
+
+/// Derive the [`ArchId`] from an arch proxy handle, or `None` for normal entity handles.
+pub(crate) fn arch_id_from_handle(h: Handle) -> Option<ArchId> {
+    is_arch_handle(h).then(|| ArchId((h.0 - ARCH_HANDLE_BASE) as u32))
 }
 
 /// What a polyline grip index refers to (matches the order of `EntityKind::grips`).
@@ -512,6 +517,22 @@ impl Session {
     /// covers the selection: a stretch drags the grips of other selected objects that sit on the
     /// same point, and the other modes transform every selected object.
     pub fn grip_edit(&mut self, handle: Handle, grip_index: usize, new_point: Vec2, mode: GripMode) -> Result<()> {
+        if let Some(id) = arch_id_from_handle(handle) {
+            if mode != GripMode::Stretch {
+                return Err(EngineError::Other("arch walls support only the stretch grip".into()));
+            }
+            let end = if grip_index == 0 { "start" } else { "end" };
+            return self
+                .execute(
+                    "arch.wall.stretch",
+                    &json!({
+                        "wall": format!("w{}", id.0),
+                        "end": end,
+                        "to": [new_point.x, new_point.y],
+                    }),
+                )
+                .map(|_| ());
+        }
         let to = [new_point.x, new_point.y];
         let hs: Vec<String> = std::iter::once(handle).chain(self.selection().into_iter().filter(|h| *h != handle)).map(|h| h.hex()).collect();
         let r = match mode {
@@ -528,6 +549,13 @@ impl Session {
 
     /// Grip points of an object (the indices `grip_edit` takes).
     pub fn grips_of(&self, handle: Handle) -> Result<Vec<Vec2>> {
+        if let Some(id) = arch_id_from_handle(handle) {
+            let d = self.doc()?;
+            return match d.arch.wall(id) {
+                Some(w) => Ok(vec![w.start, w.end]),
+                None => Err(EngineError::Other("no such object".into())),
+            };
+        }
         self.doc()?.entity(handle).map(|e| e.kind.grips()).ok_or_else(|| EngineError::Other("no such object".into()))
     }
 }
@@ -540,3 +568,61 @@ pub fn polyline_grip_count(p: &LwPolyline) -> usize {
 #[cfg(test)]
 #[path = "grips_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod arch_grips_tests {
+    use super::*;
+    use crate::Session;
+    use cadcraft_doc::{ArchId, Handle, arch_handle};
+    use cadcraft_geom::Vec2;
+    use serde_json::json;
+
+    /// Build a session with the standard L-shaped wall
+    /// (w0: (0,0)-(10,0), w1: (10,0)-(10,10)).
+    fn setup() -> Session {
+        let mut s = Session::new();
+        s.execute("wall", &json!({"points": [[0, 0], [10, 0], [10, 10]]})).unwrap();
+        s
+    }
+
+    #[test]
+    fn arch_wall_grips_are_its_endpoints() {
+        let s = setup();
+        let grips = s.grips_of(arch_handle(ArchId(0))).unwrap();
+        assert_eq!(grips, vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)]);
+        assert!(s.grips_of(arch_handle(ArchId(99))).is_err());
+    }
+
+    #[test]
+    fn grip_drag_of_arch_wall_stretches_neighbours() {
+        let mut s = setup();
+        s.grip_edit(arch_handle(ArchId(0)), 1, Vec2::new(12.0, 0.0), GripMode::Stretch).unwrap();
+        let d = s.doc().unwrap();
+        let w1 = d.arch.wall(ArchId(1)).unwrap();
+        assert_eq!(w1.start, Vec2::new(12.0, 0.0));
+    }
+
+    #[test]
+    fn arch_wall_grip_drag_is_undoable() {
+        let mut s = setup();
+        s.grip_edit(arch_handle(ArchId(0)), 1, Vec2::new(12.0, 0.0), GripMode::Stretch).unwrap();
+        s.undo().unwrap();
+        let d = s.doc().unwrap();
+        let w0 = d.arch.wall(ArchId(0)).unwrap();
+        let w1 = d.arch.wall(ArchId(1)).unwrap();
+        assert_eq!(w0.end, Vec2::new(10.0, 0.0));
+        assert_eq!(w1.start, Vec2::new(10.0, 0.0));
+    }
+
+    #[test]
+    fn normal_entity_grips_still_work() {
+        let mut s = setup();
+        s.execute("line", &json!({"points": [[0, 0], [10, 0]]})).unwrap();
+        let d = s.doc().unwrap();
+        let h = d.model.iter().find(|e| matches!(&e.kind, EntityKind::Line(_))).map(|e| e.handle).unwrap();
+        let grips = s.grips_of(h).unwrap();
+        assert!(grips.len() >= 2);
+        s.grip_edit(h, 0, Vec2::new(1.0, 1.0), GripMode::Stretch).unwrap();
+        assert!(s.grip_edit(arch_handle(ArchId(0)), 0, Vec2::new(1.0, 1.0), GripMode::Move).is_err());
+    }
+}
