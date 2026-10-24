@@ -98,8 +98,8 @@ impl Orbit {
         let m = [
             [1.0 / (aspect * tan_half), 0.0, 0.0, 0.0],
             [0.0, 1.0 / tan_half, 0.0, 0.0],
-            [0.0, 0.0, (z_far + z_near) / (z_near - z_far), -1.0],
-            [0.0, 0.0, (2.0 * z_near * z_far) / (z_near - z_far), 0.0],
+            [0.0, 0.0, -z_far / (z_far - z_near), -z_near * z_far / (z_far - z_near)],
+            [0.0, 0.0, -1.0, 0.0],
         ];
         Mat4 { m }
     }
@@ -213,6 +213,30 @@ fn apply_col(m: &Mat4, p: [f64; 3]) -> [f64; 4] {
     out
 }
 
+/// Combined view·projection in WGSL `mat4x4<f32>` layout.
+///
+/// `out[c][r]` is column `c`, row `r`. `Orbit::view`/`Orbit::proj` store matrices in
+/// the *transposed* (apply-column) convention — see `apply_col` in this file — so the
+/// product `proj.mul(&view)` must be transposed before it is uploaded as a WGSL
+/// `mat4x4<f32>` uniform (`u.view_proj * vec4(pos, 1)` in `shaders/mesh.wgsl`).
+///
+/// With `Orbit::proj`'s z mapping, NDC z is monotonically increasing with distance
+/// from the eye and lies in [0, 1] for distances ≳ 0.2 m, which is why the pipeline
+/// uses `CompareFunction::Less` (nearer = smaller depth wins). Never returns NaN: the
+/// inputs are already finite (`Orbit::view` guards the degenerate up-vector,
+/// `Orbit::proj` guards the aspect).
+pub fn view_proj(camera: &Camera, aspect: f64) -> [[f32; 4]; 4] {
+    let Camera::Orbit(o) = camera;
+    let m = o.proj(aspect).mul(&o.view());
+    let mut out = [[0.0f32; 4]; 4];
+    for c in 0..4 {
+        for r in 0..4 {
+            out[c][r] = m.m[r][c] as f32;
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,5 +327,41 @@ mod tests {
         for &v in b2.iter() {
             assert!(v.is_finite(), "normal distance empty bounds: {}", v);
         }
+    }
+
+    #[test]
+    fn view_proj_maps_the_target_to_the_screen_centre() {
+        let cam = Camera::Orbit(Orbit::at_origin(0.0, 0.0, 10.0, 45.0));
+        let vp = view_proj(&cam, 1.0);
+        let clip = clip(&vp, [0.0, 0.0, 0.0]);
+        assert!((clip[0] / clip[3]).abs() < 1e-5, "clip.x/clip.w = {}", clip[0] / clip[3]);
+        assert!((clip[1] / clip[3]).abs() < 1e-5, "clip.y/clip.w = {}", clip[1] / clip[3]);
+        let z = clip[2] / clip[3];
+        assert!((z > 0.5 && z < 1.0), "clip.z/clip.w = {} not in (0.5, 1.0)", z);
+    }
+
+    #[test]
+    fn view_proj_depth_grows_with_distance() {
+        let cam = Camera::Orbit(Orbit::at_origin(0.0, 0.0, 10.0, 45.0));
+        let vp = view_proj(&cam, 1.0);
+        let near = clip(&vp, [0.0, 5.0, 0.0]);
+        let far = clip(&vp, [0.0, -3.0, 0.0]);
+        let near_z = near[2] / near[3];
+        let far_z = far[2] / far[3];
+        assert!(far_z > near_z, "far z ({}) should be > near z ({})", far_z, near_z);
+        assert!(near_z >= 0.0 && near_z <= 1.0, "near z ({}) not in [0, 1]", near_z);
+        assert!(far_z >= 0.0 && far_z <= 1.0, "far z ({}) not in [0, 1]", far_z);
+    }
+
+    /// Multiply a WGSL `mat4x4<f32>` view·projection by a 3D point.
+    ///
+    /// `out[i] = vp[0][i]*p0 + vp[1][i]*p1 + vp[2][i]*p2 + vp[3][i]` — the
+    /// WGSL `M * vec4(p, 1)` convention.
+    fn clip(vp: &[[f32; 4]; 4], p: [f32; 3]) -> [f32; 4] {
+        let mut out = [0.0f32; 4];
+        for i in 0..4 {
+            out[i] = vp[0][i] * p[0] + vp[1][i] * p[1] + vp[2][i] * p[2] + vp[3][i];
+        }
+        out
     }
 }
