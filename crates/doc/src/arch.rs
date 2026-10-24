@@ -168,13 +168,13 @@ fn default_wall_type() -> String {
 }
 
 impl Wall {
-    /// A wall with the given centre line and thickness, 2.7 m high and no layer bands.
+    /// A wall with the given centre line and thickness, 2.4 m high and no layer bands.
     pub fn new(start: Vec2, end: Vec2, thickness: f64) -> Self {
         Wall {
             start,
             end,
             thickness,
-            height: 2.7,
+            height: 2.4,
             layers: Vec::new(),
             id: ArchId(0),
             base_level: 0,
@@ -194,7 +194,7 @@ impl Default for Wall {
             start: Vec2::ZERO,
             end: Vec2::ZERO,
             thickness: 0.2,
-            height: 2.7,
+            height: 2.4,
             layers: Vec::new(),
             id: ArchId(0),
             base_level: 0,
@@ -945,7 +945,7 @@ mod tests {
     fn wall_new_has_default_height_and_no_layers() {
         let w = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), 0.15);
         assert_eq!(w.thickness, 0.15);
-        assert_eq!(w.height, 2.7);
+        assert_eq!(w.height, 2.4);
         assert!(w.layers.is_empty());
         assert_eq!(w.start, Vec2::new(0.0, 0.0));
         assert_eq!(w.end, Vec2::new(1.0, 0.0));
