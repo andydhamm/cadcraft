@@ -45,8 +45,8 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
     let below = p.get("below");
     let index = p.get("index").and_then(|v| v.as_u64());
     let name = p.get("name").and_then(|v| v.as_str());
-    let ceiling = f64_or(p, "ceiling");
-    let structure = f64_or(p, "structure");
+    let ceiling = p.get("ceiling").and_then(|v| v.as_f64());
+    let structure = p.get("structure").and_then(|v| v.as_f64());
 
     if above.is_none() && below.is_none() && index.is_none() && name.is_none() {
         return Err(crate::EngineError::Other("level: specify above, below, index or name".into()));
@@ -110,8 +110,8 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
         }
         // Renumber walls: increment base_level for walls at or above the insertion point
         for w in arch.walls.iter_mut() {
-            if w.base_level >= (i as u32) {
-                w.base_level += 1;
+            if w.to_ceiling >= (i as u32) {
+                w.to_ceiling += 1;
             }
         }
         doc.touch_arch();
@@ -152,8 +152,7 @@ pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("level", "Level", run_level)
             .menu(&["Architecture", "Level"])
-            .params("{above?: name|index, below?: name|index, index?: n, name?: s, ceiling?: f, structure?: f}")
-            .build(),
+            .params("{above?: name|index, below?: name|index, index?: n, name?: s, ceiling?: f, structure?: f}"),
     ]
 }
 
@@ -161,7 +160,7 @@ pub fn specs() -> Vec<CommandSpec> {
 mod tests {
     use super::*;
     use crate::Session;
-    use cadcraft_doc::arch::{ArchId, JoinKind, Level, RefSide, Wall};
+    use cadcraft_doc::arch::{ArchId, Level, Wall};
     use cadcraft_geom::Vec2;
     use serde_json::json;
 
@@ -194,25 +193,18 @@ mod tests {
             doc.arch.levels.push(Level { index: 1, name: "Level 2".into(), elevation: 2.7, ceiling_height: 2.4, structure: 0.3 });
             doc.arch.walls.push(Wall {
                 id: ArchId(0),
-                points: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)],
-                thickness: 0.2,
-                height: 2.4,
-                base_level: 1,
-                top_level: 1,
-                exterior: true,
-                reversed: false,
-                join_start: JoinKind::None,
-                join_end: JoinKind::None,
-                ref_side: RefSide::Center,
-                type_id: 0,
-                split_height: 0.0,
-                upper_type: 0,
+                start: Vec2::new(0.0, 0.0),
+                end: Vec2::new(10.0, 0.0),
+                to_ceiling: 1,
+                wall_type: 0,
+                layers: vec![],
+                divider: false,
             });
         }
         let result = s.execute("level", &json!({"below": "Level 2"})).unwrap();
         let doc = s.doc().unwrap();
         let arch = &doc.arch;
-        assert_eq!(arch.walls[0].base_level, 2);
+        assert_eq!(arch.walls[0].to_ceiling, 2);
     }
 
     #[test]
