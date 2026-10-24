@@ -118,8 +118,18 @@ mod tests {
         let mut s = fresh_session();
         let d = s.doc_mut().unwrap();
         d.arch.levels.push(Level { ..Level::default() });
-        d.arch.rooms.push(Room { level: 0, room_type: RoomType::Living, ..Room::default() });
-        d.arch.rooms.push(Room { level: 0, room_type: RoomType::Living, ..Room::default() });
+        d.arch.rooms.push(Room {
+            level: 0,
+            room_type: RoomType::Living,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 5.0), Vec2::new(0.0, 5.0)],
+            ..Room::default()
+        });
+        d.arch.rooms.push(Room {
+            level: 0,
+            room_type: RoomType::Living,
+            polygon: vec![Vec2::new(5.0, 0.0), Vec2::new(9.0, 0.0), Vec2::new(9.0, 5.0), Vec2::new(5.0, 5.0)],
+            ..Room::default()
+        });
         d.touch_arch();
         s
     }
@@ -129,7 +139,12 @@ mod tests {
         let mut s = fresh_session();
         let d = s.doc_mut().unwrap();
         d.arch.levels.push(Level { ..Level::default() });
-        d.arch.rooms.push(Room { level: 0, room_type: RoomType::OpenBelow, ..Room::default() });
+        d.arch.rooms.push(Room {
+            level: 0,
+            room_type: RoomType::OpenBelow,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 5.0), Vec2::new(0.0, 5.0)],
+            ..Room::default()
+        });
         d.touch_arch();
         s
     }
