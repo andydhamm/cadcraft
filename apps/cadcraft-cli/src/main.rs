@@ -334,8 +334,20 @@ fn format_projected(pb: [f32; 4]) -> String {
     format!("PROJECTED {:.6},{:.6},{:.6},{:.6}", pb[0], pb[1], pb[2], pb[3])
 }
 
+/// Exit code the CLI uses when a 3D render fails for lack of a GPU adapter.
+const RENDER_NO_ADAPTER_EXIT: i32 = 3;
+
+/// Exit code for a `render` GPU failure: `RENDER_NO_ADAPTER_EXIT` when there is no GPU
+/// adapter (the phase-3 acceptance treats this as SKIP) and `1` for any other render error.
+fn render_error_exit(err: &cadcraft_render3d::Render3dError) -> i32 {
+    match err {
+        cadcraft_render3d::Render3dError::NoAdapter => RENDER_NO_ADAPTER_EXIT,
+        _ => 1,
+    }
+}
+
 /// Render the arch 3D scene in `FILE` to the PNG at `OUT`. `--camera` and `--size` are
-/// optional. On success the projected scene bounds are printed to stdout. With no GPU
+/// optional. On success the projected scene bounds are printed to stderr. With no GPU
 /// adapter the command prints "NO_ADAPTER" to stderr and exits 3.
 fn render(args: &[String]) -> Result<(), String> {
     let mut file: Option<String> = None;
@@ -389,13 +401,14 @@ fn render(args: &[String]) -> Result<(), String> {
         Ok(png) => {
             std::fs::write(&out, &png).map_err(|e| format!("{out}: {e}"))?;
             eprintln!("wrote {out} ({} bytes)", png.len());
-            outln!("{}", format_projected(pb));
-        }
-        Err(cadcraft_render3d::Render3dError::NoAdapter) => {
-            eprintln!("NO_ADAPTER");
-            std::process::exit(3);
+            eprintln!("{}", format_projected(pb));
         }
         Err(e) => {
+            let code = render_error_exit(&e);
+            if code == RENDER_NO_ADAPTER_EXIT {
+                eprintln!("NO_ADAPTER");
+                std::process::exit(code);
+            }
             return Err(format!("render: {e}"));
         }
     }
@@ -1032,5 +1045,12 @@ mod tests {
     #[test]
     fn format_projected_is_fixed_width() {
         assert_eq!(format_projected([1.0, 2.0, 3.0, 4.0]), "PROJECTED 1.000000,2.000000,3.000000,4.000000");
+    }
+
+    #[test]
+    fn no_adapter_exits_three() {
+        assert_eq!(render_error_exit(&cadcraft_render3d::Render3dError::NoAdapter), 3);
+        assert_eq!(render_error_exit(&cadcraft_render3d::Render3dError::Wgpu("x".into())), 1);
+        assert_eq!(render_error_exit(&cadcraft_render3d::Render3dError::Buffer("y".into())), 1);
     }
 }

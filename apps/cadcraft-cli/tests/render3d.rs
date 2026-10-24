@@ -49,7 +49,7 @@ fn floorplan(dir: &PathBuf) -> PathBuf {
 }
 
 #[test]
-fn render_writes_a_png_or_skips_without_an_adapter() {
+fn render_writes_a_png() {
     let dir = temp_dir();
     let in_dxf = floorplan(&dir);
     let out_png = dir.join("view.png");
@@ -58,13 +58,16 @@ fn render_writes_a_png_or_skips_without_an_adapter() {
     let stderr = String::from_utf8_lossy(&out.stderr).to_string();
 
     if out.status.success() {
-        // Adapter available: a real PNG must be written.
+        // Adapter available: a real PNG must be written, and both the rendered-bounds and
+        // "wrote" lines are reported to stderr.
         assert!(is_png(&out_png), "render did not write a valid PNG: {}", out_png.display());
         assert!(fs::metadata(&out_png).unwrap().len() > 8, "{:?}", out_png);
+        assert!(stderr.contains("PROJECTED "), "render did not print the PROJECTED bounds to stderr: {stderr}");
+        assert!(stderr.contains("wrote "), "render did not print the wrote line to stderr: {stderr}");
     } else {
-        // No adapter (headless CI): exit 0 (SKIP) with the no-adapter message.
-        assert_eq!(out.status.code(), Some(0), "expected exit 0 when no GPU adapter is available, stderr: {stderr}");
-        assert!(stderr.contains("render: no GPU adapter available"), "no-adapter case did not report 'render: no GPU adapter available': {stderr}");
+        // No adapter (headless CI): exit 3 with the NO_ADAPTER message on stderr.
+        assert_eq!(out.status.code(), Some(3), "no-adapter must exit 3, stderr: {stderr}");
+        assert!(stderr.contains("NO_ADAPTER"), "no-adapter case did not report 'NO_ADAPTER': {stderr}");
     }
 }
 
