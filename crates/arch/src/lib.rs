@@ -19,6 +19,7 @@ pub use cadcraft_doc::{
 
 pub mod graph;
 pub mod join;
+pub mod label;
 pub mod opening;
 pub mod symbol;
 pub mod wall;
