@@ -5,6 +5,30 @@ use crate::camera::Camera;
 use crate::types::Scene3d;
 use image::ImageEncoder;
 
+/// Encode tight RGBA8 pixels as PNG.
+fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, Render3dError> {
+    let mut out = Vec::new();
+    let mut enc = image::codecs::png::PngEncoder::new(&mut out);
+    enc.write_image(rgba, width, height, image::ExtendedColorType::Rgba8).map_err(|e| Render3dError::Buffer(e.to_string()))?;
+    Ok(out)
+}
+
+/// Decode a PNG produced by [`encode_png`] / [`Offscreen::read_png`] into tight RGBA8 pixels.
+/// `image::DynamicImage::to_rgba8()` is the 0.25 API for this; there is no `image::convert`.
+pub fn png_rgba(png: &[u8]) -> Result<Vec<u8>, Render3dError> {
+    let img = image::load_from_memory(png).map_err(|e| Render3dError::Buffer(format!("decode png: {e}")))?.to_rgba8();
+    Ok(img.into_raw())
+}
+
+/// True when every RGBA pixel of a tight RGBA8 buffer equals the first one (empty counts as uniform).
+pub fn pixels_are_uniform(rgba: &[u8]) -> bool {
+    let mut it = rgba.chunks_exact(4);
+    match it.next() {
+        None => true,
+        Some(first) => it.all(|p| p == first),
+    }
+}
+
 /// Offscreen renderer that renders to a texture and reads back as PNG.
 pub struct Offscreen {
     instance: wgpu::Instance,
@@ -91,26 +115,19 @@ impl Offscreen {
             let _ = tx.send(result);
         });
 
-        self.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(std::time::Duration::from_secs(5)) });
+        self.device
+            .poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(std::time::Duration::from_secs(5)) })
+            .map_err(|e| Render3dError::Wgpu(e.to_string()))?;
         rx.await.map_err(|e| Render3dError::Wgpu(format!("channel error: {e}")))?.map_err(|e| Render3dError::Wgpu(e.to_string()))?;
 
-        let full = slice.get_mapped_range().to_vec();
+        let full = slice.get_mapped_range().map_err(|e| Render3dError::Wgpu(e.to_string()))?.to_vec();
         // Each row is `bytes_per_row` bytes; the first `row_bytes` are the valid pixels.
         // Re-pack into a tight contiguous RGBA buffer (dropping per-row padding).
         let row = self.width as u64 * 4;
         let pixels: Vec<u8> = (0..self.height as u64)
             .flat_map(|r| full[(r * bytes_per_row) as usize..(r * bytes_per_row) as usize + row as usize].iter().copied())
             .collect();
-        let img =
-            image::RgbaImage::from_raw(self.width, self.height, pixels).ok_or_else(|| Render3dError::Buffer("invalid image data".to_string()))?;
-
-        let mut png_data = Vec::new();
-        let mut encoder = image::codecs::png::PngEncoder::new(&mut png_data);
-        encoder
-            .write_image(img.as_raw(), self.width, self.height, image::ExtendedColorType::Rgba8)
-            .map_err(|e| Render3dError::Buffer(e.to_string()))?;
-
-        Ok(png_data)
+        encode_png(self.width, self.height, &pixels)
     }
 }
 
@@ -141,5 +158,27 @@ mod tests {
             Err(Render3dError::NoAdapter) => {}
             Err(e) => panic!("unexpected error: {e}"),
         }
+    }
+
+    #[test]
+    fn png_roundtrip_keeps_pixels() {
+        let mut px = Vec::new();
+        for y in 0..4u8 {
+            for x in 0..4u8 {
+                px.extend_from_slice(&[x * 60, y * 60, 128, 255]);
+            }
+        }
+        let png = encode_png(4, 4, &px).expect("encode");
+        assert_eq!(png_rgba(&png).expect("decode"), px);
+        assert!(!pixels_are_uniform(&px));
+    }
+
+    #[test]
+    fn uniform_pixels_are_detected() {
+        let px = vec![26u8; 8 * 8 * 4];
+        assert!(pixels_are_uniform(&px));
+        let mut px2 = px.clone();
+        px2[100] = 200;
+        assert!(!pixels_are_uniform(&px2));
     }
 }
