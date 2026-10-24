@@ -51,14 +51,7 @@ pub struct Pane3d {
 impl Pane3d {
     /// New pane with a default orbit and no scene built yet.
     pub fn new() -> Self {
-        Self {
-            orbit: Orbit::default(),
-            last_revision: 0,
-            mesh_count: 0,
-            available: false,
-            has_content: false,
-            scene: None,
-        }
+        Self { orbit: Orbit::default(), last_revision: 0, mesh_count: 0, available: false, has_content: false, scene: None }
     }
 
     /// Whether the scene must be rebuilt because `current_revision` differs from the last
@@ -210,7 +203,7 @@ mod tests {
             end: cadcraft_geom::Vec2::new(10.0, 0.0),
             thickness: 0.2,
             height: 2.7,
-            ..Default::default(),
+            ..Default::default()
         });
 
         let mut pane = Pane3d::new();
@@ -244,7 +237,7 @@ mod tests {
             end: cadcraft_geom::Vec2::new(10.0, 0.0),
             thickness: 0.2,
             height: 2.7,
-            ..Default::default(),
+            ..Default::default()
         });
 
         let mut pane = Pane3d::new();
@@ -265,7 +258,7 @@ mod tests {
             end: cadcraft_geom::Vec2::new(10.0, 0.0),
             thickness: 0.2,
             height: 2.7,
-            ..Default::default(),
+            ..Default::default()
         });
 
         let mut pane = Pane3d::new();
@@ -278,7 +271,7 @@ mod tests {
         // `fit` centres the camera on the scene; for a 0..10 m wall that is x = 5.
         assert!((o.target.x - 5.0).abs() < 0.25);
         assert!(o.distance >= cadcraft_render3d::camera::MIN_DISTANCE);
-        assert!((o.distance - 10.0.max(cadcraft_render3d::camera::MIN_DISTANCE)).abs() < 1e-9);
+        assert!((o.distance - f64::max(10.0, cadcraft_render3d::camera::MIN_DISTANCE)).abs() < 1e-9);
         // The render3d Orbit stores angles in degrees; the pane default is 0.0 / 0.35 rad.
         assert!((o.azimuth - 0.0).abs() < 1e-9);
         assert!((o.elevation - 0.35 * (180.0 / std::f64::consts::PI)).abs() < 1e-6);
