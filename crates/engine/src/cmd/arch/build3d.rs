@@ -118,8 +118,8 @@ mod tests {
         let mut s = fresh_session();
         let d = s.doc_mut().unwrap();
         d.arch.levels.push(Level { ..Level::default() });
-        d.arch.rooms.push(Room { level: 0, r#type: RoomType::Living, ..Room::default() });
-        d.arch.rooms.push(Room { level: 0, r#type: RoomType::Living, ..Room::default() });
+        d.arch.rooms.push(Room { level: 0, room_type: RoomType::Living, ..Room::default() });
+        d.arch.rooms.push(Room { level: 0, room_type: RoomType::Living, ..Room::default() });
         d.touch_arch();
         s
     }
@@ -129,7 +129,7 @@ mod tests {
         let mut s = fresh_session();
         let d = s.doc_mut().unwrap();
         d.arch.levels.push(Level { ..Level::default() });
-        d.arch.rooms.push(Room { level: 0, r#type: RoomType::OpenBelow, ..Room::default() });
+        d.arch.rooms.push(Room { level: 0, room_type: RoomType::OpenBelow, ..Room::default() });
         d.touch_arch();
         s
     }
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn build3d_reports_floor_and_ceiling_counts() {
-        let s = rooms_session();
+        let mut s = rooms_session();
         let r = s.execute("build3d", &json!({})).unwrap();
         assert_eq!(r["floors"].as_u64(), Some(2), "two Living rooms -> 2 floors");
         assert_eq!(r["ceilings"].as_u64(), Some(2), "two Living rooms -> 2 ceilings");
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn build3d_reports_zero_floors_for_open_below() {
-        let s = open_below_session();
+        let mut s = open_below_session();
         let r = s.execute("build3d", &json!({})).unwrap();
         assert_eq!(r["floors"].as_u64(), Some(0), "OpenBelow rooms get no floor slab");
         assert_eq!(r["ceilings"].as_u64(), Some(1), "OpenBelow room still gets a ceiling");
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn build3d_still_reports_meshes_and_openings() {
-        let s = wall_with_opening_session();
+        let mut s = wall_with_opening_session();
         let r = s.execute("build3d", &json!({})).unwrap();
         assert!(r["meshes"].is_number(), "missing `meshes` key");
         assert!(r["triangles"].is_number(), "missing `triangles` key");
