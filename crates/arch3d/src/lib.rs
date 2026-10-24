@@ -85,9 +85,10 @@ fn raw_wall_mesh(wall: &Wall, base: f64, top: f64, object: ArchId) -> Option<Mes
 /// `to_ceiling` else `height)`. Returns `None` when the span is degenerate
 /// (non-finite, or `top <= base`) — such walls are skipped.
 pub fn wall_span(model: &ArchModel, w: &Wall) -> Option<(f64, f64)> {
-    let level = model.level(w.base_level);
-    let base = level.map(|l| l.elevation).unwrap_or(0.0);
-    let h = if w.to_ceiling { level.map(|l| l.ceiling_height).unwrap_or(w.height) } else { w.height };
+    let level = model.levels.iter().rev().find(|l| l.index == w.base_level).or(model.levels.last());
+    let Some(level) = level else { return None };
+    let base = level.elevation;
+    let h = if w.to_ceiling { level.ceiling_height } else { w.height };
     let top = base + h;
     if !base.is_finite() || !top.is_finite() || top <= base {
         return None;
