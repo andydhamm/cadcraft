@@ -75,6 +75,7 @@ fn load_fixture() -> ArchModel {
             join_start: Default::default(),
             join_end: Default::default(),
             layers: Vec::new(),
+            divider: false,
         });
     }
 
@@ -94,6 +95,7 @@ fn load_fixture() -> ArchModel {
             join_start: Default::default(),
             join_end: Default::default(),
             layers: Vec::new(),
+            divider: false,
         });
     }
 

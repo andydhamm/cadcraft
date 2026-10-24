@@ -265,11 +265,11 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     // Level: from param, or the first level in the model when absent
     let level = level_name.as_deref().and_then(|name| d.arch.levels.iter().find(|l| l.name == name)).or_else(|| d.arch.levels.first());
 
-    // Height: explicit or level floor_to_floor
+    // Height: explicit or level ceiling height
     let height = size_param("wall", p, "height", false)?;
     let height = match height {
         Some(h) => h,
-        None => level.map(|l| l.floor_to_floor).unwrap_or(super::DEFAULT_EXT_THICKNESS * 5.0),
+        None => level.map(|l| l.ceiling_height).unwrap_or(super::DEFAULT_EXT_THICKNESS * 5.0),
     };
 
     // Apply closed flag
@@ -307,6 +307,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
             join_start: JoinKind::default(),
             join_end: JoinKind::default(),
             layers: layers.clone(),
+            divider: false,
         });
     }
 
@@ -341,7 +342,7 @@ mod tests {
     fn new_session_with_level() -> Session {
         let mut s = Session::new();
         let d = s.doc_mut().unwrap();
-        d.arch.levels.push(Level { name: "ground".to_string(), floor_to_floor: 3.0, ..Default::default() });
+        d.arch.levels.push(Level { name: "ground".to_string(), ceiling_height: 2.7, structure: 0.3, ..Default::default() });
         d.touch_arch();
         s
     }
@@ -495,7 +496,7 @@ mod tests {
         });
         let _ = s.execute("wall", &p).unwrap();
         let d = s.doc().unwrap();
-        assert_eq!(d.arch.walls[0].height, 3.0);
+        assert_eq!(d.arch.walls[0].height, 2.7);
     }
 
     #[test]

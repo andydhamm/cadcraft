@@ -101,7 +101,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
             json!({
                 "name": l.name,
                 "elevation": l.elevation,
-                "floorToFloor": l.floor_to_floor,
+                "floorToFloor": l.floor_to_floor(),
                 "ceiling": l.ceiling_height,
                 "structure": l.structure,
             })

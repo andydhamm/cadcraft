@@ -107,6 +107,7 @@ fn build_random_model(seed: u64, num_walls: usize) -> (ArchModel, Vec<ArchId>) {
             join_start: JoinKind::default(),
             join_end: JoinKind::default(),
             layers: Vec::new(),
+            divider: false,
         };
 
         let id = model.add_wall(wall);
