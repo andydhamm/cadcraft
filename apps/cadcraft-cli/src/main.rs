@@ -328,9 +328,15 @@ fn parse_camera(spec: &str, base: cadcraft_render3d::camera::Orbit) -> Result<ca
     Ok(cadcraft_render3d::camera::Camera::Orbit(o))
 }
 
+/// Format a projected bounds tuple for stdout display (fixed 6-digit precision).
+/// Extracted so the output format can be pinned without needing a GPU.
+fn format_projected(pb: [f32; 4]) -> String {
+    format!("PROJECTED {:.6},{:.6},{:.6},{:.6}", pb[0], pb[1], pb[2], pb[3])
+}
+
 /// Render the arch 3D scene in `FILE` to the PNG at `OUT`. `--camera` and `--size` are
-/// optional. With no GPU adapter the command prints "render: no GPU adapter available" to
-/// stderr and exits 0 (a SKIP, not a failure).
+/// optional. On success the projected scene bounds are printed to stdout. With no GPU
+/// adapter the command prints "NO_ADAPTER" to stderr and exits 3.
 fn render(args: &[String]) -> Result<(), String> {
     let mut file: Option<String> = None;
     let mut out: Option<String> = None;
@@ -376,14 +382,18 @@ fn render(args: &[String]) -> Result<(), String> {
         None => Ok(cadcraft_render3d::camera::Camera::Orbit(base)),
     }?;
 
+    let pb = cadcraft_render3d::camera::projected_bounds(&camera, &scene.bounds, size);
+
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| format!("render: tokio runtime: {e}"))?;
     match rt.block_on(cadcraft_render3d::offscreen::headless_png(&scene, &camera, size)) {
         Ok(png) => {
             std::fs::write(&out, &png).map_err(|e| format!("{out}: {e}"))?;
             eprintln!("wrote {out} ({} bytes)", png.len());
+            outln!("{}", format_projected(pb));
         }
         Err(cadcraft_render3d::Render3dError::NoAdapter) => {
-            eprintln!("render: no GPU adapter available");
+            eprintln!("NO_ADAPTER");
+            std::process::exit(3);
         }
         Err(e) => {
             return Err(format!("render: {e}"));
@@ -1017,5 +1027,10 @@ mod tests {
         assert_eq!(validate_options("info", &args(&["missing.dxf", "--typo"]), NO_OPTIONS), Err("info: unknown option --typo".into()));
         assert_eq!(validate_options("perf", &args(&["1", "--typo"]), NO_OPTIONS), Err("perf: unknown option --typo".into()));
         assert_eq!(validate_options("sample", &args(&["bracket", "out.dxf", "--typo"]), NO_OPTIONS), Err("sample: unknown option --typo".into()));
+    }
+
+    #[test]
+    fn format_projected_is_fixed_width() {
+        assert_eq!(format_projected([1.0, 2.0, 3.0, 4.0]), "PROJECTED 1.000000,2.000000,3.000000,4.000000");
     }
 }
