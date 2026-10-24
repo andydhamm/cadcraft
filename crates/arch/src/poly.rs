@@ -96,6 +96,97 @@ pub fn point_segment_dist(p: Vec2, a: Vec2, b: Vec2) -> f64 {
     closest.dist(p)
 }
 
+/// Tolerance used by `segs_cross` for floating-point comparisons.
+const TOL: f64 = 1e-12;
+
+/// Whether the closed segments `a1 -> a2` and `b1 -> b2` touch or cross.
+///
+/// Uses the signed cross-product test with `TOL` for robustness. Returns
+/// `false` when any endpoint is non-finite.
+fn segs_cross(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2) -> bool {
+    if !a1.is_finite() || !a2.is_finite() || !b1.is_finite() || !b2.is_finite() {
+        return false;
+    }
+
+    let ab = Vec2::new(a2.x - a1.x, a2.y - a1.y);
+    let cd = Vec2::new(b2.x - b1.x, b2.y - b1.y);
+
+    let d1 = ab.cross(Vec2::new(b1.x - a1.x, b1.y - a1.y));
+    let d2 = ab.cross(Vec2::new(b2.x - a1.x, b2.y - a1.y));
+    let d3 = cd.cross(Vec2::new(a1.x - b1.x, a1.y - b1.y));
+    let d4 = cd.cross(Vec2::new(a2.x - b1.x, a2.y - b1.y));
+
+    let straddle = |d: f64, e: f64| (d > TOL && e < -TOL) || (d < -TOL && e > TOL);
+
+    // Proper crossing: both pairs of signed distances straddle zero.
+    if straddle(d1, d2) && straddle(d3, d4) {
+        return true;
+    }
+
+    // Collinear overlap: all four cross-products are within tolerance.
+    // Project both segments onto the longer axis of `ab` and check for overlap.
+    if d1.abs() <= TOL && d2.abs() <= TOL && d3.abs() <= TOL && d4.abs() <= TOL {
+        let (lo1, hi1): (f64, f64) = if ab.x.abs() >= ab.y.abs() { (a1.x.min(a2.x), a1.x.max(a2.x)) } else { (a1.y.min(a2.y), a1.y.max(a2.y)) };
+        let (lo2, hi2): (f64, f64) = if ab.x.abs() >= ab.y.abs() { (b1.x.min(b2.x), b1.x.max(b2.x)) } else { (b1.y.min(b2.y), b1.y.max(b2.y)) };
+        if hi1.min(hi2) - lo1.max(lo2) > TOL {
+            return true;
+        }
+    }
+
+    // Endpoint touching: an endpoint within tolerance of the other segment's
+    // supporting line AND inside the other segment's bounding box (with `TOL`
+    // slack on both axes).
+    if d1.abs() <= TOL && in_bbox(b1, a1, a2) {
+        return true;
+    }
+    if d2.abs() <= TOL && in_bbox(b2, a1, a2) {
+        return true;
+    }
+    if d3.abs() <= TOL && in_bbox(a1, b1, b2) {
+        return true;
+    }
+    if d4.abs() <= TOL && in_bbox(a2, b1, b2) {
+        return true;
+    }
+
+    false
+}
+
+/// Whether `p` is inside the axis-aligned bounding box of the segment
+/// `a -> b` (with `TOL` slack on both axes).
+fn in_bbox(p: Vec2, a: Vec2, b: Vec2) -> bool {
+    p.x >= a.x.min(b.x) - TOL && p.x <= a.x.max(b.x) + TOL && p.y >= a.y.min(b.y) - TOL && p.y <= a.y.max(b.y) + TOL
+}
+
+/// Whether `pts` form a simple (non-self-intersecting) closed polygon ring.
+///
+/// Returns `false` when `pts` has fewer than three points, when any point is
+/// non-finite, when the enclosed area is at most `TOL`, or when any pair of
+/// non-adjacent edges crosses. Edge `i` is `pts[i] -> pts[(i + 1) % n]`.
+pub fn is_simple(pts: &[Vec2]) -> bool {
+    let n = pts.len();
+    if n < 3 {
+        return false;
+    }
+    if pts.iter().any(|p| !p.is_finite()) {
+        return false;
+    }
+    if ring_area(pts) <= TOL {
+        return false;
+    }
+    for i in 0..n {
+        for j in (i + 2)..n {
+            if i == 0 && j == n - 1 {
+                continue;
+            }
+            if segs_cross(pts[i], pts[(i + 1) % n], pts[j], pts[(j + 1) % n]) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,5 +265,40 @@ mod tests {
 
         assert!(point_segment_dist(Vec2::new(1.0, 1.0), a, a) >= f64::MAX);
         assert!(point_segment_dist(Vec2::new(f64::NAN, 0.0), a, b) >= f64::MAX);
+    }
+
+    #[test]
+    fn is_simple_accepts_square() {
+        let square = sq(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]);
+        assert!(is_simple(&square));
+
+        let pentagon = sq(&[(0.0, 0.0), (2.0, 0.0), (3.0, 1.0), (1.0, 3.0), (-1.0, 2.0)]);
+        assert!(is_simple(&pentagon));
+    }
+
+    #[test]
+    fn is_simple_rejects_bowtie() {
+        let bowtie = sq(&[(0.0, 0.0), (2.0, 2.0), (2.0, 0.0), (0.0, 2.0)]);
+        assert!(!is_simple(&bowtie));
+    }
+
+    #[test]
+    fn is_simple_rejects_collinear_overlap() {
+        let spike = sq(&[(-1.0, -1.0), (4.0, -1.0), (4.0, 4.0), (1.0, 4.0), (1.0, 2.0), (2.0, 2.0), (2.0, 4.0), (-1.0, 4.0)]);
+        assert!(!is_simple(&spike));
+    }
+
+    #[test]
+    fn is_simple_rejects_degenerate_and_short() {
+        assert!(!is_simple(&[]));
+
+        let two_points = vec![Vec2::ZERO, Vec2::X];
+        assert!(!is_simple(&two_points));
+
+        let zero_area = sq(&[(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]);
+        assert!(!is_simple(&zero_area));
+
+        let inf = vec![Vec2::ZERO, Vec2::X, Vec2::new(f64::INFINITY, 0.0)];
+        assert!(!is_simple(&inf));
     }
 }
