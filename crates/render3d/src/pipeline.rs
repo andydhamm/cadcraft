@@ -109,11 +109,11 @@ fn create_all(device: &wgpu::Device, sample_count: u32) -> (wgpu::RenderPipeline
 
     let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("render3d bind group layout"),
-        entries: &[wgpu::BindGroupEntry {
-            bindings: &[wgpu::BindGroupBinding {
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: vec![wgpu::Binding {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferSize::Uniform, has_dynamic_offset: false, min_binding_size: None },
                 count: None,
             }],
         }],
@@ -188,7 +188,7 @@ impl GpuPipeline {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("render3d bind group instance"),
             layout: &bgl,
-            entries: &[wgpu::BindGroupEntry { bindings: &[wgpu::BindGroupBinding { buffer: uniform.clone(), offset: 0 }] }],
+            entries: &[wgpu::BindGroupEntry { binding: vec![wgpu::Binding { buffer: uniform.clone(), offset: 0 }] }],
         });
 
         GpuPipeline { pipeline, bgl, uniform, bind_group }
