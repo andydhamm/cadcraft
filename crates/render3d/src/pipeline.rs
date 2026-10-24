@@ -84,4 +84,31 @@ mod tests {
         assert_eq!(meshes.vertex_count, 3);
         assert_eq!(meshes.index_count, 3);
     }
+
+    #[test]
+    fn gpu_mesh_vertex_count_matches_the_scene() {
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        for i in 0..3 {
+            let x = i as f32;
+            mesh.positions.push([x, 0.0, 0.0]);
+            mesh.normals.push([0.0, 0.0, 1.0]);
+            mesh.uvs.push([x, 0.0]);
+        }
+        mesh.indices = vec![0, 1, 2];
+
+        let scene = Scene3d { meshes: vec![mesh], bounds: Bounds3::empty(), revision: 0, openings_built: 0 };
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let Some(adapter) = instance.request_adapter(&wgpu::RequestAdapterOptions::default()).now_or_never().and_then(Result::ok) else {
+            return;
+        };
+
+        let Some((device, _queue)) = adapter.request_device(&wgpu::DeviceDescriptor::default()).now_or_never().and_then(Result::ok) else {
+            return;
+        };
+
+        let meshes = upload(&device, &scene);
+        assert_eq!(meshes.vertex_count, 3);
+        assert_eq!(meshes.index_count, 3);
+    }
 }
