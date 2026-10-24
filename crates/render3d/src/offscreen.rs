@@ -120,7 +120,7 @@ impl Offscreen {
             .map_err(|e| Render3dError::Wgpu(e.to_string()))?;
         rx.await.map_err(|e| Render3dError::Wgpu(format!("channel error: {e}")))?.map_err(|e| Render3dError::Wgpu(e.to_string()))?;
 
-        let full = slice.get_mapped_range().map_err(|e| Render3dError::Wgpu(e.to_string()))?.to_vec();
+        let full = slice.get_mapped_range().to_vec();
         // Each row is `bytes_per_row` bytes; the first `row_bytes` are the valid pixels.
         // Re-pack into a tight contiguous RGBA buffer (dropping per-row padding).
         let row = self.width as u64 * 4;
