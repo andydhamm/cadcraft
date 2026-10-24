@@ -202,13 +202,13 @@ pub fn projected_bounds(camera: &Camera, bounds: &Bounds3, size: (u32, u32)) -> 
     [px_min.clamp(0.0, w_f) as f32, py_min.clamp(0.0, h_f) as f32, px_max.clamp(0.0, w_f) as f32, py_max.clamp(0.0, h_f) as f32]
 }
 
-/// Multiply a column-major `Mat4` by a 3D point (implicitly homogenized to w=1).
+/// Multiply a `Mat4` by a 3D point (implicitly homogenized to w=1).
 ///
-/// `out[i] = m[0][i]*p[0] + m[1][i]*p[1] + m[2][i]*p[2] + m[3][i]`
+/// `out[i] = m[i][0]*p[0] + m[i][1]*p[1] + m[i][2]*p[2] + m[i][3]`
 fn apply_col(m: &Mat4, p: [f64; 3]) -> [f64; 4] {
     let mut out = [0.0f64; 4];
     for i in 0..4 {
-        out[i] = m.m[0][i] * p[0] + m.m[1][i] * p[1] + m.m[2][i] * p[2] + m.m[3][i];
+        out[i] = m.m[i][0] * p[0] + m.m[i][1] * p[1] + m.m[i][2] * p[2] + m.m[i][3];
     }
     out
 }
