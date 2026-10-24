@@ -186,7 +186,7 @@ impl Mesh {
     /// a closed 2-manifold. If a hole cannot be bridged it is dropped.
     pub fn push_prism_with_holes(&mut self, outer: &[Vec2], holes: &[Vec<Vec2>], z0: f64, z1: f64) {
         // Filter holes: >=3 finite vertices and non-degenerate area, normalised to CW.
-        let filtered_holes: Vec<Vec<Vec2>>> = holes
+        let filtered_holes: Vec<Vec<Vec2>> = holes
             .iter()
             .filter_map(|h| {
                 if h.len() < 3 {
@@ -220,11 +220,7 @@ impl Mesh {
         if outer_area.abs() < 1e-12 {
             return;
         }
-        let ring_ccw = if outer_area < 0.0 {
-            outer.iter().rev().cloned().collect::<Vec<Vec2>>()
-        } else {
-            outer.to_vec()
-        };
+        let ring_ccw = if outer_area < 0.0 { outer.iter().rev().cloned().collect::<Vec<Vec2>>() } else { outer.to_vec() };
 
         // Bridge each hole into the running ring, dropping any that can't bridge.
         let mut ring = ring_ccw;
@@ -313,33 +309,31 @@ fn find_bridge_pair(ring: &[Vec2], hole: &[Vec2]) -> Option<(u32, u32)> {
             }
             // The bridge segment must not cross any ring edge except the two
             // edges incident to p, and no hole edge except the two incident to q.
-            let ring_ok = (0..m)
-                .all(|i| {
-                    let a = i;
-                    let b = (i + 1) % m;
-                    if a == p && b == (p + 1) % m {
-                        return true;
-                    }
-                    if b == p && a == (p + m - 1) % m {
-                        return true;
-                    }
-                    !segs_properly_intersect(ring[a], ring[b], pr, hq)
-                });
+            let ring_ok = (0..m).all(|i| {
+                let a = i;
+                let b = (i + 1) % m;
+                if a == p && b == (p + 1) % m {
+                    return true;
+                }
+                if b == p && a == (p + m - 1) % m {
+                    return true;
+                }
+                !segs_properly_intersect(ring[a as usize], ring[b as usize], pr, hq)
+            });
             if !ring_ok {
                 continue;
             }
-            let hole_ok = (0..h)
-                .all(|i| {
-                    let a = i;
-                    let b = (i + 1) % h;
-                    if a == q && b == (q + 1) % h {
-                        return true;
-                    }
-                    if b == q && a == (q + h - 1) % h {
-                        return true;
-                    }
-                    !segs_properly_intersect(hole[a], hole[b], pr, hq)
-                });
+            let hole_ok = (0..h).all(|i| {
+                let a = i;
+                let b = (i + 1) % h;
+                if a == q && b == (q + 1) % h {
+                    return true;
+                }
+                if b == q && a == (q + h - 1) % h {
+                    return true;
+                }
+                !segs_properly_intersect(hole[a as usize], hole[b as usize], pr, hq)
+            });
             if !hole_ok {
                 continue;
             }
@@ -352,11 +346,7 @@ fn find_bridge_pair(ring: &[Vec2], hole: &[Vec2]) -> Option<(u32, u32)> {
             }
         }
     }
-    if best.0.is_finite() {
-        Some((best.1, best.2))
-    } else {
-        None
-    }
+    if best.0.is_finite() { Some((best.1, best.2)) } else { None }
 }
 
 /// Splice `hole` into `ring` at the bridging pair `(p, q)`:
@@ -771,9 +761,7 @@ mod tests {
         // valid hole present.
         let mut mesh = Mesh::new("wall", ArchId(1));
         let outer = &[Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
-        let holes = &[
-            vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(3.0, 1.5)],
-        ];
+        let holes = &[vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(3.0, 1.5)]];
         mesh.push_prism_with_holes(outer, holes, 0.0, 2.5);
         assert!(mesh.positions.is_empty(), "degenerate outer must yield no positions");
         assert!(mesh.normals.is_empty(), "degenerate outer must yield no normals");
