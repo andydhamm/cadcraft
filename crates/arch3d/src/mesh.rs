@@ -307,6 +307,119 @@ fn triangulate(ring: &[Vec2]) -> Vec<[u32; 3]> {
     tri
 }
 
+/// Ear clipping that tolerates duplicate *positions* in `ring` (a bridged
+/// ring repeats the two bridge endpoints). Returns empty on <3 finite verts.
+fn triangulate_simple(ring: &[Vec2]) -> Vec<[u32; 3]> {
+    let n = ring.len();
+    if n < 3 {
+        return Vec::new();
+    }
+    for p in ring {
+        if !p.is_finite() {
+            return Vec::new();
+        }
+    }
+    let mut tri: Vec<[u32; 3]> = Vec::new();
+    let mut poly: Vec<u32> = (0..n as u32).collect();
+    let max_iters = (n * 3) as u32;
+    let mut iters: u32 = 0;
+
+    fn near(a: &Vec2, b: &Vec2) -> bool {
+        (a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9
+    }
+
+    while poly.len() >= 3 && iters < max_iters {
+        iters += 1;
+        let m = poly.len();
+        let mut removed = false;
+
+        // First pass: strict threshold.
+        for i in 0..m {
+            let j_idx = (i + 1) % m;
+            let k_idx = (i + 2) % m;
+            let pi = poly[i];
+            let pj = poly[j_idx];
+            let pk = poly[k_idx];
+
+            let cx = ring[pj as usize].x - ring[pi as usize].x;
+            let cy = ring[pj as usize].y - ring[pi as usize].y;
+            let dx = ring[pk as usize].x - ring[pi as usize].x;
+            let dy = ring[pk as usize].y - ring[pi as usize].y;
+            let cross = cx * dy - cy * dx;
+            if cross < 1e-15 {
+                continue;
+            }
+            let mut inside = false;
+            for l in 0..m {
+                if l == i || l == j_idx || l == k_idx {
+                    continue;
+                }
+                let pl = &ring[poly[l] as usize];
+                if near(pl, &ring[pi as usize]) || near(pl, &ring[pj as usize]) || near(pl, &ring[pk as usize]) {
+                    continue;
+                }
+                if point_in_triangle(pl, &ring[pi as usize], &ring[pj as usize], &ring[pk as usize]) {
+                    inside = true;
+                    break;
+                }
+            }
+            if inside {
+                continue;
+            }
+            tri.push([pi, pj, pk]);
+            poly.remove(j_idx);
+            removed = true;
+            break;
+        }
+
+        // Second pass (only if the first found nothing): relaxed threshold.
+        if !removed {
+            for i in 0..m {
+                let j_idx = (i + 1) % m;
+                let k_idx = (i + 2) % m;
+                let pi = poly[i];
+                let pj = poly[j_idx];
+                let pk = poly[k_idx];
+
+                let cx = ring[pj as usize].x - ring[pi as usize].x;
+                let cy = ring[pj as usize].y - ring[pi as usize].y;
+                let dx = ring[pk as usize].x - ring[pi as usize].x;
+                let dy = ring[pk as usize].y - ring[pi as usize].y;
+                let cross = cx * dy - cy * dx;
+                if cross < -1e-12 {
+                    continue;
+                }
+                let mut inside = false;
+                for l in 0..m {
+                    if l == i || l == j_idx || l == k_idx {
+                        continue;
+                    }
+                    let pl = &ring[poly[l] as usize];
+                    if near(pl, &ring[pi as usize]) || near(pl, &ring[pj as usize]) || near(pl, &ring[pk as usize]) {
+                        continue;
+                    }
+                    if point_in_triangle(pl, &ring[pi as usize], &ring[pj as usize], &ring[pk as usize]) {
+                        inside = true;
+                        break;
+                    }
+                }
+                if inside {
+                    continue;
+                }
+                tri.push([pi, pj, pk]);
+                poly.remove(j_idx);
+                removed = true;
+                break;
+            }
+        }
+
+        if !removed {
+            break;
+        }
+    }
+    tri
+}
+
 /// Barycentric point-in-triangle test (strictly interior, with tolerance).
 fn point_in_triangle(p: &Vec2, a: &Vec2, b: &Vec2, c: &Vec2) -> bool {
     let ab_x = b.x - a.x;
@@ -421,5 +534,56 @@ mod tests {
         assert!(point_in_ring_even_odd(Vec2::new(1.0, 1.0), &ring));
         assert!(!point_in_ring_even_odd(Vec2::new(5.0, 5.0), &ring));
         assert!(!point_in_ring_even_odd(Vec2::new(-1.0, 2.0), &ring));
+    }
+
+    /// `triangulate_simple` on simple rings matches `triangulate` in triangle count
+    /// and every returned index triple is in range with distinct entries.
+    #[test]
+    fn triangulate_simple_matches_triangulate_on_simple_rings() {
+        let square = square_ring();
+        let tri_simple = triangulate_simple(&square);
+        let tri = triangulate(&square);
+        assert_eq!(tri_simple.len(), 2, "square should triangulate to 2 triangles; got {tri_simple:?}");
+        assert_eq!(tri_simple.len(), tri.len());
+        for t in &tri_simple {
+            assert!(t[0] < square.len() as u32);
+            assert!(t[1] < square.len() as u32);
+            assert!(t[2] < square.len() as u32);
+            assert!(t[0] != t[1] && t[1] != t[2] && t[0] != t[2]);
+        }
+
+        let concave = concave_ring();
+        let tri_simple = triangulate_simple(&concave);
+        let tri = triangulate(&concave);
+        assert_eq!(tri_simple.len(), 3, "concave 5-gon should triangulate to 3 triangles; got {tri_simple:?}");
+        assert_eq!(tri_simple.len(), tri.len());
+        for t in &tri_simple {
+            assert!(t[0] < concave.len() as u32);
+            assert!(t[1] < concave.len() as u32);
+            assert!(t[2] < concave.len() as u32);
+            assert!(t[0] != t[1] && t[1] != t[2] && t[0] != t[2]);
+        }
+    }
+
+    /// A ring with a duplicated vertex (square with first vertex repeated at
+    /// the end) still produces valid triangulation with correct total area.
+    #[test]
+    fn triangulate_simple_handles_duplicate_ring_vertices() {
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0), Vec2::new(0.0, 0.0)];
+        let tri = triangulate_simple(&ring);
+        assert!(tri.len() >= 2, "expected at least 2 triangles, got {tri:?}");
+
+        let mut total_area = 0.0;
+        for t in &tri {
+            let ax = ring[t[0] as usize].x;
+            let ay = ring[t[0] as usize].y;
+            let bx = ring[t[1] as usize].x;
+            let by = ring[t[1] as usize].y;
+            let cx = ring[t[2] as usize].x;
+            let cy = ring[t[2] as usize].y;
+            let signed = (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by)) / 2.0;
+            total_area += signed.abs();
+        }
+        assert!((total_area - 16.0).abs() < 1e-6, "sum of triangle areas {total_area} not within 1e-6 of 16.0");
     }
 }
