@@ -6,11 +6,16 @@
 //! - [`offscreen`]: offscreen wgpu renderer for headless PNG export.
 
 pub mod camera;
+pub mod light;
 pub mod offscreen;
 pub mod pipeline;
 pub mod types;
 
+#[cfg(test)]
+pub(crate) mod gputest;
+
 pub use camera::{Camera, Orbit, projected_bounds};
+pub use light::Light;
 pub use offscreen::{Offscreen, headless_png};
 pub use pipeline::{GpuMeshes, upload};
 pub use types::{ArchId, Bounds3, Mesh, Scene3d};
