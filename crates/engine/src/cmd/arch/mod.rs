@@ -16,6 +16,7 @@ pub const DEFAULT_INT_THICKNESS: f64 = 0.1;
 
 pub mod build3d;
 pub mod inspect;
+pub mod level;
 pub mod opening;
 pub mod sample;
 pub mod stretch;
@@ -44,6 +45,7 @@ pub fn specs() -> Vec<CommandSpec> {
     v.extend(wall::specs());
     v.extend(opening::specs());
     v.extend(inspect::specs());
+    v.extend(level::specs());
     v.extend(build3d::specs());
     v.extend(sample::specs());
     v.extend(stretch::specs());
