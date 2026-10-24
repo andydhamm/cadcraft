@@ -50,7 +50,7 @@ pub fn vertex_layout() -> wgpu::VertexBufferLayout<'static> {
         1 => Float32x3,
         2 => Float32x2,
     ];
-    wgpu::VertexBufferLayout { attributes: ATTRS, array_stride: 32, step_mode: wgpu::VertexStepMode::Vertex }
+    wgpu::VertexBufferLayout { attributes: &ATTRS, array_stride: 32, step_mode: wgpu::VertexStepMode::Vertex }
 }
 
 /// GPU-side mesh buffers for a scene.
@@ -109,11 +109,11 @@ fn create_all(device: &wgpu::Device, sample_count: u32) -> (wgpu::RenderPipeline
 
     let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("render3d bind group layout"),
-        bind_groups: &[wgpu::BindGroupDescriptor {
-            bindings: &[wgpu::BindingDescriptor {
+        entries: &[wgpu::BindGroupEntry {
+            bindings: &[wgpu::BindGroupBinding {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferType::Uniform, has_dynamic_offset: false, min_binding_size: None },
                 count: None,
             }],
         }],
@@ -125,8 +125,7 @@ fn create_all(device: &wgpu::Device, sample_count: u32) -> (wgpu::RenderPipeline
         immediate_size: 0,
     });
 
-    let vertex =
-        wgpu::VertexState { module: &module, entry_point: Some("vs"), buffers: &[Some(vertex_layout())], compilation_options: Default::default() };
+    let vertex = wgpu::VertexState { module: &module, entry_point: Some("vs"), buffers: &[vertex_layout()], compilation_options: Default::default() };
 
     let depth_stencil = wgpu::DepthStencilState {
         format: DEPTH_FORMAT,
@@ -188,7 +187,8 @@ impl GpuPipeline {
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("render3d bind group instance"),
-            bind_groups: &[wgpu::BindGroup { bindings: &[wgpu::Binding { buffer: uniform.clone(), offset: 0 }] }],
+            layout: &bgl,
+            entries: &[wgpu::BindGroupEntry { bindings: &[wgpu::BindGroupBinding { buffer: uniform.clone(), offset: 0 }] }],
         });
 
         GpuPipeline { pipeline, bgl, uniform, bind_group }
@@ -196,7 +196,7 @@ impl GpuPipeline {
 
     /// Upload a new uniform to the GPU.
     pub fn write_uniform(&self, queue: &wgpu::Queue, u: &GpuUniform) {
-        queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
+        queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(u));
     }
 }
 
