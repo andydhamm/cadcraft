@@ -222,7 +222,7 @@ mod tests {
         }
         mesh.indices = vec![0, 1, 2];
 
-        let scene = Scene3d { meshes: vec![mesh], bounds: Bounds3::empty(), revision: 0, openings_built: 0 };
+        let scene = Scene3d { meshes: vec![mesh], bounds: Bounds3::empty(), revision: 0, openings_built: 0, floors: 0, ceilings: 0 };
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let Some(adapter) = instance.request_adapter(&wgpu::RequestAdapterOptions::default()).now_or_never().and_then(Result::ok) else {
@@ -249,7 +249,7 @@ mod tests {
         }
         mesh.indices = vec![0, 1, 2];
 
-        let scene = Scene3d { meshes: vec![mesh], bounds: Bounds3::empty(), revision: 0, openings_built: 0 };
+        let scene = Scene3d { meshes: vec![mesh], bounds: Bounds3::empty(), revision: 0, openings_built: 0, floors: 0, ceilings: 0 };
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let Some(adapter) = instance.request_adapter(&wgpu::RequestAdapterOptions::default()).now_or_never().and_then(Result::ok) else {
