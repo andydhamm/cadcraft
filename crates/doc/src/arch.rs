@@ -52,9 +52,24 @@ pub fn arch_handle(id: ArchId) -> Handle {
     Handle(ARCH_HANDLE_BASE.saturating_add(u64::from(id.0)))
 }
 
-/// Whether `h` falls in the synthetic arch-handle range.
+/// Whether `h` falls in the synthetic arch-handle range (walls, openings, rooms).
 pub fn is_arch_handle(h: Handle) -> bool {
     h.0 >= ARCH_HANDLE_BASE && h.0 < ARCH_HANDLE_BASE.saturating_add(1u64 << 32)
+}
+
+/// The synthetic proxy handle for an architectural room.
+pub fn room_handle(id: ArchId) -> Handle {
+    Handle(ARCH_HANDLE_BASE.saturating_add(ROOM_HANDLE_OFFSET).saturating_add(u64::from(id.0)))
+}
+
+/// Whether `h` falls in the synthetic room-handle range.
+pub fn is_room_handle(h: Handle) -> bool {
+    h.0 >= ARCH_HANDLE_BASE.saturating_add(ROOM_HANDLE_OFFSET) && h.0 < ARCH_HANDLE_BASE.saturating_add(ROOM_HANDLE_OFFSET).saturating_add(1u64 << 15)
+}
+
+/// Human-readable label for a room id, e.g. `r0`, `r1`.
+pub fn room_label(id: ArchId) -> String {
+    format!("r{}", id.0)
 }
 
 /// Offset within the arch-handle range reserved for opening proxy handles.
@@ -100,6 +115,16 @@ pub const MIN_WALL_LENGTH: f64 = 1e-6;
 /// Maximum number of openings in a drawing.
 pub const MAX_OPENINGS: usize = 8192;
 
+/// Maximum number of rooms in a drawing.
+pub const MAX_ROOMS: usize = 1024;
+
+/// Minimum room area (m²) to be considered valid.
+pub const MIN_ROOM_AREA: f64 = 0.05;
+
+/// Offset within the arch-handle range reserved for room proxy handles.
+/// Room handles occupy `[ARCH_HANDLE_BASE + ROOM_HANDLE_OFFSET, ...)`.
+pub const ROOM_HANDLE_OFFSET: u64 = 0x10000;
+
 /// Minimum opening width, in metres.
 pub const MIN_OPENING_WIDTH: f64 = 0.1;
 
@@ -133,6 +158,9 @@ pub struct Wall {
     /// Layer bands: each `(name, thickness)` splits the wall thickness into nested
     /// sub-bands. The sum of all band thicknesses must equal `thickness`.
     pub layers: Vec<(String, f64)>,
+    /// Whether this wall is a room-divider (encloses rooms but produces no poché/3D).
+    #[serde(default)]
+    pub divider: bool,
 }
 
 fn default_wall_type() -> String {
@@ -155,6 +183,7 @@ impl Wall {
             wall_type: "Exterior".into(),
             join_start: JoinKind::Mitre,
             join_end: JoinKind::Mitre,
+            divider: false,
         }
     }
 }
@@ -174,6 +203,7 @@ impl Default for Wall {
             wall_type: "Exterior".into(),
             join_start: JoinKind::Mitre,
             join_end: JoinKind::Mitre,
+            divider: false,
         }
     }
 }
@@ -259,15 +289,32 @@ pub enum Swing {
 }
 
 /// A building level (floor plate).
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Level {
     pub index: u32,
     pub name: String,
     pub elevation: f64,
-    pub floor_to_floor: f64,
     pub ceiling_height: f64,
     pub structure: f64,
+}
+
+impl Default for Level {
+    fn default() -> Self {
+        Level { index: 0, name: String::new(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 }
+    }
+}
+
+impl Level {
+    /// Derived floor-to-floor height: ceiling + structure.
+    /// Returns 0.0 when either component is non-finite or <= 0.
+    pub fn floor_to_floor(&self) -> f64 {
+        if self.ceiling_height.is_finite() && self.structure.is_finite() && self.ceiling_height > 0.0 && self.structure > 0.0 {
+            self.ceiling_height + self.structure
+        } else {
+            0.0
+        }
+    }
 }
 
 /// An architectural opening (door, window, garage door, or cased opening).
@@ -373,6 +420,74 @@ impl Opening {
     }
 }
 
+/// The type of an architectural room.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RoomType {
+    Living,
+    Bedroom,
+    Kitchen,
+    Bath,
+    Closet,
+    Utility,
+    Garage,
+    Porch,
+    Deck,
+    OpenBelow,
+    #[default]
+    Other,
+}
+
+impl RoomType {
+    /// Whether this room type counts as interior (excludes Garage/Porch/Deck/OpenBelow).
+    pub fn is_interior(self) -> bool {
+        !matches!(self, RoomType::Garage | RoomType::Porch | RoomType::Deck | RoomType::OpenBelow)
+    }
+
+    /// Whether this room type has a ceiling (Deck/Porch do not).
+    pub fn has_ceiling(self) -> bool {
+        !matches!(self, RoomType::Deck | RoomType::Porch)
+    }
+
+    /// Whether this room type has a floor (OpenBelow does not).
+    pub fn has_floor(self) -> bool {
+        !matches!(self, RoomType::OpenBelow)
+    }
+}
+
+/// An architectural room: enclosed area defined by wall faces.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Room {
+    pub id: ArchId,
+    pub name: String,
+    pub room_type: RoomType,
+    pub level: u32,
+    pub polygon: Vec<Vec2>,
+    pub holes: Vec<Vec<Vec2>>,
+    pub ceiling_height: Option<f64>,
+    pub floor_height: Option<f64>,
+    pub interior_area: f64,
+    pub standard_area: f64,
+}
+
+impl Default for Room {
+    fn default() -> Self {
+        Room {
+            id: ArchId(0),
+            name: String::new(),
+            room_type: RoomType::default(),
+            level: 0,
+            polygon: Vec::new(),
+            holes: Vec::new(),
+            ceiling_height: None,
+            floor_height: None,
+            interior_area: 0.0,
+            standard_area: 0.0,
+        }
+    }
+}
+
 /// The architectural object model for a drawing.
 ///
 /// Stored on [`Drawing::arch`]; the 3D pane and incremental rebuilds key off
@@ -384,9 +499,13 @@ pub struct ArchModel {
     #[serde(default)]
     pub openings: Vec<Opening>,
     #[serde(default)]
+    pub rooms: Vec<Room>,
+    #[serde(default)]
     pub next_id: u32,
     #[serde(default)]
     pub next_opening_id: u32,
+    #[serde(default)]
+    pub next_room_id: u32,
     #[serde(default)]
     pub levels: Vec<Level>,
     #[serde(default)]
@@ -400,7 +519,7 @@ impl Default for ArchModel {
             openings: Vec::new(),
             next_id: 0,
             next_opening_id: 0,
-            levels: vec![Level { index: 0, name: "Level 1".into(), elevation: 0.0, floor_to_floor: 2.4, ceiling_height: 2.4, structure: 0.2 }],
+            levels: vec![Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 }],
             types: vec![
                 WallType {
                     name: "Exterior".into(),
@@ -518,6 +637,40 @@ impl ArchModel {
     /// Look up a level by index.
     pub fn level(&self, index: u32) -> Option<&Level> {
         self.levels.iter().find(|l| l.index == index)
+    }
+
+    /// Add a room and return its new id.
+    pub fn push_room(&mut self, mut r: Room) -> ArchId {
+        let id = ArchId(self.next_room_id);
+        self.next_room_id = self.next_room_id.saturating_add(1);
+        r.id = id;
+        self.rooms.push(r);
+        id
+    }
+
+    /// Look up a room by id.
+    pub fn room(&self, id: ArchId) -> Option<&Room> {
+        self.rooms.iter().find(|r| r.id == id)
+    }
+
+    /// The index of a room by id, or `None` if not found.
+    pub fn room_index(&self, id: ArchId) -> Option<usize> {
+        self.rooms.iter().position(|r| r.id == id)
+    }
+
+    /// Remove a room by id. Returns true if it was found.
+    pub fn remove_room(&mut self, id: ArchId) -> bool {
+        if let Some(pos) = self.rooms.iter().position(|r| r.id == id) {
+            self.rooms.remove(pos);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Iterate over all room ids.
+    pub fn room_ids(&self) -> impl Iterator<Item = ArchId> + '_ {
+        self.rooms.iter().map(|r| r.id)
     }
 
     /// Union of every wall's poché ring bounds.
@@ -669,6 +822,58 @@ impl ArchModel {
         }
         for id in &dupe_ops {
             messages.push(format!("duplicate opening id {}", id));
+        }
+
+        if self.rooms.len() > MAX_ROOMS {
+            messages.push(format!("model has {} rooms, max {MAX_ROOMS}", self.rooms.len()));
+        }
+
+        for r in &self.rooms {
+            let id = format!("{}", r.id);
+            if r.polygon.len() < 3 {
+                messages.push(format!("{}: outer polygon has {} vertices (<3)", id, r.polygon.len()));
+            }
+            for p in &r.polygon {
+                if !p.is_finite() {
+                    messages.push(format!("{}: non-finite polygon point", id));
+                    break;
+                }
+            }
+            for hole in &r.holes {
+                if hole.len() < 3 {
+                    messages.push(format!("{}: hole has {} vertices (<3)", id, hole.len()));
+                }
+                for p in hole {
+                    if !p.is_finite() {
+                        messages.push(format!("{}: non-finite hole point", id));
+                        break;
+                    }
+                }
+            }
+            if !r.interior_area.is_finite() || r.interior_area < 0.0 {
+                messages.push(format!("{}: invalid interior area {}", id, r.interior_area));
+            }
+            if !r.standard_area.is_finite() || r.standard_area < 0.0 {
+                messages.push(format!("{}: invalid standard area {}", id, r.standard_area));
+            }
+            if self.level(r.level).is_none() {
+                messages.push(format!("{}: unknown level {}", id, r.level));
+            }
+        }
+
+        let mut seen_room = std::collections::HashSet::new();
+        let mut dupe_rooms = Vec::new();
+        for r in &self.rooms {
+            if seen_room.contains(&r.id) {
+                if !dupe_rooms.contains(&r.id) {
+                    dupe_rooms.push(r.id);
+                }
+            } else {
+                seen_room.insert(r.id);
+            }
+        }
+        for id in &dupe_rooms {
+            messages.push(format!("duplicate room id {}", id));
         }
 
         messages
@@ -833,9 +1038,8 @@ mod tests {
         let level = &m.levels[0];
         assert_eq!(level.index, 0);
         assert_eq!(level.elevation, 0.0);
-        assert_eq!(level.floor_to_floor, 2.4);
         assert_eq!(level.ceiling_height, 2.4);
-        assert_eq!(level.structure, 0.2);
+        assert_eq!(level.structure, 0.3);
     }
 
     #[test]
@@ -1096,5 +1300,96 @@ mod tests {
 
         let msgs = m.validate();
         assert!(msgs.iter().any(|m| m.contains("duplicate opening id")));
+    }
+
+    #[test]
+    fn level_floor_to_floor_is_derived() {
+        let l = Level { ceiling_height: 2.4, structure: 0.3, ..Level::default() };
+        assert!((l.floor_to_floor() - 2.7).abs() < 1e-12);
+        let l2 = Level { ceiling_height: 3.0, structure: 0.2, ..Level::default() };
+        assert!((l2.floor_to_floor() - 3.2).abs() < 1e-12);
+        let l3 = Level { ceiling_height: 0.0, structure: 0.3, ..Level::default() };
+        assert_eq!(l3.floor_to_floor(), 0.0);
+        let l4 = Level { ceiling_height: f64::NAN, structure: 0.3, ..Level::default() };
+        assert_eq!(l4.floor_to_floor(), 0.0);
+    }
+
+    #[test]
+    fn level_defaults_are_ceiling_2_4_structure_0_3() {
+        let l = Level::default();
+        assert!((l.ceiling_height - 2.4).abs() < 1e-12);
+        assert!((l.structure - 0.3).abs() < 1e-12);
+        let m = ArchModel::default();
+        let level = &m.levels[0];
+        assert!((level.ceiling_height - 2.4).abs() < 1e-12);
+        assert!((level.structure - 0.3).abs() < 1e-12);
+    }
+
+    #[test]
+    fn push_room_assigns_increasing_ids() {
+        let mut m = ArchModel::default();
+        let r1 = m.push_room(Room::default());
+        let r2 = m.push_room(Room::default());
+        assert_eq!(r1, ArchId(0));
+        assert_eq!(r2, ArchId(1));
+        assert!(m.room(r1).is_some());
+        assert!(m.room(r2).is_some());
+        assert_eq!(m.next_room_id, 2);
+    }
+
+    #[test]
+    fn room_handle_is_in_the_room_range() {
+        let rh = room_handle(ArchId(0));
+        assert!(is_room_handle(rh));
+        assert!(is_arch_handle(rh));
+        assert!(!is_opening_handle(rh));
+        let rh7 = room_handle(ArchId(7));
+        assert!(is_room_handle(rh7));
+        assert_ne!(rh, rh7);
+        // Wall handle should not be a room handle.
+        assert!(!is_room_handle(arch_handle(ArchId(0))));
+    }
+
+    #[test]
+    fn room_type_interior_and_ceiling_rules() {
+        assert!(RoomType::Living.is_interior());
+        assert!(RoomType::Bedroom.is_interior());
+        assert!(RoomType::Kitchen.is_interior());
+        assert!(RoomType::Bath.is_interior());
+        assert!(RoomType::Closet.is_interior());
+        assert!(RoomType::Utility.is_interior());
+        assert!(RoomType::Other.is_interior());
+        assert!(!RoomType::Garage.is_interior());
+        assert!(!RoomType::Porch.is_interior());
+        assert!(!RoomType::Deck.is_interior());
+        assert!(!RoomType::OpenBelow.is_interior());
+
+        assert!(RoomType::Living.has_ceiling());
+        assert!(RoomType::Bedroom.has_ceiling());
+        assert!(!RoomType::Deck.has_ceiling());
+        assert!(!RoomType::Porch.has_ceiling());
+
+        assert!(RoomType::Living.has_floor());
+        assert!(RoomType::Garage.has_floor());
+        assert!(!RoomType::OpenBelow.has_floor());
+
+        assert_eq!(RoomType::default(), RoomType::Other);
+    }
+
+    #[test]
+    fn validate_rejects_degenerate_room() {
+        let mut m = ArchModel::default();
+        // Polygon with only 2 points
+        m.push_room(Room { polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)], ..Room::default() });
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("<3")));
+    }
+
+    #[test]
+    fn divider_wall_defaults_to_false() {
+        let w = Wall::default();
+        assert!(!w.divider);
+        let w2 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+        assert!(!w2.divider);
     }
 }

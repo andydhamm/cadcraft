@@ -269,7 +269,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let height = size_param("wall", p, "height", false)?;
     let height = match height {
         Some(h) => h,
-        None => level.map(|l| l.floor_to_floor).unwrap_or(super::DEFAULT_EXT_THICKNESS * 5.0),
+        None => level.map(|l| l.floor_to_floor()).unwrap_or(super::DEFAULT_EXT_THICKNESS * 5.0),
     };
 
     // Apply closed flag
@@ -307,6 +307,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
             join_start: JoinKind::default(),
             join_end: JoinKind::default(),
             layers: layers.clone(),
+            divider: false,
         });
     }
 
@@ -341,7 +342,7 @@ mod tests {
     fn new_session_with_level() -> Session {
         let mut s = Session::new();
         let d = s.doc_mut().unwrap();
-        d.arch.levels.push(Level { name: "ground".to_string(), floor_to_floor: 3.0, ..Default::default() });
+        d.arch.levels.push(Level { name: "ground".to_string(), ceiling_height: 2.7, structure: 0.3, ..Default::default() });
         d.touch_arch();
         s
     }

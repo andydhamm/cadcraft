@@ -13,7 +13,9 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
-pub use cadcraft_doc::{ArchId, ArchModel, JoinKind, Level, RefSide, Wall, WallLayer, WallType};
+pub use cadcraft_doc::{
+    ArchId, ArchModel, JoinKind, Level, RefSide, Room, RoomType, Wall, WallLayer, WallType, is_room_handle, room_handle, room_label,
+};
 
 pub mod graph;
 pub mod join;
