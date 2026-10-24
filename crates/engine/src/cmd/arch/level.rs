@@ -110,8 +110,8 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
         }
         // Renumber walls: increment base_level for walls at or above the insertion point
         for w in arch.walls.iter_mut() {
-            if w.to_ceiling >= (i as u32) {
-                w.to_ceiling += 1;
+            if w.base_level >= (i as u32) {
+                w.base_level = w.base_level.saturating_add(1);
             }
         }
         doc.touch_arch();
@@ -160,7 +160,7 @@ pub fn specs() -> Vec<CommandSpec> {
 mod tests {
     use super::*;
     use crate::Session;
-    use cadcraft_doc::arch::{ArchId, Level, Wall};
+    use cadcraft_doc::arch::{ArchId, JoinKind, Level, Wall};
     use cadcraft_geom::Vec2;
     use serde_json::json;
 
@@ -195,8 +195,14 @@ mod tests {
                 id: ArchId(0),
                 start: Vec2::new(0.0, 0.0),
                 end: Vec2::new(10.0, 0.0),
-                to_ceiling: 1,
-                wall_type: 0,
+                base_level: 1,
+                to_ceiling: true,
+                exterior: true,
+                wall_type: "Exterior".into(),
+                join_start: JoinKind::Mitre,
+                join_end: JoinKind::Mitre,
+                thickness: 0.2,
+                height: 2.4,
                 layers: vec![],
                 divider: false,
             });
@@ -204,7 +210,7 @@ mod tests {
         let result = s.execute("level", &json!({"below": "Level 2"})).unwrap();
         let doc = s.doc().unwrap();
         let arch = &doc.arch;
-        assert_eq!(arch.walls[0].to_ceiling, 2);
+        assert_eq!(arch.walls[0].base_level, 2);
     }
 
     #[test]
