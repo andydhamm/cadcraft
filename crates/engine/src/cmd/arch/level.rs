@@ -180,7 +180,7 @@ mod tests {
         let doc = s.doc().unwrap();
         let arch = &doc.arch;
         assert_eq!(arch.levels.len(), 2);
-        assert_eq!(arch.levels[1].elevation, 2.7);
+        assert!((arch.levels[1].elevation - 2.7).abs() < 1e-9);
     }
 
     #[test]
