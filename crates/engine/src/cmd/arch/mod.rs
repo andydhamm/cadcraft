@@ -44,6 +44,7 @@ pub fn specs() -> Vec<CommandSpec> {
     let mut v = Vec::new();
     v.extend(wall::specs());
     v.extend(opening::specs());
+    v.extend(room::specs());
     v.extend(inspect::specs());
     v.extend(level::specs());
     v.extend(build3d::specs());
