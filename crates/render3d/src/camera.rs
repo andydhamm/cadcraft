@@ -140,6 +140,79 @@ fn clamp_pos(x: f64, lo: f64, hi: f64) -> f64 {
     }
 }
 
+/// Project scene bounds into viewport pixel coordinates.
+///
+/// Returns `[min_x, min_y, max_x, max_y]` in pixel coordinates with y-down,
+/// clamped to `[0, w] x [0, h]`. Never returns NaN or panics on degenerate
+/// input (empty bounds, non-finite corners, zero-size viewport).
+pub fn projected_bounds(camera: &Camera, bounds: &Bounds3, size: (u32, u32)) -> [f32; 4] {
+    let (w, h) = size;
+    let aspect = w as f64 / h.max(1) as f64;
+    let w_f = w as f64;
+    let h_f = h.max(1) as f64;
+    let orbit = match camera {
+        Camera::Orbit(o) => o,
+    };
+    // Empty bounds (min == max): return the viewport centre pixel.
+    if bounds.min == bounds.max {
+        let cx = (w_f / 2.0).clamp(0.0, w_f) as f32;
+        let cy = (h_f / 2.0).clamp(0.0, h_f) as f32;
+        return [cx, cy, cx, cy];
+    }
+    let view = orbit.view();
+    let proj = orbit.proj(aspect);
+    let corners = [
+        [bounds.min[0], bounds.min[1], bounds.min[2]],
+        [bounds.max[0], bounds.min[1], bounds.min[2]],
+        [bounds.max[0], bounds.max[1], bounds.min[2]],
+        [bounds.min[0], bounds.max[1], bounds.min[2]],
+        [bounds.min[0], bounds.min[1], bounds.max[2]],
+        [bounds.max[0], bounds.min[1], bounds.max[2]],
+        [bounds.max[0], bounds.max[1], bounds.max[2]],
+        [bounds.min[0], bounds.max[1], bounds.max[2]],
+    ];
+    let mut px_min = f64::MAX;
+    let mut py_min = f64::MAX;
+    let mut px_max = f64::NEG_INFINITY;
+    let mut py_max = f64::NEG_INFINITY;
+    let mut any_finite = false;
+    for c in &corners {
+        let vs = apply_col(&view, [c[0], c[1], c[2]]);
+        let clip = apply_col(&proj, [vs[0], vs[1], vs[2]]);
+        let w_clip = clip[3];
+        let w_div = if w_clip.abs() < 1e-9 { 1.0 } else { w_clip };
+        let nx = clip[0] / w_div;
+        let ny = clip[1] / w_div;
+        if !nx.is_finite() || !ny.is_finite() {
+            continue;
+        }
+        any_finite = true;
+        let px = (nx * 0.5 + 0.5) * w_f;
+        let py = (1.0 - (ny * 0.5 + 0.5)) * h_f;
+        px_min = px.min(px_min);
+        py_min = py.min(py_min);
+        px_max = px.max(px_max);
+        py_max = py.max(py_max);
+    }
+    if !any_finite {
+        let cx = (w_f / 2.0).clamp(0.0, w_f) as f32;
+        let cy = (h_f / 2.0).clamp(0.0, h_f) as f32;
+        return [cx, cy, cx, cy];
+    }
+    [px_min.clamp(0.0, w_f) as f32, py_min.clamp(0.0, h_f) as f32, px_max.clamp(0.0, w_f) as f32, py_max.clamp(0.0, h_f) as f32]
+}
+
+/// Multiply a `Mat4` by a 3D point (implicitly homogenized to w=1).
+///
+/// `out[i] = m[i][0]*p[0] + m[i][1]*p[1] + m[i][2]*p[2] + m[i][3]`
+fn apply_col(m: &Mat4, p: [f64; 3]) -> [f64; 4] {
+    let mut out = [0.0f64; 4];
+    for i in 0..4 {
+        out[i] = m.m[i][0] * p[0] + m.m[i][1] * p[1] + m.m[i][2] * p[2] + m.m[i][3];
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,5 +267,41 @@ mod tests {
             }
         }
         assert!(!bad, "non-finite matrix entry");
+    }
+
+    #[test]
+    fn projected_bounds_matches_the_camera() {
+        let cam = Camera::Orbit(Orbit::new(Vec3::new(0.0, 0.0, 0.0), 0.0, 0.0, 10.0, 45.0));
+        let size = (64u32, 64u32);
+        let tiny = Bounds3 { min: [-0.01, -0.01, -0.01], max: [0.01, 0.01, 0.01] };
+        let b = projected_bounds(&cam, &tiny, size);
+        // Centre of the projected box is at the pixel centre.
+        let cx = (b[0] + b[2]) / 2.0;
+        let cy = (b[1] + b[3]) / 2.0;
+        assert!((cx - 32.0).abs() < 1e-3, "centre x {} expected 32", cx);
+        assert!((cy - 32.0).abs() < 1e-3, "centre y {} expected 32", cy);
+        // Extents are inside the viewport.
+        assert!(b[0] >= 0.0 && b[2] <= 64.0);
+        assert!(b[1] >= 0.0 && b[3] <= 64.0);
+        // Doubling the box strictly grows the projected area.
+        let doubled = Bounds3 { min: [-0.1, -0.1, -0.1], max: [0.1, 0.1, 0.1] };
+        let b2 = projected_bounds(&cam, &doubled, size);
+        let tiny_area = (b[2] - b[0]).abs() * (b[3] - b[1]).abs();
+        let double_area = (b2[2] - b2[0]).abs() * (b2[3] - b2[1]).abs();
+        assert!(double_area > tiny_area, "doubled box (area {}) should be larger than tiny box (area {})", double_area, tiny_area);
+    }
+
+    #[test]
+    fn projected_bounds_is_finite_for_degenerate_input() {
+        let cam_min = Camera::Orbit(Orbit::new(Vec3::new(0.0, 0.0, 0.0), 0.0, 0.0, MIN_DISTANCE, 45.0));
+        let b1 = projected_bounds(&cam_min, &Bounds3::empty(), (64u32, 64u32));
+        for &v in b1.iter() {
+            assert!(v.is_finite(), "MIN_DISTANCE empty bounds: {}", v);
+        }
+        let cam = Camera::Orbit(Orbit::new(Vec3::new(0.0, 0.0, 0.0), 0.0, 0.0, 10.0, 45.0));
+        let b2 = projected_bounds(&cam, &Bounds3::empty(), (64u32, 64u32));
+        for &v in b2.iter() {
+            assert!(v.is_finite(), "normal distance empty bounds: {}", v);
+        }
     }
 }
