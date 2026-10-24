@@ -65,8 +65,8 @@ pub fn ceiling_surface(room: &Room, level: &Level, mat: &str) -> Option<Mesh> {
 mod tests {
     use super::*;
 
-    use std::f32::INFINITY;
-    use std::f32::NEG_INFINITY;
+    use std::f64::INFINITY;
+    use std::f64::NEG_INFINITY;
 
     /// 4x4 square polygon.
     fn sq() -> Vec<Vec2> {
