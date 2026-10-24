@@ -801,4 +801,88 @@ mod tests {
         }
         assert!((total_area - 16.0).abs() < 1e-6, "sum of triangle areas {total_area} not within 1e-6 of 16.0");
     }
+
+    /// Sum of |signed area| of triangles whose first vertex has normal [0,0,1].
+    fn top_cap_area(mesh: &Mesh) -> f64 {
+        let mut area = 0.0;
+        for tri in mesh.indices.chunks(3) {
+            if tri.len() != 3 {
+                continue;
+            }
+            let (a, b, c) = (tri[0], tri[1], tri[2]);
+            if mesh.normals[a as usize] == [0.0, 0.0, 1.0] {
+                let (x1, y1) = (mesh.positions[a as usize][0] as f64, mesh.positions[a as usize][1] as f64);
+                let (x2, y2) = (mesh.positions[b as usize][0] as f64, mesh.positions[b as usize][1] as f64);
+                let (x3, y3) = (mesh.positions[c as usize][0] as f64, mesh.positions[c as usize][1] as f64);
+                area += ((x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2)) / 2.0).abs();
+            }
+        }
+        area
+    }
+
+    #[test]
+    fn prism_with_holes_without_holes_matches_push_prism() {
+        let r = square_ring();
+        let mut a = Mesh::new("wall", ArchId(1));
+        a.push_prism_with_holes(&r, &[], 0.0, 2.5);
+        let mut b = Mesh::new("wall", ArchId(1));
+        b.push_prism(&r, 0.0, 2.5);
+        assert_eq!(a.positions, b.positions, "positions differ");
+        assert_eq!(a.normals, b.normals, "normals differ");
+        assert_eq!(a.indices, b.indices, "indices differ");
+    }
+
+    #[test]
+    fn prism_with_hole_cap_area() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(1.0, 2.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        let area = top_cap_area(&mesh);
+        assert!((area - 15.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 15.0");
+        let b = mesh.bounds();
+        assert!((b.min[0] - 0.0).abs() < 1e-6, "bounds min x");
+        assert!((b.max[0] - 4.0).abs() < 1e-6, "bounds max x");
+        assert!((b.min[1] - 0.0).abs() < 1e-6, "bounds min y");
+        assert!((b.max[1] - 4.0).abs() < 1e-6, "bounds max y");
+        assert!((b.min[2] - 0.0).abs() < 1e-6, "bounds min z");
+        assert!((b.max[2] - 2.5).abs() < 1e-6, "bounds max z");
+    }
+
+    #[test]
+    fn prism_with_hole_is_manifold() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(1.0, 2.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        assert!(mesh.is_manifold(), "prism with hole must be a closed manifold");
+        assert!(mesh.triangle_count() > 0, "prism with hole must have triangles");
+    }
+
+    #[test]
+    fn prism_with_two_holes_cap_area() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(6.0, 0.0), Vec2::new(6.0, 6.0), Vec2::new(0.0, 6.0)];
+        let holes = vec![
+            vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(1.0, 2.0)],
+            vec![Vec2::new(4.0, 4.0), Vec2::new(5.0, 4.0), Vec2::new(5.0, 5.0), Vec2::new(4.0, 5.0)],
+        ];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &holes, 0.0, 2.5);
+        let area = top_cap_area(&mesh);
+        assert!((area - 34.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 34.0");
+        assert!(mesh.is_manifold(), "prism with two holes must be a closed manifold");
+    }
+
+    #[test]
+    fn prism_with_hole_outside_the_outer_is_ignored() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(20.0, 20.0), Vec2::new(21.0, 20.0), Vec2::new(21.0, 21.0), Vec2::new(20.0, 21.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        let area = top_cap_area(&mesh);
+        assert!((area - 16.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 16.0");
+        let mut ref_mesh = Mesh::new("wall", ArchId(1));
+        ref_mesh.push_prism(&outer, 0.0, 2.5);
+        assert_eq!(top_cap_area(&mesh), top_cap_area(&ref_mesh), "outside hole must produce same cap area as push_prism");
+    }
 }
