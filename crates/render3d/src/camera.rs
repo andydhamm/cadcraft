@@ -98,8 +98,8 @@ impl Orbit {
         let m = [
             [1.0 / (aspect * tan_half), 0.0, 0.0, 0.0],
             [0.0, 1.0 / tan_half, 0.0, 0.0],
-            [0.0, 0.0, (z_far + z_near) / (z_near - z_far), -1.0],
-            [0.0, 0.0, (2.0 * z_near * z_far) / (z_near - z_far), 0.0],
+            [0.0, 0.0, -z_far / (z_far - z_near), -z_near * z_far / (z_far - z_near)],
+            [0.0, 0.0, -1.0, 0.0],
         ];
         Mat4 { m }
     }
