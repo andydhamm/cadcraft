@@ -26,8 +26,11 @@ fn band_offset(off: f64, depth: f64, wall_t: f64) -> f64 {
 /// `window-glass-o1`, …) while cutting the per-opening mesh count from ~10
 /// to ~5.
 ///
+/// `span` provides the host wall's `(base_elevation, top_elevation)`; when
+/// `None`, the opening is built at elevation 0 with height `wall.height`.
+///
 /// Returns an empty vector if the host wall is missing or degenerate.
-pub fn opening_meshes(walls: &BTreeMap<ArchId, &Wall>, o: &Opening) -> Vec<Mesh> {
+pub fn opening_meshes(walls: &BTreeMap<ArchId, &Wall>, o: &Opening, span: Option<(f64, f64)>) -> Vec<Mesh> {
     let wall = match walls.get(&o.host) {
         Some(w) => w,
         None => return Vec::new(),
@@ -39,6 +42,7 @@ pub fn opening_meshes(walls: &BTreeMap<ArchId, &Wall>, o: &Opening) -> Vec<Mesh>
     let dir = dir.normalized();
     let normal = Vec2::new(-dir.y, dir.x);
     let center = wall.start + dir * o.offset;
+    let (base, top) = span.unwrap_or((0.0, wall.height));
     // Offsets measured from the wall centre plane (along `normal`), each
     // clamped so the component stays inside the wall's thickness band.
     let mut meshes: BTreeMap<String, Mesh> = BTreeMap::new();
@@ -72,11 +76,11 @@ pub fn opening_meshes(walls: &BTreeMap<ArchId, &Wall>, o: &Opening) -> Vec<Mesh>
     let sd = o.sill_depth;
     let wall_t = wall.thickness;
 
-    // The opening top is clamped to the host wall height so the frame, casing,
-    // glass and leaf can never rise above the wall top and push the scene
-    // envelope out of the host wall.
-    let frame_z0 = sill_h;
-    let frame_z1 = (sill_h + h).min(wall.height);
+    // The opening top is clamped to the host wall span top so the frame,
+    // casing, glass and leaf can never rise above the wall top and push the
+    // scene envelope out of the host wall.
+    let frame_z0 = base + sill_h;
+    let frame_z1 = (base + sill_h + h).min(top);
 
     let is_window = matches!(o.kind, OpeningKind::Window);
     let kind_prefix = if is_window {
@@ -225,7 +229,7 @@ pub fn opening_meshes(walls: &BTreeMap<ArchId, &Wall>, o: &Opening) -> Vec<Mesh>
         let ext_sill_off = band_offset(o.recess - wall_t / 2.0, 0.04, wall_t);
         let s_a = center + dir * (-w / 2.0 - fw / 2.0 - sd) + normal * ext_sill_off;
         let s_b = center + dir * (w / 2.0 + fw / 2.0 + sd) + normal * ext_sill_off;
-        let sill_bottom = (frame_z0 - 0.02).max(0.0);
+        let sill_bottom = (frame_z0 - 0.02).max(base);
         let sill_mat = format!("{}-sill", kind_prefix);
         if let Some(mesh) = box_between(s_a, s_b, sill_bottom, frame_z0, 0.04, &sill_mat, o.id) {
             meshes.insert(sill_mat, mesh);
@@ -233,9 +237,9 @@ pub fn opening_meshes(walls: &BTreeMap<ArchId, &Wall>, o: &Opening) -> Vec<Mesh>
     }
 
     // Header: centred on the wall centre plane (full thickness) and clipped
-    // to stay inside the host wall height.
+    // to stay inside the host wall span top.
     let header_h = 0.2;
-    let header_top = (frame_z1 + header_h).min(wall.height);
+    let header_top = (frame_z1 + header_h).min(top);
     if header_top > frame_z1 + 1e-9 {
         let header_off = band_offset(0.0, wall_t, wall_t);
         let h_a = center + dir * (-w / 2.0 - fw) + normal * header_off;
@@ -336,7 +340,7 @@ mod tests {
     fn a_window_produces_frame_glass_and_sill_meshes() {
         let model = wall_model();
         let o = window_opening();
-        let meshes = opening_meshes(&walls_map(&model), &o);
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
         let has_frame = meshes.iter().any(|m| m.material == "window-frame");
         let has_glass = meshes.iter().any(|m| m.material == "window-glass");
         let has_sill = meshes.iter().any(|m| m.material == "window-sill");
@@ -349,7 +353,7 @@ mod tests {
     fn a_hinged_door_produces_a_frame_and_one_leaf() {
         let model = wall_model();
         let o = door_opening();
-        let meshes = opening_meshes(&walls_map(&model), &o);
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
         let has_frame = meshes.iter().any(|m| m.material == "door-frame");
         let leaf_count = meshes.iter().filter(|m| m.material == "door-leaf").count();
         assert!(has_frame, "missing door-frame mesh");
@@ -361,7 +365,7 @@ mod tests {
         let model = wall_model();
         let mut o = door_opening();
         o.style = "sliding".to_string();
-        let meshes = opening_meshes(&walls_map(&model), &o);
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
         let leaf_meshes: Vec<&Mesh> = meshes.iter().filter(|m| m.material == "door-leaf").collect();
         assert_eq!(leaf_meshes.len(), 1, "expected 1 merged leaf mesh, got {}", leaf_meshes.len());
         // Each leaf prism (4-vertex ring extrusion) has 12 triangles; two leaves = 24.
@@ -373,7 +377,7 @@ mod tests {
         let model = wall_model();
         let mut o = door_opening();
         o.style = "french".to_string();
-        let meshes = opening_meshes(&walls_map(&model), &o);
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
         let leaf_meshes: Vec<&Mesh> = meshes.iter().filter(|m| m.material == "door-leaf").collect();
         assert_eq!(leaf_meshes.len(), 1, "expected 1 merged leaf mesh, got {}", leaf_meshes.len());
         // Each leaf prism (4-vertex ring extrusion) has 12 triangles; two leaves = 24.
@@ -385,7 +389,7 @@ mod tests {
         let model = wall_model();
         let mut o = window_opening();
         o.recess = 0.05;
-        let meshes = opening_meshes(&walls_map(&model), &o);
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
         assert!(!meshes.is_empty(), "no meshes for recessed window");
         let frame = meshes.iter().find(|m| m.material == "window-frame");
         assert!(frame.is_some(), "missing window-frame");
@@ -396,7 +400,7 @@ mod tests {
         let model = wall_model();
         let mut o = window_opening();
         o.casing_width = 0.0;
-        let meshes = opening_meshes(&walls_map(&model), &o);
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
         let has_casing = meshes.iter().any(|m| m.material == "window-casing");
         assert!(!has_casing, "casing should be skipped");
     }
@@ -405,7 +409,7 @@ mod tests {
     fn glass_uses_the_glass_material() {
         let model = wall_model();
         let o = window_opening();
-        let meshes = opening_meshes(&walls_map(&model), &o);
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
         let glass = meshes.iter().find(|m| m.material == "window-glass");
         assert!(glass.is_some(), "missing window-glass mesh");
     }
@@ -414,7 +418,7 @@ mod tests {
     fn opening_meshes_are_manifold() {
         let model = wall_model();
         let o = window_opening();
-        let meshes = opening_meshes(&walls_map(&model), &o);
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
         for m in &meshes {
             assert_eq!(m.indices.len() % 3, 0, "indices not multiple of 3");
             for &idx in &m.indices {
@@ -428,7 +432,7 @@ mod tests {
         let model = wall_model();
         let mut o = window_opening();
         o.host = ArchId(999);
-        let meshes = opening_meshes(&walls_map(&model), &o);
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
         assert!(meshes.is_empty(), "expected empty for missing host");
     }
 
@@ -436,7 +440,7 @@ mod tests {
     fn a_window_produces_window_glass_meshes() {
         let model = wall_model();
         let o = window_opening();
-        let meshes = opening_meshes(&walls_map(&model), &o);
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
         let has_window_glass = meshes.iter().any(|m| m.material == "window-glass");
         let has_window_frame = meshes.iter().any(|m| m.material == "window-frame");
         assert!(has_window_glass, "missing window-glass mesh");
@@ -447,7 +451,7 @@ mod tests {
     fn a_hinged_door_produces_door_leaf_and_frame() {
         let model = wall_model();
         let o = door_opening();
-        let meshes = opening_meshes(&walls_map(&model), &o);
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
         let has_door_frame = meshes.iter().any(|m| m.material == "door-frame");
         let has_door_leaf = meshes.iter().any(|m| m.material == "door-leaf");
         assert!(has_door_frame, "missing door-frame mesh");
@@ -461,7 +465,7 @@ mod tests {
         let door = door_opening();
         let wm = walls_map(&model);
         for o in [&window, &door] {
-            let meshes = opening_meshes(&wm, o);
+            let meshes = opening_meshes(&wm, o, None);
             for m in &meshes {
                 assert!(!m.positions.is_empty(), "mesh {} has no positions", m.material);
             }
@@ -472,7 +476,7 @@ mod tests {
     fn header_stays_inside_the_wall_height() {
         let model = wall_model();
         let o = window_opening();
-        let meshes = opening_meshes(&walls_map(&model), &o);
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
         let wall_height = 2.5;
         for m in &meshes {
             if m.material.contains("header") {
@@ -540,7 +544,7 @@ mod tests {
             let normal = Vec2::new(-dir.y, dir.x);
             let center = wall.start + dir * o.offset;
             let half_t = wall.thickness / 2.0;
-            for m in opening_meshes(&wm, &o) {
+            for m in opening_meshes(&wm, &o, None) {
                 for p in &m.positions {
                     let n = (Vec2::new(p[0] as f64, p[1] as f64) - center).dot(normal);
                     assert!(n.abs() <= half_t + 1e-6, "vertex {} of {} leaves wall band (n={})", p[0] as f64, m.material, n);
@@ -678,7 +682,7 @@ mod tests {
         // Opening component meshes: they must fit inside the wall envelope.
         let wm = walls_map(&model);
         for o in &model.openings {
-            for m in opening_meshes(&wm, o) {
+            for m in opening_meshes(&wm, o, None) {
                 for p in &m.positions {
                     x_min = x_min.min(p[0].into());
                     x_max = x_max.max(p[0].into());

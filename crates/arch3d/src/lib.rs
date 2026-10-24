@@ -24,13 +24,12 @@ use cadcraft_geom::{Vec2, Vec3};
 /// Build a simple extruded-rectangle mesh from a wall's raw start/end/thickness.
 ///
 /// Used as a fallback when the join solver produced no shape for a wall id.
-/// Returns `None` if the wall is degenerate (zero length or zero height).
-fn raw_wall_mesh(wall: &Wall, object: ArchId) -> Option<Mesh> {
+/// Returns `None` if the wall is degenerate (zero length).
+fn raw_wall_mesh(wall: &Wall, base: f64, top: f64, object: ArchId) -> Option<Mesh> {
     let dx = wall.end.x - wall.start.x;
     let dy = wall.end.y - wall.start.y;
     let len = (dx * dx + dy * dy).sqrt();
-    let h = wall.height;
-    if len < 1e-9 || h <= 0.0 {
+    if len < 1e-9 {
         return None;
     }
     let nx = -dy / len;
@@ -42,19 +41,19 @@ fn raw_wall_mesh(wall: &Wall, object: ArchId) -> Option<Mesh> {
     let p3 = Vec2::new(wall.start.x - nx * half, wall.start.y - ny * half);
 
     let pos_f64: Vec<Vec3> = vec![
-        Vec3::new(p0.x, p0.y, 0.0),
-        Vec3::new(p1.x, p1.y, 0.0),
-        Vec3::new(p2.x, p2.y, 0.0),
-        Vec3::new(p3.x, p3.y, 0.0),
-        Vec3::new(p0.x, p0.y, h),
-        Vec3::new(p1.x, p1.y, h),
-        Vec3::new(p2.x, p2.y, h),
-        Vec3::new(p3.x, p3.y, h),
+        Vec3::new(p0.x, p0.y, base),
+        Vec3::new(p1.x, p1.y, base),
+        Vec3::new(p2.x, p2.y, base),
+        Vec3::new(p3.x, p3.y, base),
+        Vec3::new(p0.x, p0.y, top),
+        Vec3::new(p1.x, p1.y, top),
+        Vec3::new(p2.x, p2.y, top),
+        Vec3::new(p3.x, p3.y, top),
     ];
 
     let cx = (p0.x + p1.x + p2.x + p3.x) * 0.25;
     let cy = (p0.y + p1.y + p2.y + p3.y) * 0.25;
-    let cz = h * 0.5;
+    let cz = (base + top) * 0.5;
     let normals_f64: Vec<Vec3> = pos_f64
         .iter()
         .map(|p| {
@@ -79,6 +78,22 @@ fn raw_wall_mesh(wall: &Wall, object: ArchId) -> Option<Mesh> {
     ];
 
     Some(Mesh { positions, normals, uvs, indices, material: "wall".to_string(), object })
+}
+
+/// The vertical span `(base, top)` for a wall, derived from its level.
+///
+/// `base` is the level's `elevation`; `top` is `base + (ceiling_height if
+/// `to_ceiling` else `height)`. Returns `None` when the span is degenerate
+/// (non-finite, or `top <= base`) — such walls are skipped.
+pub fn wall_span(model: &ArchModel, w: &Wall) -> Option<(f64, f64)> {
+    let level = model.levels.iter().rev().find(|l| l.index == w.base_level).or(model.levels.last());
+    let base = level.map(|l| l.elevation).unwrap_or(0.0);
+    let h = if w.to_ceiling { level.map(|l| l.ceiling_height).unwrap_or(w.height) } else { w.height };
+    let top = base + h;
+    if !base.is_finite() || !top.is_finite() || top <= base {
+        return None;
+    }
+    Some((base, top))
 }
 
 /// A 3D scene composed of extruded architectural meshes.
@@ -116,10 +131,13 @@ impl Scene3d {
         let mut meshes: Vec<Mesh> = Vec::with_capacity(model.walls.len());
 
         for wall in &model.walls {
-            let height = wall.height;
+            let Some((base, top)) = wall_span(model, wall) else {
+                continue;
+            };
+            let height = top - base;
             let mesh = match shape_by_id.get(&wall.id).and_then(|&i| shapes.get(i)) {
-                Some(shape) => walls::extrude_wall(shape, height, 0.0, "wall"),
-                None => raw_wall_mesh(wall, wall.id),
+                Some(shape) => walls::extrude_wall(shape, height, base, "wall"),
+                None => raw_wall_mesh(wall, base, top, wall.id),
             };
             if let Some(m) = mesh {
                 meshes.push(m);
@@ -129,7 +147,8 @@ impl Scene3d {
         let mut openings_built = 0;
         let wall_map: BTreeMap<ArchId, &Wall> = model.walls.iter().map(|w| (w.id, w)).collect();
         for opening in &model.openings {
-            let o_meshes: Vec<Mesh> = openings::opening_meshes(&wall_map, opening).into_iter().filter(|m| !m.positions.is_empty()).collect();
+            let span = wall_map.get(&opening.host).and_then(|w| wall_span(model, w));
+            let o_meshes: Vec<Mesh> = openings::opening_meshes(&wall_map, opening, span).into_iter().filter(|m| !m.positions.is_empty()).collect();
             if !o_meshes.is_empty() {
                 openings_built += 1;
                 meshes.extend(o_meshes);
@@ -159,10 +178,12 @@ impl Scene3d {
                     continue;
                 }
             }
-            let height = wall.height;
+            let Some((base, top)) = wall_span(model, wall) else {
+                continue;
+            };
             let mesh = match shape_by_id.get(&wall.id).and_then(|&i| shapes.get(i)) {
-                Some(shape) => walls::extrude_wall(shape, height, 0.0, "wall"),
-                None => raw_wall_mesh(wall, wall.id),
+                Some(shape) => walls::extrude_wall(shape, top - base, base, "wall"),
+                None => raw_wall_mesh(wall, base, top, wall.id),
             };
             if let Some(m) = mesh {
                 meshes.push(m);
@@ -176,8 +197,10 @@ impl Scene3d {
             m
         });
         for opening in &model.openings {
+            let span = wall_map.get(&opening.host).and_then(|w| wall_span(model, w));
             if dirty.contains(&opening.id) {
-                let o_meshes: Vec<Mesh> = openings::opening_meshes(&wall_map, opening).into_iter().filter(|m| !m.positions.is_empty()).collect();
+                let o_meshes: Vec<Mesh> =
+                    openings::opening_meshes(&wall_map, opening, span).into_iter().filter(|m| !m.positions.is_empty()).collect();
                 if !o_meshes.is_empty() {
                     openings_built += 1;
                     meshes.extend(o_meshes);
@@ -222,6 +245,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use cadcraft_doc::Wall;
+    use cadcraft_doc::arch::Level;
     use cadcraft_geom::Vec2;
 
     /// A model with two non-intersecting walls.
@@ -430,7 +454,8 @@ mod tests {
         opening.kind = OpeningKind::Window;
 
         let wall_map: BTreeMap<ArchId, &Wall> = model.walls.iter().map(|w| (w.id, w)).collect();
-        let meshes = openings::opening_meshes(&wall_map, &opening);
+        let span = wall_span(&model, &model.walls[0]);
+        let meshes = openings::opening_meshes(&wall_map, &opening, span);
 
         // Each material should appear in at most one mesh.
         let materials: Vec<&str> = meshes.iter().map(|m| m.material.as_str()).collect();
@@ -484,7 +509,9 @@ mod tests {
         opening.casing_depth = 0.02;
         opening.style = "window".to_string();
         opening.kind = OpeningKind::Window;
-        model.openings.push(opening);
+        model.openings.push(opening.clone());
+        opening = Opening { height: 2.0, ..opening };
+        model.openings = vec![opening];
 
         let full = Scene3d::build(&model);
 
@@ -507,6 +534,85 @@ mod tests {
             assert_eq!(a.indices, b.indices, "index mismatch: {}", a.material);
             assert_eq!(a.material, b.material, "material mismatch: {} vs {}", a.material, b.material);
         }
+    }
+
+    #[test]
+    fn wall_is_built_at_its_level_elevation() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { elevation: 3.0, ceiling_height: 2.5, ..Default::default() });
+        model.walls.push(Wall {
+            id: ArchId(1),
+            base_level: 0,
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.0,
+            ..Default::default()
+        });
+        let scene = Scene3d::build(&model);
+        let mesh = scene.mesh_for(&ArchId(1)).unwrap();
+        let z_min = mesh.positions.iter().map(|p| p[2]).fold(f32::INFINITY, f32::min);
+        let z_max = mesh.positions.iter().map(|p| p[2]).fold(f32::NEG_INFINITY, f32::max);
+        assert!((z_min - 3.0f32).abs() < 1e-3f32, "z_min = {z_min}, expected 3.0");
+        assert!((z_max - 5.0f32).abs() < 1e-3f32, "z_max = {z_max}, expected 5.0");
+    }
+
+    #[test]
+    fn to_ceiling_stops_the_wall_at_the_ceiling() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { elevation: 0.0, ceiling_height: 2.2, ..Default::default() });
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            to_ceiling: true,
+            ..Default::default()
+        });
+        let scene = Scene3d::build(&model);
+        let mesh = scene.mesh_for(&ArchId(1)).unwrap();
+        let z_max = mesh.positions.iter().map(|p| p[2]).fold(f32::NEG_INFINITY, f32::max);
+        assert!((z_max - 2.2f32).abs() < 1e-3f32, "to_ceiling wall z_max = {z_max}, expected ceiling_height 2.2");
+    }
+
+    #[test]
+    fn second_level_wall_sits_on_the_first() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { elevation: 0.0, ceiling_height: 2.5, ..Default::default() });
+        model.levels.push(Level { elevation: 2.5, ceiling_height: 2.5, ..Default::default() });
+        model.walls.push(Wall {
+            id: ArchId(1),
+            base_level: 1,
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        let scene = Scene3d::build(&model);
+        let mesh = scene.mesh_for(&ArchId(1)).unwrap();
+        let z_min = mesh.positions.iter().map(|p| p[2]).fold(f32::INFINITY, f32::min);
+        assert!((z_min - 2.5f32).abs() < 1e-3f32, "level-1 wall z_min = {z_min}, expected 2.5");
+        let z_max = mesh.positions.iter().map(|p| p[2]).fold(f32::NEG_INFINITY, f32::max);
+        assert!((z_max - 5.0f32).abs() < 1e-3f32, "level-1 wall z_max = {z_max}, expected 5.0");
+    }
+
+    #[test]
+    fn wall_with_bad_elevation_is_skipped() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { elevation: f64::INFINITY, ceiling_height: 2.5, ..Default::default() });
+        model.walls.push(Wall {
+            id: ArchId(1),
+            base_level: 0,
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        let scene = Scene3d::build(&model);
+        assert!(scene.mesh_for(&ArchId(1)).is_none(), "wall with infinite elevation should be skipped");
     }
 
     #[test]
