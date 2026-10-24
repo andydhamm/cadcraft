@@ -170,7 +170,7 @@ mod tests {
         assert!(close(point_segment_dist(Vec2::new(0.5, 2.0), a, b), 2.0));
         assert!(close(point_segment_dist(Vec2::new(-3.0, 4.0), a, b), 5.0));
         // (5, 12) projects past the end (1, 0); distance to the clamped end is sqrt(4^2 + 12^2).
-        assert!(close(point_segment_dist(Vec2::new(5.0, 12.0), a, b), (16.0 + 144.0).f64_sqrt()));
+        assert!(close(point_segment_dist(Vec2::new(5.0, 12.0), a, b), 160.0.sqrt()));
 
         assert!(point_segment_dist(Vec2::new(1.0, 1.0), a, a) >= f64::MAX);
         assert!(point_segment_dist(Vec2::new(f64::NAN, 0.0), a, b) >= f64::MAX);
