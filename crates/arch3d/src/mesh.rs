@@ -175,6 +175,193 @@ impl Mesh {
             self.indices.extend([b_base + i, b_base + m + j, b_base + m + i]);
         }
     }
+
+    /// Extrude `outer` (with `holes` cut out) into a closed 2-manifold prism.
+    ///
+    /// The outer ring and each hole ring are validated and normalised; holes
+    /// are bridged one at a time into a single running ring, then the merged
+    /// ring is extruded exactly like [`Mesh::push_prism`]. The two bridge
+    /// edges that join each hole to the outer ring are skipped in the side
+    /// loop (detected as repeated undirected edges) so the resulting mesh stays
+    /// a closed 2-manifold. If a hole cannot be bridged it is dropped.
+    pub fn push_prism_with_holes(&mut self, outer: &[Vec2], holes: &[Vec<Vec2>], z0: f64, z1: f64) {
+        // Filter holes: >=3 finite vertices and non-degenerate area, normalised to CW.
+        let filtered_holes: Vec<Vec<Vec2>> = holes
+            .iter()
+            .filter_map(|h| {
+                if h.len() < 3 {
+                    return None;
+                }
+                if !h.iter().all(|p| p.is_finite()) {
+                    return None;
+                }
+                let a = polygon_area(h);
+                if a.abs() < 1e-12 {
+                    return None;
+                }
+                Some(if a > 0.0 { h.iter().rev().cloned().collect() } else { h.to_vec() })
+            })
+            .collect();
+
+        // Empty-hole path is byte-identical to push_prism (including its no-ops).
+        if filtered_holes.is_empty() {
+            self.push_prism(outer, z0, z1);
+            return;
+        }
+
+        // Validate and normalise the outer ring to CCW.
+        if outer.len() < 3 {
+            return;
+        }
+        if !outer.iter().all(|p| p.is_finite()) {
+            return;
+        }
+        let outer_area = polygon_area(outer);
+        if outer_area.abs() < 1e-12 {
+            return;
+        }
+        let ring_ccw = if outer_area < 0.0 { outer.iter().rev().cloned().collect::<Vec<Vec2>>() } else { outer.to_vec() };
+
+        // Bridge each hole into the running ring, dropping any that can't bridge.
+        let mut ring = ring_ccw;
+        for hole in &filtered_holes {
+            if let Some((p, q)) = find_bridge_pair(&ring, hole) {
+                ring = merge_ring(ring, p, hole, q);
+            }
+        }
+
+        // Triangulate the merged ring once; both caps share it.
+        let tris = triangulate_simple(&ring);
+        if tris.is_empty() {
+            return;
+        }
+        let m = ring.len() as u32;
+        let z0f = z0 as f32;
+        let z1f = z1 as f32;
+        let b_base = self.positions.len() as u32;
+
+        // Bottom cap vertices (outward normal: -Z).
+        for &p in &ring {
+            self.positions.push([p.x as f32, p.y as f32, z0f]);
+            self.uvs.push([p.x as f32, z0f]);
+            self.normals.push([0.0, 0.0, -1.0]);
+        }
+        // Top cap vertices (outward normal: +Z).
+        for &p in &ring {
+            self.positions.push([p.x as f32, p.y as f32, z1f]);
+            self.uvs.push([p.x as f32, z1f]);
+            self.normals.push([0.0, 0.0, 1.0]);
+        }
+
+        // Bottom cap triangles: reversed winding gives outward -Z normals.
+        for tri in &tris {
+            self.indices.extend([(b_base + tri[0]) as u32, (b_base + tri[2]) as u32, (b_base + tri[1]) as u32]);
+        }
+        // Top cap triangles: forward winding gives +Z normals.
+        for tri in &tris {
+            self.indices.extend([(b_base + m + tri[0]) as u32, (b_base + m + tri[1]) as u32, (b_base + m + tri[2]) as u32]);
+        }
+
+        // Detect bridge edges: any undirected merged edge appearing twice is the
+        // outer-hole bridge and both occurrences are skipped.
+        let mut edge_count: HashMap<(u32, u32), u32> = HashMap::new();
+        for i in 0..m {
+            let j = (i + 1) % m;
+            let key = (i.min(j), i.max(j));
+            *edge_count.entry(key).or_insert(0) += 1;
+        }
+
+        // Side faces, skipping bridge edges; vertices are shared with the caps
+        // so the mesh is a closed 2-manifold.
+        for i in 0..m {
+            let j = (i + 1) % m;
+            if *edge_count.get(&(i.min(j), i.max(j))).unwrap_or(&0) >= 2 {
+                continue;
+            }
+            // Triangle: bottom_i, bottom_j, top_j
+            self.indices.extend([b_base + i, b_base + j, b_base + m + j]);
+            // Triangle: bottom_i, top_j, top_i
+            self.indices.extend([b_base + i, b_base + m + j, b_base + m + i]);
+        }
+    }
+}
+
+/// Find the `(ring_index, hole_index)` pair that bridges `hole` into `ring`.
+///
+/// Returns `None` if no valid pair exists. A valid pair's open segment
+/// `ring[p]..hole[q]` must cross no ring edge (except the edges incident to `p`)
+/// or hole edge (except those incident to `q`), and its midpoint must lie
+/// inside `ring` (even-odd test).
+fn find_bridge_pair(ring: &[Vec2], hole: &[Vec2]) -> Option<(u32, u32)> {
+    let m = ring.len() as u32;
+    let h = hole.len() as u32;
+    if m < 3 || h < 3 {
+        return None;
+    }
+    let mut best: (f64, u32, u32) = (f64::INFINITY, 0, 0);
+    for p in 0..m {
+        for q in 0..h {
+            let pr = ring[p as usize];
+            let hq = hole[q as usize];
+            let dist = (pr.x - hq.x).powi(2) + (pr.y - hq.y).powi(2);
+            if dist > best.0 {
+                continue;
+            }
+            // The bridge segment must not cross any ring edge except the two
+            // edges incident to p, and no hole edge except the two incident to q.
+            let ring_ok = (0..m).all(|i| {
+                let a = i;
+                let b = (i + 1) % m;
+                if a == p && b == (p + 1) % m {
+                    return true;
+                }
+                if b == p && a == (p + m - 1) % m {
+                    return true;
+                }
+                !segs_properly_intersect(ring[a as usize], ring[b as usize], pr, hq)
+            });
+            if !ring_ok {
+                continue;
+            }
+            let hole_ok = (0..h).all(|i| {
+                let a = i;
+                let b = (i + 1) % h;
+                if a == q && b == (q + 1) % h {
+                    return true;
+                }
+                if b == q && a == (q + h - 1) % h {
+                    return true;
+                }
+                !segs_properly_intersect(hole[a as usize], hole[b as usize], pr, hq)
+            });
+            if !hole_ok {
+                continue;
+            }
+            let mid = Vec2::new((pr.x + hq.x) / 2.0, (pr.y + hq.y) / 2.0);
+            if !point_in_ring_even_odd(mid, ring) {
+                continue;
+            }
+            if dist < best.0 {
+                best = (dist, p, q);
+            }
+        }
+    }
+    if best.0.is_finite() { Some((best.1, best.2)) } else { None }
+}
+
+/// Splice `hole` into `ring` at the bridging pair `(p, q)`:
+///
+/// `merged = ring[0..=p] ++ hole[q..] ++ hole[0..=q] ++ ring[p..]`
+///
+/// `ring[p]` and `hole[q]` each appear twice in the result, which creates the
+/// two bridge edges that `push_prism_with_holes` skips in the side loop.
+fn merge_ring(ring: Vec<Vec2>, p: u32, hole: &[Vec2], q: u32) -> Vec<Vec2> {
+    let mut merged = Vec::with_capacity(ring.len() + hole.len() + 2);
+    merged.extend(&ring[..=p as usize]);
+    merged.extend(&hole[q as usize..]);
+    merged.extend(&hole[..=q as usize]);
+    merged.extend(&ring[p as usize..]);
+    merged
 }
 
 /// Outward unit normal for the edge from `a` to `b` on a CCW polygon.
@@ -563,6 +750,34 @@ mod tests {
             assert!(t[2] < concave.len() as u32);
             assert!(t[0] != t[1] && t[1] != t[2] && t[0] != t[2]);
         }
+    }
+
+    /// With a degenerate outer (2 vertices) or a degenerate hole the output is
+    /// a no-op: a degenerate outer yields no geometry at all, and a square
+    /// outer with only a degenerate hole is byte-identical to `push_prism`.
+    #[test]
+    fn push_prism_with_holes_noop_on_degenerate_outer() {
+        // Degenerate outer (2 vertices) must produce no geometry, even with a
+        // valid hole present.
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        let outer = &[Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
+        let holes = &[vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(3.0, 1.5)]];
+        mesh.push_prism_with_holes(outer, holes, 0.0, 2.5);
+        assert!(mesh.positions.is_empty(), "degenerate outer must yield no positions");
+        assert!(mesh.normals.is_empty(), "degenerate outer must yield no normals");
+        assert!(mesh.indices.is_empty(), "degenerate outer must yield no indices");
+
+        // A square outer with a degenerate hole (2 vertices) is identical to
+        // `push_prism` on the same square.
+        let ring = square_ring();
+        let degenerate_hole = vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0)];
+        let mut a = Mesh::new("wall", ArchId(1));
+        a.push_prism_with_holes(&ring, &[degenerate_hole.clone()], 0.0, 2.5);
+        let mut b = Mesh::new("wall", ArchId(1));
+        b.push_prism(&ring, 0.0, 2.5);
+        assert_eq!(a.positions, b.positions, "with holes (empty after filter) must equal push_prism: positions");
+        assert_eq!(a.normals, b.normals, "with holes (empty after filter) must equal push_prism: normals");
+        assert_eq!(a.indices, b.indices, "with holes (empty after filter) must equal push_prism: indices");
     }
 
     /// A ring with a duplicated vertex (square with first vertex repeated at
