@@ -97,6 +97,12 @@ pub fn wall_span(model: &ArchModel, w: &Wall) -> Option<(f64, f64)> {
     Some((base, top))
 }
 
+/// The [`Level`] corresponding to `index`, preferring the last level
+/// (or a default) when no level with that index exists.
+fn level_for(model: &ArchModel, index: u32) -> cadcraft_doc::arch::Level {
+    model.levels.iter().rev().find(|l| l.index == index).cloned().unwrap_or_else(|| model.levels.last().cloned().unwrap_or_default())
+}
+
 /// A 3D scene composed of extruded architectural meshes.
 #[derive(Debug, Clone)]
 pub struct Scene3d {
@@ -104,6 +110,8 @@ pub struct Scene3d {
     pub bounds: Bounds3,
     pub revision: u64,
     pub openings_built: usize,
+    pub floors: usize,
+    pub ceilings: usize,
 }
 
 impl Scene3d {
@@ -156,6 +164,20 @@ impl Scene3d {
             }
         }
 
+        let mut floors = 0;
+        let mut ceilings = 0;
+        for room in &model.rooms {
+            let level = level_for(model, room.level);
+            if let Some(m) = floors::floor_slab(room, &level, "floor") {
+                meshes.push(m);
+                floors += 1;
+            }
+            if let Some(m) = floors::ceiling_surface(room, &level, "ceiling") {
+                meshes.push(m);
+                ceilings += 1;
+            }
+        }
+
         meshes.retain(|m| !m.positions.is_empty());
 
         let bounds = meshes.iter().fold(Bounds3::empty(), |mut b, m| {
@@ -163,7 +185,7 @@ impl Scene3d {
             b
         });
 
-        Scene3d { meshes, bounds, revision: 0, openings_built }
+        Scene3d { meshes, bounds, revision: 0, openings_built, floors, ceilings }
     }
 
     /// Incremental rebuild: reuses meshes for ids not in `dirty`, recomputes bounds.
@@ -214,6 +236,34 @@ impl Scene3d {
             }
         }
 
+        let mut floors = 0;
+        let mut ceilings = 0;
+        for room in &model.rooms {
+            let level = level_for(model, room.level);
+            if dirty.contains(&room.id) {
+                if let Some(m) = floors::floor_slab(room, &level, "floor") {
+                    meshes.push(m);
+                    floors += 1;
+                }
+                if let Some(m) = floors::ceiling_surface(room, &level, "ceiling") {
+                    meshes.push(m);
+                    ceilings += 1;
+                }
+            } else {
+                if let Some(om) = prev_by_object.get(&room.id) {
+                    for m in om {
+                        if m.material == "floor" {
+                            meshes.push(m.clone());
+                            floors += 1;
+                        } else if m.material == "ceiling" {
+                            meshes.push(m.clone());
+                            ceilings += 1;
+                        }
+                    }
+                }
+            }
+        }
+
         meshes.retain(|m| !m.positions.is_empty());
 
         let bounds = meshes.iter().fold(Bounds3::empty(), |mut b, m| {
@@ -221,7 +271,7 @@ impl Scene3d {
             b
         });
 
-        Scene3d { meshes, bounds, revision: 0, openings_built }
+        Scene3d { meshes, bounds, revision: 0, openings_built, floors, ceilings }
     }
 }
 
@@ -246,7 +296,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use cadcraft_doc::Wall;
-    use cadcraft_doc::arch::Level;
+    use cadcraft_doc::arch::{Level, Room};
     use cadcraft_geom::Vec2;
 
     /// A model with two non-intersecting walls.
@@ -666,5 +716,87 @@ mod tests {
         let ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         assert!(ms < 50.0, "build_dirty 300w/150o took {:.1} ms (budget 50 ms)", ms);
+    }
+
+    /// Build a square room at the given level.
+    fn square_room(id: u32, level: u32, origin: (f64, f64), size: f64) -> Room {
+        let (x, y) = origin;
+        let pts = vec![Vec2::new(x, y), Vec2::new(x + size, y), Vec2::new(x + size, y + size), Vec2::new(x, y + size)];
+        Room { id: ArchId(id), level, polygon: pts, ..Default::default() }
+    }
+
+    #[test]
+    fn floor_counts_match_room_counts() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.rooms.push(square_room(1, 0, (0.0, 0.0), 3.0));
+        model.rooms.push(square_room(2, 0, (4.0, 0.0), 3.0));
+        model.rooms.push(square_room(3, 0, (8.0, 0.0), 3.0));
+
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.floors, 3, "floors={} expected 3", scene.floors);
+        assert_eq!(scene.ceilings, 3, "ceilings={} expected 3", scene.ceilings);
+        let floor_meshes: Vec<&Mesh> = scene.meshes.iter().filter(|m| m.material == "floor").collect();
+        assert_eq!(floor_meshes.len(), 3, "floor mesh count={}", floor_meshes.len());
+    }
+
+    #[test]
+    fn slab_mesh_carries_the_room_id() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.rooms.push(square_room(7, 0, (0.0, 0.0), 3.0));
+
+        let scene = Scene3d::build(&model);
+        assert!(scene.meshes.iter().any(|m| m.object == ArchId(7) && m.material == "floor"), "no floor mesh for room ArchId(7)",);
+    }
+
+    #[test]
+    fn build_dirty_rebuilds_only_the_touched_room() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.rooms.push(square_room(1, 0, (0.0, 0.0), 3.0));
+        model.rooms.push(square_room(2, 0, (4.0, 0.0), 3.0));
+
+        let full = Scene3d::build(&model);
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(2)]);
+        let partial = Scene3d::build_dirty(&model, &dirty, &full);
+
+        assert_eq!(partial.floors, full.floors, "floors {} != {}", partial.floors, full.floors);
+        assert_eq!(partial.ceilings, full.ceilings, "ceilings {} != {}", partial.ceilings, full.ceilings);
+
+        let full_floor = full.meshes.iter().find(|m| m.object == ArchId(1) && m.material == "floor");
+        let partial_floor = partial.meshes.iter().find(|m| m.object == ArchId(1) && m.material == "floor");
+        match (full_floor, partial_floor) {
+            (Some(fa), Some(pa)) => {
+                assert_eq!(fa.positions, pa.positions);
+                assert_eq!(fa.normals, pa.normals);
+                assert_eq!(fa.uvs, pa.uvs);
+                assert_eq!(fa.indices, pa.indices);
+                assert_eq!(fa.material, pa.material);
+            }
+            _ => assert!(false, "room 1 floor mesh missing from full or partial"),
+        }
+    }
+
+    #[test]
+    fn build_dirty_room_counts_match_full_build() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.rooms.push(square_room(1, 0, (0.0, 0.0), 3.0));
+        model.rooms.push(square_room(2, 0, (4.0, 0.0), 3.0));
+
+        let full = Scene3d::build(&model);
+
+        let mut edited = model.clone();
+        if let Some(room) = edited.rooms.iter_mut().find(|r| r.id == ArchId(2)) {
+            room.polygon[1].x += 1.0;
+        }
+
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(2)]);
+        let partial = Scene3d::build_dirty(&edited, &dirty, &full);
+        let full_edited = Scene3d::build(&edited);
+
+        assert_eq!(partial.floors, full_edited.floors, "floors {} != {}", partial.floors, full_edited.floors);
+        assert_eq!(partial.ceilings, full_edited.ceilings, "ceilings {} != {}", partial.ceilings, full_edited.ceilings);
     }
 }
