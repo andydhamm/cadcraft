@@ -5,7 +5,10 @@
 //! undoable and reachable from scripts, the control channel and MCP.
 
 use cadcraft_doc::arch::Opening;
-use cadcraft_doc::{ARCH_HANDLE_BASE, ArchId, DimKind, EntityKind, Handle, LwPolyline, OPENING_HANDLE_OFFSET, is_arch_handle, is_opening_handle};
+use cadcraft_doc::arch::ROOM_HANDLE_OFFSET;
+use cadcraft_doc::{
+    ARCH_HANDLE_BASE, ArchId, DimKind, EntityKind, Handle, LwPolyline, OPENING_HANDLE_OFFSET, is_arch_handle, is_opening_handle, is_room_handle,
+};
 use cadcraft_geom::{Arc, EPS, Mat3, Polyline, Vec2, Vec3, norm_angle};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -517,16 +520,22 @@ pub enum ArchTarget {
     Wall(ArchId),
     /// An opening, resolved through `ArchModel::opening`.
     Opening(ArchId),
+    /// A room, resolved through `ArchModel::room`.
+    Room(ArchId),
 }
 
 /// Resolve an arch proxy handle to its target, or `None` if `h` is not an arch proxy handle.
 ///
-/// Opening ranges resolve to `ArchTarget::Opening`; everything else in the arch range
-/// resolves to `ArchTarget::Wall`. Because a wall id and an opening id can share a number,
-/// this is the single place that disambiguates them.
+/// Opening ranges resolve to `ArchTarget::Opening`, room ranges resolve to `ArchTarget::Room`;
+/// everything else in the arch range resolves to `ArchTarget::Wall`. Because a wall id, an
+/// opening id, and a room id can share a number, this is the single place that disambiguates
+/// them.
 pub fn arch_id_from_handle(h: Handle) -> Option<ArchTarget> {
     if is_opening_handle(h) {
         return Some(ArchTarget::Opening(ArchId((h.0 - ARCH_HANDLE_BASE - OPENING_HANDLE_OFFSET) as u32)));
+    }
+    if is_room_handle(h) {
+        return Some(ArchTarget::Room(ArchId((h.0 - ARCH_HANDLE_BASE - ROOM_HANDLE_OFFSET) as u32)));
     }
     if is_arch_handle(h) {
         return Some(ArchTarget::Wall(ArchId((h.0 - ARCH_HANDLE_BASE) as u32)));
@@ -541,14 +550,20 @@ impl Session {
     /// same point, and the other modes transform every selected object.
     pub fn grip_edit(&mut self, handle: Handle, grip_index: usize, new_point: Vec2, mode: GripMode) -> Result<()> {
         if let Some(target) = arch_id_from_handle(handle) {
+            if matches!(target, ArchTarget::Room(_)) {
+                // Rooms are not drag-editable yet; a grip drag is a silent no-op for every mode.
+                return Ok(());
+            }
             if mode != GripMode::Stretch {
                 return match target {
+                    ArchTarget::Room(_) => Ok(()),
                     ArchTarget::Opening(_) => Err(EngineError::Other("arch openings support only the stretch grip".into())),
                     ArchTarget::Wall(_) => Err(EngineError::Other("arch walls support only the stretch grip".into())),
                 };
             }
             let d = self.doc()?;
             return match target {
+                ArchTarget::Room(_) => Ok(()),
                 ArchTarget::Opening(id) => {
                     let o = d.arch.opening(id).ok_or_else(|| EngineError::Other("no such opening".into()))?;
                     let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
@@ -608,6 +623,10 @@ impl Session {
                     let far = centre + perp * half_t + dir * half_w;
                     Ok(vec![centre, hinge, far])
                 }
+                ArchTarget::Room(id) => {
+                    let room = d.arch.room(id).ok_or_else(|| EngineError::Other("no such object".into()))?;
+                    Ok(cadcraft_arch::label::label_point(&room.polygon, &room.holes).into_iter().collect())
+                }
                 ArchTarget::Wall(id) => match d.arch.wall(id) {
                     Some(w) => Ok(vec![w.start, w.end]),
                     None => Err(EngineError::Other("no such object".into())),
@@ -631,7 +650,7 @@ mod tests;
 mod arch_grips_tests {
     use super::*;
     use crate::Session;
-    use cadcraft_doc::{ArchId, Handle, arch_handle, opening_handle};
+    use cadcraft_doc::{ArchId, Handle, arch_handle, opening_handle, room_handle};
     use cadcraft_geom::Vec2;
     use serde_json::json;
 
@@ -772,5 +791,54 @@ mod arch_grips_tests {
         let o = d.arch.opening(ArchId(0)).unwrap();
         assert_eq!(o.offset, 3.0);
         assert_eq!(o.host, ArchId(0));
+    }
+
+    /// Build a session with a 4 × 3 room pushed directly into the arch model —
+    /// do not depend on the `room` command.
+    fn setup_room() -> Session {
+        let mut s = Session::new();
+        {
+            let d = s.doc_mut().unwrap();
+            d.arch.push_room(cadcraft_arch::Room {
+                polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+                ..Default::default()
+            });
+        }
+        s
+    }
+
+    #[test]
+    fn room_handle_resolves_to_a_room_target() {
+        let _s = setup_room();
+        assert_eq!(arch_id_from_handle(room_handle(ArchId(0))), Some(ArchTarget::Room(ArchId(0))));
+    }
+
+    #[test]
+    fn room_grips_of_returns_the_label_point() {
+        let s = setup_room();
+        let grips = s.grips_of(room_handle(ArchId(0))).unwrap();
+        assert_eq!(grips.len(), 1);
+        // A single label grip inside the 4×3 polygon.
+        assert!(grips[0].x > 0.0 && grips[0].x < 4.0);
+        assert!(grips[0].y > 0.0 && grips[0].y < 3.0);
+    }
+
+    #[test]
+    fn room_grip_drag_is_a_no_op() {
+        let mut s = setup_room();
+        let h = room_handle(ArchId(0));
+        // Every mode must be a silent no-op (Ok), for both existing and missing rooms.
+        assert!(s.grip_edit(h, 0, Vec2::new(10.0, 10.0), GripMode::Stretch).is_ok());
+        assert!(s.grip_edit(h, 0, Vec2::new(10.0, 10.0), GripMode::Move).is_ok());
+        assert!(s.grip_edit(h, 0, Vec2::new(10.0, 10.0), GripMode::Rotate).is_ok());
+        assert!(s.grip_edit(h, 0, Vec2::new(10.0, 10.0), GripMode::Scale).is_ok());
+        assert!(s.grip_edit(h, 0, Vec2::new(10.0, 10.0), GripMode::Mirror).is_ok());
+    }
+
+    #[test]
+    fn room_grip_drag_on_a_missing_room_does_not_panic() {
+        let mut s = setup_room();
+        let result = s.grip_edit(room_handle(ArchId(9999)), 0, Vec2::new(10.0, 10.0), GripMode::Stretch);
+        assert!(result.is_ok());
     }
 }
