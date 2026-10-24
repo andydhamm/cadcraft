@@ -13,7 +13,7 @@ pub mod types;
 pub use camera::{Camera, Orbit};
 pub use offscreen::{Offscreen, headless_png};
 pub use pipeline::{GpuMeshes, upload};
-pub use types::{Mesh, Scene3d, Vertex};
+pub use types::{ArchId, Bounds3, Mesh, Scene3d};
 
 /// Errors returned by the render3d crate.
 #[derive(Debug, thiserror::Error)]

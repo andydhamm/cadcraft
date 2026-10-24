@@ -13,11 +13,12 @@ pub mod openings;
 pub mod walls;
 
 pub use crate::mesh::{Bounds3, Mesh};
+pub use cadcraft_doc::ArchId;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadcraft_arch::join::solve_joins;
-use cadcraft_doc::{ArchId, ArchModel, Wall};
+use cadcraft_doc::{ArchModel, Wall};
 use cadcraft_geom::{Vec2, Vec3};
 
 /// Build a simple extruded-rectangle mesh from a wall's raw start/end/thickness.
