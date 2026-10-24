@@ -556,12 +556,14 @@ impl Session {
             }
             if mode != GripMode::Stretch {
                 return match target {
+                    ArchTarget::Room(_) => Ok(()),
                     ArchTarget::Opening(_) => Err(EngineError::Other("arch openings support only the stretch grip".into())),
                     ArchTarget::Wall(_) => Err(EngineError::Other("arch walls support only the stretch grip".into())),
                 };
             }
             let d = self.doc()?;
             return match target {
+                ArchTarget::Room(_) => Ok(()),
                 ArchTarget::Opening(id) => {
                     let o = d.arch.opening(id).ok_or_else(|| EngineError::Other("no such opening".into()))?;
                     let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
