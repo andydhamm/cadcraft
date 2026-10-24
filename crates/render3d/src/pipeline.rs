@@ -112,7 +112,7 @@ fn create_all(device: &wgpu::Device, sample_count: u32) -> (wgpu::RenderPipeline
         entries: &[wgpu::BindGroupLayoutEntry {
             binding: 0,
             count: None,
-            ty: wgpu::BindType::Buffer { buffer_binding: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+            ty: wgpu::BindingType::Buffer { buffer_binding: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
             visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
         }],
     });
@@ -188,7 +188,7 @@ impl GpuPipeline {
             layout: &bgl,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding { buffer: uniform.clone(), offset: 0 }),
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding { buffer: &uniform, offset: 0, size: UNIFORM_SIZE }),
             }],
         });
 
