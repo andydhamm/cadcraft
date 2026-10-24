@@ -797,7 +797,10 @@ mod arch_grips_tests {
         let mut s = Session::new();
         {
             let d = s.doc_mut().unwrap();
-            d.arch.push_room(cadcraft_arch::Room { polygon: vec![(0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)], ..Default::default() });
+            d.arch.push_room(cadcraft_arch::Room {
+                polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+                ..Default::default()
+            });
         }
         s
     }
