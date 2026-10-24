@@ -8,13 +8,15 @@
 //! height 2.6, ids `w1..wN` (handles `arch_handle(i)`).
 //!
 //! The optional `openings` parameter (default `0`, capped at `MAX_OPENINGS`)
-//! deterministically seeds openings on top of the chain: every 3rd wall gets
-//! a hinged door (0.9 m × 2.1 m), and every 5th a sliding window (1.2 m ×
-//! 1.2 m, sill 0.9 m), both at 40 % of the centre-line length. Walls
-//! shorter than 2.0 m and any placement rejected by
-//! [`cadcraft_arch::opening::validate_placement`] are skipped, so the command
-//! never fails. Openings are pushed through `ArchModel::push_opening`, so
-//! ids continue the shared counter after the wall ids. Same seed ⇒ same
+//! deterministically seeds openings on top of the chain, one per wall, using
+//! two waves so no separation conflict is ever possible: wave 0 seeds the
+//! even 1-based walls and wave 1 the odd ones, each candidate at 40 % of the
+//! centre-line length, choosing the hinged door (0.9 m × 2.1 m) when the
+//! 1-based index is a multiple of 3 and the sliding window (1.2 m × 1.2 m,
+//! sill 0.9 m) otherwise. Walls shorter than 2.0 m and any placement rejected
+//! by [`cadcraft_arch::opening::validate_placement`] are skipped, so the
+//! command never fails. Openings are pushed through `ArchModel::push_opening`,
+//! so ids continue the shared counter after the wall ids. Same seed ⇒ same
 //! output.
 //!
 //! This command *does* mutate the model and calls `touch_arch()`; it is
@@ -104,15 +106,19 @@ const MIN_SAMPLE_WALL: f64 = 2.0;
 /// One opening attempt to seed: kind, finished width/height, sill, style.
 type OpeningSpec = (OpeningKind, f64, f64, f64, &'static str);
 
-/// Deterministically seed up to `max` openings on the given model.
+/// Deterministically seed up to `max` openings on the given model, one per
+/// wall.
 ///
-/// Every 3rd wall (1-based) gets a hinged door (0.9 m × 2.1 m) at 40 % of the
-/// centre-line length; every 5th gets a sliding window (1.2 m × 1.2 m, sill
-/// 0.9 m) at the same 40 % mark. Walls shorter than [`MIN_SAMPLE_WALL`] and
-/// any placement rejected by [`validate_placement`] are skipped (in particular,
-/// the door and window on the same wall 15/30/… are at the same offset, so
-/// the window's separation check rejects it). Returns the number actually
-/// placed; never fails.
+/// Two waves so no separation conflict is ever possible: wave 0 seeds the
+/// even 1-based walls, wave 1 the odd ones (the other parity is skipped with
+/// `continue`), and each candidate wall gets at most one opening. Every
+/// generated wall is 3.0-8.9 m long and 2.6 m high, so a single 0.9×2.1 door
+/// or 1.2×1.2 window (sill 0.9 m) at 40 % of the centre-line always passes
+/// [`validate_placement`] (min segment 0.15 m, rough allowance 0.12 m),
+/// meaning wave 0 alone yields `floor(n/2)` openings — 150 for 300 walls —
+/// and wave 1 doubles the capacity to `n`. `max` is already clamped to
+/// `MAX_OPENINGS` in `run_sample`. Returns the number actually placed; never
+/// fails.
 fn seed_openings(model: &mut ArchModel, max: usize) -> usize {
     const DOOR: OpeningSpec = (OpeningKind::Door, 0.9, 2.1, 0.0, "hinged");
     const WINDOW: OpeningSpec = (OpeningKind::Window, 1.2, 1.2, 0.9, "slider");
@@ -121,33 +127,36 @@ fn seed_openings(model: &mut ArchModel, max: usize) -> usize {
     // Index-based loop: the only thing copied out is `wid` (a `Copy` ArchId)
     // and a plain `f64`, so no borrow of `model.walls` is live when
     // `model.push_opening(o)` mutates the model.
-    for i in 0..model.walls.len() {
-        if placed >= max {
-            break;
-        }
-        let wid = model.walls[i].id;
-        let length = model.walls[i].start.dist(model.walls[i].end);
-        if !length.is_finite() || length < MIN_SAMPLE_WALL {
-            continue;
-        }
-        let offset = 0.4 * length;
-
-        let mut attempts = Vec::new();
-        if (i + 1) % 3 == 0 {
-            attempts.push(DOOR);
-        }
-        if (i + 1) % 5 == 0 {
-            attempts.push(WINDOW);
-        }
-        for (kind, width, height, sill, style) in attempts {
-            if validate_placement(model, wid, offset, width, sill, height, kind, style, None).is_err() {
+    for wave in 0..2 {
+        for i in 0..model.walls.len() {
+            if placed >= max {
+                return placed;
+            }
+            // Wave 0: even 1-based walls; wave 1: odd ones.
+            if (i + 1) % 2 != wave {
                 continue;
             }
-            let mut o = Opening::new(wid, offset, width, height, kind);
-            o.sill = sill;
-            o.style = style.to_string();
-            model.push_opening(o);
-            placed += 1;
+            let wid = model.walls[i].id;
+            let length = model.walls[i].start.dist(model.walls[i].end);
+            if !length.is_finite() || length < MIN_SAMPLE_WALL {
+                continue;
+            }
+            let spec = if (i + 1) % 3 == 0 { DOOR } else { WINDOW };
+            let (kind, width, height, sill, style) = spec;
+            let offset = 0.4 * length;
+
+            match validate_placement(model, wid, offset, width, sill, height, kind, style, None) {
+                Ok(off) => {
+                    let mut o = Opening::new(wid, off, width, height, kind);
+                    o.sill = sill;
+                    o.style = style.to_string();
+                    model.push_opening(o);
+                    placed += 1;
+                }
+                Err(_) => {
+                    continue;
+                }
+            }
             if placed >= max {
                 return placed;
             }
@@ -242,10 +251,14 @@ mod tests {
     /// The seed is the only input: two fresh sessions with the same
     /// `walls`/`openings` params must produce byte-identical openings
     /// (ids, hosts, offsets, dimensions, styles, kinds) in the same order.
+    ///
+    /// `openings` is set to the wave-0 capacity (`floor(N_WALLS / 2)` = 16),
+    /// so exactly the even 1-based walls get seeded and wave 1 never runs:
+    /// 16 openings, one per even wall 2,4,…,32, wall 1 empty.
     #[test]
     fn arch_sample_places_deterministic_openings() {
         const N_WALLS: usize = 32;
-        const N_OPENINGS: usize = 32;
+        const N_OPENINGS: usize = 16;
         let p = json!({ "walls": N_WALLS, "openings": N_OPENINGS });
 
         let mut s1 = fresh_session();
@@ -258,11 +271,10 @@ mod tests {
         let o2 = s2.doc().unwrap().arch.openings.clone();
         assert_eq!(o1, o2);
 
-        // 10 doors (walls 3..=30, every 3rd) + 4 windows (walls 5, 10, 20, 25;
-        // walls 15 and 30 would take a door and a window at the same 40 %
-        // mark, so the window's separation check rejects it).
-        assert_eq!(o1.len(), 14, "expected 14 seeded openings");
+        // 16 openings (even walls 2..=32, one each), ids in push order.
+        assert_eq!(o1.len(), 16, "expected 16 seeded openings");
         assert!(o1.iter().all(|o| o.id.0 < N_OPENINGS as u32), "opening ids must be within the opening counter range");
+        assert_eq!(o1.iter().map(|o| o.host.0).collect::<Vec<u32>>(), (2..=N_WALLS).step_by(2).map(|i| i as u32).collect::<Vec<u32>>());
 
         let d = s1.doc().unwrap();
         // Every opening sits at 40 % of its host wall, in the door/window
@@ -280,10 +292,72 @@ mod tests {
                 assert_eq!((o.width, o.height, o.sill), (1.2, 1.2, 0.9));
             }
         }
-        // 2nd wall: no opening; 3rd: exactly the door; 5th: exactly the window.
-        assert!(d.arch.openings_on(ArchId(2)).is_empty());
-        assert_eq!(d.arch.openings_on(ArchId(3)).len(), 1);
-        assert!(d.arch.openings_on(ArchId(5)).len() == 1);
+        // 1st wall (odd): no opening; 2nd: exactly the window; 6th: exactly
+        // the door (1-based index 6 is a multiple of 3).
+        assert!(d.arch.openings_on(ArchId(1)).is_empty());
+        assert_eq!(d.arch.openings_on(ArchId(2)).len(), 1);
+        assert_eq!(d.arch.openings_on(ArchId(6)).len(), 1);
+    }
+
+    /// `arch.sample {"walls":300,"openings":150}` places exactly the requested
+    /// 150 openings: one per wall, every host distinct, and every placement
+    /// still legal against the final model.
+    #[test]
+    fn arch_sample_places_the_requested_opening_count() {
+        let mut s = fresh_session();
+        let r = s.execute("arch.sample", &json!({ "walls": 300, "openings": 150 })).unwrap();
+        assert_eq!(r["openings"].as_u64(), Some(150));
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.openings.len(), 150);
+
+        // One per wall: every host is distinct.
+        let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        for o in &d.arch.openings {
+            assert!(seen.insert(o.host.0), "duplicate host wall for opening {:?}", o.id);
+        }
+
+        // Every placement is still legal on the final model.
+        for o in &d.arch.openings {
+            assert!(
+                validate_placement(&d.arch, o.host, o.offset, o.width, o.sill, o.height, o.kind, &o.style, Some(o.id)).is_ok(),
+                "opening {:?} fails re-validation on the final model",
+                o.id
+            );
+        }
+    }
+
+    /// Opening ids are exactly `ArchId(0)..ArchId(149)` in push order for a
+    /// full 300-wall / 150-opening sample — this is what makes `o10`
+    /// resolvable by `arch.opening.move`.
+    #[test]
+    fn arch_sample_opening_ids_are_sequential() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "walls": 300, "openings": 150 })).unwrap();
+        let ids: Vec<ArchId> = s.doc().unwrap().arch.openings.iter().map(|o| o.id).collect();
+        assert_eq!(ids, (0..150).map(ArchId).collect::<Vec<ArchId>>());
+    }
+
+    /// `arch.opening.move {"opening":"o10","offset":1.0}` on a 300-wall sample
+    /// succeeds: with one opening per wall and every wall at least 3.0 m long,
+    /// offset 1.0 always validates. This is exactly the edit
+    /// `tests/acceptance/phase-2/09_opening_rebuild_bench.sh` runs.
+    #[test]
+    fn arch_sample_opening_move_to_one_metre_is_legal() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "walls": 300, "openings": 150 })).unwrap();
+        s.execute("arch.opening.move", &json!({ "opening": "o10", "offset": 1.0 })).unwrap();
+    }
+
+    /// Requesting more openings than walls places at most one per wall and
+    /// neither fails nor panics.
+    #[test]
+    fn arch_sample_more_openings_than_walls_is_capped_by_capacity() {
+        let mut s = fresh_session();
+        let r = s.execute("arch.sample", &json!({ "walls": 8, "openings": 100 })).unwrap();
+        assert_eq!(r["walls"].as_u64(), Some(8));
+        let placed = r["openings"].as_u64().unwrap();
+        assert!(placed <= 8, "placed {placed} openings on 8 walls");
+        assert_eq!(s.doc().unwrap().arch.openings.len(), placed as usize);
     }
 
     /// Every seeded opening must still pass placement validation against the
