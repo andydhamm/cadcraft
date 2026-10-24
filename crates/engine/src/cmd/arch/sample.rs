@@ -145,15 +145,18 @@ fn seed_openings(model: &mut ArchModel, max: usize) -> usize {
             let (kind, width, height, sill, style) = spec;
             let offset = 0.4 * length;
 
-            let Ok(off) = validate_placement(model, wid, offset, width, sill, height, kind, style, None)
-            else {
-                continue;
+            match validate_placement(model, wid, offset, width, sill, height, kind, style, None) {
+                Ok(off) => {
+                    let mut o = Opening::new(wid, off, width, height, kind);
+                    o.sill = sill;
+                    o.style = style.to_string();
+                    model.push_opening(o);
+                    placed += 1;
+                }
+                Err(_) => {
+                    continue;
+                }
             }
-            let mut o = Opening::new(wid, off, width, height, kind);
-            o.sill = sill;
-            o.style = style.to_string();
-            model.push_opening(o);
-            placed += 1;
             if placed >= max {
                 return placed;
             }
@@ -271,10 +274,7 @@ mod tests {
         // 16 openings (even walls 2..=32, one each), ids in push order.
         assert_eq!(o1.len(), 16, "expected 16 seeded openings");
         assert!(o1.iter().all(|o| o.id.0 < N_OPENINGS as u32), "opening ids must be within the opening counter range");
-        assert_eq!(
-            o1.iter().map(|o| o.host.0).collect::<Vec<u32>>(),
-            (2..=N_WALLS).step_by(2).map(|i| i as u32).collect::<Vec<u32>>()
-        );
+        assert_eq!(o1.iter().map(|o| o.host.0).collect::<Vec<u32>>(), (2..=N_WALLS).step_by(2).map(|i| i as u32).collect::<Vec<u32>>());
 
         let d = s1.doc().unwrap();
         // Every opening sits at 40 % of its host wall, in the door/window
