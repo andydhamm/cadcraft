@@ -10,7 +10,7 @@ pub mod offscreen;
 pub mod pipeline;
 pub mod types;
 
-pub use camera::{Camera, Orbit};
+pub use camera::{Camera, Orbit, projected_bounds};
 pub use offscreen::{Offscreen, headless_png};
 pub use pipeline::{GpuMeshes, upload};
 pub use types::{Mesh, Scene3d, Vertex};
