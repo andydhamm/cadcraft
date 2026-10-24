@@ -23,13 +23,12 @@ use cadcraft_geom::{Vec2, Vec3};
 /// Build a simple extruded-rectangle mesh from a wall's raw start/end/thickness.
 ///
 /// Used as a fallback when the join solver produced no shape for a wall id.
-/// Returns `None` if the wall is degenerate (zero length or zero height).
-fn raw_wall_mesh(wall: &Wall, object: ArchId) -> Option<Mesh> {
+/// Returns `None` if the wall is degenerate (zero length).
+fn raw_wall_mesh(wall: &Wall, base: f64, top: f64, object: ArchId) -> Option<Mesh> {
     let dx = wall.end.x - wall.start.x;
     let dy = wall.end.y - wall.start.y;
     let len = (dx * dx + dy * dy).sqrt();
-    let h = wall.height;
-    if len < 1e-9 || h <= 0.0 {
+    if len < 1e-9 {
         return None;
     }
     let nx = -dy / len;
@@ -41,19 +40,19 @@ fn raw_wall_mesh(wall: &Wall, object: ArchId) -> Option<Mesh> {
     let p3 = Vec2::new(wall.start.x - nx * half, wall.start.y - ny * half);
 
     let pos_f64: Vec<Vec3> = vec![
-        Vec3::new(p0.x, p0.y, 0.0),
-        Vec3::new(p1.x, p1.y, 0.0),
-        Vec3::new(p2.x, p2.y, 0.0),
-        Vec3::new(p3.x, p3.y, 0.0),
-        Vec3::new(p0.x, p0.y, h),
-        Vec3::new(p1.x, p1.y, h),
-        Vec3::new(p2.x, p2.y, h),
-        Vec3::new(p3.x, p3.y, h),
+        Vec3::new(p0.x, p0.y, base),
+        Vec3::new(p1.x, p1.y, base),
+        Vec3::new(p2.x, p2.y, base),
+        Vec3::new(p3.x, p3.y, base),
+        Vec3::new(p0.x, p0.y, top),
+        Vec3::new(p1.x, p1.y, top),
+        Vec3::new(p2.x, p2.y, top),
+        Vec3::new(p3.x, p3.y, top),
     ];
 
     let cx = (p0.x + p1.x + p2.x + p3.x) * 0.25;
     let cy = (p0.y + p1.y + p2.y + p3.y) * 0.25;
-    let cz = h * 0.5;
+    let cz = (base + top) * 0.5;
     let normals_f64: Vec<Vec3> = pos_f64
         .iter()
         .map(|p| {
@@ -158,10 +157,12 @@ impl Scene3d {
                     continue;
                 }
             }
-            let height = wall.height;
+            let Some((base, top)) = wall_span(model, wall) else {
+                continue;
+            };
             let mesh = match shape_by_id.get(&wall.id).and_then(|&i| shapes.get(i)) {
-                Some(shape) => walls::extrude_wall(shape, height, 0.0, "wall"),
-                None => raw_wall_mesh(wall, wall.id),
+                Some(shape) => walls::extrude_wall(shape, top - base, base, "wall"),
+                None => raw_wall_mesh(wall, base, top, wall.id),
             };
             if let Some(m) = mesh {
                 meshes.push(m);
@@ -175,8 +176,10 @@ impl Scene3d {
             m
         });
         for opening in &model.openings {
+            let span = wall_map.get(&opening.host).and_then(|w| wall_span(model, w));
             if dirty.contains(&opening.id) {
-                let o_meshes: Vec<Mesh> = openings::opening_meshes(&wall_map, opening).into_iter().filter(|m| !m.positions.is_empty()).collect();
+                let o_meshes: Vec<Mesh> =
+                    openings::opening_meshes(&wall_map, opening, span).into_iter().filter(|m| !m.positions.is_empty()).collect();
                 if !o_meshes.is_empty() {
                     openings_built += 1;
                     meshes.extend(o_meshes);
@@ -429,7 +432,8 @@ mod tests {
         opening.kind = OpeningKind::Window;
 
         let wall_map: BTreeMap<ArchId, &Wall> = model.walls.iter().map(|w| (w.id, w)).collect();
-        let meshes = openings::opening_meshes(&wall_map, &opening);
+        let span = wall_span(&model, &model.walls[0]);
+        let meshes = openings::opening_meshes(&wall_map, &opening, span);
 
         // Each material should appear in at most one mesh.
         let materials: Vec<&str> = meshes.iter().map(|m| m.material.as_str()).collect();
@@ -483,7 +487,9 @@ mod tests {
         opening.casing_depth = 0.02;
         opening.style = "window".to_string();
         opening.kind = OpeningKind::Window;
-        model.openings.push(opening);
+        model.openings.push(opening.clone());
+        opening = Opening { height: 2.0, ..opening };
+        model.openings = vec![opening];
 
         let full = Scene3d::build(&model);
 
