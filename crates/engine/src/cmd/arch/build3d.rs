@@ -55,7 +55,7 @@ pub fn specs() -> Vec<crate::cmd::CommandSpec> {
 mod tests {
     use super::*;
 
-    use cadcraft_doc::arch::{Opening, OpeningKind, Room, Level, RoomType};
+    use cadcraft_doc::arch::{Level, Opening, OpeningKind, Room, RoomType};
     use cadcraft_doc::{ArchId, Wall};
     use cadcraft_geom::Vec2;
     use serde_json::json;
@@ -118,8 +118,8 @@ mod tests {
         let mut s = fresh_session();
         let d = s.doc_mut().unwrap();
         d.arch.levels.push(Level { ..Level::default() });
-        d.arch.rooms.push(Room { level: 0, type: RoomType::Living, ..Room::default() });
-        d.arch.rooms.push(Room { level: 0, type: RoomType::Living, ..Room::default() });
+        d.arch.rooms.push(Room { level: 0, r#type: RoomType::Living, ..Room::default() });
+        d.arch.rooms.push(Room { level: 0, r#type: RoomType::Living, ..Room::default() });
         d.touch_arch();
         s
     }
@@ -129,7 +129,7 @@ mod tests {
         let mut s = fresh_session();
         let d = s.doc_mut().unwrap();
         d.arch.levels.push(Level { ..Level::default() });
-        d.arch.rooms.push(Room { level: 0, type: RoomType::OpenBelow, ..Room::default() });
+        d.arch.rooms.push(Room { level: 0, r#type: RoomType::OpenBelow, ..Room::default() });
         d.touch_arch();
         s
     }
