@@ -1,7 +1,7 @@
 //! Utility for computing a point strictly inside a polygon (with optional holes)
 //! for use as a label placement position.
 
-use cadcraft_geom::{Vec2, curve::point_in_polygon};
+use cadcraft_geom::{Vec2, point_in_polygon};
 
 /// Minimum distance from any polygon edge that a label point must maintain.
 const MIN_EDGE_DIST: f64 = 1e-9;
