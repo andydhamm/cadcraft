@@ -42,6 +42,7 @@ fn build_300_wall_grid() -> ArchModel {
                 join_start: Default::default(),
                 join_end: Default::default(),
                 layers: Vec::new(),
+                divider: false,
             });
             count += 1;
         }
@@ -70,6 +71,7 @@ fn build_300_wall_grid() -> ArchModel {
             join_start: Default::default(),
             join_end: Default::default(),
             layers: Vec::new(),
+            divider: false,
         });
         count += 1;
     }
