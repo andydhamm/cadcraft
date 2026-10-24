@@ -517,8 +517,10 @@ impl Default for ArchModel {
         ArchModel {
             walls: Vec::new(),
             openings: Vec::new(),
+            rooms: Vec::new(),
             next_id: 0,
             next_opening_id: 0,
+            next_room_id: 0,
             levels: vec![Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 }],
             types: vec![
                 WallType {
