@@ -44,12 +44,14 @@ pub struct Pane3d {
     pub available: bool,
     /// Whether the built scene has visible content (walls, floors, etc.).
     pub has_content: bool,
+    /// The last built scene (`None` until the first successful build).
+    scene: Option<cadcraft_render3d::Scene3d>,
 }
 
 impl Pane3d {
     /// New pane with a default orbit and no scene built yet.
     pub fn new() -> Self {
-        Self { orbit: Orbit::default(), last_revision: 0, mesh_count: 0, available: false, has_content: false }
+        Self { orbit: Orbit::default(), last_revision: 0, mesh_count: 0, available: false, has_content: false, scene: None }
     }
 
     /// Whether the scene must be rebuilt because `current_revision` differs from the last
@@ -64,6 +66,56 @@ impl Pane3d {
         self.last_revision = revision;
         self.mesh_count = mesh_count;
         self.has_content = has_content;
+    }
+
+    /// Rebuild the scene for `revision` from `model` (`None` = no document).
+    ///
+    /// Returns `true` when the scene was rebuilt. Never rebuilds when
+    /// `revision == self.last_revision` and a scene already exists.
+    pub fn sync(&mut self, revision: u64, model: Option<&cadcraft_doc::ArchModel>) -> bool {
+        match model {
+            Some(m) => {
+                if self.last_revision == revision {
+                    return false;
+                }
+                let scene = cadcraft_arch3d::build(m);
+                let mesh_count = scene.meshes.len();
+                let has_content = !scene.meshes.is_empty();
+                self.scene = Some(scene);
+                self.mark_built(revision, mesh_count, has_content);
+                true
+            }
+            None => {
+                self.scene = None;
+                self.mesh_count = 0;
+                self.has_content = false;
+                self.last_revision = revision;
+                true
+            }
+        }
+    }
+
+    /// The scene currently held (`None` when nothing has been built).
+    pub fn scene(&self) -> Option<&cadcraft_arch3d::Scene3d> {
+        self.scene.as_ref()
+    }
+
+    /// The orbit `Camera` for the currently held scene.
+    ///
+    /// Frames the held scene (or an empty bounds when there is none) via
+    /// [`cadcraft_render3d::camera::Orbit::fit`], then applies the pane's user
+    /// orbit: `azimuth`/`elevation` in degrees and `distance` clamped to at
+    /// least [`cadcraft_render3d::camera::MIN_DISTANCE`]. `fit`'s `target` and
+    /// `fov_deg` are preserved.
+    pub fn camera(&self) -> cadcraft_render3d::Camera {
+        let mut orbit = match self.scene {
+            Some(ref s) => cadcraft_render3d::camera::Orbit::fit(&s.bounds),
+            None => cadcraft_render3d::camera::Orbit::fit(&cadcraft_arch3d::Bounds3::empty()),
+        };
+        orbit.azimuth = self.orbit.azimuth.to_degrees();
+        orbit.elevation = self.orbit.elevation.to_degrees();
+        orbit.distance = self.orbit.distance.max(cadcraft_render3d::camera::MIN_DISTANCE);
+        cadcraft_render3d::Camera::Orbit(orbit)
     }
 }
 
@@ -141,5 +193,87 @@ mod tests {
         assert!(!pane.needs_rebuild(2));
 
         assert!(pane.needs_rebuild(3));
+    }
+
+    #[test]
+    fn pane3d_renders_after_a_revision_bump() {
+        let mut arch = cadcraft_doc::ArchModel::default();
+        arch.push_wall(cadcraft_doc::Wall {
+            start: cadcraft_geom::Vec2::new(0.0, 0.0),
+            end: cadcraft_geom::Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            height: 2.7,
+            ..Default::default()
+        });
+
+        let mut pane = Pane3d::new();
+        assert!(pane.scene().is_none());
+        assert!(!pane.has_content);
+
+        // First successful build at revision 1.
+        assert!(pane.sync(1, Some(&arch)));
+        assert!(pane.scene().is_some());
+        assert!(pane.has_content);
+        assert_eq!(pane.last_revision, 1);
+
+        // "No document" clears the scene.
+        assert!(pane.sync(2, None));
+        assert!(pane.scene().is_none());
+        assert!(!pane.has_content);
+        assert_eq!(pane.last_revision, 2);
+
+        // A revision bump rebuilds.
+        assert!(pane.sync(3, Some(&arch)));
+        assert!(pane.scene().is_some());
+        assert!(pane.has_content);
+        assert_eq!(pane.last_revision, 3);
+    }
+
+    #[test]
+    fn pane3d_sync_skips_an_unchanged_revision() {
+        let mut arch = cadcraft_doc::ArchModel::default();
+        arch.push_wall(cadcraft_doc::Wall {
+            start: cadcraft_geom::Vec2::new(0.0, 0.0),
+            end: cadcraft_geom::Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            height: 2.7,
+            ..Default::default()
+        });
+
+        let mut pane = Pane3d::new();
+        assert!(pane.sync(1, Some(&arch)));
+        let first_mesh_count = pane.mesh_count;
+
+        // Same revision, same model: no rebuild.
+        assert!(!pane.sync(1, Some(&arch)));
+        assert!(pane.scene().is_some());
+        assert_eq!(pane.mesh_count, first_mesh_count);
+    }
+
+    #[test]
+    fn pane3d_camera_frames_the_scene_bounds() {
+        let mut arch = cadcraft_doc::ArchModel::default();
+        arch.push_wall(cadcraft_doc::Wall {
+            start: cadcraft_geom::Vec2::new(0.0, 0.0),
+            end: cadcraft_geom::Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            height: 2.7,
+            ..Default::default()
+        });
+
+        let mut pane = Pane3d::new();
+        assert!(pane.sync(1, Some(&arch)));
+        assert!(pane.scene().is_some());
+
+        let cam = pane.camera();
+        let cadcraft_render3d::Camera::Orbit(o) = cam;
+
+        // `fit` centres the camera on the scene; for a 0..10 m wall that is x = 5.
+        assert!((o.target.x - 5.0).abs() < 0.25);
+        assert!(o.distance >= cadcraft_render3d::camera::MIN_DISTANCE);
+        assert!((o.distance - f64::max(10.0, cadcraft_render3d::camera::MIN_DISTANCE)).abs() < 1e-9);
+        // The render3d Orbit stores angles in degrees; the pane default is 0.0 / 0.35 rad.
+        assert!((o.azimuth - 0.0).abs() < 1e-9);
+        assert!((o.elevation - 0.35 * (180.0 / std::f64::consts::PI)).abs() < 1e-6);
     }
 }
