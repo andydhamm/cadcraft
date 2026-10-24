@@ -177,7 +177,8 @@ pub fn projected_bounds(camera: &Camera, bounds: &Bounds3, size: (u32, u32)) -> 
     let mut py_max = f64::NEG_INFINITY;
     let mut any_finite = false;
     for c in &corners {
-        let clip = apply_col(&view, [c[0], c[1], c[2]]);
+        let vs = apply_col(&view, [c[0], c[1], c[2]]);
+        let clip = apply_col(&proj, [vs[0], vs[1], vs[2]]);
         let w_clip = clip[3];
         let w_div = if w_clip.abs() < 1e-9 { 1.0 } else { w_clip };
         let nx = clip[0] / w_div;
