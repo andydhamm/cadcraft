@@ -12,7 +12,8 @@ use serde_json::{Value, json};
 use crate::Session;
 
 /// Run body. Returns `{"meshes": ..., "triangles": ..., "rebuildMs": ...,
-/// "bounds": {"min": [x,y,z], "max": [x,y,z]}, "revision": ...}`.
+/// "bounds": {"min": [x,y,z], "max": [x,y,z]}, "floors": ..., "ceilings": ...,
+/// "openings": ..., "revision": ...}`.
 fn run_build3d(s: &mut Session, _params: &Value) -> crate::Result<Value> {
     let d = s.doc()?;
     let t = Instant::now();
@@ -25,6 +26,8 @@ fn run_build3d(s: &mut Session, _params: &Value) -> crate::Result<Value> {
             "min": [scene.bounds.min[0], scene.bounds.min[1], scene.bounds.min[2]],
             "max": [scene.bounds.max[0], scene.bounds.max[1], scene.bounds.max[2]]
         },
+        "floors": scene.floors,
+        "ceilings": scene.ceilings,
         "openings": scene.openings_built,
         "revision": d.arch_revision
     }))
@@ -52,7 +55,7 @@ pub fn specs() -> Vec<crate::cmd::CommandSpec> {
 mod tests {
     use super::*;
 
-    use cadcraft_doc::arch::{Opening, OpeningKind};
+    use cadcraft_doc::arch::{Level, Opening, OpeningKind, Room, RoomType};
     use cadcraft_doc::{ArchId, Wall};
     use cadcraft_geom::Vec2;
     use serde_json::json;
@@ -110,6 +113,42 @@ mod tests {
         assert_eq!(s.doc().unwrap().arch_revision, before, "build3d must not bump arch_revision");
     }
 
+    /// A session whose arch model holds a level and two `Living` rooms.
+    fn rooms_session() -> Session {
+        let mut s = fresh_session();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { ..Level::default() });
+        d.arch.rooms.push(Room {
+            level: 0,
+            room_type: RoomType::Living,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 5.0), Vec2::new(0.0, 5.0)],
+            ..Room::default()
+        });
+        d.arch.rooms.push(Room {
+            level: 0,
+            room_type: RoomType::Living,
+            polygon: vec![Vec2::new(5.0, 0.0), Vec2::new(9.0, 0.0), Vec2::new(9.0, 5.0), Vec2::new(5.0, 5.0)],
+            ..Room::default()
+        });
+        d.touch_arch();
+        s
+    }
+
+    /// A session whose arch model holds a level and one `OpenBelow` room.
+    fn open_below_session() -> Session {
+        let mut s = fresh_session();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { ..Level::default() });
+        d.arch.rooms.push(Room {
+            level: 0,
+            room_type: RoomType::OpenBelow,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 5.0), Vec2::new(0.0, 5.0)],
+            ..Room::default()
+        });
+        d.touch_arch();
+        s
+    }
+
     /// A session whose arch model holds one 10 m wall with a single hinged door on it.
     fn wall_with_opening_session() -> Session {
         let mut s = fresh_session();
@@ -125,5 +164,32 @@ mod tests {
         let mut s = wall_with_opening_session();
         let r = s.execute("build3d", &json!({})).unwrap();
         assert_eq!(r["openings"].as_u64(), Some(1), "expected 1 cut opening");
+    }
+
+    #[test]
+    fn build3d_reports_floor_and_ceiling_counts() {
+        let mut s = rooms_session();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["floors"].as_u64(), Some(2), "two Living rooms -> 2 floors");
+        assert_eq!(r["ceilings"].as_u64(), Some(2), "two Living rooms -> 2 ceilings");
+    }
+
+    #[test]
+    fn build3d_reports_zero_floors_for_open_below() {
+        let mut s = open_below_session();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["floors"].as_u64(), Some(0), "OpenBelow rooms get no floor slab");
+        assert_eq!(r["ceilings"].as_u64(), Some(1), "OpenBelow room still gets a ceiling");
+    }
+
+    #[test]
+    fn build3d_still_reports_meshes_and_openings() {
+        let mut s = wall_with_opening_session();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert!(r["meshes"].is_number(), "missing `meshes` key");
+        assert!(r["triangles"].is_number(), "missing `triangles` key");
+        assert!(r["openings"].is_number(), "missing `openings` key");
+        assert!(r["bounds"].is_object(), "missing `bounds` key");
+        assert!(r["revision"].is_number(), "missing `revision` key");
     }
 }
