@@ -355,10 +355,10 @@ fn triangulate_simple(ring: &[Vec2]) -> Vec<[u32; 3]> {
                     continue;
                 }
                 let pl = &ring[poly[l] as usize];
-                if near(pl, &ring[pi]) || near(pl, &ring[pj]) || near(pl, &ring[pk]) {
+                if near(pl, &ring[pi as usize]) || near(pl, &ring[pj as usize]) || near(pl, &ring[pk as usize]) {
                     continue;
                 }
-                if point_in_triangle(pl, &ring[pi], &ring[pj], &ring[pk]) {
+                if point_in_triangle(pl, &ring[pi as usize], &ring[pj as usize], &ring[pk as usize]) {
                     inside = true;
                     break;
                 }
@@ -395,10 +395,10 @@ fn triangulate_simple(ring: &[Vec2]) -> Vec<[u32; 3]> {
                         continue;
                     }
                     let pl = &ring[poly[l] as usize];
-                    if near(pl, &ring[pi]) || near(pl, &ring[pj]) || near(pl, &ring[pk]) {
+                    if near(pl, &ring[pi as usize]) || near(pl, &ring[pj as usize]) || near(pl, &ring[pk as usize]) {
                         continue;
                     }
-                    if point_in_triangle(pl, &ring[pi], &ring[pj], &ring[pk]) {
+                    if point_in_triangle(pl, &ring[pi as usize], &ring[pj as usize], &ring[pk as usize]) {
                         inside = true;
                         break;
                     }
