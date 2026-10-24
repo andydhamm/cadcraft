@@ -165,9 +165,7 @@ mod tests {
     use serde_json::json;
 
     fn setup_session() -> Session {
-        let mut s = Session::new();
-        s.new_drawing(false);
-        s
+        Session::new()
     }
 
     #[test]
@@ -175,6 +173,7 @@ mod tests {
         let mut s = setup_session();
         {
             let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
             doc.arch.levels.push(Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 });
         }
         let result = s.execute("level", &json!({"above": "Level 1"})).unwrap();
@@ -189,6 +188,7 @@ mod tests {
         let mut s = setup_session();
         {
             let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
             doc.arch.levels.push(Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 });
             doc.arch.levels.push(Level { index: 1, name: "Level 2".into(), elevation: 2.7, ceiling_height: 2.4, structure: 0.3 });
             doc.arch.walls.push(Wall {
