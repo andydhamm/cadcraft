@@ -204,6 +204,41 @@ fn polygon_area(ring: &[Vec2]) -> f64 {
     area / 2.0
 }
 
+/// True if open segments a-b and c-d properly cross (not merely touch).
+fn segs_properly_intersect(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> bool {
+    if !a.is_finite() || !b.is_finite() || !c.is_finite() || !d.is_finite() {
+        return false;
+    }
+    let eps = 1e-12;
+    let d1 = (b - a).cross(c - a);
+    let d2 = (b - a).cross(d - a);
+    let d3 = (d - c).cross(a - c);
+    let d4 = (d - c).cross(b - c);
+    (d1 > eps && d2 < -eps || d1 < -eps && d2 > eps) && (d3 > eps && d4 < -eps || d3 < -eps && d4 > eps)
+}
+
+/// Even-odd (ray cast, +x ray) inside test for polygon `ring`.
+fn point_in_ring_even_odd(p: Vec2, ring: &[Vec2]) -> bool {
+    let n = ring.len();
+    if n < 3 {
+        return false;
+    }
+    let mut inside = false;
+    for i in 0..n {
+        let xi = ring[i].x;
+        let yi = ring[i].y;
+        let xj = ring[(i + 1) % n].x;
+        let yj = ring[(i + 1) % n].y;
+        if (yi > p.y) != (yj > p.y) {
+            let xint = xi + (p.y - yi) * (xj - xi) / (yj - yi);
+            if p.x < xint - 1e-12 {
+                inside = !inside;
+            }
+        }
+    }
+    inside
+}
+
 /// Ear-clipping triangulation of a planar polygon ring (CCW expected).
 ///
 /// Returns a list of triangle index triples referencing vertices of `ring`.
@@ -363,5 +398,28 @@ mod tests {
             WallShape { id: ArchId(1), centre: (Vec2::ZERO, Vec2::ZERO), polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)], joins: Vec::new() };
         let m = crate::walls::extrude_wall(&degenerate, 2.5, 0.0, "wall");
         assert!(m.is_none(), "degenerate (2-vertex) wall must produce no mesh");
+    }
+
+    /// Properly-crossing segments return true; touching, collinear, or parallel
+    /// segments return false.
+    #[test]
+    fn segs_properly_intersect_detects_crossing() {
+        // (0,0)-(1,1) vs (0,1)-(1,0) properly cross.
+        assert!(segs_properly_intersect(Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0), Vec2::new(0.0, 1.0), Vec2::new(1.0, 0.0),));
+        // Collinear overlapping (0,0)-(2,0) vs (1,0)-(3,0) does not properly cross.
+        assert!(!segs_properly_intersect(Vec2::new(0.0, 0.0), Vec2::new(2.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(3.0, 0.0),));
+        // Touching endpoint (0,0)-(1,0) vs (1,0)-(1,1) does not properly cross.
+        assert!(!segs_properly_intersect(Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0),));
+        // Non-crossing (0,0)-(1,0) vs (0,1)-(1,1) does not properly cross.
+        assert!(!segs_properly_intersect(Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(0.0, 1.0), Vec2::new(1.0, 1.0),));
+    }
+
+    /// Even-odd ray-cast: a point inside the square is true; outside is false.
+    #[test]
+    fn point_in_ring_even_odd_inside_and_outside() {
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        assert!(point_in_ring_even_odd(Vec2::new(1.0, 1.0), &ring));
+        assert!(!point_in_ring_even_odd(Vec2::new(5.0, 5.0), &ring));
+        assert!(!point_in_ring_even_odd(Vec2::new(-1.0, 2.0), &ring));
     }
 }
