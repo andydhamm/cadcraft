@@ -298,7 +298,7 @@ mod tests {
         let mut model = ArchModel::default();
 
         model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
-        model.levels.push(Level { index: 1, elevation: 2.4, ceiling_height: 2.4, ..Default::default() });
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
 
         let wall = |id: u32, a: (f64, f64), b: (f64, f64), t: f64| -> Wall {
             Wall { id: ArchId(id), start: Vec2::new(a.0, a.1), end: Vec2::new(b.0, b.1), thickness: t, height: 2.7, ..Default::default() }
