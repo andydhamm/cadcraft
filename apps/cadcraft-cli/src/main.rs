@@ -82,7 +82,9 @@ image framing (png 2400x1600, svg, pdf; always model space):
     --cmd 'mview {\"p1\":[20,20],\"p2\":[200,150]}'        prints {\"viewports\":[\"100\"]}
     --cmd 'viewport.set {\"handle\":\"{last}\",\"scale\":1}' changes viewport 100
   It works in any parameter, at any depth (e.g. \"handles\":[\"{last}\"]); every other string is
-  passed unchanged. With no earlier returned handle the run fails and says so.";
+  passed unchanged. With no earlier returned handle the run fails and says so.
+  A failing --cmd prints `error: ID: message` on stderr and the run continues; the exit status
+  is that of the last step. --script still stops the run.";
 
 /// What part of model space an image export shows.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -608,6 +610,32 @@ fn fill_last(p: &Value, h: Option<Handle>) -> Result<Value, String> {
     }
 }
 
+/// One stderr line for a failed `--cmd` step.
+fn cmd_step_error_line(id: &str, msg: &str) -> String {
+    format!("error: {id}: {msg}")
+}
+/// `run` returns this when its last step was a failed `--cmd`: the line is already on stderr, so
+/// `cli` sets the exit status without printing an empty line.
+const RUN_LAST_STEP_FAILED: &str = "";
+
+/// One `--cmd` step. `Err` is the formatted `error: {id}: {msg}` line.
+fn cmd_step(s: &mut Session, body: &str, drawing: Option<u64>, last_handle: &mut Option<Handle>) -> Result<(), String> {
+    let (id, json) = body.split_once(' ').unwrap_or((body, "{}"));
+    let params: Value = serde_json::from_str(json).map_err(|e| cmd_step_error_line(id, &e.to_string()))?;
+    let params = fill_last(&params, *last_handle).map_err(|e| cmd_step_error_line(id, &e))?;
+    let r = s.execute(id, &params).map_err(|e| cmd_step_error_line(id, &e.to_string()))?;
+    if active_drawing(s) != drawing {
+        *last_handle = None;
+    }
+    if let Some(h) = returned_handle(s, &r) {
+        *last_handle = Some(h);
+    }
+    if !r.is_null() {
+        outln!("{r}");
+    }
+    Ok(())
+}
+
 fn run(args: &[String]) -> Result<(), String> {
     let mut s = Session::empty();
     let mut it = args.iter();
@@ -644,6 +672,7 @@ fn run(args: &[String]) -> Result<(), String> {
     check_framed_output(framing, exp.as_deref())?;
     let before = model_views(&s);
     let mut last_handle: Option<Handle> = None;
+    let mut last_step_error: Option<String> = None;
     for (kind, body) in steps {
         // A handle belongs to the drawing that returned it: if this step makes another drawing
         // current (`new`, `open`, `document.switch`, `close`, or a script running one of them),
@@ -653,25 +682,18 @@ fn run(args: &[String]) -> Result<(), String> {
         match kind.as_str() {
             "script" => {
                 s.script(&body).map_err(|e| e.to_string())?;
+                last_step_error = None;
                 if active_drawing(&s) != drawing {
                     last_handle = None;
                 }
             }
-            _ => {
-                let (id, json) = body.split_once(' ').unwrap_or((&body, "{}"));
-                let params: Value = serde_json::from_str(json).map_err(|e| format!("--cmd {id}: {e}"))?;
-                let params = fill_last(&params, last_handle).map_err(|e| format!("--cmd {id}: {e}"))?;
-                let r = s.execute(id, &params).map_err(|e| e.to_string())?;
-                if active_drawing(&s) != drawing {
-                    last_handle = None;
+            _ => match cmd_step(&mut s, &body, drawing, &mut last_handle) {
+                Ok(()) => last_step_error = None,
+                Err(line) => {
+                    eprintln!("{line}");
+                    last_step_error = Some(line);
                 }
-                if let Some(h) = returned_handle(&s, &r) {
-                    last_handle = Some(h);
-                }
-                if !r.is_null() {
-                    outln!("{r}");
-                }
-            }
+            },
         }
     }
     for l in &s.log {
@@ -684,7 +706,10 @@ fn run(args: &[String]) -> Result<(), String> {
         let window = if cadcraft_io::is_image(&p) { export_window(&s, framing, Some(&before))? } else { None };
         export_framed(&s, &p, window)?;
     }
-    Ok(())
+    match last_step_error {
+        Some(_) => Err(RUN_LAST_STEP_FAILED.to_string()),
+        None => Ok(()),
+    }
 }
 
 /// Small deterministic generator (xorshift64*) so perf runs are repeatable without a dependency.
@@ -1012,7 +1037,9 @@ fn cli() -> ExitCode {
     match r {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("{e}");
+            if !e.is_empty() {
+                eprintln!("{e}");
+            }
             ExitCode::FAILURE
         }
     }
@@ -1273,5 +1300,50 @@ mod tests {
         assert_eq!(render_error_exit(&cadcraft_render3d::Render3dError::NoAdapter), 3);
         assert_eq!(render_error_exit(&cadcraft_render3d::Render3dError::Wgpu("x".into())), 1);
         assert_eq!(render_error_exit(&cadcraft_render3d::Render3dError::Buffer("y".into())), 1);
+    }
+
+    #[test]
+    fn cmd_step_error_line_names_the_command() {
+        assert_eq!(cmd_step_error_line("door", "too wide"), "error: door: too wide");
+    }
+
+    #[test]
+    fn cmd_error_does_not_abort_the_run() {
+        let dir = scratch_dir("cmd_err");
+        let out = dir.join("a.dxf").to_string_lossy().to_string();
+        let args: Vec<String> = ["--metric", "--cmd", "no.such.command {}", "--cmd", r#"line {"points":[[0,0],[10,0]]}"#, "--save", &out]
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+        assert_eq!(run(&args), Ok(()));
+        let content = std::fs::read_to_string(&out).unwrap();
+        assert!(content.contains("LINE"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cmd_json_parse_error_does_not_abort_the_run() {
+        let dir = scratch_dir("cmd_json");
+        let out = dir.join("a.dxf").to_string_lossy().to_string();
+        let args: Vec<String> = ["--metric", "--cmd", r#"line {"points": [["#, "--cmd", r#"line {"points":[[0,0],[10,0]]}"#, "--save", &out]
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+        assert_eq!(run(&args), Ok(()));
+        let content = std::fs::read_to_string(&out).unwrap();
+        assert!(content.contains("LINE"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_good_last_step_clears_the_failure_status() {
+        // Bad --cmd then good --cmd -> Ok
+        let good_args: Vec<String> =
+            ["--metric", "--cmd", "no.such.command {}", "--cmd", "drawing.inspect {}"].iter().map(|a| a.to_string()).collect();
+        assert_eq!(run(&good_args), Ok(()));
+        // Good first, bad last -> Err with RUN_LAST_STEP_FAILED
+        let bad_args: Vec<String> =
+            ["--metric", "--cmd", r#"line {"points":[[0,0],[10,0]]}"#, "--cmd", "no.such.command {}"].iter().map(|a| a.to_string()).collect();
+        assert_eq!(run(&bad_args), Err(RUN_LAST_STEP_FAILED.to_string()));
     }
 }
