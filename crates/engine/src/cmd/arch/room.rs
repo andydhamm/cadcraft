@@ -26,6 +26,8 @@
 //! for create; `{"id": "r0", "name": ..., "type": ..., "interiorArea": n}` for
 //! edit.
 
+use std::str::FromStr;
+
 use cadcraft_arch::poly::{ensure_ccw, is_simple, region_area};
 use cadcraft_doc::arch::{ArchId, MAX_ROOMS, Room, RoomType};
 use cadcraft_geom::Vec2;
@@ -165,12 +167,12 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
         d.touch_arch();
 
         let room = &d.arch.rooms[idx];
-        Ok(json!({
+        return Ok(json!({
             "id": format!("r{}", id.0),
             "name": room.name,
             "type": room_type_name(room.room_type),
             "interiorArea": room.interior_area,
-        }))
+        }));
     }
 
     let arch = &d.arch;
