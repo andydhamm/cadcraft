@@ -35,7 +35,7 @@ fn cmd_error_is_reported_on_stderr() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "exit {:?}\nstdout: {stdout}\nstderr: {stderr}", out.status);
     assert!(stderr.lines().any(|l| l.starts_with("error: no.such.command:")), "stderr: {stderr}");
-    assert!(stdout.contains("drawing.inspect"), "stdout: {stdout}");
+    assert!(stdout.contains("\"entities\""), "stdout: {stdout}");
     assert!(!stdout.contains("no.such.command"), "stdout: {stdout}");
 }
 
