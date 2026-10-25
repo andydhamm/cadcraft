@@ -27,6 +27,13 @@ pub(crate) const ARCH_PROXY_MARKER: &str = "ARCHWALL";
 /// drops it (the opening's model data is the one source of truth).
 pub(crate) const ARCH_OPENING_MARKER: &str = "ARCHOPENING";
 
+/// Layer of save-time room-label proxy polylines.
+pub(crate) const ARCH_ROOM_LAYER: &str = "A-ROOM";
+
+/// `CADCRAFT` xdata marker identifying a save-time room-label proxy polyline, so the
+/// reader drops it (the room's model data is the one source of truth).
+pub(crate) const ARCH_ROOM_MARKER: &str = "ARCHROOM";
+
 /// Rejects payloads larger than this before they are even parsed.
 const MAX_ARCH_PAYLOAD: usize = 8 << 20;
 
@@ -49,7 +56,7 @@ pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
     if m.is_empty() {
         return None;
     }
-    let json = serde_json::to_string(&Payload { version: 2, model: m.clone() }).ok()?;
+    let json = serde_json::to_string(&Payload { version: 3, model: m.clone() }).ok()?;
     Some(crate::dxf_ext::json_chunks(&json))
 }
 
@@ -63,7 +70,7 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
         return None;
     }
     let p: Payload = serde_json::from_str(text).ok()?;
-    if p.version != 1 && p.version != 2 {
+    if p.version != 1 && p.version != 2 && p.version != 3 {
         return None;
     }
     if p.model.walls.len() > cadcraft_doc::MAX_WALLS {
@@ -541,5 +548,73 @@ mod tests {
         assert!(parse_arch(&"a".repeat((8 << 20) + 1)).is_none());
         // arch_chunks is None for an empty model and must not panic for a populated one.
         assert!(arch_chunks(&ArchModel::default()).is_none());
+    }
+
+    #[test]
+    fn rooms_round_trip_through_dxf() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Kitchen".into(),
+            ..Room::default()
+        });
+        d.ensure_layer("A-ROOM");
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.rooms.len(), 1, "room lost on DXF round trip");
+        let got = &back.arch.rooms[0];
+        assert_eq!(got.id, rid, "room id changed on round trip");
+        assert_eq!(got.name, "Kitchen");
+        assert_eq!(got.polygon.len(), 4);
+        for (p, q) in got.polygon.iter().zip(d.arch.rooms[0].polygon.iter()) {
+            assert!((p.x - q.x).abs() < 1e-9, "polygon x mismatch: {} vs {}", p.x, q.x);
+            assert!((p.y - q.y).abs() < 1e-9, "polygon y mismatch: {} vs {}", p.y, q.y);
+        }
+    }
+
+    #[test]
+    fn arch_read_is_idempotent_with_rooms() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Bedroom".into(),
+            ..Room::default()
+        });
+        d.ensure_layer("A-ROOM");
+
+        let first = read_dxf(write_dxf(&d).as_bytes()).unwrap();
+        let second = read_dxf(write_dxf(&first).as_bytes()).unwrap();
+
+        assert_eq!(first.arch.rooms.len(), second.arch.rooms.len(), "room count changed between reads");
+        for (a, b) in first.arch.rooms.iter().zip(second.arch.rooms.iter()) {
+            assert_eq!(a.id, b.id);
+            assert_eq!(a.name, b.name);
+            assert_eq!(a.polygon.len(), b.polygon.len());
+        }
+
+        // Room proxy polylines (ARCHROOM xdata) are dropped on read.
+        let count_proxy = |d: &Drawing| {
+            d.model
+                .iter()
+                .filter(|e| matches!(&e.kind, EntityKind::LwPolyline(_)))
+                .filter(|e| e.common.xdata.iter().any(|t| t.code == 1000 && t.value.trim() == ARCH_ROOM_MARKER))
+                .count()
+        };
+        assert_eq!(count_proxy(&first), 0, "room proxy polyline survived the first read");
+        assert_eq!(count_proxy(&second), 0, "room proxy polyline survived the second read");
+    }
+
+    #[test]
+    fn a_room_layer_is_registered() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-ROOM");
+        d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Living Room".into(),
+            ..Room::default()
+        });
+        let text = write_dxf(&d);
+        assert!(text.contains("A-ROOM"), "no A-ROOM layer in the DXF output");
     }
 }

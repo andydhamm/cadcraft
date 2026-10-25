@@ -2,11 +2,12 @@ use std::collections::BTreeMap;
 
 use cadcraft_color::{Color, Rgb};
 use cadcraft_doc::{ArchId, Drawing, Handle, Wall};
+use cadcraft_fonts::{TextFont, TextParams, place};
 use cadcraft_geom::Vec2;
 
 use crate::{DPrim, DisplayList, Kind, Options};
 
-pub use cadcraft_doc::{is_arch_handle, opening_handle};
+pub use cadcraft_doc::{is_arch_handle, opening_handle, room_handle};
 
 /// Stable proxy handle for an architectural object: arch objects have no entity handle, so
 /// selection and picking map back to the `ArchId` through this reserved range.
@@ -178,6 +179,46 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
         }
     }
 
+    // Room labels: for each room, shape its name at the polygon centroid as 2D polyline
+    // primitives tagged with the room's proxy handle on layer A-ROOM.
+    for r in &d.arch.rooms {
+        if r.polygon.len() < 3 {
+            continue;
+        }
+        if !r.polygon.iter().all(|p| p.is_finite()) {
+            continue;
+        }
+        let label_text = if r.name.is_empty() { format!("r{}", r.id.0) } else { r.name.clone() };
+        let n = r.polygon.len() as f64;
+        let cx = r.polygon.iter().map(|p| p.x).sum::<f64>() / n;
+        let cy = r.polygon.iter().map(|p| p.y).sum::<f64>() / n;
+        let label_pt = Vec2::new(cx, cy);
+        let params = TextParams::centered(label_pt, 0.24, 0.0);
+        let (sh, _) = place(&TextFont::Stroke, &label_text, &params);
+        let room_layer = d.layer("A-ROOM").map(|l| l.color).unwrap_or(Color::Index(7));
+        let room_ink = crate::ink(Color::ByLayer, room_layer, Color::Index(7));
+        for stroke in &sh.strokes {
+            if stroke.len() < 2 || !stroke.iter().all(|p| p.is_finite()) {
+                continue;
+            }
+            let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+            for q in stroke {
+                list.bounds.add(*q);
+                list.verts.push(*q);
+            }
+            list.prims.push(DPrim {
+                handle: room_handle(r.id),
+                color: room_ink.rgb,
+                aci7: room_ink.aci7,
+                lw: 0.0,
+                transparency: 0,
+                kind: Kind::Polyline,
+                start,
+                len: u32::try_from(stroke.len()).unwrap_or(u32::MAX),
+            });
+        }
+    }
+
     list
 }
 
@@ -185,7 +226,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
 mod tests {
     use super::*;
     use cadcraft_color::Rgb;
-    use cadcraft_doc::arch::{Opening, OpeningKind};
+    use cadcraft_doc::arch::{Opening, OpeningKind, Room};
     use cadcraft_doc::{Drawing, Layer};
 
     fn wall(start: Vec2, end: Vec2, thickness: f64) -> Wall {
@@ -477,6 +518,26 @@ mod tests {
         for (i, (got, exp)) in pts.iter().zip(expected.iter()).enumerate() {
             assert!((got.x - exp.x).abs() < 1e-9, "x[{}]: {} != {}", i, got.x, exp.x);
             assert!((got.y - exp.y).abs() < 1e-9, "y[{}]: {} != {}", i, got.y, exp.y);
+        }
+    }
+
+    #[test]
+    fn arch_prims_emits_room_label_prims() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Living Room".into(),
+            ..Room::default()
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = room_handle(rid);
+        let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(!label_prims.is_empty(), "no room label prims emitted for room {rid}");
+        for p in &label_prims {
+            assert_eq!(p.kind, Kind::Polyline, "room label prim kind: {}", p.kind as u32);
+            assert!(!p.verts.is_empty(), "room label prim has no vertices");
         }
     }
 }
