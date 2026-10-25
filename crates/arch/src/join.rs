@@ -121,6 +121,11 @@ pub struct WallShape {
 }
 
 impl WallShape {
+    /// A shape with the given id, ring and centre line, and no joins.
+    pub fn new(id: ArchId, polygon: Vec<Vec2>, centre: (Vec2, Vec2)) -> Self {
+        WallShape { id, polygon, centre, joins: Vec::new() }
+    }
+
     /// Bounds of the polygon; `Bounds2::EMPTY` for an empty polygon.
     pub fn bounds(&self) -> Bounds2 {
         if self.polygon.is_empty() {

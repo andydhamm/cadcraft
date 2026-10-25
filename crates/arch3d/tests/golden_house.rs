@@ -11,7 +11,7 @@
 
 use cadcraft_arch3d::{Scene3d, build, build_dirty};
 use cadcraft_doc::geom::Vec2;
-use cadcraft_doc::{ArchId, ArchModel, Wall};
+use cadcraft_doc::{ArchModel, Wall};
 
 /// FNV-1a 64-bit hash (no external dependency).
 fn fnv1a_hash(data: &[u8]) -> u64 {
@@ -63,19 +63,14 @@ fn load_fixture() -> ArchModel {
     ];
     for (start, end) in exterior_walls {
         model.add_wall(Wall {
-            id: ArchId(0),
             start,
             end,
             thickness: 0.3,
             height: 2.7,
-            base_level: 0,
             to_ceiling: false,
             exterior: true,
             wall_type: "Default".to_string(),
-            join_start: Default::default(),
-            join_end: Default::default(),
-            layers: Vec::new(),
-            divider: false,
+            ..Default::default()
         });
     }
 
@@ -83,19 +78,14 @@ fn load_fixture() -> ArchModel {
     let interior_walls = [(Vec2::new(0.0, 4.0), Vec2::new(10.0, 4.0)), (Vec2::new(5.0, 0.0), Vec2::new(5.0, 8.0))];
     for (start, end) in interior_walls {
         model.add_wall(Wall {
-            id: ArchId(0),
             start,
             end,
             thickness: 0.15,
             height: 2.7,
-            base_level: 0,
             to_ceiling: false,
             exterior: false,
             wall_type: "Default".to_string(),
-            join_start: Default::default(),
-            join_end: Default::default(),
-            layers: Vec::new(),
-            divider: false,
+            ..Default::default()
         });
     }
 

@@ -308,6 +308,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
             join_end: JoinKind::default(),
             layers: layers.clone(),
             divider: false,
+            ..Default::default()
         });
     }
 

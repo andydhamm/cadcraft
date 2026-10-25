@@ -78,7 +78,7 @@ fn raw_wall_mesh(wall: &Wall, base: f64, top: f64, object: ArchId) -> Option<Mes
         2, 3, 4, 2, 4, 6, // right
     ];
 
-    Some(Mesh { positions, normals, uvs, indices, material: "wall".to_string(), object })
+    Some(Mesh { positions, normals, uvs, indices, ..Mesh::new("wall", object) })
 }
 
 /// The vertical span `(base, top)` for a wall, derived from its level.
@@ -112,6 +112,13 @@ pub struct Scene3d {
     pub openings_built: usize,
     pub floors: usize,
     pub ceilings: usize,
+}
+
+impl Default for Scene3d {
+    /// An empty scene: no meshes, empty bounds, revision 0, nothing counted.
+    fn default() -> Self {
+        Scene3d { meshes: Vec::new(), bounds: Bounds3::empty(), revision: 0, openings_built: 0, floors: 0, ceilings: 0 }
+    }
 }
 
 impl Scene3d {

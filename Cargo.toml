@@ -68,6 +68,9 @@ unsafe_code = "forbid"
 dbg_macro = "warn"
 todo = "warn"
 too_many_arguments = "allow"
+# `Type { every, field, ..Default::default() }` is deliberate: a field added later by
+# another branch must not break this literal (`cargo xtask literals`, docs/arch3d/DESIGN.md).
+needless_update = "allow"
 type_complexity = "allow"
 
 [profile.dev.package."*"]

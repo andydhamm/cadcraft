@@ -242,6 +242,7 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
         floor_height: floor,
         interior_area,
         standard_area,
+        ..Default::default()
     };
     let id = d.arch.push_room(room);
     d.touch_arch();

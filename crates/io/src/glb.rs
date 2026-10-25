@@ -294,7 +294,7 @@ fn json_string(v: Value) -> String {
 mod tests {
     use super::*;
 
-    use cadcraft_arch3d::{Bounds3, Mesh, Scene3d};
+    use cadcraft_arch3d::{Mesh, Scene3d};
     use cadcraft_doc::ArchId;
     use serde_json::Value;
 
@@ -305,8 +305,7 @@ mod tests {
             normals: vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
             uvs: vec![[0.0, 0.0], [0.5, 0.0], [0.5, 0.5]],
             indices: vec![0, 1, 2],
-            material: "wall".into(),
-            object: ArchId(1),
+            ..Mesh::new("wall", ArchId(1))
         }
     }
 
@@ -319,11 +318,7 @@ mod tests {
                     m
                 })
                 .collect(),
-            bounds: Bounds3::empty(),
-            revision: 0,
-            openings_built: 0,
-            floors: 0,
-            ceilings: 0,
+            ..Default::default()
         }
     }
 
@@ -496,7 +491,7 @@ mod tests {
 
     #[test]
     fn empty_scene_writes_a_valid_empty_glb() {
-        let scene = Scene3d { meshes: Vec::new(), bounds: Bounds3::empty(), revision: 0, openings_built: 0, floors: 0, ceilings: 0 };
+        let scene = Scene3d::default();
         let bytes = write(&scene);
         assert_eq!(&bytes[0..4], b"glTF");
         assert_eq!(&bytes[4..8], &[0x02, 0x00, 0x00, 0x00]);
