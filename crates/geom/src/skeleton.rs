@@ -58,6 +58,9 @@ pub struct Skeleton {
     pub arcs: Vec<(usize, usize)>,
     /// One face per input edge, in ring order.
     pub faces: Vec<SkeletonFace>,
+    /// The speed of each cleaned ring edge, `weights[ring][edge]` (same indexing as `rings`): 1.0 for every edge of a
+    /// plain [`straight_skeleton`]; for a [`weighted_skeleton`], the input weights mapped onto the cleaned edges.
+    pub weights: Vec<Vec<f64>>,
 }
 
 impl Skeleton {
@@ -92,6 +95,9 @@ pub enum SkeletonError {
     NotFinite,
     /// The event simulation went past its budget (a bug or a pathological input); nothing is returned.
     EventLimit,
+    /// Weights (or slopes) do not match the rings edge for edge, are negative, NaN or infinite, or two collinear
+    /// neighbouring edges carry different weights (no well-defined skeleton there).
+    BadWeights,
 }
 
 impl std::fmt::Display for SkeletonError {
@@ -102,6 +108,7 @@ impl std::fmt::Display for SkeletonError {
             SkeletonError::HoleOutside => "a hole is not inside the outer ring",
             SkeletonError::NotFinite => "a coordinate or distance is not a finite number (or a distance is negative)",
             SkeletonError::EventLimit => "the straight-skeleton event simulation exceeded its budget",
+            SkeletonError::BadWeights => "the edge weights or slopes do not fit the rings, or are not finite and non-negative",
         })
     }
 }
@@ -116,7 +123,42 @@ pub fn straight_skeleton(outer: &[Vec2], holes: &[Vec<Vec2>]) -> Result<Skeleton
     sim.run(None)?;
     let faces = build_faces(&prep.rings, &sim.arcs);
     let arcs = sim.arcs.iter().map(|r| (r.a, r.b)).collect();
-    Ok(Skeleton { rings: prep.rings, nodes: sim.nodes, arcs, faces })
+    let weights = prep.rings.iter().map(|r| vec![1.0; r.len()]).collect();
+    Ok(Skeleton { rings: prep.rings, nodes: sim.nodes, arcs, faces, weights })
+}
+
+/// The weighted straight skeleton: edge `i` of ring `r` moves inward at speed `weights[r][i]` instead of 1. Weights index
+/// the INPUT rings exactly as given (`weights[0]` for `outer`, `weights[1 + h]` for `holes[h]`; edge `i` runs from vertex
+/// `i` to vertex `i + 1`, before any cleaning or reorientation); each must be finite and >= 0. A weight of 0 freezes the
+/// edge: its face has no area in plan (a gable end). All weights equal to 1 give exactly [`straight_skeleton`].
+/// A node's `time` is when the wavefront reached it, so it lies at distance `weight * time` from each of its faces'
+/// edges. Mismatched, negative or non-finite weights, or collinear neighbouring edges with different weights, give
+/// [`SkeletonError::BadWeights`].
+pub fn weighted_skeleton(outer: &[Vec2], holes: &[Vec<Vec2>], weights: &[Vec<f64>]) -> Result<Skeleton, SkeletonError> {
+    let _ = (outer, holes, weights);
+    todo!("weighted straight skeleton")
+}
+
+/// The skeleton of a pitched roof over `outer` with `holes`: `slopes[r][i]` is the rise per unit run of the roof plane
+/// over input edge `i` of ring `r` (indexed like [`weighted_skeleton`]'s weights), `f64::INFINITY` for a gable end (a
+/// vertical face). Each edge moves at speed `1 / slope`, so every node's `time` IS its roof height and each face is one
+/// plane through its edge. Slopes must be > 0 (or infinite); anything else gives [`SkeletonError::BadWeights`].
+pub fn roof_skeleton(outer: &[Vec2], holes: &[Vec<Vec2>], slopes: &[Vec<f64>]) -> Result<Skeleton, SkeletonError> {
+    let mut weights = Vec::with_capacity(slopes.len());
+    for ring in slopes {
+        let mut w = Vec::with_capacity(ring.len());
+        for &s in ring {
+            if s == f64::INFINITY {
+                w.push(0.0);
+            } else if s.is_finite() && s > 0.0 {
+                w.push(1.0 / s);
+            } else {
+                return Err(SkeletonError::BadWeights);
+            }
+        }
+        weights.push(w);
+    }
+    weighted_skeleton(outer, holes, &weights)
 }
 
 /// The inward offset of `outer` with `holes` by `d >= 0`: the wavefront at time `d`. One region per piece the polygon
@@ -207,7 +249,7 @@ pub fn outset(outer: &[Vec2], holes: &[Vec<Vec2>], d: f64) -> Result<OffsetRegio
 }
 
 /// Problems with a skeleton, for tests and debugging; empty when every invariant holds within `tol`:
-/// each face's nodes lie at distance `time` from the line of the face's edge, the faces' areas add up to the region's
+/// each face's nodes lie at distance `weight * time` from the line of the face's edge, the faces' areas add up to the region's
 /// area, every node lies inside the region or on its boundary, and every arc joins two existing nodes.
 pub fn check(skeleton: &Skeleton, tol: f64) -> Vec<String> {
     let mut problems = Vec::new();
