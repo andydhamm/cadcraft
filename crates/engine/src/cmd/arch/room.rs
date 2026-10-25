@@ -165,6 +165,7 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
         }
         d.arch.rooms[idx].ceiling_height = ceiling;
         d.arch.rooms[idx].floor_height = floor;
+        cadcraft_arch::area::refresh_areas(&mut d.arch);
         d.touch_arch();
 
         let room = &d.arch.rooms[idx];
@@ -173,6 +174,7 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
             "name": room.name,
             "type": room_type_name(room.room_type),
             "interiorArea": room.interior_area,
+            "standardArea": room.standard_area,
         }));
     }
 
@@ -256,6 +258,7 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
     let standard_area = cadcraft_arch::area::standard_area(arch, &room);
     room.standard_area = standard_area;
     let id = d.arch.push_room(room);
+    cadcraft_arch::area::refresh_areas(&mut d.arch);
     d.touch_arch();
 
     Ok(json!({
@@ -610,5 +613,43 @@ mod tests {
         assert_eq!(r["id"].as_str().unwrap(), "r0");
         assert_eq!(r["interiorArea"].as_f64().unwrap(), 9.0);
         assert_eq!(r["standardArea"].as_f64().unwrap(), 9.0);
+    }
+
+    /// `room` create path stores both interior and standard areas on the model.
+    #[test]
+    fn room_create_stores_areas() {
+        let mut s = new_session();
+        let p = json!({ "points": square_points() });
+        let r = s.execute("room", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.rooms.len(), 1);
+        assert!(d.arch.rooms[0].interior_area > 0.0, "stored interior_area should be > 0");
+        assert!(d.arch.rooms[0].standard_area > 0.0, "stored standard_area should be > 0");
+        assert!((d.arch.rooms[0].interior_area - r["interiorArea"].as_f64().unwrap()).abs() < 1e-9);
+        assert!((d.arch.rooms[0].standard_area - r["standardArea"].as_f64().unwrap()).abs() < 1e-9);
+    }
+
+    /// `room` edit path refreshes stored areas via `refresh_areas`.
+    #[test]
+    fn room_edit_refreshes_stored_areas() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points() })).unwrap();
+        let _ = s
+            .execute(
+                "wall",
+                &json!({
+                    "points": [[0.0, -0.1], [3.0, -0.1]],
+                    "thickness": 0.2,
+                    "exterior": true,
+                }),
+            )
+            .unwrap();
+        let r = s.execute("room", &json!({ "id": "r0", "name": "Test" })).unwrap();
+        let d = s.doc().unwrap();
+        assert!(d.arch.rooms[0].standard_area > 0.0, "stored standard_area should be > 0 after refresh, got {}", d.arch.rooms[0].standard_area);
+        assert!(
+            (d.arch.rooms[0].standard_area - r["standardArea"].as_f64().unwrap()).abs() < 1e-9,
+            "stored standard_area should match the reported standardArea"
+        );
     }
 }

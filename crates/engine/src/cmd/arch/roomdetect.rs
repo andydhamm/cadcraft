@@ -94,7 +94,12 @@ fn run_roomdetect(s: &mut Session, p: &Value) -> Result<Value> {
             Some(l) => all.into_iter().filter(|r| r.level == l).collect(),
             None => all,
         };
-        let rooms: Vec<Value> = detected.iter().map(|r| room_json(r.level, r.room_type, r.interior_area, r.standard_area, &r.polygon)).collect();
+        let rooms: Vec<Value> = detected
+            .iter()
+            .map(|r| {
+                room_json(r.level, r.room_type, cadcraft_arch::area::interior_area(r), cadcraft_arch::area::standard_area(&d.arch, r), &r.polygon)
+            })
+            .collect();
         Ok(json!({"rooms": rooms, "count": detected.len()}))
     } else {
         let d = s.doc_mut()?;
@@ -118,12 +123,22 @@ fn run_roomdetect(s: &mut Session, p: &Value) -> Result<Value> {
         detected.truncate(cap);
         let count = detected.len();
 
-        let rooms: Vec<Value> = detected.iter().map(|r| room_json(r.level, r.room_type, r.interior_area, r.standard_area, &r.polygon)).collect();
-
         for r in detected {
             d.arch.push_room(r);
         }
+        cadcraft_arch::area::refresh_areas(&mut d.arch);
         d.touch_arch();
+
+        let rooms: Vec<Value> = d
+            .arch
+            .rooms
+            .iter()
+            .filter(|r| match level_filter {
+                Some(l) => r.level == l,
+                None => true,
+            })
+            .map(|r| room_json(r.level, r.room_type, r.interior_area, r.standard_area, &r.polygon))
+            .collect();
 
         Ok(json!({
             "rooms": rooms,
@@ -202,6 +217,43 @@ mod tests {
                 assert_eq!(s.doc().unwrap().arch.rooms.len(), rooms_before, "rooms must be unchanged after Err");
                 assert_eq!(s.doc().unwrap().arch_revision, rev_before, "arch_revision must be unchanged after Err");
             }
+        }
+    }
+
+    /// `roomdetect` stores non-zero standard areas on the model's rooms.
+    #[test]
+    fn roomdetect_stores_standard_areas() {
+        let mut s = Session::new();
+        build_test_wall(&mut s);
+        let res = s.execute("roomdetect", &json!({}));
+        assert!(res.is_ok(), "roomdetect must succeed");
+        let d = s.doc().unwrap();
+        assert!(d.arch.rooms.len() > 0, "expected at least one room after detection");
+        for r in &d.arch.rooms {
+            assert!(r.standard_area > 0.0, "stored standard_area should be > 0, got {}", r.standard_area);
+        }
+        let val = res.unwrap();
+        for room in val["rooms"].as_array().expect("rooms array").iter() {
+            let standard = room["standardArea"].as_f64().unwrap();
+            assert!(standard > 0.0, "reported standardArea should be > 0, got {}", standard);
+        }
+    }
+
+    /// A dry-run `roomdetect` reports areas without mutating the model.
+    #[test]
+    fn roomdetect_dry_run_reports_areas_without_mutating() {
+        let mut s = Session::new();
+        build_test_wall(&mut s);
+        let rooms_before = s.doc().unwrap().arch.rooms.len();
+        let rev_before = s.doc().unwrap().arch_revision;
+        let res = s.execute("roomdetect", &json!({"dryRun": true}));
+        assert!(res.is_ok(), "dry-run roomdetect must succeed");
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), rooms_before, "dry run must not add rooms");
+        assert_eq!(s.doc().unwrap().arch_revision, rev_before, "dry run must not bump revision");
+        let val = res.unwrap();
+        for room in val["rooms"].as_array().expect("rooms array").iter() {
+            let standard = room["standardArea"].as_f64().unwrap();
+            assert!(standard > 0.0, "dry-run standardArea should be > 0, got {}", standard);
         }
     }
 }
