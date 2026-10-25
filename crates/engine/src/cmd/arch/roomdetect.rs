@@ -195,9 +195,8 @@ mod tests {
                 let val = result.unwrap();
                 assert_eq!(val["count"], 0, "expected count 0 on empty model");
             }
-
             // A bad `level` must be Err and must not mutate the document.
-            if g == &json!({"level": "nope"}) || g == &json!({"level": 99}) {
+            else if g == &json!({"level": "nope"}) || g == &json!({"level": 99}) {
                 assert!(result.is_err(), "bad level {:?} must be Err", g);
                 assert_eq!(s.doc().unwrap().arch.rooms.len(), rooms_before, "rooms must be unchanged after Err");
                 assert_eq!(s.doc().unwrap().arch_revision, rev_before, "arch_revision must be unchanged after Err");
