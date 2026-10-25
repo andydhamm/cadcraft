@@ -232,16 +232,15 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad("room", "room limit reached"));
     }
     let room = Room {
-        id: ArchId(0),
         name,
         room_type,
         level: level as u32,
         polygon: ring,
-        holes: Vec::new(),
         ceiling_height: ceiling,
         floor_height: floor,
         interior_area,
         standard_area,
+        ..Default::default()
     };
     let id = d.arch.push_room(room);
     d.touch_arch();

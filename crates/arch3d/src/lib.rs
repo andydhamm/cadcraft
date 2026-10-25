@@ -80,7 +80,7 @@ fn raw_wall_mesh(wall: &Wall, base: f64, top: f64, object: ArchId) -> Option<Mes
         2, 3, 4, 2, 4, 6, // right
     ];
 
-    Some(Mesh { positions, normals, uvs, indices, material: "wall".to_string(), object })
+    Some(Mesh { positions, normals, uvs, indices, ..Mesh::new("wall", object) })
 }
 
 /// The vertical span `(base, top)` for a wall, derived from its level.
@@ -106,7 +106,11 @@ fn level_for(model: &ArchModel, index: u32) -> cadcraft_doc::arch::Level {
 }
 
 /// A 3D scene composed of extruded architectural meshes.
-#[derive(Debug, Clone)]
+///
+/// Build one with `Scene3d { meshes, ..Default::default() }` (or [`Scene3d::build`]), never an
+/// exhaustive literal: other crates' tests construct scenes and must keep compiling when a field
+/// is added here.
+#[derive(Debug, Clone, Default)]
 pub struct Scene3d {
     pub meshes: Vec<Mesh>,
     pub bounds: Bounds3,

@@ -9,13 +9,21 @@ use cadcraft_doc::ArchId;
 use cadcraft_geom::Vec2;
 
 /// Axis-aligned bounding box in 3D world space.
-#[derive(Debug, Clone, Copy, PartialEq)]
+///
+/// Build it with [`Bounds3::new`], [`Bounds3::empty`] or `..Default::default()`, not an
+/// exhaustive literal (see "Shared structs" in `docs/arch3d/DESIGN.md`).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Bounds3 {
     pub min: [f64; 3],
     pub max: [f64; 3],
 }
 
 impl Bounds3 {
+    /// A box with the given corners (used as given; not reordered or validated).
+    pub const fn new(min: [f64; 3], max: [f64; 3]) -> Self {
+        Bounds3 { min, max }
+    }
+
     /// A zero-sized box centred on the origin.
     pub const fn empty() -> Self {
         Bounds3 { min: [0.0; 3], max: [0.0; 3] }
@@ -31,6 +39,9 @@ impl Bounds3 {
 }
 
 /// A triangulated 3D mesh with per-vertex attributes.
+///
+/// Start from [`Mesh::new`] (material and owning object are the required fields) and set the
+/// vertex data with `Mesh { positions, indices, ..Mesh::new(material, object) }`.
 #[derive(Debug, Clone)]
 pub struct Mesh {
     /// World-space vertex positions (x, y, z).
@@ -694,8 +705,7 @@ mod tests {
     /// A degenerate ring (fewer than 3 vertices) yields `None`.
     #[test]
     fn degenerate_wall_produces_no_mesh() {
-        let degenerate =
-            WallShape { id: ArchId(1), centre: (Vec2::ZERO, Vec2::ZERO), polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)], joins: Vec::new() };
+        let degenerate = WallShape::new(ArchId(1), vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)], (Vec2::ZERO, Vec2::ZERO));
         let m = crate::walls::extrude_wall(&degenerate, 2.5, 0.0, "wall");
         assert!(m.is_none(), "degenerate (2-vertex) wall must produce no mesh");
     }

@@ -16,7 +16,7 @@
 
 use std::collections::HashSet;
 
-use cadcraft_doc::{ArchId, ArchModel, Room, RoomType, Wall};
+use cadcraft_doc::{ArchModel, Room, RoomType, Wall};
 use cadcraft_geom::Vec2;
 
 use crate::poly::{ensure_ccw, region_area};
@@ -202,18 +202,9 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
             break;
         }
 
-        rooms.push(Room {
-            id: ArchId(0), // caller assigns the real id
-            name: String::new(),
-            room_type: RoomType::Other,
-            level,
-            polygon: outer,
-            holes,
-            ceiling_height: None,
-            floor_height: None,
-            interior_area: area,
-            standard_area: 0.0, // filled by the area module later
-        });
+        // `id` stays unassigned (the caller assigns the real one) and `standard_area` is filled by
+        // the area module later.
+        rooms.push(Room { room_type: RoomType::Other, level, polygon: outer, holes, interior_area: area, ..Default::default() });
     }
 
     rooms
@@ -298,21 +289,7 @@ mod tests {
     /// A non-divider wall on `level` with the given thickness.
     #[inline]
     fn wall(id: u32, level: u32, x0: f64, y0: f64, x1: f64, y1: f64, t: f64) -> Wall {
-        Wall {
-            id: ArchId(id),
-            start: Vec2::new(x0, y0),
-            end: Vec2::new(x1, y1),
-            base_level: level,
-            to_ceiling: false,
-            exterior: true,
-            wall_type: "Exterior".into(),
-            join_start: JoinKind::Mitre,
-            join_end: JoinKind::Mitre,
-            thickness: t,
-            height: 2.4,
-            layers: Vec::new(),
-            divider: false,
-        }
+        Wall { id: ArchId(id), start: Vec2::new(x0, y0), end: Vec2::new(x1, y1), base_level: level, thickness: t, ..Default::default() }
     }
 
     /// A divider wall (thickness 0, `divider: true`) on `level`.
@@ -323,15 +300,13 @@ mod tests {
             start: Vec2::new(x0, y0),
             end: Vec2::new(x1, y1),
             base_level: level,
-            to_ceiling: false,
             exterior: false,
             wall_type: "Interior".into(),
             join_start: JoinKind::Auto,
             join_end: JoinKind::Auto,
             thickness: 0.0,
-            height: 2.4,
-            layers: Vec::new(),
             divider: true,
+            ..Default::default()
         }
     }
 
