@@ -147,7 +147,8 @@ fn layers_report_uses_and_where() {
     let current = &r["items"].as_array().unwrap()[0];
     assert_eq!(current["name"], "0");
     assert_eq!((current["used"].clone(), current["unused"].clone(), current["current"].clone()), (json!(true), json!(false), json!(true)));
-    assert_eq!(names(&r, "layers"), ["Empty"]);
+    // The arch3d default layers ride along in every new drawing; empty, they are unused like Empty.
+    assert_eq!(names(&r, "layers"), ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR", "Empty"]);
 }
 
 /// Guards that a block's `used` follows reachability from model space — INNER, referenced only
@@ -209,9 +210,9 @@ fn styles_and_linetypes_report_uses() {
     assert_eq!((spare["used"].clone(), spare["unused"].clone()), (json!(false), json!(true)));
     assert_eq!(names(&r, "linetypes"), ["SPARE"]);
 
-    // A layer's linetype is a reference to it; every layer here is Continuous.
+    // A layer's linetype is a reference to it; every layer here (including the arch3d defaults) is Continuous.
     let continuous = item(&r, "linetype", "Continuous");
-    assert_eq!((continuous["entities"].clone(), continuous["references"].clone()), (json!(0), json!(5)));
+    assert_eq!((continuous["entities"].clone(), continuous["references"].clone()), (json!(0), json!(10)));
     assert_eq!((continuous["used"].clone(), continuous["unused"].clone()), (json!(true), json!(false)));
 }
 
@@ -260,7 +261,8 @@ fn paging_and_filters() {
     assert_eq!((offset["returned"].clone(), offset["truncated"].clone()), (json!(2), json!(total > 4)));
 
     let layers = usage(&mut s, json!({ "type": "layers" }));
-    assert_eq!(layers["count"], 5);
+    // 0, Defpoints, Used, Empty, InBlock plus the five arch3d default layers.
+    assert_eq!(layers["count"], 10);
     assert!(layers["items"].as_array().unwrap().iter().all(|i| i["type"] == "layer"));
     let styles = usage(&mut s, json!({ "type": "textstyles" }));
     assert_eq!(styles["count"], 3);
