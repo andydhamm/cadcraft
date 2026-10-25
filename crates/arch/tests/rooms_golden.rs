@@ -1,13 +1,13 @@
 use std::cmp::Ordering;
 
-use cadcraft_arch::area::compute_areas;
+use cadcraft_arch::area::refresh_areas;
 use cadcraft_arch::room::detect_rooms;
 use cadcraft_doc::{ArchModel, Room, Wall};
 use cadcraft_geom::Vec2;
 
 /// Build a wall from its centre-line endpoints and thickness.
 fn wall(a: Vec2, b: Vec2, thickness: f64, exterior: bool) -> Wall {
-    Wall { a, b, thickness, exterior, ..Default::default() }
+    Wall { start: a, end: b, thickness, exterior, ..Default::default() }
 }
 
 /// The phase-1 10 x 8 house: exterior centre lines at 0.2 m and two
@@ -39,7 +39,7 @@ fn house_with_loop() -> ArchModel {
 fn detect_and_areas(model: &mut ArchModel) {
     let rooms = detect_rooms(model);
     model.rooms = rooms;
-    compute_areas(model);
+    refresh_areas(model);
 }
 
 fn approx(a: f64, b: f64, tol: f64) -> bool {

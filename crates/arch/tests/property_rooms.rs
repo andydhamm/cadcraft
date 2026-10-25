@@ -31,7 +31,7 @@ impl Lcg {
 
 fn push_wall(model: &mut ArchModel, a: Vec2, b: Vec2, t: f64, exterior: bool) {
     let divider = t == 0.0;
-    model.push_wall(Wall { a, b, thickness: t, exterior, divider, ..Default::default() });
+    model.push_wall(Wall { start: a, end: b, thickness: t, exterior, divider, ..Default::default() });
 }
 
 /// Add a closed axis-aligned rectangle (4 walls).
@@ -98,9 +98,9 @@ fn random_wall_graphs_never_panic_in_room_detection() {
             for hole in &room.holes {
                 assert!(is_simple(hole), "non-simple hole (seed {:?})", seed);
             }
-            // Area must exceed MIN_ROOM_AREA.
+            // Area must exceed MIN_ROOM_AREA (0.1 m², defined in arch::room; kept private there).
             let area = region_area(&room.polygon, &room.holes);
-            assert!(area > cadcraft_doc::MIN_ROOM_AREA, "room area {} <= MIN_ROOM_AREA (seed {:?})", area, seed);
+            assert!(area > 0.1, "room area {} <= MIN_ROOM_AREA (seed {:?})", area, seed);
             // label_point returns a valid point inside the polygon.
             let label = label_point(&room.polygon, &room.holes);
             assert!(label.is_some(), "label_point returned None (seed {:?})", seed);
