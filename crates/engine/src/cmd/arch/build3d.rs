@@ -285,15 +285,11 @@ mod tests {
     #[test]
     fn build3d_probe_rejects_non_finite() {
         let mut s = wall_session();
-        let probe = Value::Array(vec![Value::Array(vec![
-            Value::Number(serde_json::Number::from_f64(f64::NAN).unwrap()),
-            Value::Number(serde_json::Number::from_f64(0.0).unwrap()),
-            Value::Number(serde_json::Number::from_f64(1.0).unwrap()),
-        ])]);
-        let mut map = serde_json::Map::new();
-        map.insert("probe".to_string(), probe);
-        let params = Value::Object(map);
+        // JSON has no NaN/Infinity, so a real non-finite `Number` is unrepresentable;
+        // the textual form `"NaN"` is the closest input, and the command must reject it
+        // (non-number) rather than coerce it.
+        let params = json!({"probe": [[5.0, 0.0, "NaN"]]});
         let r = s.execute("build3d", &params);
-        assert!(r.is_err(), "build3d should reject a NaN probe point");
+        assert!(r.is_err(), "build3d must reject a non-finite probe coordinate");
     }
 }
