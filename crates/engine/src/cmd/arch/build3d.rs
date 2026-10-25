@@ -285,8 +285,14 @@ mod tests {
     #[test]
     fn build3d_probe_rejects_non_finite() {
         let mut s = wall_session();
-        let probe = Value::Array(vec![Value::Array(vec![Value::Number(f64::NAN.into()), Value::Number(0.0), Value::Number(1.0)])]);
-        let params = Value::Object(serde_json::Map::from([("probe", probe)]));
+        let probe = Value::Array(vec![Value::Array(vec![
+            Value::Number(serde_json::Number::from_f64(f64::NAN).unwrap()),
+            Value::Number(serde_json::Number::from_f64(0.0).unwrap()),
+            Value::Number(serde_json::Number::from_f64(1.0).unwrap()),
+        ])]);
+        let mut map = serde_json::Map::new();
+        map.insert("probe".to_string(), probe);
+        let params = Value::Object(map);
         let r = s.execute("build3d", &params);
         assert!(r.is_err(), "build3d should reject a NaN probe point");
     }
