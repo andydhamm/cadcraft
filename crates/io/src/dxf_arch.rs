@@ -226,7 +226,7 @@ pub(crate) fn proxy_opening_polylines(m: &ArchModel) -> Vec<(String, Vec<Tag>)> 
 mod tests {
     use super::*;
     use crate::{read_dxf, write_dxf};
-    use cadcraft_doc::arch::{Opening, OpeningKind};
+    use cadcraft_doc::arch::{Opening, OpeningKind, Room};
     use cadcraft_doc::{ArchModel, Drawing, EntityKind, Wall};
     use cadcraft_geom::Vec2;
 
