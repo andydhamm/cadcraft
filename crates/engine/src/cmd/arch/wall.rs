@@ -3,7 +3,8 @@
 //! JSON parameters:
 //! - `points`: required, `[[x,y], ...]` with 2 or more distinct points.
 //! - `thickness`: optional, wall thickness. Defaults to the exterior or interior
-//!   default based on `exterior`.
+//!   default based on `exterior`. For `divider: true`, 0 is allowed; otherwise
+//!   must be positive.
 //! - `height`: optional, wall height. Defaults to the level's `floor_to_floor`.
 //! - `exterior`: optional bool (default `true`).
 //! - `closed`: optional bool (default `false`). If true and >2 points and last
@@ -11,6 +12,9 @@
 //! - `level`: optional string, level name. Defaults to the first level in the model.
 //! - `type`: optional string (`exterior|interior|knee|railing|retaining`).
 //!   Overrides the `exterior` flag and sets the wall kind.
+//! - `toCeiling`: optional bool (default `false`). Wall extends to the level ceiling.
+//! - `divider`: optional bool (default `false`). A partition wall that is interior
+//!   and may have zero thickness.
 //!
 //! Returns JSON: `{"walls": [{"id": "w1", "handle": "a0000001"}, ...], "joins": 0}`
 
@@ -29,7 +33,7 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("wall", "Wall", run_wall)
             .menu(&["Architecture", "Wall"])
             .alias(&["wal"])
-            .params("{points: [[x,y],...], thickness?, height?, exterior?, closed?, level?, type?}")
+            .params("{points: [[x,y],...], thickness?, height?, exterior?, closed?, level?, type?, toCeiling?, divider?}")
             .interactive(|_| Ok(Box::new(WallM::default()))),
     ]
 }
@@ -237,11 +241,13 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let closed = bool_or(p, "closed", false);
     let level_name = str_param(p, "level").map(|s| s.to_string());
     let type_str = str_param(p, "type").map(|s| s.to_string());
+    let divider = bool_or(p, "divider", false);
+    let to_ceiling = bool_or(p, "toCeiling", false);
 
     let d = s.doc_mut()?;
 
     // `type` overrides `exterior`; knee/railing/retaining are treated as interior
-    let exterior = match &type_str {
+    let mut exterior = match &type_str {
         None => bool_or(p, "exterior", true),
         Some(t) => match t.as_str() {
             "exterior" => true,
@@ -249,17 +255,28 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
             _ => return Err(bad("wall", format!("unknown wall type `{t}`"))),
         },
     };
+    if divider {
+        exterior = false;
+    }
     let wall_type = type_str.clone().unwrap_or_else(|| if exterior { "exterior".to_string() } else { "interior".to_string() });
 
-    // Thickness: explicit or default based on exterior
-    let thickness = size_param("wall", p, "thickness", false)?;
-    let thickness = match thickness {
-        Some(t) => t,
-        None => {
-            if exterior {
-                super::DEFAULT_EXT_THICKNESS
-            } else {
-                super::DEFAULT_INT_THICKNESS
+    // Thickness: explicit or default based on exterior (divider allows 0)
+    let thickness = if divider {
+        match p.get("thickness").and_then(Value::as_f64) {
+            Some(t) if t.is_finite() && t >= 0.0 => t,
+            Some(_) => return Err(bad("wall", "divider `thickness` must be finite and non-negative")),
+            None => 0.0,
+        }
+    } else {
+        size_param("wall", p, "thickness", false)?;
+        match thickness {
+            Some(t) => t,
+            None => {
+                if exterior {
+                    super::DEFAULT_EXT_THICKNESS
+                } else {
+                    super::DEFAULT_INT_THICKNESS
+                }
             }
         }
     };
@@ -267,11 +284,11 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     // Level: from param, or the first level in the model when absent
     let level = level_name.as_deref().and_then(|name| d.arch.levels.iter().find(|l| l.name == name)).or_else(|| d.arch.levels.first());
 
-    // Height: explicit or level ceiling height
+    // Height: explicit or level floor-to-floor
     let height = size_param("wall", p, "height", false)?;
     let height = match height {
         Some(h) => h,
-        None => level.map(|l| l.ceiling_height).unwrap_or(super::DEFAULT_EXT_THICKNESS * 5.0),
+        None => level.map(|l| l.floor_to_floor()).unwrap_or(super::DEFAULT_EXT_THICKNESS * 5.0),
     };
 
     // Apply closed flag
@@ -303,7 +320,8 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
             thickness,
             height,
             base_level: base_level_idx,
-            to_ceiling: true,
+            to_ceiling,
+            divider,
             exterior,
             wall_type: wall_type.clone(),
             layers: layers.clone(),
@@ -342,7 +360,7 @@ mod tests {
     fn new_session_with_level() -> Session {
         let mut s = Session::new();
         let d = s.doc_mut().unwrap();
-        d.arch.levels.push(Level { name: "ground".to_string(), ceiling_height: 2.7, structure: 0.3, ..Default::default() });
+        d.arch.levels.push(Level { name: "ground".to_string(), ceiling_height: 2.4, structure: 0.3, ..Default::default() });
         d.touch_arch();
         s
     }
@@ -488,7 +506,7 @@ mod tests {
     }
 
     #[test]
-    fn wall_defaults_use_the_level_floor_to_floor() {
+    fn wall_height_defaults_to_the_derived_floor_to_floor() {
         let mut s = new_session_with_level();
         let p = json!({
             "points": [[0.0, 0.0], [2.0, 0.0]],
@@ -497,6 +515,50 @@ mod tests {
         let _ = s.execute("wall", &p).unwrap();
         let d = s.doc().unwrap();
         assert_eq!(d.arch.walls[0].height, 2.7);
+    }
+
+    #[test]
+    fn wall_to_ceiling_param_is_honoured() {
+        let mut s = new_session_with_level();
+        // Default: to_ceiling is false
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        assert!(!s.doc().unwrap().arch.walls[0].to_ceiling);
+
+        // Explicit: to_ceiling is true
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "toCeiling": true,
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        assert!(s.doc().unwrap().arch.walls[1].to_ceiling);
+    }
+
+    #[test]
+    fn wall_divider_allows_zero_thickness() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "divider": true,
+            "thickness": 0.0,
+        });
+        let r = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!(d.arch.walls[0].divider);
+        assert!(!d.arch.walls[0].exterior);
+        assert_eq!(d.arch.walls[0].thickness, 0.0);
+    }
+
+    #[test]
+    fn wall_rejects_zero_thickness_without_divider() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "thickness": 0.0,
+        });
+        assert!(s.execute("wall", &p).is_err());
     }
 
     #[test]

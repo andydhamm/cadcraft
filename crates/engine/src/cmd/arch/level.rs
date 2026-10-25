@@ -26,6 +26,25 @@ fn find_level(arch: &cadcraft_doc::arch::ArchModel, ref_val: &Value) -> Result<u
     Err(crate::EngineError::Other("level: invalid level reference".into()))
 }
 
+/// True if `name` is an auto-generated level name (`Level <n>`, case-insensitive).
+fn is_auto_level_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase().trim();
+    if !lower.starts_with("level") {
+        return false;
+    }
+    let rest = &lower["level".len()..].trim();
+    !rest.is_empty() && rest.parse::<i32>().is_ok()
+}
+
+/// Renames levels whose name parses as `Level <n>` (case-insensitive) to `Level <pos+1>`.
+fn renumber_auto_levels(levels: &mut [cadcraft_doc::arch::Level]) {
+    for (pos, level) in levels.iter_mut().enumerate() {
+        if is_auto_level_name(&level.name) {
+            level.name = format!("Level {}", pos + 1);
+        }
+    }
+}
+
 /// Run the `level` command.
 ///
 /// JSON: `{above: "Level 1" | index}` — add a level above.
@@ -51,9 +70,10 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
         let base = &arch.levels[i];
         let new_elev = base.elevation + base.floor_to_floor();
         // A new level takes `Level::default()`'s ceiling height and floor structure.
+        let name_str = name.map(|n| n.trim()).filter(|n| !n.is_empty()).map(String::from);
         let mut new_level = cadcraft_doc::arch::Level {
             index: arch.levels.len() as u32,
-            name: format!("Level {}", arch.levels.len() + 1),
+            name: name_str.unwrap_or_else(|| format!("Level {}", arch.levels.len() + 1)),
             elevation: new_elev,
             ..Default::default()
         };
@@ -70,6 +90,7 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
             new_level.structure = s;
         }
         arch.levels.push(new_level);
+        renumber_auto_levels(&mut arch.levels);
         doc.touch_arch();
         return Ok(Value::from("ok"));
     }
@@ -78,8 +99,13 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
         let i = find_level(arch, below_ref)?;
         let base = &arch.levels[i];
         let new_elev = base.elevation - base.floor_to_floor();
-        let mut new_level =
-            cadcraft_doc::arch::Level { index: i as u32, name: format!("Level {}", i + 1), elevation: new_elev, ..Default::default() };
+        let name_str = name.map(|n| n.trim()).filter(|n| !n.is_empty()).map(String::from);
+        let mut new_level = cadcraft_doc::arch::Level {
+            index: i as u32,
+            name: name_str.unwrap_or_else(|| format!("Level {}", i + 1)),
+            elevation: new_elev,
+            ..Default::default()
+        };
         if let Some(c) = ceiling {
             if !c.is_finite() || c <= 0.0 {
                 return Err(crate::EngineError::Other("level: ceiling must be finite and positive".into()));
@@ -103,6 +129,7 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
                 w.base_level = w.base_level.saturating_add(1);
             }
         }
+        renumber_auto_levels(&mut arch.levels);
         doc.touch_arch();
         return Ok(Value::from("ok"));
     }
@@ -229,5 +256,36 @@ mod tests {
         }
         let result = s.execute("level", &json!({"name": "Level 1", "ceiling": -1.0}));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn level_below_uses_the_requested_name() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        let _ = s.execute("level", &json!({"below": "Level 1", "name": "Basement"})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 2);
+        assert_eq!(arch.levels[0].name, "Basement");
+        assert_eq!(arch.levels[1].name, "Level 1");
+    }
+
+    #[test]
+    fn level_above_names_the_new_level_by_position() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        let _ = s.execute("level", &json!({"above": "Level 1"})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 2);
+        assert_eq!(arch.levels[1].name, "Level 2");
     }
 }

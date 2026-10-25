@@ -236,7 +236,8 @@ struct Resources {
 
 impl Resources {
     fn new(device: &wgpu::Device, target: wgpu::TextureFormat, stencil: Option<wgpu::TextureFormat>) -> Self {
-        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("pane3d blit"), source: wgpu::ShaderSource::Wgsl(BLIT.into()) });
+        let module =
+            device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("pane3d blit"), source: wgpu::ShaderSource::Wgsl(BLIT.into()) });
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("pane3d blit"),
             entries: &[
@@ -258,8 +259,11 @@ impl Resources {
                 },
             ],
         });
-        let pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("pane3d blit"), bind_group_layouts: &[Some(&layout)], immediate_size: 0 });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("pane3d blit"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
         // The window pass may carry a stencil buffer (clipped viewports); a pipeline drawn in it
         // must name the same format even though it never tests it.
         let depth_stencil = stencil.map(|format| wgpu::DepthStencilState {
@@ -554,7 +558,10 @@ mod tests {
         let mut enc = device.create_command_encoder(&Default::default());
         enc.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo { texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            wgpu::TexelCopyBufferInfo { buffer: &buffer, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: Some(h) } },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: Some(h) },
+            },
             wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
         );
         let index = queue.submit([enc.finish()]);
@@ -574,12 +581,8 @@ mod tests {
         let mut pane = Pane3d::new();
         pane.available = true;
         assert!(pane.sync(1, Some(&house())));
-        let callback = |pane: &Pane3d| Pane3dCallback {
-            scene: pane.scene.clone().expect("scene"),
-            key: pane.scene_key(),
-            camera: pane.camera(),
-            size: (w, h),
-        };
+        let callback =
+            |pane: &Pane3d| Pane3dCallback { scene: pane.scene.clone().expect("scene"), key: pane.scene_key(), camera: pane.camera(), size: (w, h) };
         let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [w, h], pixels_per_point: 1.0 };
         let target = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
