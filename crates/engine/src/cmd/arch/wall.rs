@@ -514,7 +514,7 @@ mod tests {
         });
         let _ = s.execute("wall", &p).unwrap();
         let d = s.doc().unwrap();
-        assert_eq!(d.arch.walls[0].height, 2.7);
+        assert!((d.arch.walls[0].height - 2.7).abs() < 1e-9);
     }
 
     #[test]

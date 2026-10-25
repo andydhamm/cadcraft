@@ -91,7 +91,6 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
             new_level.structure = s;
         }
         arch.levels.push(new_level);
-        renumber_auto_levels(&mut arch.levels);
         doc.touch_arch();
         return Ok(Value::from("ok"));
     }
@@ -130,7 +129,6 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
                 w.base_level = w.base_level.saturating_add(1);
             }
         }
-        renumber_auto_levels(&mut arch.levels);
         doc.touch_arch();
         return Ok(Value::from("ok"));
     }
