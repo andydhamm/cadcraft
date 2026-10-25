@@ -56,12 +56,22 @@ pub struct Mesh {
     pub material: String,
     /// The arch object this mesh belongs to.
     pub object: ArchId,
+    /// The level elevation this mesh belongs to; `f64::NAN` if unknown.
+    pub level_elevation: f64,
 }
 
 impl Mesh {
     /// Create an empty mesh.
     pub fn new(material: &str, object: ArchId) -> Self {
-        Mesh { positions: Vec::new(), normals: Vec::new(), uvs: Vec::new(), indices: Vec::new(), material: material.to_string(), object }
+        Mesh {
+            positions: Vec::new(),
+            normals: Vec::new(),
+            uvs: Vec::new(),
+            indices: Vec::new(),
+            material: material.to_string(),
+            object,
+            level_elevation: f64::NAN,
+        }
     }
 
     /// Number of triangles in this mesh.
@@ -294,6 +304,12 @@ impl Mesh {
             // Triangle: bottom_i, top_j, top_i
             self.indices.extend([b_base + i, b_base + m + j, b_base + m + i]);
         }
+    }
+}
+
+impl Default for Mesh {
+    fn default() -> Self {
+        Self::new("", ArchId(0))
     }
 }
 

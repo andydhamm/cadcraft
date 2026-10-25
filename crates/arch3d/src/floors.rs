@@ -32,6 +32,7 @@ pub fn floor_slab(room: &Room, level: &Level, mat: &str) -> Option<Mesh> {
     }
     let top = level.elevation;
     let mut m = Mesh::new(mat, room.id);
+    m.level_elevation = level.elevation;
     m.push_prism_with_holes(&room.polygon, &room.holes, top - level.structure, top);
     if m.positions.is_empty() { None } else { Some(m) }
 }
@@ -57,6 +58,7 @@ pub fn ceiling_surface(room: &Room, level: &Level, mat: &str) -> Option<Mesh> {
     }
     let top = level.elevation + ch;
     let mut m = Mesh::new(mat, room.id);
+    m.level_elevation = level.elevation;
     m.push_prism_with_holes(&room.polygon, &room.holes, top - 0.02, top);
     if m.positions.is_empty() { None } else { Some(m) }
 }
