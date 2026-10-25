@@ -83,18 +83,26 @@ fn room_json(level: u32, t: RoomType, interior: f64, standard: f64, polygon: &[c
 /// the existing rooms for the targeted level(s).
 fn run_roomdetect(s: &mut Session, p: &Value) -> Result<Value> {
     // Resolve the level filter before any mutation so a bad level leaves the doc untouched.
-    let level_filter = resolve_level(&s.doc()?.arch, p.get("level").cloned().unwrap_or(Value::Null))?;
+    let level_filter = resolve_level(&s.doc()?.arch, &p.get("level").cloned().unwrap_or(Value::Null))?;
     let dry = bool_or(p, "dryRun", false);
 
     if dry {
         // Dry run: read-only. Must not call `doc_mut()` or `touch_arch()`.
         let d = s.doc()?;
-        let detected = cadcraft_arch::room::detect_rooms(&d.arch, level_filter);
-        let rooms: Vec<Value> = detected.iter().map(|r| room_json(r.level, r.rtype, r.interior, r.standard, &r.polygon)).collect();
+        let all = cadcraft_arch::room::detect_rooms(&d.arch);
+        let detected: Vec<cadcraft_arch::Room> = match level_filter {
+            Some(l) => all.into_iter().filter(|r| r.level == l).collect(),
+            None => all,
+        };
+        let rooms: Vec<Value> = detected.iter().map(|r| room_json(r.level, r.room_type, r.interior_area, r.standard_area, &r.polygon)).collect();
         Ok(json!({"rooms": rooms, "count": detected.len()}))
     } else {
         let d = s.doc_mut()?;
-        let detected = cadcraft_arch::room::detect_rooms(&d.arch, level_filter);
+        let all = cadcraft_arch::room::detect_rooms(&d.arch);
+        let mut detected: Vec<cadcraft_arch::Room> = match level_filter {
+            Some(l) => all.into_iter().filter(|r| r.level == l).collect(),
+            None => all,
+        };
 
         // Replace-per-level: remove rooms for the target level, then insert the
         // detected ones. One `touch_arch()` → one undo step.
@@ -107,17 +115,15 @@ fn run_roomdetect(s: &mut Session, p: &Value) -> Result<Value> {
 
         let cap = MAX_ROOMS.saturating_sub(d.arch.rooms.len());
         let truncated = detected.len() > cap;
-        let mut detected: Vec<_> = detected;
         detected.truncate(cap);
         let count = detected.len();
+
+        let rooms: Vec<Value> = detected.iter().map(|r| room_json(r.level, r.room_type, r.interior_area, r.standard_area, &r.polygon)).collect();
 
         for r in detected {
             d.arch.push_room(r);
         }
         d.touch_arch();
-
-        let rooms: Vec<Value> =
-            d.arch.rooms.iter().rev().take(count).map(|r| room_json(r.level, r.rtype, r.interior, r.standard, &r.polygon)).collect();
 
         Ok(json!({
             "rooms": rooms,
@@ -163,7 +169,7 @@ mod tests {
         assert_eq!(s.doc().unwrap().arch_revision, rev + 1, "exactly one revision bump");
 
         let label = s.undo().unwrap();
-        assert_eq!(label, "Room Detect", "undo label must match the command name");
+        assert_eq!(label, Some("Room Detect".to_string()), "undo label must match the command name");
 
         assert_eq!(s.doc().unwrap().arch.rooms.len(), rooms_before, "undo must restore the room count");
         assert_eq!(s.doc().unwrap().arch_revision, rev, "undo must restore the revision");
