@@ -132,6 +132,14 @@ impl Scene3d {
         self.meshes.iter().find(|m| &m.object == id)
     }
 
+    /// Probe the scene at point `p`, returning the first mesh that contains it.
+    ///
+    /// Inherent impl lives here because `Scene3d` is defined in `lib.rs`;
+    /// the free function `probe()` stays in `probe.rs`.
+    pub fn probe(&self, p: Vec3) -> Option<crate::probe::Hit> {
+        crate::probe::probe(self, p)
+    }
+
     /// Build the full 3D scene from an arch model.
     ///
     /// Solves joins once, then extrudes each wall (falling back to a raw
