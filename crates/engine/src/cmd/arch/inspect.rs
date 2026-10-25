@@ -643,7 +643,8 @@ mod tests {
 
     #[test]
     fn inspect_reports_derived_floor_to_floor() {
-        let v = exec(&Session::new(), "arch.inspect", &json!({}));
+        let mut s = Session::new();
+        let v = exec(&mut s, "arch.inspect", &json!({}));
         let levels = v["levels"].as_array().expect("levels array missing");
         assert!(!levels.is_empty(), "expected at least one level");
         let l = &levels[0];
