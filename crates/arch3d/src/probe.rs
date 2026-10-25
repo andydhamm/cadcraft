@@ -63,9 +63,6 @@ pub fn part_of(mesh: &Mesh) -> &'static str {
 /// point below them; they are excluded. Meshes with negligible z-extent
 /// (e.g. flat decals) are also excluded.
 pub fn is_probeable(mesh: &Mesh) -> bool {
-    if part_of(mesh) == "ceiling" {
-        return false;
-    }
     let b = mesh.bounds();
     let z_extent = b.max[2] - b.min[2];
     z_extent >= 1e-6
@@ -104,19 +101,39 @@ pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
     crossings_upward(p, &tris[..scan_count]) % 2 == 1
 }
 
-/// A human-readable label for a mesh, based on its owning object.
+/// A human-readable label for a mesh, based on its material and owning object.
 ///
-/// Falls back to the `ArchId` display string; never returns an empty string.
+/// `floor`/`ceiling` materials use the room label; opening-part materials use
+/// the opening label; everything else uses the wall label. Never returns an
+/// empty string.
 pub fn mesh_label(mesh: &Mesh) -> String {
-    let label = format!("{}", mesh.object);
+    let m = mesh.material.to_lowercase();
+    let label = if m.contains("floor") || m.contains("ceiling") {
+        cadcraft_doc::arch::room_label(mesh.object)
+    } else if m.contains("door")
+        || m.contains("window")
+        || m.contains("glass")
+        || m.contains("frame")
+        || m.contains("casing")
+        || m.contains("leaf")
+        || m.contains("sill")
+        || m.contains("header")
+    {
+        cadcraft_doc::arch::opening_label(mesh.object)
+    } else {
+        cadcraft_doc::arch::wall_label(mesh.object)
+    };
     if label.is_empty() { format!("object-{}", mesh.object.0) } else { label }
 }
 
 /// The level elevation for a mesh.
 ///
-/// Falls back to the mesh bounding box `min.z` when no level is
-/// recorded on the mesh.
+/// Prefers the recorded `level_elevation`; falls back to the mesh
+/// bounding box `min.z` when unknown.
 pub fn mesh_level(mesh: &Mesh) -> f64 {
+    if mesh.level_elevation.is_finite() {
+        return mesh.level_elevation;
+    }
     mesh.bounds().min[2]
 }
 
@@ -407,5 +424,135 @@ mod tests {
 
         // Finite but far away: no panic, and not inside anything.
         assert!(probe(&scene, Vec3::new(1e6, 1e6, 1e6)).is_none(), "probe(1e6,1e6,1e6) should be None");
+    }
+
+    /// Build a minimal scene: Level 0 room (4x4) with walls.
+    ///
+    /// Level 0: elevation 0.0, structure 0.3, ceiling_height 2.4.
+    /// Floor slab spans z -0.3..0.0; ceiling slab spans z 2.38..2.4.
+    fn level0_room_scene() -> Scene3d {
+        let mut model = ArchModel::default();
+
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, structure: 0.3, ..Default::default() });
+
+        let wall = |id: u32, a: (f64, f64), b: (f64, f64)| -> Wall {
+            Wall { id: ArchId(id), start: Vec2::new(a.0, a.1), end: Vec2::new(b.0, b.1), thickness: 0.2, height: 2.4, ..Default::default() }
+        };
+
+        model.walls.push(wall(1, (0.0, 0.0), (4.0, 0.0)));
+        model.walls.push(wall(2, (4.0, 0.0), (4.0, 4.0)));
+        model.walls.push(wall(3, (4.0, 4.0), (0.0, 4.0)));
+        model.walls.push(wall(4, (0.0, 4.0), (0.0, 0.0)));
+
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 0,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)],
+            ..Default::default()
+        });
+
+        Scene3d::build(&model)
+    }
+
+    #[test]
+    fn probe_hits_a_ceiling_slab() {
+        let scene = level0_room_scene();
+        // Ceiling slab spans z 2.38..2.4; probe at 2.39 (inside).
+        let hit = probe(&scene, Vec3::new(2.0, 2.0, 2.39));
+        assert!(hit.is_some(), "probe(2,2,2.39) should hit the ceiling slab");
+        let hit = hit.unwrap();
+        assert_eq!(hit.part, "ceiling");
+        assert!(!hit.id.is_empty());
+    }
+
+    #[test]
+    fn probe_reports_the_level_elevation_not_the_slab_bottom() {
+        let scene = level0_room_scene();
+        // Ceiling slab spans 2.38..2.4 but level.elevation is 0.0.
+        let hit = probe(&scene, Vec3::new(2.0, 2.0, 2.39)).unwrap();
+        assert_eq!(hit.level, 0.0, "level should be 0.0 (level elevation), not 2.38 (slab bottom)");
+    }
+
+    #[test]
+    fn floor_probe_id_starts_with_r() {
+        let scene = level0_room_scene();
+        // Floor slab spans z -0.3..0.0; probe at -0.15 (inside).
+        let hit = probe(&scene, Vec3::new(2.0, 2.0, -0.15)).expect("floor slab hit");
+        assert!(hit.id.starts_with('r'), "floor probe id should start with 'r', got {:?}", hit.id);
+    }
+
+    #[test]
+    fn probe_level_one_slab_reports_zero() {
+        let scene = level0_room_scene();
+        // Level-1 (elevation 0.0) floor slab bottom is -0.3.
+        // The probe must report level.elevation = 0.0, not bounds.min[2] = -0.3.
+        let hit = probe(&scene, Vec3::new(2.0, 2.0, -0.15)).expect("floor slab hit");
+        assert_eq!(hit.level, 0.0, "Level-0 slab must report 0.0, not -0.3");
+    }
+
+    #[test]
+    fn mesh_label_uses_the_material_prefix() {
+        // Floor material → room label (starts with 'r').
+        let floor_mesh = Mesh {
+            positions: vec![],
+            normals: vec![],
+            uvs: Vec::new(),
+            indices: Vec::new(),
+            material: "floor-slab".to_string(),
+            object: ArchId(42),
+            ..Mesh::new("", ArchId(42))
+        };
+        assert!(mesh_label(&floor_mesh).starts_with('r'), "floor mesh label should be a room label");
+
+        // Ceiling material → room label (starts with 'r').
+        let ceil_mesh = Mesh {
+            positions: vec![],
+            normals: vec![],
+            uvs: Vec::new(),
+            indices: Vec::new(),
+            material: "ceiling".to_string(),
+            object: ArchId(42),
+            ..Mesh::new("", ArchId(42))
+        };
+        assert!(mesh_label(&ceil_mesh).starts_with('r'), "ceiling mesh label should be a room label");
+
+        // Door material → opening label.
+        let door_mesh = Mesh {
+            positions: vec![],
+            normals: vec![],
+            uvs: Vec::new(),
+            indices: Vec::new(),
+            material: "door-frame".to_string(),
+            object: ArchId(42),
+            ..Mesh::new("", ArchId(42))
+        };
+        let door_label = mesh_label(&door_mesh);
+        assert!(!door_label.is_empty());
+
+        // Wall material → wall label.
+        let wall_mesh = Mesh {
+            positions: vec![],
+            normals: vec![],
+            uvs: Vec::new(),
+            indices: Vec::new(),
+            material: "wall".to_string(),
+            object: ArchId(42),
+            ..Mesh::new("", ArchId(42))
+        };
+        let wall_label = mesh_label(&wall_mesh);
+        assert!(!wall_label.is_empty());
+
+        // Unknown material → wall label (fallback).
+        let mystery_mesh = Mesh {
+            positions: vec![],
+            normals: vec![],
+            uvs: Vec::new(),
+            indices: Vec::new(),
+            material: "mystery-thing".to_string(),
+            object: ArchId(42),
+            ..Mesh::new("", ArchId(42))
+        };
+        let mystery_label = mesh_label(&mystery_mesh);
+        assert!(!mystery_label.is_empty());
     }
 }

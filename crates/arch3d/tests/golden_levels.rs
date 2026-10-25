@@ -6,6 +6,7 @@
 
 use cadcraft_arch::room::detect_rooms;
 use cadcraft_arch3d::build;
+use cadcraft_doc::arch::room_label;
 use cadcraft_doc::{ArchModel, Level, Wall};
 use cadcraft_geom::{Vec2, Vec3};
 
@@ -85,7 +86,7 @@ fn two_storey_probes_match_the_brief() {
     match scene.probe(Vec3::new(2.0, 1.0, 2.55)) {
         Some(hit) => {
             assert_eq!(hit.part, "floor", "probe(2.0, 1.0, 2.55).part = `{}` (expected `floor`)", hit.part);
-            let level1_ids: Vec<String> = model.rooms.iter().filter(|r| r.level == 1).map(|r| format!("{}", r.id)).collect();
+            let level1_ids: Vec<String> = model.rooms.iter().filter(|r| r.level == 1).map(|r| room_label(r.id)).collect();
             assert!(level1_ids.contains(&hit.id), "probe(2.0, 1.0, 2.55).id = `{}` not in level-1 room ids: {level1_ids:?}", hit.id);
         }
         None => assert!(false, "probe(2.0, 1.0, 2.55) returned None (expected a Level-2 floor hit)"),
@@ -105,7 +106,7 @@ fn two_storey_probes_match_the_brief() {
     match scene.probe(Vec3::new(2.0, 1.0, -0.15)) {
         Some(hit) => {
             assert_eq!(hit.part, "floor", "probe(2.0, 1.0, -0.15).part = `{}` (expected `floor`)", hit.part);
-            let level0_ids: Vec<String> = model.rooms.iter().filter(|r| r.level == 0).map(|r| format!("{}", r.id)).collect();
+            let level0_ids: Vec<String> = model.rooms.iter().filter(|r| r.level == 0).map(|r| room_label(r.id)).collect();
             assert!(level0_ids.contains(&hit.id), "probe(2.0, 1.0, -0.15).id = `{}` not in level-0 room ids: {level0_ids:?}", hit.id);
         }
         None => assert!(false, "probe(2.0, 1.0, -0.15) returned None (expected a Level-1 floor hit)"),
