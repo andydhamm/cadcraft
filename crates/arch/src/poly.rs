@@ -229,8 +229,7 @@ pub fn offset_polygon(pts: &[Vec2], dist: &[f64], outward: bool) -> Option<Vec<V
         }
         let ni = if outward { -dir.perp() } else { dir.perp() };
         let p = Vec2::new(a.x + ni.x * d, a.y + ni.y * d);
-        let r = Vec2::new(b.x + ni.x * d, b.y + ni.y * d);
-        lines.push((p, r));
+        lines.push((p, dir));
     }
 
     let mut out: Vec<Vec2> = Vec::with_capacity(n);
