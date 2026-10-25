@@ -18,6 +18,7 @@ pub mod build3d;
 pub mod inspect;
 pub mod level;
 pub mod opening;
+pub mod room;
 pub mod sample;
 pub mod stretch;
 pub mod view;
