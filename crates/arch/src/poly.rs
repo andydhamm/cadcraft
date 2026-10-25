@@ -419,9 +419,11 @@ mod tests {
         let nan_dist = vec![0.1, f64::NAN, 0.1, 0.1];
         assert!(offset_polygon(&pts, &nan_dist, true).is_none());
 
-        // Thin spike whose offset self-intersects.
-        let spike = sq(&[(0.0, 0.0), (10.0, 0.0), (10.0, 0.05), (0.0, 0.05)]);
-        assert!(offset_polygon(&spike, &[1.0; 4], true).is_none());
+        // A slot open at the top: the two slot walls offset onto the same line,
+        // so the resulting ring has overlapping (self-intersecting) edges and
+        // fails `is_simple`.
+        let notch = sq(&[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (7.0, 10.0), (7.0, 4.0), (5.0, 4.0), (5.0, 10.0), (0.0, 10.0)]);
+        assert!(offset_polygon(&notch, &[1.0; 8], true).is_none());
     }
 
     #[test]
