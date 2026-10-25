@@ -1,6 +1,6 @@
 # Where CADCraft falls short of AutoCAD
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-22 · **Change:** new "Architecture (arch3d)" section (ARCH-1…ARCH-13): phase 1 rows done (object model, wall joins, plan poché, extruded 3D, orbit view, GLB export), later phases (openings, rooms, roofs, stairs, HLR elevations, ARCHDETECT, IFC) open; F24 untouched · **Target:** Autodesk AutoCAD 2027
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-25 · **Change:** arch3d phases 2 and 3 landed (openings; rooms/floors/levels): ARCH-7 and ARCH-8 done; later phases (roofs, stairs, HLR elevations, ARCHDETECT, IFC) open; F24 untouched · **Target:** Autodesk AutoCAD 2027
 
 Every known shortfall, one row each, ranked within each section by user impact. This is the work
 list: agents pick from here (top of a section first), and remove or update a row in the same PR
@@ -62,8 +62,8 @@ one commit each, ending at the ⛔ checkpoint in [DESIGN.md](arch3d/DESIGN.md).
 | ARCH-4 | Extruded 3D: `arch3d::build` / `build_dirty` → `Scene3d`, pure/deterministic/incremental; wall elevation = 2D face region (minus opening rectangles, no CSG) extruded; meshes carry the owning `ArchId` for picking and box UVs (u=x, v=z) | done — phase 1 | — |
 | ARCH-5 | Orbit view: offscreen wgpu render into its own colour+depth textures, presented as an image; headless render returns `NoAdapter` (exit 0 / SKIP) without a GPU | done — phase 1 | — |
 | ARCH-6 | GLB export: own GLTF 2.0 writer in `io::glb` (no dependency), node names `wall-w1`, POSITION min/max on every accessor | done — phase 1 | — |
-| ARCH-7 | Openings: doors, windows, garages — placement limits, plan symbols, elevation cutouts | open — phase 2 | — |
-| ARCH-8 | Rooms, floors, ceilings, levels: room detection with holes, area/perimeter rules, floor/ceiling geometry | open — phase 3 | — |
+| ARCH-7 | Openings: doors, windows, garages — placement limits, plan symbols, elevation cutouts | done — phase 2 | — |
+| ARCH-8 | Rooms, floors, ceilings, levels: room detection with holes, area/perimeter rules, floor/ceiling geometry | done — phase 3 | — |
 | ARCH-9 | Roofs: straight-skeleton roof generator, pitch and overhang, fascia/soffit, wall-top clip to rafters | open — phase 4 | — |
 | ARCH-10 | Stairs, railings, decks: stair code calculator with code limits, landings | open — phase 5 | — |
 | ARCH-11 | HLR elevations and sections: hidden-line removal of our meshes → 2D vectors; orthographic elevation/section cameras | open — phase 7 | — |
@@ -173,6 +173,8 @@ Detail: [localization-parity.md](localization-parity.md).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-25 | minor | arch3d phase 3 landed: rooms, floors, ceilings and levels with detection, area rules, slabs and level build-ups; ARCH-8 done |
+| 2026-10-25 | minor | arch3d phase 2 landed: doors, windows and garage openings with placement limits, plan symbols, elevation cutouts and DXF round-trip; ARCH-7 done |
 | 2026-10-22 | minor | APPLOAD typed or from Tools ▸ Load Application opens a `.lsp` file browser starting in the last-used folder (kept in the preferences); a picked file loads interactively like a typed name (routines that ask for input wait), the web says to drop the file (no file system), and the JSON form `{path}` reads the path as given and returns the commands the file defined, never opening a dialog (#1820): E1 narrowed |
 | 2026-10-16 | minor | ALIASEDIT typed or from Tools ▸ Customize opens the Command Aliases dialog (user aliases next to the built-in ones; Add, Edit, Remove; OK, Cancel, Apply), #1381: U12 and E5 narrowed |
 | 2026-10-16 | minor | MOCORO (Tools ▸ Express Tools ▸ Move/Copy/Rotate): select objects and a base point once, then Move, Copy, Rotate, Scale, Base and Undo until eXit, one undo step; JSON form `{base, ops}`: E3 narrowed |
