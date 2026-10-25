@@ -174,6 +174,7 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
             "name": room.name,
             "type": room_type_name(room.room_type),
             "interiorArea": room.interior_area,
+            "standardArea": room.standard_area,
         }));
     }
 
