@@ -26,9 +26,9 @@ pub use curve::{
 pub use fillet::{CornerFit, TanCurve, tangent_circles};
 pub use intersect::{circle_circle, intersect_ext, intersect_segments, line_circle, line_line, line_line_infinite};
 pub use mat::{Mat3, Mat4};
+pub use skeleton::{OffsetRegion, Skeleton, SkeletonError, SkeletonFace, SkeletonNode, inset, outset, straight_skeleton};
 pub use spline::{MAX_DEGREE as MAX_SPLINE_DEGREE, Spline};
 pub use spline_fit::{FitOptions, KnotParam};
-pub use skeleton::{OffsetRegion, Skeleton, SkeletonError, SkeletonFace, SkeletonNode, inset, outset, straight_skeleton};
 pub use vec::{Vec2, Vec3};
 
 /// Geometric tolerance for coincidence tests in drawing units.
