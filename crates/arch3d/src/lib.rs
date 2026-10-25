@@ -11,6 +11,7 @@
 pub mod floors;
 pub mod mesh;
 pub mod openings;
+pub mod ray;
 pub mod walls;
 
 pub use crate::mesh::{Bounds3, Mesh};
