@@ -188,7 +188,8 @@ fn create_all(device: &wgpu::Device, sample_count: u32) -> (wgpu::RenderPipeline
         immediate_size: 0,
     });
 
-    let vertex = wgpu::VertexState { module: &module, entry_point: Some("vs"), buffers: &[Some(vertex_layout())], compilation_options: Default::default() };
+    let vertex =
+        wgpu::VertexState { module: &module, entry_point: Some("vs"), buffers: &[Some(vertex_layout())], compilation_options: Default::default() };
 
     let depth_stencil = wgpu::DepthStencilState {
         format: DEPTH_FORMAT,
