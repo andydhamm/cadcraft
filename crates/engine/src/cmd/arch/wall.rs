@@ -243,7 +243,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let type_str = str_param(p, "type").map(|s| s.to_string());
     let divider = bool_or(p, "divider", false);
     let to_ceiling = bool_or(p, "toCeiling", false);
-    let has_exterior_param = p.contains_key("exterior");
+    let has_exterior_param = p.as_object().is_some_and(|o| o.contains_key("exterior"));
 
     let d = s.doc_mut()?;
 
