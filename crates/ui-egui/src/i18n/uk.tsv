@@ -1385,3 +1385,15 @@
 	Level	Рівень
 	Room	Кімната
 	Room Detect	Виявити кімнати
+	Interior (inner surfaces)	Внутрішній (внутрішні поверхні)
+	Standard (centre of walls)	Стандартний (центр стін)
+	Living (living areas)	Жилій (жилові зони)
+	Area basis	База вимірювання площі
+	Enter elevation:	Введіть відмітку:
+	Enter ceiling height:	Введіть висоту стелажу:
+	Enter floor structure thickness:	Введіть товщину конструкції підлоги
+	Ceiling height	Висота стелажу
+	Floor structure thickness	Товщина конструкції підлоги
+	Elevation	Відмітка
+	Select walls for room detection	Виберіть стіни для виявлення кімнат
+	Room detection complete: {n} rooms	Виявлено кімнат: {n}
