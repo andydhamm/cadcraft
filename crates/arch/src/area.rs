@@ -351,8 +351,8 @@ mod tests {
 
     #[test]
     fn low_ceiling_room_is_not_living() {
-        let level_low = Level { ceiling_height: Some(1.0), ..Default::default() };
-        let level_ok = Level { ceiling_height: Some(1.2), ..Default::default() };
+        let level_low = Level { ceiling_height: 1.0, ..Default::default() };
+        let level_ok = Level { ceiling_height: 1.2, ..Default::default() };
         let base = Room { polygon: vec![], room_type: RoomType::Living, level: 0, ..Default::default() };
 
         // ceiling 1.1 -> not living
