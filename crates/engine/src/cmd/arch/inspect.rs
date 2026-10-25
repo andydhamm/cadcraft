@@ -130,7 +130,8 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
             obj.insert("livingIncluded".to_string(), json!(is_living(r, level)));
             obj.insert("ceiling".to_string(), json!(r.ceiling_height));
             if labels_flag {
-                obj.insert("labelPoint".to_string(), json!(centroid_points(&r.polygon)));
+                let label_pt = centroid_points(&r.polygon);
+                obj.insert("labelPoint".to_string(), json!([label_pt.x, label_pt.y]));
                 obj.insert("labelText".to_string(), json!(format!("{}\n{:.2} m2", r.name, r.interior_area)));
             }
             room_objects.push(Value::Object(obj));
