@@ -11,6 +11,7 @@
 pub mod floors;
 pub mod mesh;
 pub mod openings;
+pub mod probe;
 pub mod ray;
 pub mod walls;
 
