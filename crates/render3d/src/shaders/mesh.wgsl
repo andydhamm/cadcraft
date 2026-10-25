@@ -20,12 +20,11 @@ struct VOut { @builtin(position) clip: vec4<f32>, @location(0) nrm: vec3<f32>, @
 }
 
 @fragment fn fs(v: VOut) -> @location(0) vec4<f32> {
-    // Two-sided lighting that does not trust triangle winding: cross(dpdy, dpdx) of the world
-    // position is a geometric normal that always points at the camera, so a normal facing away
-    // from it is flipped and the visible side is lit.
-    let toward_eye = cross(dpdy(v.wpos), dpdx(v.wpos));
-    var n = normalize(v.nrm);
-    if (dot(n, toward_eye) < 0.0) { n = -n; }
+    // Flat shading from the triangle's own plane: cross(dpdy, dpdx) of the world position is the
+    // face normal turned toward the camera. arch3d's boxes share 8 corners with averaged normals,
+    // which interpolate to anything across a face (speckled walls, 2026-10-25), and its winding is
+    // not consistent, so neither the vertex normal nor front_facing can be trusted here.
+    let n = normalize(cross(dpdy(v.wpos), dpdx(v.wpos)));
     let ndl = max(dot(n, u.light_dir), 0.0);
     let c = u.albedo * (u.ambient + (1.0 - u.ambient) * ndl);
     return vec4<f32>(c, 1.0);

@@ -14,7 +14,7 @@ pub mod types;
 #[cfg(test)]
 pub(crate) mod gputest;
 
-pub use camera::{Camera, Orbit, projected_bounds};
+pub use camera::{Camera, Orbit, projected_bounds, projected_scene_bounds};
 pub use light::Light;
 pub use offscreen::{Offscreen, headless_png, render_png};
 pub use pipeline::{Draw, GpuMeshes, material_albedo, upload};

@@ -51,9 +51,10 @@ def fg(rows):
     return n,((min(xs),max(xs),min(ys),max(ys)) if xs else None)
 n,bb=fg(rows); frac=n/(w*h)
 assert 0.05<frac<0.85, f"foreground fraction {frac:.3f} implausible (blank or zero-filled image?)"
-uniq={p for r in rows for p in (r[:nch],r[nch:2*nch],r[-nch:])}
-assert len(uniq)>3, f"image is a flat fill: {uniq}"
-x0,x1,y0,y1=bb; px=[float(v) for v in sys.argv[4].split()[1:5]]
+# Every pixel, not only the edge columns: a framed house leaves those all background.
+uniq={r[x:x+nch] for r in rows for x in range(0,w*nch,nch)}
+assert len(uniq)>3, f"image is a flat fill: {len(uniq)} colours"
+x0,x1,y0,y1=bb; px=[float(v) for v in sys.argv[4].replace(",", " ").split()[1:5]]  # PROJECTED x0,y0,x1,y1
 assert abs(x0-px[0])<=3 and abs(x1-px[2])<=3 and abs(y0-px[1])<=3 and abs(y1-px[3])<=3, \
     f"foreground bbox {(x0,x1,y0,y1)} != projected bounds {px} (3px)"
 w2,h2,n2_,rows2=png(sys.argv[2])

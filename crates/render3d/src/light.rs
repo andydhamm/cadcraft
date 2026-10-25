@@ -12,6 +12,11 @@ impl Light {
     /// Sun south-west, 45 deg up, ambient 0.25.
     pub const DEFAULT: Light = Light { dir: [-0.5, -0.5, 0.70710678], ambient: 0.25 };
 
+    /// A light shining from `dir` (toward the light, any length) with `ambient` (see [`Light::normalized`]).
+    pub const fn new(dir: [f32; 3], ambient: f32) -> Self {
+        Light { dir, ambient }
+    }
+
     /// Unit dir (zero/non-finite -> [0,0,1]); ambient clamped 0..=1 (NaN -> 0).
     pub fn normalized(&self) -> Light {
         let mut d = self.dir;

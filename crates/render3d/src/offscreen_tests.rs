@@ -127,7 +127,7 @@ fn faces_turned_differently_to_the_light_get_different_shades() {
     let Some(mut r) = renderer((96, 96)) else { return };
     let s = scene(vec![cuboid("wall", [-1.0, -1.0, -1.0], [1.0, 1.0, 1.0])]);
     // Seen from above the south-west corner: the top and two side faces are visible.
-    r.render(&s, 1, &Camera::Orbit(Orbit::at_origin(225.0, 35.0, 7.0, 45.0)), &Light { dir: [0.0, 0.0, 1.0], ambient: 0.2 });
+    r.render(&s, 1, &Camera::Orbit(Orbit::at_origin(225.0, 35.0, 7.0, 45.0)), &Light::new([0.0, 0.0, 1.0], 0.2));
     let rgba = r.read_rgba().expect("readback");
     let shades: std::collections::BTreeSet<[u8; 4]> =
         rgba.chunks_exact(4).map(|p| [p[0], p[1], p[2], p[3]]).filter(|&p| !close(p, clear_srgb(), 8)).collect();
@@ -140,7 +140,7 @@ fn the_nearer_of_two_boxes_wins_whatever_the_draw_order() {
     let Some(mut r) = renderer((64, 64)) else { return };
     // Camera on +Y looking at the origin (azimuth 0 = north, elevation 0).
     let cam = Camera::Orbit(Orbit::at_origin(0.0, 0.0, 10.0, 45.0));
-    let light = Light { dir: [0.0, 1.0, 0.0], ambient: 0.3 };
+    let light = Light::new([0.0, 1.0, 0.0], 0.3);
     let near = cuboid("glass", [-1.0, 1.0, -1.0], [1.0, 2.0, 1.0]);
     let far = cuboid("door", [-2.0, -3.0, -2.0], [2.0, -2.0, 2.0]);
     let mut seen = Vec::new();
@@ -167,9 +167,9 @@ fn a_face_seen_from_behind_is_lit_from_the_camera_side() {
     m.indices = vec![0, 1, 2, 0, 2, 3];
     let s = scene(vec![m]);
     let cam = Camera::Orbit(Orbit::at_origin(10.0, -60.0, 6.0, 45.0));
-    r.render(&s, 1, &cam, &Light { dir: [0.0, 0.0, -1.0], ambient: 0.1 });
+    r.render(&s, 1, &cam, &Light::new([0.0, 0.0, -1.0], 0.1));
     let lit = px(&r.read_rgba().expect("readback"), 48, 24, 24);
-    r.render(&s, 1, &cam, &Light { dir: [0.0, 0.0, 1.0], ambient: 0.1 });
+    r.render(&s, 1, &cam, &Light::new([0.0, 0.0, 1.0], 0.1));
     let unlit = px(&r.read_rgba().expect("readback"), 48, 24, 24);
     assert!(lit[0] > unlit[0] + 40, "back face not flipped toward the camera: lit {lit:?} unlit {unlit:?}");
 }
@@ -214,7 +214,7 @@ fn many_meshes_each_get_their_own_uniform_slot() {
         .collect();
     let s = scene(meshes);
     let cam = Camera::Orbit(Orbit::at_origin(0.0, 0.0, 14.0, 45.0));
-    r.render(&s, 3, &cam, &Light { dir: [0.0, 1.0, 0.0], ambient: 0.3 });
+    r.render(&s, 3, &cam, &Light::new([0.0, 1.0, 0.0], 0.3));
     let rgba = r.read_rgba().expect("readback");
     let row: Vec<[u8; 4]> = (0..64).map(|x| px(&rgba, 64, x, 16)).filter(|p| !close(*p, clear_srgb(), 8)).collect();
     let bluish = row.iter().filter(|p| p[2] > p[0]).count();
@@ -231,4 +231,57 @@ fn readback_returns_in_bounded_time() {
         r.read_rgba().expect("readback");
     }
     assert!(start.elapsed() < READBACK_TIMEOUT, "five readbacks took {:?}", start.elapsed());
+}
+
+/// A box the way arch3d builds walls and slabs: 8 shared corners, each with one averaged normal.
+fn shared_corner_box(material: &str, min: [f32; 3], max: [f32; 3]) -> Mesh {
+    let mut m = Mesh::new(material, ArchId(3));
+    let c = [(min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0, (min[2] + max[2]) / 2.0];
+    for i in 0..8u32 {
+        let p = [if i & 1 == 0 { min[0] } else { max[0] }, if i & 2 == 0 { min[1] } else { max[1] }, if i & 4 == 0 { min[2] } else { max[2] }];
+        let d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
+        let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        m.positions.push(p);
+        m.normals.push([d[0] / l, d[1] / l, d[2] / l]);
+        m.uvs.push([p[0], p[2]]);
+    }
+    // -y, +y, -x, +x, -z, +z faces as two triangles each.
+    m.indices = vec![0, 1, 5, 0, 5, 4, 2, 6, 7, 2, 7, 3, 0, 4, 6, 0, 6, 2, 1, 3, 7, 1, 7, 5, 0, 2, 3, 0, 3, 1, 4, 5, 7, 4, 7, 6];
+    m
+}
+
+#[test]
+fn a_flat_face_is_one_colour_even_with_averaged_corner_normals() {
+    let Some(mut r) = renderer((64, 64)) else { return };
+    // Looking straight at the box's south face (camera due south, level), lit from the south-west and above.
+    let s = scene(vec![shared_corner_box("wall", [-4.0, -1.0, -4.0], [4.0, 1.0, 4.0])]);
+    r.render(&s, 1, &Camera::Orbit(Orbit::at_origin(180.0, 0.0, 12.0, 45.0)), &Light::new([-0.5, -0.5, 0.7], 0.25));
+    let rgba = r.read_rgba().expect("readback");
+    let patch: std::collections::BTreeSet<[u8; 4]> = (24..40).flat_map(|y| (24..40).map(move |x| (x, y))).map(|(x, y)| px(&rgba, 64, x, y)).collect();
+    assert_eq!(patch.len(), 1, "one planar face shows {} colours: {patch:?}", patch.len());
+}
+
+
+#[test]
+fn projected_scene_bounds_match_the_rendered_silhouette_where_the_bounding_box_does_not() {
+    let Some(mut r) = renderer((240, 160)) else { return };
+    // A long low slab plus a tall post at one end: most corners of their joint bounding box are empty space.
+    let s = scene(vec![cuboid("floor", [0.0, 0.0, -0.3], [10.0, 8.0, 0.0]), cuboid("wall", [9.0, 7.0, 0.0], [10.0, 8.0, 6.0])]);
+    let cam = Camera::Orbit(Orbit::at_origin(35.0, 30.0, 28.0, 45.0));
+    r.render(&s, 1, &cam, &Light::DEFAULT);
+    let rgba = r.read_rgba().expect("readback");
+    let (mut x0, mut y0, mut x1, mut y1) = (u32::MAX, u32::MAX, 0, 0);
+    for y in 0..160 {
+        for x in 0..240 {
+            if !close(px(&rgba, 240, x, y), clear_srgb(), 8) {
+                (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
+            }
+        }
+    }
+    let tight = crate::camera::projected_scene_bounds(&cam, &s, (240, 160));
+    let boxed = crate::camera::projected_bounds(&cam, &s.bounds, (240, 160));
+    let near = |a: u32, b: f32| (a as f32 - b).abs() <= 1.5;
+    assert!(near(x0, tight[0]) && near(y0, tight[1]) && near(x1, tight[2]) && near(y1, tight[3]), "silhouette {:?} vs projected vertices {tight:?}", (x0, y0, x1, y1));
+    let gap = (0..4).map(|k| (tight[k] - boxed[k]).abs()).fold(0.0f32, f32::max);
+    assert!(gap > 3.0, "the scene fills its bounding box; this test needs one that does not ({tight:?} vs {boxed:?})");
 }

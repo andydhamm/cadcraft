@@ -398,7 +398,8 @@ fn render(args: &[String]) -> Result<(), String> {
         None => Ok(cadcraft_render3d::camera::Camera::Orbit(base)),
     }?;
 
-    let pb = cadcraft_render3d::camera::projected_bounds(&camera, &scene.bounds, size);
+    // The mesh vertices, not the bounding box: room slabs leave its lower corners empty.
+    let pb = cadcraft_render3d::camera::projected_scene_bounds(&camera, &scene, size);
 
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| format!("render: tokio runtime: {e}"))?;
     match rt.block_on(cadcraft_render3d::offscreen::headless_png(&scene, &camera, size)) {
