@@ -356,10 +356,10 @@ mod tests {
         let base = Room { polygon: vec![], room_type: RoomType::Living, level: 0, ..Default::default() };
 
         // ceiling 1.1 -> not living
-        assert!(!is_living(&Room { ceiling_height: Some(1.1), ..base }, None));
+        assert!(!is_living(&Room { ceiling_height: Some(1.1), ..base.clone() }, None));
 
         // ceiling 1.2 -> living
-        assert!(is_living(&Room { ceiling_height: Some(1.2), ..base }, None));
+        assert!(is_living(&Room { ceiling_height: Some(1.2), ..base.clone() }, None));
 
         // ceiling None + level with ceiling 1.0 -> not living
         assert!(!is_living(&base, Some(&level_low)));
