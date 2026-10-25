@@ -261,7 +261,6 @@ fn a_flat_face_is_one_colour_even_with_averaged_corner_normals() {
     assert_eq!(patch.len(), 1, "one planar face shows {} colours: {patch:?}", patch.len());
 }
 
-
 #[test]
 fn projected_scene_bounds_match_the_rendered_silhouette_where_the_bounding_box_does_not() {
     let Some(mut r) = renderer((240, 160)) else { return };
@@ -281,7 +280,11 @@ fn projected_scene_bounds_match_the_rendered_silhouette_where_the_bounding_box_d
     let tight = crate::camera::projected_scene_bounds(&cam, &s, (240, 160));
     let boxed = crate::camera::projected_bounds(&cam, &s.bounds, (240, 160));
     let near = |a: u32, b: f32| (a as f32 - b).abs() <= 1.5;
-    assert!(near(x0, tight[0]) && near(y0, tight[1]) && near(x1, tight[2]) && near(y1, tight[3]), "silhouette {:?} vs projected vertices {tight:?}", (x0, y0, x1, y1));
+    assert!(
+        near(x0, tight[0]) && near(y0, tight[1]) && near(x1, tight[2]) && near(y1, tight[3]),
+        "silhouette {:?} vs projected vertices {tight:?}",
+        (x0, y0, x1, y1)
+    );
     let gap = (0..4).map(|k| (tight[k] - boxed[k]).abs()).fold(0.0f32, f32::max);
     assert!(gap > 3.0, "the scene fills its bounding box; this test needs one that does not ({tight:?} vs {boxed:?})");
 }
