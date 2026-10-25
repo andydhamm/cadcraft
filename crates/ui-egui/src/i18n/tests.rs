@@ -254,6 +254,12 @@ fn counts_and_templates_follow_each_catalog_and_keep_inserted_text() {
 }
 
 #[test]
+fn translations_cover_commands_menus_tools_and_snap_labels() {
+    let missing = missing_commands_menus_tools_and_snap_labels("uk");
+    assert!(missing.is_empty(), "Ukrainian catalog is missing: {missing:#?}");
+}
+
+#[test]
 fn the_wcs_pill_draws_its_arrow_instead_of_a_glyph_a_font_may_lack() {
     // #1541: "WCS ⌄" showed a box where the UI font had no "⌄"; the chevron is now drawn as
     // lines, so no catalog and no language paints the glyph.
