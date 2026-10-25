@@ -20,9 +20,9 @@
 use cadcraft_arch::poly::{ensure_ccw, is_simple, region_area};
 use cadcraft_doc::arch::{ArchId, MAX_ROOMS, Room, RoomType, room_handle};
 use cadcraft_geom::Vec2;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::cmd::{bad, CommandSpec, distinct_points, points_param, size_param, str_param};
+use crate::cmd::{CommandSpec, bad, distinct_points, points_param, size_param, str_param};
 use crate::prompt::{Accept, Input, Interactive, Prompt, Step};
 use crate::{EngineError, Result, Session};
 
@@ -86,15 +86,10 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
     let arch = &d.arch;
 
     // --- Points: required, distinct, >= 3, all finite, simple, CCW-normalised ---
-    let pts = points_param(p, "points")
-        .ok_or_else(|| bad("room", "`points` [[x,y],...] (3 or more) is required"))?;
+    let pts = points_param(p, "points").ok_or_else(|| bad("room", "`points` [[x,y],...] (3 or more) is required"))?;
     let pts = distinct_points(&pts);
     // The ring is closed implicitly: drop a trailing point coincident with the first.
-    let ring: Vec<Vec2> = if pts.len() >= 2 && pts[pts.len() - 1].near(pts[0], 1e-9) {
-        pts[..pts.len() - 1].to_vec()
-    } else {
-        pts
-    };
+    let ring: Vec<Vec2> = if pts.len() >= 2 && pts[pts.len() - 1].near(pts[0], 1e-9) { pts[..pts.len() - 1].to_vec() } else { pts };
     if ring.len() < 3 {
         return Err(bad("room", "`points` [[x,y],...] must have 3 or more distinct points"));
     }
@@ -104,10 +99,7 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
         }
     }
     if !is_simple(&ring) {
-        return Err(bad(
-            "room",
-            "`points` do not form a simple polygon (self-intersecting, zero area, or fewer than 3 points)",
-        ));
+        return Err(bad("room", "`points` do not form a simple polygon (self-intersecting, zero area, or fewer than 3 points)"));
     }
     let ring = ensure_ccw(&ring);
 
@@ -186,16 +178,8 @@ impl Interactive for RoomM {
     }
 
     fn prompt(&self, _s: &Session) -> Prompt {
-        let message = if self.pts.is_empty() {
-            "Specify start point:".to_string()
-        } else {
-            "Specify next point or [Close]:".to_string()
-        };
-        let keywords = if self.pts.is_empty() {
-            Vec::new()
-        } else {
-            vec!["Close".to_string()]
-        };
+        let message = if self.pts.is_empty() { "Specify start point:".to_string() } else { "Specify next point or [Close]:".to_string() };
+        let keywords = if self.pts.is_empty() { Vec::new() } else { vec!["Close".to_string()] };
         Prompt {
             message,
             keywords,
@@ -256,9 +240,9 @@ impl RoomM {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Session;
     use cadcraft_doc::arch::RoomType;
     use serde_json::json;
-    use crate::Session;
 
     fn new_session() -> Session {
         Session::new()
@@ -331,9 +315,9 @@ mod tests {
             json!({}),
             json!({"points": "nope"}),
             json!({"points": []}),
-            json!({"points": [[1.0, 1.0], [1.0, 1.0], [2.0, 2.0] /* dedup -> 2 pts */}),
-            json!({"points": [[f64::NAN, 0.0], [1.0, 0.0], [1.0, 1.0] /* non-finite */}),
-            json!({"points": [[0.0, 0.0], [2.0, 2.0], [2.0, 0.0], [0.0, 2.0] /* bowtie */}),
+            json!({"points": [[1.0, 1.0], [1.0, 1.0], [2.0, 2.0]]}),
+            json!({"points": [[f64::NAN, 0.0], [1.0, 0.0], [1.0, 1.0]]}),
+            json!({"points": [[0.0, 0.0], [2.0, 2.0], [2.0, 0.0], [0.0, 2.0]]}),
             json!({"id": "r0"}),
             json!({"points": square_points(), "level": "nope"}),
             json!({"points": square_points(), "level": 7}),
