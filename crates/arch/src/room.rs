@@ -63,12 +63,16 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
         }
     }
     for shape in crate::join::solve_joins(&temp) {
-        if shape.polygon.len() < 3 || shape.polygon.iter().any(|p| !p.is_finite()) {
+        if shape.polygon.is_empty() || shape.polygon.iter().any(|p| !p.is_finite()) {
             continue;
         }
         let mut closed = shape.polygon.clone();
-        closed.push(shape.polygon[0]); // append the first point to close the edge
-        soup.push(closed);
+        if !closed.is_empty() && closed.last() != Some(&closed[0]) {
+            closed.push(closed[0]); // append the first point to close the edge
+        }
+        if closed.len() >= 2 {
+            soup.push(closed);
+        }
     }
 
     // Divider walls (thickness 0, no poché): push the 2-point centre line as an
@@ -86,7 +90,7 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
     // Step 3: seed points. For every closed ring, take the left (interior) normal of
     // each edge at its midpoint, plus the vertex-average centroid. Only finite
     // seeds are collected.
-    let eps: f64 = 0.02;
+    let eps: f64 = 0.5;
     let mut seeds: Vec<Vec2> = Vec::new();
     for ring in &soup {
         if ring.len() < 2 {
@@ -106,12 +110,23 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
             if len < 1e-12 || !len.is_finite() {
                 continue;
             }
-            // Left normal of edge a -> b (interior side of a CCW ring).
-            let nx = (-dy) / len;
-            let ny = dx / len;
-            let seed = Vec2::new((a.x + b.x) / 2.0 + nx * eps, (a.y + b.y) / 2.0 + ny * eps);
-            if seed.is_finite() {
-                seeds.push(seed);
+            let mx = (a.x + b.x) * 0.5;
+            let my = (a.y + b.y) * 0.5;
+            // Left and right normals of edge a -> b.
+            // One of them points toward the room; the other toward the poché
+            // or the exterior. With eps = 0.5 (well above half the max wall
+            // thickness of ~0.2 m) the in-room seed lands cleanly in the face.
+            let nx_l = -dy / len;
+            let ny_l = dx / len;
+            let nx_r = dy / len;
+            let ny_r = -dx / len;
+            let sl = Vec2::new(mx + nx_l * eps, my + ny_l * eps);
+            let sr = Vec2::new(mx + nx_r * eps, my + ny_r * eps);
+            if sl.is_finite() {
+                seeds.push(sl);
+            }
+            if sr.is_finite() {
+                seeds.push(sr);
             }
         }
         // Vertex-average centroid.
