@@ -63,7 +63,7 @@ fn parse_room_type(s: &str) -> Option<RoomType> {
 /// Resolve a level reference (a level name or its numeric index) to a position in the
 /// arch model's levels. Mirrors `cmd/arch/level.rs`'s `find_level` but reads a plain `&str`.
 /// An unknown name/index is an error, never a silent fallback to level 0.
-fn find_room_level(arch: &cadcraft_doc::arch::ArchModel, ref_val: &str) -> Result<usize, EngineError> {
+fn find_room_level(arch: &cadcraft_doc::arch::ArchModel, ref_val: &str) -> Result<usize> {
     if let Some(i) = ref_val.trim().parse::<u64>().ok() {
         if i < arch.levels.len() as u64 {
             return Ok(i as usize);
@@ -199,7 +199,7 @@ impl Interactive for RoomM {
         let closes = match i {
             Input::Enter => true,
             Input::Keyword(_) => true,
-            Input::Text(txt) => {
+            Input::Text(ref txt) => {
                 let l = txt.trim().to_ascii_lowercase();
                 l.is_empty() || l == "close"
             }
