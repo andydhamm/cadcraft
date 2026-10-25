@@ -28,7 +28,8 @@ fn find_level(arch: &cadcraft_doc::arch::ArchModel, ref_val: &Value) -> Result<u
 
 /// True if `name` is an auto-generated level name (`Level <n>`, case-insensitive).
 fn is_auto_level_name(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase().trim();
+    let lower = name.to_ascii_lowercase();
+    let lower = lower.trim();
     if !lower.starts_with("level") {
         return false;
     }

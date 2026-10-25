@@ -268,8 +268,8 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
             None => 0.0,
         }
     } else {
-        size_param("wall", p, "thickness", false)?;
-        match thickness {
+        let explicit = size_param("wall", p, "thickness", false)?;
+        match explicit {
             Some(t) => t,
             None => {
                 if exterior {
