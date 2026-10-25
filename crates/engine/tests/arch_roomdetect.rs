@@ -110,7 +110,7 @@ fn roomdetect_replaces_only_the_named_level() {
     assert_eq!(current_ids, level0_ids);
 
     // All-levels detect drops and re-adds the level-0 rooms.
-    let r = s.execute("roomdetect", &json!({}));
+    let r = s.execute("roomdetect", &json!({})).unwrap();
     assert_eq!(r["replaced"].as_u64().unwrap(), level0_ids.len() as u64);
 
     // No two rooms share an id after the replace.
