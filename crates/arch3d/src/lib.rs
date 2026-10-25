@@ -162,7 +162,8 @@ impl Scene3d {
                 Some(shape) => walls::extrude_wall(shape, height, base, "wall"),
                 None => raw_wall_mesh(wall, base, top, wall.id),
             };
-            if let Some(m) = mesh {
+            if let Some(mut m) = mesh {
+                m.level_elevation = base;
                 meshes.push(m);
             }
         }
@@ -222,7 +223,8 @@ impl Scene3d {
                 Some(shape) => walls::extrude_wall(shape, top - base, base, "wall"),
                 None => raw_wall_mesh(wall, base, top, wall.id),
             };
-            if let Some(m) = mesh {
+            if let Some(mut m) = mesh {
+                m.level_elevation = base;
                 meshes.push(m);
             }
         }
