@@ -13,9 +13,20 @@
 //! - `ceiling` / `floor`: optional positive heights, stored as the room's
 //!   ceiling height / floor height.
 //!
-//! The `{id, ...}` editing path is refused; a later segment implements it.
 //!
-//! Returns `{"id": "r0", "handle": "...", "interiorArea": n, "standardArea": n}`.
+//! JSON parameters (edit path — `id` present; `points`, `level` are ignored):
+//! - `id`: the room to edit — `"r12"` (case-insensitive, the leading `r` may be
+//!   omitted) or a plain non-negative integer; unknown ids are refused.
+//! - `name` / `type` / `ceiling` / `floor`: applied in that order; only fields
+//!   present are touched (the others stay as-is), all are validated before the
+//!   model is written, and an edit that changes nothing is refused. Areas are
+//!   not recomputed; the detector/area pass owns them.
+//!
+//! Returns `{"id": "r0", "handle": "...", "interiorArea": n, "standardArea": n}`
+//! for create; `{"id": "r0", "name": ..., "type": ..., "interiorArea": n}` for
+//! edit.
+
+use std::str::FromStr;
 
 use cadcraft_arch::poly::{ensure_ccw, is_simple, region_area};
 use cadcraft_doc::arch::{ArchId, MAX_ROOMS, Room, RoomType};
@@ -75,14 +86,95 @@ fn find_room_level(arch: &cadcraft_doc::arch::ArchModel, ref_val: &str) -> Resul
     Err(EngineError::Other(format!("room: unknown level `{ref_val}`")))
 }
 
-/// Run the `room` command from JSON parameters (create path). Never opens a dialog.
+/// Parse an id for the edit path: a string like `"r12"` (case-insensitive, the
+/// leading `r`/`R` is stripped) or a plain non-negative integer. Anything else
+/// (fractional, negative, non-finite, or not a number) is `None`.
+fn parse_room_id(v: &Value) -> Option<ArchId> {
+    let n64 = match v {
+        Value::Number(n) => {
+            let f = n.as_f64()?;
+            if !(f.is_finite() && f >= 0.0 && (f % 1.0) == 0.0 && f <= u32::MAX as f64) {
+                return None;
+            }
+            f as u64
+        }
+        Value::String(s) => {
+            let s = s.trim();
+            if s.is_empty() {
+                return None;
+            }
+            let digits = if s.starts_with('r') || s.starts_with('R') { &s[1..] } else { s };
+            u64::from_str(digits.trim()).ok()?
+        }
+        _ => return None,
+    };
+    Some(ArchId(n64 as u32))
+}
+
+/// The lowerCamelCase name of a [`RoomType`], matching the JSON output names
+/// (`openbelow` in input maps to `openBelow` in output).
+fn room_type_name(t: RoomType) -> &'static str {
+    match t {
+        RoomType::Living => "living",
+        RoomType::Bedroom => "bedroom",
+        RoomType::Kitchen => "kitchen",
+        RoomType::Bath => "bath",
+        RoomType::Closet => "closet",
+        RoomType::Utility => "utility",
+        RoomType::Garage => "garage",
+        RoomType::Porch => "porch",
+        RoomType::Deck => "deck",
+        RoomType::OpenBelow => "openBelow",
+        RoomType::Other => "other",
+    }
+}
+
+/// Run the `room` command from JSON parameters. Never opens a dialog.
 fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
-    // Editing by `id` is a later segment.
-    if p.get("id").is_some() {
-        return Err(bad("room", "`id` (room editing) is not supported yet"));
+    let d = s.doc_mut()?;
+
+    // --- Edit path: modify an existing room by `id`. Every field is validated
+    // before the model is written, only present fields are touched, and the
+    // arch revision is touched exactly once. ---
+    if let Some(id_val) = p.get("id") {
+        let label = id_val.to_string();
+        let id = parse_room_id(id_val).ok_or_else(|| bad("room", format!("no such room `{label}`")))?;
+        let idx = d.arch.room_index(id).ok_or_else(|| bad("room", format!("no such room `{label}`")))?;
+
+        let name = str_param(p, "name").map(|t| t.to_string());
+        let room_type = match str_param(p, "type") {
+            None => None,
+            Some(t) => match parse_room_type(t) {
+                Some(rt) => Some(rt),
+                None => return Err(bad("room", format!("unknown room type `{t}`"))),
+            },
+        };
+        let ceiling = size_param("room", p, "ceiling", false)?;
+        let floor = size_param("room", p, "floor", false)?;
+
+        if name.is_none() && room_type.is_none() && ceiling.is_none() && floor.is_none() {
+            return Err(bad("room", "nothing to change"));
+        }
+
+        if let Some(n) = name {
+            d.arch.rooms[idx].name = n;
+        }
+        if let Some(rt) = room_type {
+            d.arch.rooms[idx].room_type = rt;
+        }
+        d.arch.rooms[idx].ceiling_height = ceiling;
+        d.arch.rooms[idx].floor_height = floor;
+        d.touch_arch();
+
+        let room = &d.arch.rooms[idx];
+        return Ok(json!({
+            "id": format!("r{}", id.0),
+            "name": room.name,
+            "type": room_type_name(room.room_type),
+            "interiorArea": room.interior_area,
+        }));
     }
 
-    let d = s.doc_mut()?;
     let arch = &d.arch;
 
     // --- Points: required, distinct, >= 3, all finite, simple, CCW-normalised ---
@@ -331,5 +423,82 @@ mod tests {
             assert!(r.is_err(), "garbage `{g}` should be refused");
             assert_eq!(s.doc().unwrap().arch.rooms.len(), 0);
         }
+    }
+
+    /// Edit `type` on an existing room; the id is accepted, the response reports
+    /// the lowerCamelCase type name, and untouched fields (name/area) are intact.
+    #[test]
+    fn room_edit_changes_the_type() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points(), "name": "Old" })).unwrap();
+        assert_eq!(s.doc().unwrap().arch.rooms[0].room_type, RoomType::Other);
+        let r = s.execute("room", &json!({ "id": "r0", "type": "kitchen" })).unwrap();
+        assert_eq!(s.doc().unwrap().arch.rooms[0].room_type, RoomType::Kitchen);
+        assert_eq!(s.doc().unwrap().arch.rooms[0].name, "Old");
+        assert_eq!(r["id"].as_str().unwrap(), "r0");
+        assert_eq!(r["type"].as_str().unwrap(), "kitchen");
+        assert_eq!(r["name"].as_str().unwrap(), "Old");
+        assert_eq!(r["interiorArea"].as_f64().unwrap(), 9.0);
+    }
+
+    /// An unknown or malformed id is refused and the model is untouched.
+    #[test]
+    fn room_edit_rejects_unknown_id() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points() })).unwrap();
+        let r = s.execute("room", &json!({ "id": "r999", "type": "kitchen" }));
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        // Malformed / unparseable ids are also refused.
+        for id in [json!("r"), json!("r-1"), json!("1e3"), json!(7.5), json!(-3), json!(true), json!(null)] {
+            let r = s.execute("room", &json!({ "id": id, "type": "kitchen" }));
+            assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        }
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 1);
+        assert_eq!(s.doc().unwrap().arch.rooms[0].room_type, RoomType::Other);
+    }
+
+    /// An unknown type is refused, never coerced to Other, and the room is
+    /// otherwise untouched.
+    #[test]
+    fn room_edit_rejects_unknown_type() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points() })).unwrap();
+        let r = s.execute("room", &json!({ "id": "r0", "type": "not-a-type" }));
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.rooms[0].room_type, RoomType::Other);
+    }
+
+    /// A bad `ceiling` (zero, negative, non-number) is refused without mutating;
+    /// a valid edit still lands afterwards.
+    #[test]
+    fn room_edit_rejects_a_bad_ceiling() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points() })).unwrap();
+        for c in [json!(0.0), json!(-0.5), json!("tall"), json!(true)] {
+            let r = s.execute("room", &json!({ "id": "r0", "ceiling": c }));
+            assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+            assert_eq!(s.doc().unwrap().arch.rooms[0].ceiling_height, None);
+        }
+        // A valid edit still works after the rejections.
+        let r = s.execute("room", &json!({ "id": "r0", "ceiling": 3.0 })).unwrap();
+        assert_eq!(r["interiorArea"].as_f64().unwrap(), 9.0);
+        assert_eq!(s.doc().unwrap().arch.rooms[0].ceiling_height, Some(3.0));
+        assert_eq!(s.doc().unwrap().arch.rooms[0].floor_height, None);
+    }
+
+    /// An edit is a single undoable step: undo restores the pre-edit state of
+    /// every field.
+    #[test]
+    fn room_edit_is_one_undo_step() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points() })).unwrap();
+        let _ = s.execute("room", &json!({ "id": "r0", "name": "Kitchen", "type": "kitchen", "ceiling": 3.0 })).unwrap();
+        assert_eq!(s.doc().unwrap().arch.rooms[0].name, "Kitchen");
+        // One undo brings us back to the created (pre-edit) state.
+        assert_eq!(s.undo().unwrap(), Some("Room".to_string()));
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 1);
+        assert_eq!(s.doc().unwrap().arch.rooms[0].name, "");
+        assert_eq!(s.doc().unwrap().arch.rooms[0].room_type, RoomType::Other);
+        assert_eq!(s.doc().unwrap().arch.rooms[0].ceiling_height, None);
     }
 }
