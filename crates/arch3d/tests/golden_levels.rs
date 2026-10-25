@@ -24,7 +24,7 @@ fn two_storey_probes_match_the_brief() {
 
     // Level 1 (index 0) is the default: elevation 0.0, ceiling 2.4, structure 0.3.
     // Add Level 2 at elevation 2.7 (0.0 + 2.4 + 0.3).
-    model.levels.push(Level { index: 1, name: "Level 2".into(), elevation: 2.7, ceiling_height: 2.4, structure: 0.3 });
+    model.levels.push(Level { index: 1, name: "Level 2".into(), elevation: 2.7, ..Default::default() });
 
     // Exterior rectangle centre lines.
     let exterior = [
