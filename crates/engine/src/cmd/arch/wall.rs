@@ -85,6 +85,7 @@ impl Interactive for WallM {
                 distance: false,
                 deferred: false,
                 raw: false,
+                picks_one: false,
             };
         }
 
@@ -109,6 +110,7 @@ impl Interactive for WallM {
             distance: false,
             deferred: false,
             raw: false,
+            picks_one: false,
         }
     }
 

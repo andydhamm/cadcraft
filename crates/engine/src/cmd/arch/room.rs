@@ -287,6 +287,7 @@ impl Interactive for RoomM {
             distance: false,
             deferred: false,
             raw: false,
+            picks_one: false,
         }
     }
 
