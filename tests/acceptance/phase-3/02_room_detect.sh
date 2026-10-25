@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Room detection: the phase-1 house's three rooms, plus rooms enclosed by an
+# invisible room-divider wall.
+# Fixed 2026-10-26: `want` must be ascending because `A` is sorted; the brief
+# lists the three areas by room (27.93, 28.3725, 18.6725), not in sorted order,
+# so the old check compared a sorted list against an unsorted one and could never pass.
 set -uo pipefail
 out=$(cargo run -q -p cadcraft-cli -- run --metric \
   --cmd 'wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.7,"exterior":true}' \
@@ -14,7 +19,10 @@ for r in R:
     assert r["handle"].startswith("a001"), f"room proxy handle missing: {r}"
     assert len(r["polygon"])>=3 and r["label"], r
     assert r["type"] in ("living","bedroom","kitchen","bath","closet","utility","garage","porch","deck","openBelow","other"), r["type"]
-A=sorted(round(r["interiorArea"],4) for r in R); want=[27.93,28.3725,18.6725]
+# interior surfaces: south 9.8 x 2.85 = 27.93, north-west 5.85 x 4.85 = 28.3725,
+# north-east 3.85 x 4.85 = 18.6725.
+A=sorted(round(r["interiorArea"],4) for r in R); want=[18.6725,27.93,28.3725]
+assert len(A)==len(want), f"interior areas {A} != {want}"
 for a,w in zip(A,want): assert abs(a-w)<1e-3, f"interior areas {A} != {want}"
 def inside(poly,p):
     x,y=p; c=False

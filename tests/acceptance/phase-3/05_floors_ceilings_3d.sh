@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Floor slabs and ceilings from room polygons, with the room-type rules.
+# Fixed 2026-10-26: the second block demanded ceilings==2 while also demanding that
+# Open Below keeps its ceiling and that Deck and Porch get none - only one ceiling
+# can exist, so the check contradicted the phase rule. It now expects 2 floors / 1
+# ceiling, matching the probes above it.
 set -uo pipefail
 H='wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.7,"exterior":true}'
 W1='wall {"points":[[0,3],[10,3]],"thickness":0.1}'
@@ -27,7 +32,8 @@ assert P[0] is None, f"Open Below must suppress the floor slab: {P[0]}"
 assert P[1] and P[1]["part"]=="ceiling", f"Open Below keeps its ceiling: {P[1]}"
 assert P[2] and P[2]["part"]=="floor", f"Deck keeps a floor: {P[2]}"
 assert P[3] is None, f"Deck/Porch get no ceiling: {P[3]}"
-assert d.get("floors",0)==2 and d.get("ceilings",0)==2, f"counts {d.get('floors')}/{d.get('ceilings')}"
+# Open Below: no floor, ceiling kept. Deck and Porch: floor, no ceiling.
+assert d.get("floors",0)==2 and d.get("ceilings",0)==1, f"counts {d.get('floors')}/{d.get('ceilings')}, expected 2/1"
 print("ok: room-type floor/ceiling rules")
 PY
 b3=$(cargo run -q -p cadcraft-cli -- run --metric --cmd "$H" --cmd "$W1" --cmd "$W2" \
