@@ -548,6 +548,22 @@ mod tests {
     }
 
     #[test]
+    fn wall_defaults_use_the_level_floor_to_floor() {
+        let mut s = Session::new();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "floor2".to_string(), ceiling_height: 2.1, structure: 0.4, ..Default::default() });
+        d.touch_arch();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "floor2",
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        // floor_to_floor = 2.1 + 0.4 = 2.5
+        assert!((d.arch.walls[0].height - 2.5).abs() < 1e-9);
+    }
+
+    #[test]
     fn wall_infers_interior_from_a_thin_thickness() {
         let mut s = new_session_with_level();
         let p = json!({
