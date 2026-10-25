@@ -160,7 +160,7 @@ mod tests {
 
         let indices: Vec<u32> = vec![0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 2, 3, 7, 2, 7, 6, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2];
 
-        Mesh { positions, normals, uvs, indices, material: material.to_string(), object }
+        Mesh { positions, normals, uvs, indices, ..Mesh::new(material, object) }
     }
 
     /// A flat ceiling quad at z = `z0`, spanning `(x0, y0)` to `(x0+s, y0+s)`.
@@ -178,7 +178,7 @@ mod tests {
 
         let indices: Vec<u32> = vec![0, 1, 2, 0, 2, 3];
 
-        Mesh { positions, normals, uvs, indices, material: "ceiling".to_string(), object }
+        Mesh { positions, normals, uvs, indices, ..Mesh::new("ceiling", object) }
     }
 
     #[test]
