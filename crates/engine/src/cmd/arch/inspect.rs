@@ -120,7 +120,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
             let level = d.arch.level(r.level);
             let mut obj = JsonMap::new();
             obj.insert("id".to_string(), json!(room_label(r.id)));
-            obj.insert("handle".to_string(), json!(room_handle(r.id).hex()));
+            obj.insert("handle".to_string(), json!(room_handle(r.id).hex().to_lowercase()));
             obj.insert("name".to_string(), json!(r.name));
             obj.insert("type".to_string(), json!(room_type_key(r.room_type)));
             obj.insert("level".to_string(), json!(level.map(|l| l.name.clone()).unwrap_or_default()));
