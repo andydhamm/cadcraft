@@ -104,7 +104,7 @@ fn parse_room_id(v: &Value) -> Option<ArchId> {
                 return None;
             }
             let digits = if s.starts_with('r') || s.starts_with('R') { &s[1..] } else { s };
-            u64::from_str(digits.trim())?
+            u64::from_str(digits.trim()).ok()?
         }
         _ => return None,
     };
