@@ -84,7 +84,7 @@ pub fn edge_standard_offset(model: &ArchModel, level: u32, a: Vec2, b: Vec2, out
     if dir == Vec2::ZERO || !out.is_finite() {
         return 0.0;
     }
-    let mut best = 0.0;
+    let mut best: f64 = 0.0;
     for w in &model.walls {
         if w.base_level != level || !w.thickness.is_finite() || w.thickness <= 0.0 || w.divider {
             continue;
@@ -94,7 +94,7 @@ pub fn edge_standard_offset(model: &ArchModel, level: u32, a: Vec2, b: Vec2, out
         };
         for (idx, face) in faces.iter().enumerate() {
             let (fa, fb) = face;
-            if point_segment_dist(a, fa, fb) < 1e-6 && point_segment_dist(b, fa, fb) < 1e-6 {
+            if point_segment_dist(a, *fa, *fb) < 1e-6 && point_segment_dist(b, *fa, *fb) < 1e-6 {
                 let (ref_a, ref_b) = if w.exterior {
                     // The room edge sits on the interior face; the standard
                     // reference is the opposite (outer) face.
@@ -174,7 +174,7 @@ pub fn refresh_areas(model: &mut ArchModel) {
 /// Offset the outer ring outward and each hole inward to the walls' standard
 /// reference lines. `None` when the outer offset is degenerate
 /// (callers fall back to interior geometry).
-fn standard_rings(model: &ArchModel, room: &Room) -> Option<(Vec<Vec2>, Vec<Vec2>)> {
+fn standard_rings(model: &ArchModel, room: &Room) -> Option<(Vec<Vec2>, Vec<Vec<Vec2>>)> {
     if room.polygon.len() < 3 {
         return None;
     }
