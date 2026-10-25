@@ -18,7 +18,7 @@
 //! Returns `{"id": "r0", "handle": "...", "interiorArea": n, "standardArea": n}`.
 
 use cadcraft_arch::poly::{ensure_ccw, is_simple, region_area};
-use cadcraft_doc::arch::{ArchId, MAX_ROOMS, Room, RoomType, room_handle};
+use cadcraft_doc::arch::{ArchId, MAX_ROOMS, Room, RoomType};
 use cadcraft_geom::Vec2;
 use serde_json::{Value, json};
 
@@ -104,9 +104,13 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
     let ring = ensure_ccw(&ring);
 
     // --- Level: name or index, else 0; unknown is an error, never a silent default ---
-    let level = match str_param(p, "level") {
+    // `level` must be a string (a level name or a numeric index string). A present
+    // non‑string (e.g. a bare JSON number) is malformed, not "absent".
+    let level = match p.get("level") {
         None => 0,
-        Some(n) => find_room_level(arch, n)?,
+        Some(Value::Null) => 0,
+        Some(Value::String(n)) => find_room_level(arch, n)?,
+        Some(other) => return Err(bad("room", format!("`level` must be a string (a level name or index), got `{other}`"))),
     };
 
     // --- Type: known names only; unknown is refused, absent is Other ---
@@ -152,7 +156,7 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
 
     Ok(json!({
         "id": format!("r{}", id.0),
-        "handle": format!("{:016X}", room_handle(id).0),
+        "handle": format!("{:016X}", cadcraft_arch::room_handle(id).0),
         "interiorArea": interior_area,
         "standardArea": standard_area,
     }))
