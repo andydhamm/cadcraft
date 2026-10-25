@@ -232,7 +232,7 @@ pub fn offset_polygon(pts: &[Vec2], dist: &[f64], outward: bool) -> Option<Vec<V
         if den.abs() < 1e-12 {
             return None;
         }
-        let t = (a2 - a1).cross(d2) / den;
+        let t = (*a2 - *a1).cross(d2) / den;
         let pt = *a1 + d1 * t;
         if !pt.is_finite() {
             return None;
