@@ -24,7 +24,7 @@ commands:
   wasm            cargo check --target wasm32-unknown-unknown for the wasm-safe crates
   test            cargo nextest run (cargo test without nextest) plus the doctests
   i18n            print the strings each interface language shows in English (never fails)
-  ci              fmt --check, clippy -D warnings, test, i18n, assets, layers, wasm (stops at first failure)
+  ci              fmt --check, clippy -D warnings, test, i18n, assets, layers, literals, wasm (stops at first failure)
   corpus [--download]
                   show where test corpora live; --download fetches PngSuite into corpus/pngsuite
   stats [--exact] count tests and lines per crate (--exact: ask the test harness via `-- --list`)
