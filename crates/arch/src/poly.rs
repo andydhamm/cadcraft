@@ -482,6 +482,7 @@ mod tests {
         let d = [0.5, 0.5, 0.5, 0.5];
         let Some(out) = offset_polygon(&square, &d, true) else {
             assert!(false, "offset_polygon returned None for outward unit square");
+            return;
         };
         assert!(close(ring_area(&out), 4.0));
         let b = bounds_of(&out);
@@ -495,6 +496,7 @@ mod tests {
         let d = [0.25, 0.25, 0.25, 0.25];
         let Some(out) = offset_polygon(&square, &d, false) else {
             assert!(false, "offset_polygon returned None for inward 2x2 square");
+            return;
         };
         assert!(close(ring_area(&out), 2.25));
         let b = bounds_of(&out);
@@ -507,6 +509,7 @@ mod tests {
         let d = [0.1, 0.1, 0.1, 0.1, 0.1];
         let Some(out) = offset_polygon(&ring, &d, true) else {
             assert!(false, "offset_polygon returned None for ring with parallel edges");
+            return;
         };
         assert!(close(ring_area(&out), 2.64));
         let b = bounds_of(&out);
