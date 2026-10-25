@@ -7,17 +7,39 @@
 use std::time::Instant;
 
 use cadcraft_arch3d::build;
+use cadcraft_geom::Vec3;
 use serde_json::{Value, json};
 
 use crate::Session;
 
 /// Run body. Returns `{"meshes": ..., "triangles": ..., "rebuildMs": ...,
 /// "bounds": {"min": [x,y,z], "max": [x,y,z]}, "floors": ..., "ceilings": ...,
-/// "openings": ..., "revision": ...}`.
-fn run_build3d(s: &mut Session, _params: &Value) -> crate::Result<Value> {
+/// "openings": ..., "revision": ..., "probe": [{id, part, level} | null, ...]}`.
+/// The optional `probe` key is a list of at most 1024 `[x, y, z]` points;
+/// each element of the returned `probe` array is the hit (or `null`) for the
+/// corresponding input point, in the same order.
+fn run_build3d(s: &mut Session, params: &Value) -> crate::Result<Value> {
     let d = s.doc()?;
     let t = Instant::now();
     let scene = build(&d.arch);
+
+    let probe_points = parse_probe_points(params)?;
+    let probe_results: Vec<Value> = probe_points
+        .iter()
+        .map(|p| {
+            scene
+                .probe(*p)
+                .map(|h| {
+                    json!({
+                        "id": h.id,
+                        "part": h.part,
+                        "level": h.level,
+                    })
+                })
+                .unwrap_or(Value::Null)
+        })
+        .collect();
+
     Ok(json!({
         "meshes": scene.meshes.len(),
         "triangles": scene.meshes.iter().map(|m| m.indices.len() / 3).sum::<usize>(),
@@ -29,8 +51,42 @@ fn run_build3d(s: &mut Session, _params: &Value) -> crate::Result<Value> {
         "floors": scene.floors,
         "ceilings": scene.ceilings,
         "openings": scene.openings_built,
-        "revision": d.arch_revision
+        "revision": d.arch_revision,
+        "probe": probe_results,
     }))
+}
+
+/// Parse the optional `probe` key — a JSON array of `[x, y, z]` arrays — into a
+/// capped, finite list of 3D points.
+///
+/// Absent or `null` yields an empty list (no probing). A non-array value, an
+/// array longer than 1024 entries, an element that is not a 3-number array,
+/// or any non-finite coordinate is rejected with `bad`.
+fn parse_probe_points(params: &Value) -> crate::Result<Vec<Vec3>> {
+    match params.get("probe") {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(v) => {
+            let arr = v.as_array().ok_or_else(|| crate::cmd::bad("build3d", "`probe` must be an array of [x, y, z] arrays"))?;
+            if arr.len() > 1024 {
+                return Err(crate::cmd::bad("build3d", "probe: at most 1024 points allowed"));
+            }
+            let mut pts = Vec::with_capacity(arr.len());
+            for (i, item) in arr.iter().enumerate() {
+                let sub = item.as_array().ok_or_else(|| crate::cmd::bad("build3d", format!("probe[{}] must be [x, y, z]", i)))?;
+                if sub.len() != 3 {
+                    return Err(crate::cmd::bad("build3d", format!("probe[{}] must be an array of 3 numbers, got {}", i, sub.len())));
+                }
+                let x = sub.get(0).and_then(Value::as_f64).ok_or_else(|| crate::cmd::bad("build3d", format!("probe[{}][0] is not a number", i)))?;
+                let y = sub.get(1).and_then(Value::as_f64).ok_or_else(|| crate::cmd::bad("build3d", format!("probe[{}][1] is not a number", i)))?;
+                let z = sub.get(2).and_then(Value::as_f64).ok_or_else(|| crate::cmd::bad("build3d", format!("probe[{}][2] is not a number", i)))?;
+                if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+                    return Err(crate::cmd::bad("build3d", format!("probe[{}] has a non-finite coordinate", i)));
+                }
+                pts.push(Vec3::new(x, y, z));
+            }
+            Ok(pts)
+        }
+    }
 }
 
 /// Elapsed ms since `t`. On wasm32 this is `0.0` — no `web-time` dependency so
@@ -47,7 +103,12 @@ fn elapsed_ms(_t: Instant) -> f64 {
 /// Command spec for `build3d`.
 pub fn specs() -> Vec<crate::cmd::CommandSpec> {
     let mut v = Vec::new();
-    v.push(crate::cmd::CommandSpec::new("build3d", "Build 3D", run_build3d).menu(&["Architecture", "Build 3D"]).noundo().params("{}"));
+    v.push(
+        crate::cmd::CommandSpec::new("build3d", "Build 3D", run_build3d)
+            .menu(&["Architecture", "Build 3D"])
+            .noundo()
+            .params("{probe?: [[x, y, z], ...]}"),
+    );
     v
 }
 
@@ -191,5 +252,42 @@ mod tests {
         assert!(r["openings"].is_number(), "missing `openings` key");
         assert!(r["bounds"].is_object(), "missing `bounds` key");
         assert!(r["revision"].is_number(), "missing `revision` key");
+    }
+
+    #[test]
+    fn build3d_probe_answers_every_point() {
+        let mut s = wall_session();
+        let params = json!({
+            "probe": [
+                [5.0, 0.0, 1.0],
+                [5.0, 1.0, 1.0],
+                [-1.0, 0.0, 1.0],
+            ],
+        });
+        let r = s.execute("build3d", &params).unwrap();
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert_eq!(probe.len(), 3, "expected 3 probe results, got {}", probe.len());
+
+        // [5, 0, 1] is inside the 10 m wall (x 0..10, y -0.1..0.1, z 0..2.7).
+        let hit = &probe[0];
+        assert!(hit.is_object(), "probe[0] should be a hit object (inside wall)");
+        assert!(hit["id"].is_string(), "probe[0].id should be a string");
+        assert!(hit["part"].is_string(), "probe[0].part should be a string");
+        assert!(hit["level"].is_number(), "probe[0].level should be a number");
+
+        // [5, 1, 1] is well outside in y.
+        assert!(probe[1].is_null(), "probe[1] should be null (outside wall)");
+
+        // [-1, 0, 1] is well outside in x.
+        assert!(probe[2].is_null(), "probe[2] should be null (outside wall)");
+    }
+
+    #[test]
+    fn build3d_probe_rejects_non_finite() {
+        let mut s = wall_session();
+        let probe = Value::Array(vec![Value::Array(vec![Value::Number(f64::NAN.into()), Value::Number(0.0), Value::Number(1.0)])]);
+        let params = Value::Object(serde_json::Map::from([("probe", probe)]));
+        let r = s.execute("build3d", &params);
+        assert!(r.is_err(), "build3d should reject a NaN probe point");
     }
 }
