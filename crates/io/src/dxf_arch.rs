@@ -30,9 +30,9 @@ pub(crate) const ARCH_OPENING_MARKER: &str = "ARCHOPENING";
 /// Layer of save-time room-label proxy polylines.
 pub(crate) const ARCH_ROOM_LAYER: &str = "A-ROOM";
 
-/// `CADCRAFT` xdata marker identifying a save-time room-label proxy polyline, so the
-/// reader drops it (the room's model data is the one source of truth).
-pub(crate) const ARCH_ROOM_MARKER: &str = "ARCHROOM";
+/// `CADCRAFT` xdata marker identifying a save-time room-boundary proxy polyline, so the
+/// reader drops it while the arch record is present (the room's model data is the source of truth).
+pub(crate) const ARCH_ROOM_MARKER: &str = "CADCRAFT-ROOM";
 
 /// Rejects payloads larger than this before they are even parsed.
 const MAX_ARCH_PAYLOAD: usize = 8 << 20;
@@ -218,6 +218,38 @@ pub(crate) fn proxy_opening_polylines(m: &ArchModel) -> Vec<(String, Vec<Tag>)> 
             t.push(Tag::s(1000, ARCH_OPENING_MARKER));
             t.push(Tag::s(1000, &format!("o{}", o.id)));
             Some((o.layer.clone(), t))
+        })
+        .collect()
+}
+
+/// True when an entity's `CADCRAFT` xdata marks it as a save-time room proxy polyline.
+pub(crate) fn is_room_proxy(tags: &[Tag]) -> bool {
+    crate::dxf_ext::xdata(tags, crate::dxf_ext::APP).iter().any(|t| t.code == 1000 && t.str().trim() == ARCH_ROOM_MARKER)
+}
+
+/// The DXF groups (after the common entity groups) of one closed LWPOLYLINE per valid room
+/// boundary. Rooms with fewer than three vertices or any non-finite point are skipped; output is
+/// capped at [`cadcraft_doc::arch::MAX_ROOMS`] polylines.
+pub(crate) fn proxy_room_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
+    m.rooms
+        .iter()
+        .take(cadcraft_doc::arch::MAX_ROOMS)
+        .filter_map(|r| {
+            if r.polygon.len() < 3 || !r.polygon.iter().all(|p| p.is_finite()) {
+                return None;
+            }
+            let n = i64::try_from(r.polygon.len()).ok()?;
+            let mut t = Vec::new();
+            t.push(Tag::i(90, n));
+            t.push(Tag::i(70, 1));
+            for p in &r.polygon {
+                t.push(Tag::f(10, p.x));
+                t.push(Tag::f(20, p.y));
+            }
+            t.push(Tag::s(1001, crate::dxf_ext::APP));
+            t.push(Tag::s(1000, ARCH_ROOM_MARKER));
+            t.push(Tag::s(1000, &cadcraft_doc::arch::room_label(r.id)));
+            Some(t)
         })
         .collect()
 }
@@ -616,5 +648,70 @@ mod tests {
         });
         let text = write_dxf(&d);
         assert!(text.contains("A-ROOM"), "no A-ROOM layer in the DXF output");
+    }
+
+    fn drawing_with_room() -> Drawing {
+        let mut d = Drawing::new_metric();
+        d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Kitchen".into(),
+            ..Room::default()
+        });
+        d
+    }
+
+    #[test]
+    fn room_proxy_polylines_are_written_on_save() {
+        let d = drawing_with_room();
+        let label = d.arch.rooms.first().map(|r| cadcraft_doc::arch::room_label(r.id)).unwrap_or_default();
+        let polys = proxy_room_polylines(&d.arch);
+        assert_eq!(polys.len(), 1, "expected one room proxy ring");
+        let tags = &polys[0];
+        assert!(tags.iter().any(|t| t.code == 90 && t.i64() == 4));
+        assert!(tags.iter().any(|t| t.code == 70 && t.i64() == 1));
+        assert_eq!(tags.iter().filter(|t| t.code == 10).count(), 4);
+        assert_eq!(tags.iter().filter(|t| t.code == 20).count(), 4);
+        assert!(tags.iter().any(|t| t.code == 1000 && t.str() == ARCH_ROOM_MARKER));
+        assert!(tags.iter().any(|t| t.code == 1000 && t.str() == label.as_str()));
+
+        let text = write_dxf(&d);
+        assert!(text.contains(ARCH_ROOM_MARKER), "no room proxy marker in the DXF");
+        assert!(text.contains(ARCH_ROOM_LAYER), "no A-ROOM layer in the DXF");
+        assert!(text.contains(label.as_str()), "no room label in the DXF");
+    }
+
+    #[test]
+    fn room_proxy_is_dropped_when_the_arch_record_is_present() {
+        let d = drawing_with_room();
+        let text = write_dxf(&d);
+        assert!(text.contains(ARCH_KEY), "no architectural record in the DXF");
+        assert!(text.contains(ARCH_ROOM_MARKER), "no room proxy written");
+
+        let back = read_dxf(text.as_bytes()).unwrap();
+        assert_eq!(back.arch.rooms.len(), 1, "room lost on the arch XRECORD round trip");
+        let polylines = back.model.iter().filter(|e| matches!(&e.kind, EntityKind::LwPolyline(_))).count();
+        assert_eq!(polylines, 0, "room proxy linework survived the read");
+    }
+
+    #[test]
+    fn rooms_survive_a_save_read_save_cycle_with_a_room_layer() {
+        let mut d = drawing_with_room();
+        d.ensure_layer(ARCH_ROOM_LAYER);
+        let want = d.arch.rooms[0].clone();
+
+        let first_text = write_dxf(&d);
+        let first = read_dxf(first_text.as_bytes()).unwrap();
+        let second_text = write_dxf(&first);
+        let second = read_dxf(second_text.as_bytes()).unwrap();
+
+        assert_eq!(first.arch.rooms.len(), 1, "room lost on the first read");
+        assert_eq!(second.arch.rooms.len(), 1, "room lost on the second read");
+        let got = &second.arch.rooms[0];
+        assert_eq!(got.id, want.id);
+        assert_eq!(got.name, want.name);
+        assert_eq!(got.polygon, want.polygon);
+        assert!(second.layer(ARCH_ROOM_LAYER).is_some(), "A-ROOM layer lost on round trip");
+        assert_eq!(first_text.matches(ARCH_ROOM_MARKER).count(), 1);
+        assert_eq!(second_text.matches(ARCH_ROOM_MARKER).count(), 1, "room proxies duplicated on re-save");
     }
 }

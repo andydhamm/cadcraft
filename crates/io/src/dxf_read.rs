@@ -245,11 +245,11 @@ fn mirror_text(t: &mut Text, align: Option<Vec3>, insert: Vec3) {
 
 /// Parse one entity record. POLYLINE/INSERT followers are handled by the caller.
 fn entity(kind: &str, tags: &[Tag]) -> Option<(Common, EntityKind)> {
-    entity_with_table_budget(kind, tags, &mut 4_000_000)
+    entity_with_table_budget(kind, tags, &mut 4_000_000, false)
 }
 
 /// Parse one entity while charging materialized table cells to the caller's shared import budget.
-fn entity_with_table_budget(kind: &str, tags: &[Tag], table_cells_left: &mut usize) -> Option<(Common, EntityKind)> {
+fn entity_with_table_budget(kind: &str, tags: &[Tag], table_cells_left: &mut usize, drop_room_proxies: bool) -> Option<(Common, EntityKind)> {
     // The paper-space viewport our writer adds (dxf_write::paper_view) stays implicit.
     if kind == "VIEWPORT" && crate::dxf_ext::is_paper_view(tags) {
         return None;
@@ -290,7 +290,7 @@ fn entity_with_table_budget(kind: &str, tags: &[Tag], table_cells_left: &mut usi
             EntityKind::Ellipse(e)
         }
         "LWPOLYLINE" => {
-            if crate::dxf_arch::is_arch_proxy(tags) {
+            if crate::dxf_arch::is_arch_proxy(tags) || (drop_room_proxies && crate::dxf_arch::is_room_proxy(tags)) {
                 return None;
             }
             let mut verts = Vec::new();
@@ -1118,6 +1118,7 @@ fn parse_entities(
     rx: &mut Rx,
     skipped: &mut usize,
     table_cells_left: &mut usize,
+    drop_room_proxies: bool,
 ) -> Vec<(Option<String>, bool, Entity)> {
     let mut out = Vec::new();
     let mut i = 0;
@@ -1126,7 +1127,7 @@ fn parse_entities(
         let owner = crate::dxf_ext::owner(tags);
         let paper = t.i(67) == Some(1);
         let handle = t.s(5).and_then(|h| Handle::parse_hex(&h));
-        let mut kindent = entity_with_table_budget(kind, tags, table_cells_left);
+        let mut kindent = entity_with_table_budget(kind, tags, table_cells_left, drop_room_proxies);
         if let Some((c, _)) = kindent.as_mut()
             && let Some(n) = entity_plot_style(tags, rx)
         {
@@ -1713,6 +1714,7 @@ fn read_budgeted(bytes: &[u8], mut table_cells_left: usize) -> Result<Drawing> {
     // CADCraft wrote names its own next handle, above which its rebuilt records are numbered
     // (#495), so it is left to that.
     let ours = secs.iter().any(|s| s.name == "OBJECTS" && s.tags.iter().any(|t| t.code == 3 && t.str() == crate::dxf_ext::HANDSEED_KEY));
+    let has_arch_record = secs.iter().any(|s| s.name == "OBJECTS" && s.tags.iter().any(|t| t.code == 3 && t.str() == crate::dxf_arch::ARCH_KEY));
     for t in secs.iter().filter(|_| !ours).flat_map(|s| s.tags.iter()).filter(|t| t.code == 5 || t.code == 105) {
         if let Some(h) = Handle::parse_hex(t.str().trim()) {
             d.bump_handseed(h);
@@ -1747,7 +1749,7 @@ fn read_budgeted(bytes: &[u8], mut table_cells_left: usize) -> Result<Drawing> {
                             j += 1;
                         }
                         let body = recs.get(i + 1..j).unwrap_or(&[]);
-                        let ents = parse_entities(body, &mut d, &mut rx, &mut n, &mut table_cells_left);
+                        let ents = parse_entities(body, &mut d, &mut rx, &mut n, &mut table_cells_left, has_arch_record);
                         blocks.push((name, base, description, ents, xref));
                         i = j + 1;
                     } else {
@@ -1763,7 +1765,7 @@ fn read_budgeted(bytes: &[u8], mut table_cells_left: usize) -> Result<Drawing> {
             // A damaged file may split its entities over several ENTITIES sections (#865).
             "ENTITIES" => {
                 let mut n = 0;
-                entities.extend(parse_entities(&records(&s.tags), &mut d, &mut rx, &mut n, &mut table_cells_left));
+                entities.extend(parse_entities(&records(&s.tags), &mut d, &mut rx, &mut n, &mut table_cells_left, has_arch_record));
                 count_skipped(&mut skipped, "ENTITIES", n);
             }
             "OBJECTS" => {
