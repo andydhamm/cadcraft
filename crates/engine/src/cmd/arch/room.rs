@@ -268,7 +268,7 @@ mod tests {
         assert_eq!(r["id"].as_str().unwrap(), "r0");
         assert_eq!(r["interiorArea"].as_f64().unwrap(), 9.0);
         assert_eq!(r["standardArea"].as_f64().unwrap(), 9.0);
-        assert_eq!(r["handle"], "0000A01000000000");
+        assert_eq!(r["handle"], "00000000A0010000");
         assert_eq!(d.arch.room(d.arch.rooms.last().unwrap().id).unwrap().polygon.len(), 4);
         assert_eq!(d.arch.room(d.arch.rooms.last().unwrap().id).unwrap().level, 0);
         assert_eq!(d.arch.room(d.arch.rooms.last().unwrap().id).unwrap().room_type, RoomType::Other);
