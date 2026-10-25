@@ -33,8 +33,9 @@ python3 - "$out2" <<'PY' || exit 1
 import json,sys
 d=json.loads(sys.argv[1]); R=d.get("rooms",[])
 assert len(R)==2, f"a room-divider wall must enclose rooms: {[(r['name'],r['interiorArea']) for r in R]}"
+# interior faces span 0.1..9.9 by 0.1..7.9; a zero-thickness divider at x=5 gives 4.9 x 7.8 = 38.22
 A=sorted(round(r["interiorArea"],4) for r in R)
-assert abs(A[0]-23.66)<1e-3 and abs(A[1]-23.66)<1e-3, f"two 4.85x4.9 halves: {A}"
+assert abs(A[0]-38.22)<1e-3 and abs(A[1]-38.22)<1e-3, f"two 4.9x7.8 halves: {A}"
 dv=[w for w in d["walls"] if abs(w["thickness"])<1e-9]
 assert dv and "polygon" not in dv[0], f"divider wall must have no poche: {dv}"
 print("ok: divider rooms",A)

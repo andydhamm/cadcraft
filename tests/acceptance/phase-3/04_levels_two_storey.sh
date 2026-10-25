@@ -11,8 +11,9 @@ import json,sys
 R=json.loads(sys.argv[1])["rooms"]
 l2=[r for r in R if r["level"]=="Level 2"]
 assert len(l2)==2, f"Level 2 must give two rooms: {[(r['name'],r['level'],r['interiorArea']) for r in R]}"
+# interior faces 0.1..9.9 by 0.1..7.9; a 0.1 wall at x=5 leaves 4.85 x 7.8 = 37.83 each
 A=sorted(round(r["interiorArea"],4) for r in l2)
-assert abs(A[0]-23.66)<1e-3 and abs(A[1]-23.66)<1e-3, f"two 4.85x4.9 halves: {A}"
+assert abs(A[0]-37.83)<1e-3 and abs(A[1]-37.83)<1e-3, f"two 4.85x7.8 halves: {A}"
 print("ok: Level-2 rooms",A)
 PY
 b=$(cargo run -q -p cadcraft-cli -- run --metric --cmd "$H" \

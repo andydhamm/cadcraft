@@ -30,6 +30,7 @@ assert a==b, f"rooms changed on a second save/read:\n{a}\n{b}"
 print("ok: rooms round-trip idempotently")
 PY
 python3 - "$tmp/p.dxf" <<'PY' || exit 1
+import sys
 t=open(sys.argv[1],errors="ignore").read()
 assert "CADCRAFT_ARCH" in t, "no arch record written"
 assert "A-ROOM" in t, "no A-ROOM proxy layer for room labels"
