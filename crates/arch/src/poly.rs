@@ -212,7 +212,7 @@ pub fn offset_polygon(pts: &[Vec2], dist: &[f64], outward: bool) -> Option<Vec<V
     for i in 0..n {
         let a = &pts[i];
         let b = &pts[(i + 1) % n];
-        let dir = (b - a).normalized();
+        let dir = (*b - *a).normalized();
         if dir == Vec2::ZERO {
             return None;
         }
