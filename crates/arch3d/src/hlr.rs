@@ -96,6 +96,12 @@ pub(crate) struct Cap {
     pub depth: f64,
 }
 
+impl Cap {
+    pub(crate) const fn new(rings: Vec<Vec<[f64; 2]>>, depth: f64) -> Self {
+        Cap { rings, depth }
+    }
+}
+
 /// A triangle on the sheet, `[u, v, depth]` per corner.
 struct Tri {
     p: [[f64; 3]; 3],

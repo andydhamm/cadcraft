@@ -178,7 +178,7 @@ pub fn section_view(scene: &Scene3d, plane: &Plane, up: [f64; 3]) -> Option<Sect
         by_object.entry(r.object).or_default().push(r.points.clone());
     }
     let depth = plane.offset; // the view looks along the unit normal, so a point's depth is normal · p
-    let caps: Vec<Cap> = by_object.into_values().map(|rings| Cap { rings, depth }).collect();
+    let caps: Vec<Cap> = by_object.into_values().map(|rings| Cap::new(rings, depth)).collect();
     let beyond = visible_lines_beyond(scene, &view, Some(plane), &caps);
     Some(SectionView { view, cut, beyond })
 }
