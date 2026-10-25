@@ -1,13 +1,15 @@
 //! Read-only architecture inspection command.
 use crate::cmd::CommandSpec;
 use crate::{EngineError, Session};
+use cadcraft_arch::area::is_living;
 use cadcraft_arch::join::solve_joins;
 use cadcraft_arch::opening::rough_offset;
 use cadcraft_arch::symbol::opening_symbol;
 use cadcraft_arch::wall::{wall_layer_polygons, wall_polygon};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::Handle;
-use cadcraft_doc::arch::OpeningKind;
+use cadcraft_doc::arch::{OpeningKind, RoomType, room_handle, room_label};
+use cadcraft_geom::Vec2;
 use serde_json::json;
 use serde_json::{Map as JsonMap, Value};
 
@@ -40,6 +42,8 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
 
     let openings_flag = p.get("openings").and_then(Value::as_bool).unwrap_or(false);
     let symbols_flag = p.get("symbols").and_then(Value::as_bool).unwrap_or(false);
+    let rooms_flag = p.get("rooms").and_then(Value::as_bool).unwrap_or(false);
+    let labels_flag = p.get("labels").and_then(Value::as_bool).unwrap_or(false);
 
     let shapes = solve_joins(&d.arch);
     let mut solved: std::collections::BTreeMap<ArchId, &Vec<cadcraft_geom::Vec2>> = std::collections::BTreeMap::new();
@@ -108,6 +112,31 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
         })
         .collect::<Vec<Value>>();
 
+    // Per-room objects. Read-only: no `doc_mut`, no `touch_arch`.
+    let mut room_objects = Vec::new();
+    if rooms_flag {
+        for r in &d.arch.rooms {
+            let level = d.arch.level(r.level);
+            let mut obj = JsonMap::new();
+            obj.insert("id".to_string(), json!(room_label(r.id)));
+            obj.insert("handle".to_string(), json!(format!("{:016X}", room_handle(r.id).0)));
+            obj.insert("name".to_string(), json!(r.name));
+            obj.insert("type".to_string(), json!(room_type_key(r.room_type)));
+            obj.insert("level".to_string(), json!(level.map(|l| l.name.clone()).unwrap_or_default()));
+            obj.insert("polygon".to_string(), json_points(&r.polygon));
+            obj.insert("holes".to_string(), json!(r.holes.len()));
+            obj.insert("interiorArea".to_string(), json!(r.interior_area));
+            obj.insert("standardArea".to_string(), json!(r.standard_area));
+            obj.insert("livingIncluded".to_string(), json!(is_living(r, level)));
+            obj.insert("ceiling".to_string(), json!(r.ceiling_height));
+            if labels_flag {
+                obj.insert("labelPoint".to_string(), json!(centroid_points(&r.polygon)));
+                obj.insert("labelText".to_string(), json!(format!("{}\n{:.2} m2", r.name, r.interior_area)));
+            }
+            room_objects.push(Value::Object(obj));
+        }
+    }
+
     // Arch openings are reported read-only: no `doc_mut`, no `touch_arch`.
     let mut opening_objects = Vec::new();
     if openings_flag {
@@ -158,8 +187,48 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     if openings_flag {
         out.insert("openings".to_string(), Value::Array(opening_objects));
     }
+    if rooms_flag {
+        out.insert("rooms".to_string(), Value::Array(room_objects));
+    }
 
     Ok(Value::Object(out))
+}
+
+/// Camel-case key for a room type (`OpenBelow` -> `openBelow`), used for the
+/// per-room `type` field of the report.
+fn room_type_key(t: RoomType) -> &'static str {
+    match t {
+        RoomType::Living => "living",
+        RoomType::Bedroom => "bedroom",
+        RoomType::Kitchen => "kitchen",
+        RoomType::Bath => "bath",
+        RoomType::Closet => "closet",
+        RoomType::Utility => "utility",
+        RoomType::Garage => "garage",
+        RoomType::Porch => "porch",
+        RoomType::Deck => "deck",
+        RoomType::OpenBelow => "openBelow",
+        RoomType::Other => "other",
+    }
+}
+
+/// `pts` as a JSON array of `[x, y]` pairs.
+fn json_points(pts: &[Vec2]) -> Value {
+    Value::Array(pts.iter().map(|p| json!([p.x, p.y])).collect())
+}
+
+/// Label anchor for a room: the average of the outer-ring vertices.
+///
+/// Returns [`Vec2::ZERO`] for an empty polygon (degenerate input) rather than
+/// dividing by zero.
+fn centroid_points(pts: &[Vec2]) -> Vec2 {
+    if pts.is_empty() {
+        return Vec2::ZERO;
+    }
+    let n = pts.len() as f64;
+    let x = pts.iter().map(|p| p.x).sum::<f64>() / n;
+    let y = pts.iter().map(|p| p.y).sum::<f64>() / n;
+    Vec2::new(x, y)
 }
 
 #[cfg(test)]
@@ -168,7 +237,7 @@ mod tests {
     use crate::Session;
 
     use cadcraft_doc::Wall;
-    use cadcraft_doc::arch::{Opening, OpeningKind};
+    use cadcraft_doc::arch::{Opening, OpeningKind, Room, RoomType};
     use cadcraft_geom::Vec2;
 
     /// Helper that runs a command and returns its Value, asserting it succeeded.
@@ -528,5 +597,69 @@ mod tests {
         assert!(cased.is_some(), "cased opening not found");
         assert_eq!(window.unwrap()["kind"].as_str().expect("kind should be a string"), "window");
         assert_eq!(cased.unwrap()["kind"].as_str().expect("kind should be a string"), "cased");
+    }
+
+    /// A fresh session holding a single room with a known area on level 0.
+    fn session_with_one_room() -> Session {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "Living Room".into(),
+                    room_type: RoomType::Living,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+                    ceiling_height: Some(2.4),
+                    interior_area: 12.0,
+                    standard_area: 12.48,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        s
+    }
+
+    #[test]
+    fn inspect_reports_rooms_with_areas() {
+        let mut s = session_with_one_room();
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        assert_eq!(rooms.len(), 1, "expected one room");
+        let r = &rooms[0];
+        assert_eq!(r["id"].as_str().unwrap(), "r0");
+        assert!(r["handle"].is_string(), "handle must be a string");
+        assert_eq!(r["name"].as_str().unwrap(), "Living Room");
+        assert_eq!(r["type"].as_str().unwrap(), "living");
+        assert_eq!(r["level"].as_str().unwrap(), "Level 1");
+        assert!(r["polygon"].is_array(), "polygon must be an array");
+        assert_eq!(r["holes"].as_i64().unwrap(), 0);
+        assert!((r["interiorArea"].as_f64().unwrap() - 12.0).abs() < 1e-9);
+        assert!((r["standardArea"].as_f64().unwrap() - 12.48).abs() < 1e-9);
+        assert!(r["livingIncluded"].as_bool().unwrap());
+        assert!((r["ceiling"].as_f64().unwrap() - 2.4).abs() < 1e-9);
+    }
+
+    #[test]
+    fn inspect_reports_derived_floor_to_floor() {
+        let v = exec(&Session::new(), "arch.inspect", &json!({}));
+        let levels = v["levels"].as_array().expect("levels array missing");
+        assert!(!levels.is_empty(), "expected at least one level");
+        let l = &levels[0];
+        let ceiling = l["ceiling"].as_f64().unwrap();
+        let structure = l["structure"].as_f64().unwrap();
+        let ftf = l["floorToFloor"].as_f64().unwrap();
+        assert!((ftf - (ceiling + structure)).abs() < 1e-9, "floorToFloor {} != ceiling {} + structure {}", ftf, ceiling, structure);
+    }
+
+    #[test]
+    fn inspect_label_text_carries_the_area() {
+        let mut s = session_with_one_room();
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true, "labels": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        let r = &rooms[0];
+        assert!(r["labelPoint"].is_array(), "labelPoint must be an array");
+        assert_eq!(r["labelText"].as_str().unwrap(), "Living Room\n12.00 m2");
     }
 }
