@@ -99,6 +99,9 @@ pub fn point_segment_dist(p: Vec2, a: Vec2, b: Vec2) -> f64 {
 /// Tolerance used by `segs_cross` for floating-point comparisons.
 const TOL: f64 = 1e-12;
 
+/// Minimum squared length used to treat a segment as degenerate.
+const MIN_LEN2: f64 = 1e-24;
+
 /// Whether the closed segments `a1 -> a2` and `b1 -> b2` touch or cross.
 ///
 /// Uses the signed cross-product test with `TOL` for robustness. Returns
@@ -187,64 +190,77 @@ pub fn is_simple(pts: &[Vec2]) -> bool {
     true
 }
 
-/// Offset each edge of a closed ring by its own distance, then re-intersect
-/// adjacent edges.
+/// Per-edge offset of a closed polygon ring, with miter re-intersection.
 ///
-/// `outward == true` offsets along `-(b - a).normalized().perp()` (outward for a CCW ring);
-/// `outward == false` along `(b - a).normalized().perp()` (inward for a CCW ring, i.e. outward
-/// from the region when the ring is a hole). Returns `None` on any degenerate input.
+/// Each edge `i` (`ccw[i] -> ccw[(i + 1) % n]`) is offset by `dist[i]` along its normal.
+/// The offset is outward when `outward` is true (for a CCW ring, outward is the left-hand
+/// side of the traversal, i.e. the `-dir.perp()` side). Consecutive offset lines are
+/// intersected to form the new vertices; when two consecutive lines are parallel or
+/// collinear (the common case after collinear merging) the start point of the offset
+/// line is used instead.
+///
+/// Returns `None` when the ring is degenerate (`< 3` points), when `dist` does not match
+/// the ring length, when any distance is non-finite or negative, or when the resulting
+/// ring is not simple (self-intersecting) or contains a non-finite vertex.
 pub fn offset_polygon(pts: &[Vec2], dist: &[f64], outward: bool) -> Option<Vec<Vec2>> {
-    let n = pts.len();
+    let ccw = ensure_ccw(pts);
+    let n = ccw.len();
     if n < 3 || dist.len() != n {
         return None;
     }
-    if pts.iter().any(|p| !p.is_finite()) {
-        return None;
-    }
-    if dist.iter().any(|d| !d.is_finite()) {
-        return None;
-    }
-    if ring_area(pts) <= 0.0 {
-        return None;
-    }
 
-    let mut offset_lines: Vec<(Vec2, Vec2)> = Vec::with_capacity(n);
+    let mut lines: Vec<(Vec2, Vec2)> = Vec::with_capacity(n);
     for i in 0..n {
-        let a = &pts[i];
-        let b = &pts[(i + 1) % n];
-        let dir = (*b - *a).normalized();
-        if dir == Vec2::ZERO {
+        let a = ccw[i];
+        let b = ccw[(i + 1) % n];
+        let ab = Vec2::new(b.x - a.x, b.y - a.y);
+        let len2 = ab.dot(ab);
+        if len2 < MIN_LEN2 {
             return None;
         }
-        let nrm = if outward { -dir.perp() } else { dir.perp() };
-        let oa = *a + nrm * dist[i];
-        let ob = *b + nrm * dist[i];
-        offset_lines.push((oa, ob));
+        let len = len2.sqrt();
+        let dir = Vec2::new(ab.x / len, ab.y / len);
+        if !dir.is_finite() {
+            return None;
+        }
+        let d = dist[i];
+        if !d.is_finite() || d < 0.0 {
+            return None;
+        }
+        let ni = if outward { -dir.perp() } else { dir.perp() };
+        let p = Vec2::new(a.x + ni.x * d, a.y + ni.y * d);
+        lines.push((p, dir));
     }
 
     let mut out: Vec<Vec2> = Vec::with_capacity(n);
     for i in 0..n {
-        let (a1, b1) = &offset_lines[(i + n - 1) % n];
-        let (a2, b2) = &offset_lines[i];
-        let d1 = *b1 - *a1;
-        let d2 = *b2 - *a2;
-        let den = d1.cross(d2);
-        if den.abs() < 1e-12 {
+        let prev = (i + n - 1) % n;
+        let vertex = line_line(lines[prev].0, lines[prev].1, lines[i].0, lines[i].1).unwrap_or(lines[i].0);
+        if !vertex.is_finite() {
             return None;
         }
-        let t = (*a2 - *a1).cross(d2) / den;
-        let pt = *a1 + d1 * t;
-        if !pt.is_finite() {
-            return None;
-        }
-        out.push(pt);
+        out.push(vertex);
     }
 
-    if ring_area(&out) <= 1e-12 || !is_simple(&out) {
+    if !is_simple(&out) {
         return None;
     }
-
     Some(out)
+}
+
+/// Intersection of the two infinite lines `(p, r)` and `(q, s)`.
+///
+/// Returns `None` when the lines are parallel (cross-product of direction vectors is within
+/// `TOL`) or when the intersection point is non-finite.
+fn line_line(p: Vec2, r: Vec2, q: Vec2, s: Vec2) -> Option<Vec2> {
+    let den = r.cross(s);
+    if den.abs() < TOL {
+        return None;
+    }
+    let t = Vec2::new(q.x - p.x, q.y - p.y).cross(s) / den;
+    let x = p.x + r.x * t;
+    let y = p.y + r.y * t;
+    if x.is_finite() && y.is_finite() { Some(Vec2::new(x, y)) } else { None }
 }
 
 #[cfg(test)]
@@ -439,5 +455,100 @@ mod tests {
             assert!(close(out[i].y, p.y));
         }
         assert!(close(ring_area(&out), 1.0));
+    }
+
+    fn bounds_of(r: &[Vec2]) -> (f64, f64, f64, f64) {
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        for p in r {
+            min_x = min_x.min(p.x);
+            min_y = min_y.min(p.y);
+            max_x = max_x.max(p.x);
+            max_y = max_y.max(p.y);
+        }
+        (min_x, min_y, max_x, max_y)
+    }
+
+    fn unit_square_ccw() -> Vec<Vec2> {
+        sq(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])
+    }
+
+    #[test]
+    fn offset_rectangle_outward_grows() {
+        let square = unit_square_ccw();
+        let d = [0.5, 0.5, 0.5, 0.5];
+        let Some(out) = offset_polygon(&square, &d, true) else {
+            assert!(false, "offset_polygon returned None for outward unit square");
+            return;
+        };
+        assert!(close(ring_area(&out), 4.0));
+        let b = bounds_of(&out);
+        assert!(close(b.0, -0.5) && close(b.1, -0.5) && close(b.2, 1.5) && close(b.3, 1.5));
+        assert!(close(ring_perimeter(&out), 8.0));
+    }
+
+    #[test]
+    fn offset_rectangle_inward_shrinks() {
+        let square = sq(&[(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)]);
+        let d = [0.25, 0.25, 0.25, 0.25];
+        let Some(out) = offset_polygon(&square, &d, false) else {
+            assert!(false, "offset_polygon returned None for inward 2x2 square");
+            return;
+        };
+        assert!(close(ring_area(&out), 2.25));
+        let b = bounds_of(&out);
+        assert!(close(b.0, 0.25) && close(b.1, 0.25) && close(b.2, 1.75) && close(b.3, 1.75));
+    }
+
+    #[test]
+    fn offset_polygon_parallel_edges_is_finite() {
+        let ring = sq(&[(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (2.0, 1.0), (0.0, 1.0)]);
+        let d = [0.1, 0.1, 0.1, 0.1, 0.1];
+        let Some(out) = offset_polygon(&ring, &d, true) else {
+            assert!(false, "offset_polygon returned None for ring with parallel edges");
+            return;
+        };
+        assert!(close(ring_area(&out), 2.64));
+        let b = bounds_of(&out);
+        assert!(close(b.0, -0.1) && close(b.1, -0.1) && close(b.2, 2.1) && close(b.3, 1.1));
+    }
+
+    #[test]
+    fn offset_polygon_rejects_self_intersection() {
+        let u = sq(&[(0.0, 0.0), (3.0, 0.0), (3.0, 4.0), (2.0, 4.0), (2.0, 1.0), (1.0, 1.0), (1.0, 3.0), (0.0, 3.0)]);
+        let d = [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0];
+        assert!(offset_polygon(&u, &d, true).is_none());
+        let small = [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2];
+        assert!(offset_polygon(&u, &small, true).is_some());
+    }
+
+    #[test]
+    fn offset_polygon_rejects_bad_dist_len() {
+        let square = unit_square_ccw();
+        let bad_len3 = [0.1, 0.1, 0.1];
+        assert!(offset_polygon(&square, &bad_len3, true).is_none());
+        let bad_len0 = [0.0];
+        assert!(offset_polygon(&square, &[], true).is_none());
+    }
+
+    #[test]
+    fn offset_polygon_rejects_negative_dist() {
+        let square = unit_square_ccw();
+        let negative = [0.1, -0.1, 0.1, 0.1];
+        assert!(offset_polygon(&square, &negative, true).is_none());
+        let nan_dist = [0.1, f64::NAN, 0.1, 0.1];
+        assert!(offset_polygon(&square, &nan_dist, true).is_none());
+    }
+
+    #[test]
+    fn offset_polygon_rejects_degenerate_ring() {
+        let two_points = vec![Vec2::ZERO, Vec2::X];
+        let two_dist = [0.1, 0.1];
+        assert!(offset_polygon(&two_points, &two_dist, true).is_none());
+        let repeated = sq(&[(0.0, 0.0), (0.0, 0.0), (1.0, 1.0)]);
+        let repeated_dist = [0.1, 0.1, 0.1];
+        assert!(offset_polygon(&repeated, &repeated_dist, true).is_none());
     }
 }
