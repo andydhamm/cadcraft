@@ -221,6 +221,7 @@ fn runaway_routines_are_errors_not_crashes() {
     assert_eq!(r, Ok("3000000".into()));
 }
 
+/// An infinite comparator stops at its callback cap, and a later finite comparator still succeeds.
 #[test]
 fn synchronous_callback_loop_is_an_error_not_a_hang() {
     // A comparator with an infinite loop used to run with u64::MAX fuel and hang the thread; it
@@ -232,6 +233,7 @@ fn synchronous_callback_loop_is_an_error_not_a_hang() {
     assert_eq!(ok(&mut s, "(vl-sort '(3 1 2) '<)"), "(1 2 3)");
 }
 
+/// A zero-step callback limit prevents even the first callback side effect.
 #[test]
 fn a_zero_callback_budget_does_not_run_the_callback() {
     let mut s = session();
@@ -242,6 +244,7 @@ fn a_zero_callback_budget_does_not_run_the_callback() {
     assert_eq!(ok(&mut s, "callback-ran"), "nil");
 }
 
+/// A callback stops at a cap smaller than one scheduling slice without completing all its assignments.
 #[test]
 fn a_callback_must_fit_within_a_partial_slice() {
     let mut s = session();
@@ -252,6 +255,7 @@ fn a_callback_must_fit_within_a_partial_slice() {
     assert_eq!(ok(&mut s, "(and (> callback-count 0) (< callback-count 1000))"), "T");
 }
 
+/// Crossing a scheduling boundary grants only the additional configured step, rather than another slice.
 #[test]
 fn reaching_a_callback_slice_boundary_does_not_grant_another_slice() {
     let counts: Vec<u64> = [399_999, 400_000]
@@ -270,6 +274,7 @@ fn reaching_a_callback_slice_boundary_does_not_grant_another_slice() {
     assert!(counts[1] >= counts[0] && counts[1] - counts[0] <= 1, "{counts:?}");
 }
 
+/// System-variable conversion rejects a shared list whose owned JSON expansion would exceed its budget.
 #[test]
 fn setvar_rejects_an_oversized_shared_structure() {
     // A list repeatedly sharing its own contents expands exponentially; setvar's bounded JSON
@@ -430,6 +435,24 @@ fn tables_and_variables() {
     assert_eq!(ok(&mut s, "(setvar \"OSMODE\" 0)"), "0");
     assert_eq!(ok(&mut s, "(getvar \"OSMODE\")"), "0");
     assert_eq!(ok(&mut s, "(getvar \"NOSUCHVAR\")"), "nil");
+}
+
+#[test]
+fn getvar_drawing_and_session_variables() {
+    let mut s = session();
+    assert_eq!(ok(&mut s, "(list (getvar \"DWGPREFIX\") (getvar \"DWGTITLED\"))"), "(\"\" 0)");
+    assert_eq!(ok(&mut s, "(list (getvar \"FILEDIA\") (getvar \"CMDECHO\") (getvar \"TILEMODE\"))"), "(1 1 1)");
+    assert_eq!(ok(&mut s, "(setvar \"FILEDIA\" 0) (setvar \"CMDECHO\" 0) (getvar \"FILEDIA\")"), "0");
+    // Both belong to the session, so they survive a switch to another drawing.
+    s.new_drawing(true);
+    assert_eq!(ok(&mut s, "(list (getvar \"FILEDIA\") (getvar \"CMDECHO\"))"), "(0 0)");
+    assert_eq!(ok(&mut s, "(getvar \"CMDACTIVE\")"), "0");
+    let dir = std::env::temp_dir();
+    let file = dir.join("lisp_getvar_test.dxf");
+    s.state_mut().unwrap().path = Some(file.to_string_lossy().into_owned());
+    let want = format!("{}{}", dir.to_string_lossy().trim_end_matches(std::path::MAIN_SEPARATOR), std::path::MAIN_SEPARATOR);
+    assert_eq!(crate::sysvars::get(&s, "DWGPREFIX"), Some(serde_json::json!(want)));
+    assert_eq!(ok(&mut s, "(getvar \"DWGTITLED\")"), "1");
 }
 
 #[test]
