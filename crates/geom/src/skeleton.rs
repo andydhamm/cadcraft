@@ -2,9 +2,10 @@
 //!
 //! Assisted draft (2026-10-25): written ahead of phase 4 (automatic roofs) by Claude, not by the swarm.
 //!
-//! Every edge of the input moves inward at unit speed, parallel to itself. The skeleton is the set of paths the
-//! vertices trace until the shrinking wavefront vanishes. Each input edge sweeps one face. A node's `time` is how far
-//! the wavefront had travelled when it got there, which is its distance to the edges of the faces around it. So:
+//! Every edge of the input moves inward, parallel to itself, at its weight (unit speed for the plain skeleton). The
+//! skeleton is the set of paths the vertices trace until the shrinking wavefront vanishes. Each input edge sweeps one
+//! face. A node's `time` is how far the wavefront had travelled when it got there, which is its distance to the edges of
+//! the faces around it (times the edge's weight, for a [`weighted_skeleton`]). So:
 //! - a hip roof over the polygon is the skeleton lifted by `time * slope` (each face is one roof plane);
 //! - the inward offset by `d` is the wavefront at time `d` ([`inset`]);
 //! - the outward offset by `d` is the same construction on the outside ([`outset`]).
@@ -19,8 +20,18 @@
 //! `EPS`): points closer than that are one, and a strip a few tolerances wide counts as zero-width. The cost grows with
 //! the cube of the vertex count: milliseconds for hundreds of vertices, about a second for a thousand.
 //!
+//! Weights (one code path; the plain skeleton is the weighted one with every weight 1): an edge's offset line is
+//! `normal . x = c + weight * time`, and a vertex between two edges moves so that it stays on both lines. A weight of 0
+//! pins the edge (a gable end): its vertices slide along it and its face has no area in plan. Two parallel edges that
+//! become neighbours at different speeds (one caught up with the other) lie on one line at that instant; from then on the
+//! faster one carries the wavefront and the slower one is consumed, leaving a ridge arc along the slower one's last position.
+//!
 //! Limit: shapes whose features are only about ten to a hundred tolerances apart (`1e-8` of their size) are the one place
 //! where the tolerances can disagree with each other; a very rare such input ends in `EventLimit` instead of a skeleton.
+//! Weights add two: edges of weight 0 can enclose a part of the region that no moving edge ever reaches (`BadWeights`), and
+//! weights more than about `1e4` apart on a shape whose features nearly coincide (within about `1e-6` of its size, but not
+//! exactly) can end in `EventLimit` or in faces that do not add up (`check` reports it); a perturbed shape in a realistic
+//! range of slopes is fine.
 
 use crate::{Vec2, point_in_polygon, shoelace};
 
@@ -42,7 +53,9 @@ pub struct SkeletonFace {
     pub ring: usize,
     /// The edge runs from `rings[ring][edge]` to `rings[ring][(edge + 1) % len]`.
     pub edge: usize,
-    /// The face's boundary as node indices, counter-clockwise, starting with the edge's two end vertices.
+    /// The face's boundary as node indices, counter-clockwise, starting with the edge's two end vertices. A face that
+    /// encloses an island (the faces of a hole, when one edge sweeps all round it) has no single outline: the boundary goes
+    /// out to the island along a bridge arc, round it clockwise and back along the bridge, so nodes repeat.
     pub nodes: Vec<usize>,
 }
 
@@ -58,6 +71,9 @@ pub struct Skeleton {
     pub arcs: Vec<(usize, usize)>,
     /// One face per input edge, in ring order.
     pub faces: Vec<SkeletonFace>,
+    /// The speed of each cleaned ring edge, `weights[ring][edge]` (same indexing as `rings`): 1.0 for every edge of a
+    /// plain [`straight_skeleton`]; for a [`weighted_skeleton`], the input weights mapped onto the cleaned edges.
+    pub weights: Vec<Vec<f64>>,
 }
 
 impl Skeleton {
@@ -92,6 +108,10 @@ pub enum SkeletonError {
     NotFinite,
     /// The event simulation went past its budget (a bug or a pathological input); nothing is returned.
     EventLimit,
+    /// Weights (or slopes) do not match the rings edge for edge, are negative, NaN or infinite, or two collinear
+    /// neighbouring edges carry different weights (no well-defined skeleton there). Also when the edges with weight 0
+    /// enclose a part of the region that no moving edge ever reaches.
+    BadWeights,
 }
 
 impl std::fmt::Display for SkeletonError {
@@ -102,6 +122,7 @@ impl std::fmt::Display for SkeletonError {
             SkeletonError::HoleOutside => "a hole is not inside the outer ring",
             SkeletonError::NotFinite => "a coordinate or distance is not a finite number (or a distance is negative)",
             SkeletonError::EventLimit => "the straight-skeleton event simulation exceeded its budget",
+            SkeletonError::BadWeights => "the edge weights or slopes do not fit the rings, or are not finite and non-negative",
         })
     }
 }
@@ -111,12 +132,50 @@ impl std::error::Error for SkeletonError {}
 /// The straight skeleton of `outer` with `holes`. Rings may be given in either orientation and may repeat their first
 /// point at the end; they are cleaned and oriented as described on [`Skeleton::rings`].
 pub fn straight_skeleton(outer: &[Vec2], holes: &[Vec<Vec2>]) -> Result<Skeleton, SkeletonError> {
-    let prep = prepare(outer, holes)?;
-    let mut sim = Sim::new(&prep.rings, prep.origin, prep.tol, 0);
+    weighted_skeleton(outer, holes, &unit_weights(outer, holes))
+}
+
+/// The weighted straight skeleton: edge `i` of ring `r` moves inward at speed `weights[r][i]` instead of 1. Weights index
+/// the INPUT rings exactly as given (`weights[0]` for `outer`, `weights[1 + h]` for `holes[h]`; edge `i` runs from vertex
+/// `i` to vertex `i + 1`, before any cleaning or reorientation); each must be finite and >= 0. A weight of 0 freezes the
+/// edge: its face has no area in plan (a gable end). All weights equal to 1 give exactly [`straight_skeleton`].
+/// A node's `time` is when the wavefront reached it, so it lies at distance `weight * time` from each of its faces'
+/// edges. Mismatched, negative or non-finite weights, or collinear neighbouring edges with different weights, give
+/// [`SkeletonError::BadWeights`].
+pub fn weighted_skeleton(outer: &[Vec2], holes: &[Vec<Vec2>], weights: &[Vec<f64>]) -> Result<Skeleton, SkeletonError> {
+    let prep = prepare(outer, holes, weights)?;
+    // Without a moving edge on the outer ring nothing ever happens: there is no skeleton, and no way to tell a gable roof
+    // with no roof planes from a mistake.
+    if prep.weights.first().is_none_or(|ring| ring.iter().all(|&w| w == 0.0)) {
+        return Err(SkeletonError::BadWeights);
+    }
+    let mut sim = Sim::new(&prep.rings, &prep.weights, prep.origin, prep.tol, 0);
     sim.run(None)?;
-    let faces = build_faces(&prep.rings, &sim.arcs);
+    let faces = build_faces(&prep.rings, &sim.arcs, &sim.nodes);
     let arcs = sim.arcs.iter().map(|r| (r.a, r.b)).collect();
-    Ok(Skeleton { rings: prep.rings, nodes: sim.nodes, arcs, faces })
+    Ok(Skeleton { rings: prep.rings, nodes: sim.nodes, arcs, faces, weights: prep.weights })
+}
+
+/// The skeleton of a pitched roof over `outer` with `holes`: `slopes[r][i]` is the rise per unit run of the roof plane
+/// over input edge `i` of ring `r` (indexed like [`weighted_skeleton`]'s weights), `f64::INFINITY` for a gable end (a
+/// vertical face). Each edge moves at speed `1 / slope`, so every node's `time` IS its roof height and each face is one
+/// plane through its edge. Slopes must be > 0 (or infinite); anything else gives [`SkeletonError::BadWeights`].
+pub fn roof_skeleton(outer: &[Vec2], holes: &[Vec<Vec2>], slopes: &[Vec<f64>]) -> Result<Skeleton, SkeletonError> {
+    let mut weights = Vec::with_capacity(slopes.len());
+    for ring in slopes {
+        let mut w = Vec::with_capacity(ring.len());
+        for &s in ring {
+            if s == f64::INFINITY {
+                w.push(0.0);
+            } else if s.is_finite() && s > 0.0 {
+                w.push(1.0 / s);
+            } else {
+                return Err(SkeletonError::BadWeights);
+            }
+        }
+        weights.push(w);
+    }
+    weighted_skeleton(outer, holes, &weights)
 }
 
 /// The inward offset of `outer` with `holes` by `d >= 0`: the wavefront at time `d`. One region per piece the polygon
@@ -125,7 +184,7 @@ pub fn inset(outer: &[Vec2], holes: &[Vec<Vec2>], d: f64) -> Result<Vec<OffsetRe
     if !d.is_finite() || d < 0.0 {
         return Err(SkeletonError::NotFinite);
     }
-    let prep = prepare(outer, holes)?;
+    let prep = prepare(outer, holes, &unit_weights(outer, holes))?;
     if d == 0.0 {
         return Ok(vec![region_of(&prep.rings)]);
     }
@@ -139,7 +198,7 @@ pub fn outset(outer: &[Vec2], holes: &[Vec<Vec2>], d: f64) -> Result<OffsetRegio
     if !d.is_finite() || d < 0.0 {
         return Err(SkeletonError::NotFinite);
     }
-    let prep = prepare(outer, holes)?;
+    let prep = prepare(outer, holes, &unit_weights(outer, holes))?;
     if d == 0.0 {
         return Ok(region_of(&prep.rings));
     }
@@ -207,7 +266,7 @@ pub fn outset(outer: &[Vec2], holes: &[Vec<Vec2>], d: f64) -> Result<OffsetRegio
 }
 
 /// Problems with a skeleton, for tests and debugging; empty when every invariant holds within `tol`:
-/// each face's nodes lie at distance `time` from the line of the face's edge, the faces' areas add up to the region's
+/// each face's nodes lie at distance `weight * time` from the line of the face's edge, the faces' areas add up to the region's
 /// area, every node lies inside the region or on its boundary, and every arc joins two existing nodes.
 pub fn check(skeleton: &Skeleton, tol: f64) -> Vec<String> {
     let mut problems = Vec::new();
@@ -218,6 +277,7 @@ pub fn check(skeleton: &Skeleton, tol: f64) -> Vec<String> {
         return problems;
     }
     check_ring_nodes(skeleton, ring_vertices, tol, &mut problems);
+    check_weights(skeleton, &mut problems);
     for (i, &(a, b)) in skeleton.arcs.iter().enumerate() {
         if a >= nodes.len() || b >= nodes.len() {
             problems.push(format!("arc {i} joins node {a} and node {b}, but there are only {} nodes", nodes.len()));
@@ -256,6 +316,9 @@ pub fn check(skeleton: &Skeleton, tol: f64) -> Vec<String> {
 /// back on each other within this angle is a zero-width spike (rejected on input, collapsed during the simulation). It
 /// is `EPS` so that the width of such a wedge, at most this angle times the size of the input, is within the tolerance.
 const SPIKE_SIN: f64 = EPS;
+/// Two edges that point the same way within this sine are parallel: if their speeds differ there is no vertex between
+/// them (their lines are one line at that instant and part for ever after), see `Sim::collapse_parallel`.
+const PARALLEL_SIN: f64 = EPS;
 /// A wedge between nearly antiparallel edges counts as a zero-width spike while it is at most this many tolerances wide.
 /// Positions are only good to a few tolerances after merges, so the orientation of anything thinner is not reliable.
 const THIN_WEDGE: f64 = 16.0;
@@ -268,15 +331,17 @@ const SNAP_MIN_SIN: f64 = 0.05;
 const SNAP_REACH: f64 = 16.0;
 /// A vertex is reflex (it can split the wavefront) when its edges turn right by more than this sine.
 const REFLEX_SIN: f64 = 1e-12;
-/// A length changing slower than this per unit time is treated as constant.
+/// A length changing slower than this per unit time is treated as constant (for unit-speed edges: see `Sim::speed`).
 const RATE_EPS: f64 = 1e-12;
-/// A reflex vertex approaches a wavefront edge only if it closes the gap faster than this (the edge moves at speed 1).
+/// A reflex vertex approaches a wavefront edge only if it closes the gap faster than this (a unit-speed edge moves at 1).
 const CLOSE_EPS: f64 = 1e-9;
 
 /// The cleaned, oriented and validated input, with the tolerance derived from its size.
 struct Prepared {
     /// Outer ring counter-clockwise, then each hole clockwise, in the caller's coordinates.
     rings: Vec<Vec<Vec2>>,
+    /// The speed of each edge of `rings` (edge `i` runs from vertex `i` to vertex `i + 1`).
+    weights: Vec<Vec<f64>>,
     /// Centre of the bounding box. The simulation works relative to it so a drawing far from the origin keeps precision.
     origin: Vec2,
     /// Coincidence tolerance: [`EPS`] relative to the size of the input (at least [`EPS`] itself).
@@ -333,15 +398,31 @@ enum Spikes {
 
 /// Drop repeated points (including a repeated closing point) and straight-through vertices from a ring.
 fn clean_ring(pts: &[Vec2], tol: f64, spikes: Spikes) -> Result<Vec<Vec2>, SkeletonError> {
-    let mut v: Vec<Vec2> = Vec::with_capacity(pts.len());
-    for &p in pts {
-        if v.last().is_none_or(|q| q.dist(p) > tol) {
-            v.push(p);
+    let unit = vec![1.0; pts.len()];
+    clean_ring_weighted(pts, &unit, tol, spikes).map(|(ring, _, _)| ring)
+}
+
+/// `clean_ring` for a ring whose edge `i` (from point `i` to point `i + 1`) has speed `weights[i]`. Returns the cleaned
+/// ring, the weight of each of its edges, and whether a straight-through vertex had to go between two edges of different
+/// weights (the merged edge then has no right weight: the caller refuses the input). A repeated point takes its zero-length
+/// edge with it, and the edge that leaves it carries on from the point that was kept.
+fn clean_ring_weighted(pts: &[Vec2], weights: &[f64], tol: f64, spikes: Spikes) -> Result<(Vec<Vec2>, Vec<f64>, bool), SkeletonError> {
+    // Each vertex carries the weight of the edge that leaves it.
+    let mut v: Vec<(Vec2, f64)> = Vec::with_capacity(pts.len());
+    for (k, &p) in pts.iter().enumerate() {
+        let w = weights.get(k).copied().unwrap_or(1.0);
+        if v.last().is_some_and(|q| q.0.dist(p) <= tol) {
+            if let Some(last) = v.last_mut() {
+                last.1 = w;
+            }
+        } else {
+            v.push((p, w));
         }
     }
-    while v.len() > 1 && v.first().zip(v.last()).is_some_and(|(a, b)| a.dist(*b) <= tol) {
+    while v.len() > 1 && v.first().zip(v.last()).is_some_and(|(a, b)| a.0.dist(b.0) <= tol) {
         v.pop();
     }
+    let mut clash = false;
     loop {
         let n = v.len();
         if n < 3 {
@@ -349,7 +430,7 @@ fn clean_ring(pts: &[Vec2], tol: f64, spikes: Spikes) -> Result<Vec<Vec2>, Skele
         }
         // Straight-through vertices go first, so a ring that is entirely collinear ends up with too few vertices rather
         // than looking like a chain of spikes.
-        let corner = |i: usize| (v[(i + n - 1) % n], v[i], v[(i + 1) % n]);
+        let corner = |i: usize| (v[(i + n - 1) % n].0, v[i].0, v[(i + 1) % n].0);
         let straight = (0..n).find(|&i| {
             let (a, b, c) = corner(i);
             let (ab, bc) = (b - a, c - b);
@@ -357,6 +438,7 @@ fn clean_ring(pts: &[Vec2], tol: f64, spikes: Spikes) -> Result<Vec<Vec2>, Skele
             ab.dot(bc) >= 0.0 && ab.cross(bc).abs() <= tol * (c - a).len().max(tol)
         });
         if let Some(i) = straight {
+            clash |= v[(i + n - 1) % n].1 != v[i].1;
             v.remove(i);
             continue;
         }
@@ -366,7 +448,10 @@ fn clean_ring(pts: &[Vec2], tol: f64, spikes: Spikes) -> Result<Vec<Vec2>, Skele
             ab.dot(bc) < 0.0 && ab.cross(bc).abs() <= SPIKE_SIN * ab.len() * bc.len()
         });
         match (spike, spikes) {
-            (None, _) => return Ok(v),
+            (None, _) => {
+                let (ring, speeds) = v.into_iter().unzip();
+                return Ok((ring, speeds, clash));
+            }
             (Some(_), Spikes::Reject) => return Err(SkeletonError::NotSimple),
             (Some(i), Spikes::Remove) => {
                 v.remove(i);
@@ -375,9 +460,19 @@ fn clean_ring(pts: &[Vec2], tol: f64, spikes: Spikes) -> Result<Vec<Vec2>, Skele
     }
 }
 
-/// Clean, orient and validate the input. Errors in the order: not finite, too few vertices, not simple, hole outside.
-fn prepare(outer: &[Vec2], holes: &[Vec<Vec2>]) -> Result<Prepared, SkeletonError> {
+/// Weight 1 for every edge of the input rings as given (outer ring first, then the holes).
+fn unit_weights(outer: &[Vec2], holes: &[Vec<Vec2>]) -> Vec<Vec<f64>> {
+    std::iter::once(outer).chain(holes.iter().map(Vec::as_slice)).map(|ring| vec![1.0; ring.len()]).collect()
+}
+
+/// Clean, orient and validate the input. Errors in the order: bad weights (wrong number of rings, negative or not finite),
+/// not finite, too few vertices, bad weights (wrong number for a ring), not simple, hole outside, bad weights (a straight-through
+/// vertex between edges of different weights).
+fn prepare(outer: &[Vec2], holes: &[Vec<Vec2>], weights: &[Vec<f64>]) -> Result<Prepared, SkeletonError> {
     let input = || std::iter::once(outer).chain(holes.iter().map(Vec::as_slice));
+    if weights.len() != holes.len() + 1 || weights.iter().flatten().any(|w| !w.is_finite() || *w < 0.0) {
+        return Err(SkeletonError::BadWeights);
+    }
     if input().flatten().any(|p| !p.is_finite()) {
         return Err(SkeletonError::NotFinite);
     }
@@ -392,9 +487,31 @@ fn prepare(outer: &[Vec2], holes: &[Vec<Vec2>]) -> Result<Prepared, SkeletonErro
         return Err(SkeletonError::TooFewVertices);
     }
     let tol = EPS * size.max(1.0);
-    let mut rings = input().map(|pts| clean_ring(pts, tol, Spikes::Reject)).collect::<Result<Vec<_>, _>>()?;
+    // One weight per input edge, the closing edge (last point back to the first) included. A ring that repeats its first
+    // point at the end has an empty closing edge, and may leave its weight out.
+    let mut speeds: Vec<Vec<f64>> = Vec::with_capacity(weights.len());
+    for (pts, ws) in input().zip(weights) {
+        let repeats_first = pts.first().zip(pts.last()).is_some_and(|(a, b)| pts.len() >= 2 && a.dist(*b) <= tol);
+        let mut ws = ws.clone();
+        if repeats_first && ws.len() + 1 == pts.len() {
+            ws.push(ws.last().copied().unwrap_or(0.0));
+        }
+        if ws.len() != pts.len() {
+            return Err(SkeletonError::BadWeights);
+        }
+        // -0.0 is a weight of 0 too.
+        speeds.push(ws.into_iter().map(|w| if w == 0.0 { 0.0 } else { w }).collect());
+    }
+    let mut rings = Vec::with_capacity(speeds.len());
+    let mut clash = false;
+    for (pts, ws) in input().zip(&mut speeds) {
+        let (ring, cleaned, straight_clash) = clean_ring_weighted(pts, ws, tol, Spikes::Reject)?;
+        rings.push(ring);
+        *ws = cleaned;
+        clash |= straight_clash;
+    }
     check_simple(&rings, tol)?;
-    for (k, ring) in rings.iter_mut().enumerate() {
+    for (k, (ring, ws)) in rings.iter_mut().zip(&mut speeds).enumerate() {
         let area = shoelace(ring);
         if !area.is_finite() {
             return Err(SkeletonError::NotFinite);
@@ -402,13 +519,19 @@ fn prepare(outer: &[Vec2], holes: &[Vec<Vec2>]) -> Result<Prepared, SkeletonErro
         if area.abs() <= tol * size {
             return Err(SkeletonError::TooFewVertices);
         }
-        // The outer ring runs counter-clockwise, holes clockwise.
+        // The outer ring runs counter-clockwise, holes clockwise. Reversing a ring reverses its edges, so edge `j` of the
+        // reversed ring is old edge `n - 2 - j`.
         if (k == 0) != (area > 0.0) {
             ring.reverse();
+            ws.reverse();
+            ws.rotate_left(1);
         }
     }
     check_holes(&rings)?;
-    Ok(Prepared { rings, origin: lo.mid(hi), tol })
+    if clash {
+        return Err(SkeletonError::BadWeights);
+    }
+    Ok(Prepared { rings, weights: speeds, origin: lo.mid(hi), tol })
 }
 
 /// No two edges of the rings may touch or cross, except consecutive edges of one ring at their shared vertex.
@@ -464,26 +587,33 @@ fn region_of(rings: &[Vec<Vec2>]) -> OffsetRegion {
     OffsetRegion { outer: it.next().cloned().unwrap_or_default(), holes: it.cloned().collect() }
 }
 
-/// The velocity of a wavefront vertex between two edges with inward unit normals `n1` and `n2`: the point where both
-/// edges' offset lines meet, which solves `n1 . v = 1` and `n2 . v = 1`. For edges that turn gently that is
-/// `(n1 + n2) / (1 + n1 . n2)`; for edges that nearly double back `1 + n1 . n2` cancels away, so the system is solved by
-/// Cramer's rule instead (`cross(n1, n2)` stays accurate). Antiparallel edges have no velocity (zero).
-fn corner_velocity(n1: Vec2, n2: Vec2) -> Vec2 {
+/// The velocity of a wavefront vertex between two edges with inward unit normals `n1` and `n2` and speeds `w1` and `w2`:
+/// the point where both edges' offset lines meet, which solves `n1 . v = w1` and `n2 . v = w2`. For equal speeds `w` and
+/// edges that turn gently that is `w * (n1 + n2) / (1 + n1 . n2)`; for edges that nearly double back `1 + n1 . n2` cancels
+/// away, so the system is solved by Cramer's rule instead (`cross(n1, n2)` stays accurate). Antiparallel edges, and
+/// parallel edges of different speeds, have no velocity (zero).
+fn corner_velocity(n1: Vec2, w1: f64, n2: Vec2, w2: f64) -> Vec2 {
     let (dot, cross) = (n1.dot(n2), n1.cross(n2));
-    if dot >= 0.0 {
-        (n1 + n2) / (1.0 + dot)
+    if w1 == w2 {
+        if dot >= 0.0 {
+            (n1 + n2) / (1.0 + dot) * w1
+        } else if cross.abs() < SPIKE_SIN {
+            Vec2::ZERO
+        } else {
+            (n1 - n2).perp() / cross * w1
+        }
     } else if cross.abs() < SPIKE_SIN {
         Vec2::ZERO
     } else {
-        (n1 - n2).perp() / cross
+        (n1 * w2 - n2 * w1).perp() / cross
     }
 }
 
-/// The fastest vertex speed in a cleaned ring (the sharpest corner).
+/// The fastest vertex speed in a cleaned ring (the sharpest corner), with every edge at unit speed.
 fn max_corner_speed(ring: &[Vec2]) -> f64 {
     let n = ring.len();
     let normal = |i: usize| unit(ring[(i + 1) % n] - ring[i]).perp();
-    (0..n).map(|i| corner_velocity(normal((i + n - 1) % n), normal(i)).len()).filter(|s| s.is_finite()).fold(1.0, f64::max)
+    (0..n).map(|i| corner_velocity(normal((i + n - 1) % n), 1.0, normal(i), 1.0).len()).filter(|s| s.is_finite()).fold(1.0, f64::max)
 }
 
 /// A wavefront loop as a clean ring: finite, without repeated or straight-through vertices, at least 3 vertices and a
@@ -540,7 +670,7 @@ fn assemble_regions(loops: Vec<Vec<Vec2>>, tol: f64) -> Vec<OffsetRegion> {
 // events at one place or time, zero-width spikes, loops that have collapsed) with local operations until the picture is
 // consistent again. Events are recomputed from scratch each step: O(n^3) overall, but there is no queue to invalidate.
 
-/// One input edge as a moving line: at time `t` the wavefront edge lies on `{ p : normal . p = c + t }`.
+/// One input edge as a moving line: at time `t` the wavefront edge lies on `{ p : normal . p = c + w * t }`.
 #[derive(Clone, Copy, Debug, Default)]
 struct EdgeLine {
     /// Unit direction of the edge.
@@ -548,6 +678,8 @@ struct EdgeLine {
     /// Inward unit normal (left of the direction: the polygon interior for the outer ring, the material for holes).
     normal: Vec2,
     c: f64,
+    /// Speed of the edge along its normal: its weight (0 for an edge that never moves).
+    w: f64,
 }
 
 /// A wavefront vertex: where two wavefront edges meet. Positions are relative to the simulation origin.
@@ -567,6 +699,9 @@ struct Wv {
     reflex: bool,
     /// The edges are antiparallel: a zero-width spike with no velocity, to be collapsed before anything moves.
     spike: bool,
+    /// The edges point the same way at different speeds: their lines are one line at this instant and part after it, so
+    /// there is no vertex; the faster edge consumes the slower one (see `Sim::collapse_parallel`).
+    parallel: bool,
 }
 
 impl Wv {
@@ -596,6 +731,10 @@ struct Sim {
     /// Edge ids below this belong to the outset frame, not to the shape; loops touching them are reported as such.
     marked: usize,
     time: f64,
+    /// The fastest edge: `RATE_EPS` and `CLOSE_EPS` are for edges moving at 1 and scale with this (1 for unit weights).
+    speed: f64,
+    /// Times closer than this are one instant: `tol` is a distance, and the fastest edge covers it in this long.
+    time_tol: f64,
     /// Splits applied at the current instant, as (incoming edge, outgoing edge, cut edge). Near the tolerance a split and
     /// another repair can keep recreating each other's input; applying each split once per instant guarantees the
     /// repairs of one instant end. Cleared whenever time moves on.
@@ -612,6 +751,8 @@ enum Action {
     Cluster(Vec<Addr>),
     /// A vertex between antiparallel edges: the shorter of the two edges is consumed by the longer one.
     Spike { lav: usize, i: usize },
+    /// A vertex between parallel edges of different speeds: the faster edge consumes the slower one.
+    Parallel { lav: usize, i: usize },
     /// A reflex vertex lies on a wavefront edge: the loop splits (or two loops merge).
     Split { lav: usize, v: usize, target_lav: usize, target: usize },
 }
@@ -623,8 +764,9 @@ enum Event {
 }
 
 impl Sim {
-    /// Wavefront of the given cleaned rings (first counter-clockwise, rest clockwise), all vertices at time 0.
-    fn new(rings: &[Vec<Vec2>], origin: Vec2, tol: f64, marked: usize) -> Sim {
+    /// Wavefront of the given cleaned rings (first counter-clockwise, rest clockwise), all vertices at time 0, with edge `i`
+    /// of ring `r` moving at `weights[r][i]` (a missing weight is 1).
+    fn new(rings: &[Vec<Vec2>], weights: &[Vec<f64>], origin: Vec2, tol: f64, marked: usize) -> Sim {
         let vertices: usize = rings.iter().map(Vec::len).sum();
         let mut sim = Sim {
             edges: Vec::with_capacity(vertices),
@@ -635,19 +777,27 @@ impl Sim {
             tol,
             marked,
             time: 0.0,
+            speed: 1.0,
+            time_tol: tol,
             splits_done: Vec::new(),
             ops: 0,
             budget: vertices.saturating_mul(vertices).saturating_mul(64).saturating_add(1024),
         };
-        for ring in rings {
+        for (r, ring) in rings.iter().enumerate() {
             let n = ring.len();
             for (i, &p) in ring.iter().enumerate() {
                 let (a, b) = (p - origin, ring[(i + 1) % n] - origin);
                 let dir = unit(b - a);
                 let normal = dir.perp();
-                sim.edges.push(EdgeLine { dir, normal, c: normal.dot(a) });
+                let w = weights.get(r).and_then(|ws| ws.get(i)).copied().unwrap_or(1.0);
+                sim.edges.push(EdgeLine { dir, normal, c: normal.dot(a), w });
                 sim.nodes.push(SkeletonNode { pos: p, time: 0.0 });
             }
+        }
+        let fastest = sim.edges.iter().map(|e| e.w).filter(|w| w.is_finite()).fold(0.0, f64::max);
+        if fastest > 0.0 {
+            sim.speed = fastest;
+            sim.time_tol = tol / fastest;
         }
         let mut base = 0;
         for ring in rings {
@@ -667,15 +817,17 @@ impl Sim {
     fn new_wv(&self, ein: usize, eout: usize, pos: Vec2, t: f64, node: usize) -> Wv {
         let (e1, e2) = (self.edge(ein), self.edge(eout));
         let spike = e1.dir.dot(e2.dir) < 0.0 && e1.dir.cross(e2.dir).abs() < SPIKE_SIN;
+        let parallel = e1.dir.dot(e2.dir) > 0.0 && e1.dir.cross(e2.dir).abs() < PARALLEL_SIN && e1.w != e2.w;
         Wv {
             p0: self.on_lines(e1, e2, pos, t),
             t0: t,
-            vel: corner_velocity(e1.normal, e2.normal),
+            vel: corner_velocity(e1.normal, e1.w, e2.normal, e2.w),
             ein,
             eout,
             node,
             reflex: e1.dir.cross(e2.dir) < -REFLEX_SIN,
             spike,
+            parallel,
         }
     }
 
@@ -687,7 +839,7 @@ impl Sim {
         if det.abs() < SNAP_MIN_SIN {
             return pos;
         }
-        let (a, b) = (e1.c + t, e2.c + t);
+        let (a, b) = (e1.c + e1.w * t, e2.c + e2.w * t);
         let x = Vec2::new((a * e2.normal.y - b * e1.normal.y) / det, (b * e1.normal.x - a * e2.normal.x) / det);
         if x.dist(pos) <= SNAP_REACH * self.tol { x } else { pos }
     }
@@ -703,10 +855,10 @@ impl Sim {
     fn node_at(&mut self, pos: Vec2, t: f64) -> usize {
         let world = pos + self.origin;
         for (i, node) in self.nodes.iter().enumerate().rev() {
-            if node.time < t - self.tol {
+            if node.time < t - self.time_tol {
                 break;
             }
-            if (node.time - t).abs() <= self.tol && node.pos.dist(world) <= self.tol {
+            if (node.time - t).abs() <= self.time_tol && node.pos.dist(world) <= self.tol {
                 return i;
             }
         }
@@ -747,7 +899,7 @@ impl Sim {
 
 /// Run the wavefront of `rings` for time `d` and return its loops (with the frame flag, see [`Sim::loops_at`]).
 fn wavefront(rings: &[Vec<Vec2>], prep: &Prepared, d: f64, marked: usize) -> Result<Vec<(Vec<Vec2>, bool)>, SkeletonError> {
-    let mut sim = Sim::new(rings, prep.origin, prep.tol, marked);
+    let mut sim = Sim::new(rings, &[], prep.origin, prep.tol, marked);
     sim.run(Some(d))?;
     Ok(sim.loops_at(d))
 }
@@ -846,6 +998,46 @@ impl Sim {
             self.add_arc(tip, node, ridge);
             let merged = self.new_wv(v.ein, q.eout, pq, t, node);
             std::iter::once(merged).chain((2..n).map(|k| lav[(i + k) % n])).collect()
+        };
+        self.lavs.push(out);
+        Ok(())
+    }
+
+    /// `lav[i]` sits between two parallel edges of different speeds, which lie on one line at this instant (the faster one
+    /// has just caught up with the slower one) and part from now on. Where they overlap, the faster edge is the one still
+    /// on the wavefront, so it consumes the slower one: the vertex at the far end of the slower edge now joins the faster
+    /// edge to its other neighbour, at the same place (the lines coincide, so it is still on both). The slower edge's last
+    /// position is a ridge arc between the two faces, as for a spike.
+    fn collapse_parallel(&mut self, l: usize, i: usize, t: f64) -> Result<(), SkeletonError> {
+        self.spend()?;
+        let Some(lav) = self.take_lav(l) else { return Ok(()) };
+        let n = lav.len();
+        if n < 3 || i >= n {
+            self.lavs.push(lav);
+            return Ok(());
+        }
+        let v = lav[i];
+        let tip = self.node_at(v.at(t), t);
+        self.end_ray(&v, tip);
+        let ridge = (v.ein, v.eout);
+        let out = if self.edge(v.ein).w > self.edge(v.eout).w {
+            // The incoming edge is the faster: it takes over the outgoing edge, whose far end `q` now ends it.
+            let q = lav[(i + 1) % n];
+            let pq = q.at(t);
+            let node = self.node_at(pq, t);
+            self.end_ray(&q, node);
+            self.add_arc(tip, node, ridge);
+            let merged = self.new_wv(v.ein, q.eout, pq, t, node);
+            std::iter::once(merged).chain((2..n).map(|k| lav[(i + k) % n])).collect()
+        } else {
+            // The outgoing edge is the faster: it takes over the incoming edge, whose far end `p` now starts it.
+            let p = lav[(i + n - 1) % n];
+            let pp = p.at(t);
+            let node = self.node_at(pp, t);
+            self.end_ray(&p, node);
+            self.add_arc(tip, node, ridge);
+            let merged = self.new_wv(p.ein, v.eout, pp, t, node);
+            std::iter::once(merged).chain((1..n - 1).map(|k| lav[(i + k) % n])).collect()
         };
         self.lavs.push(out);
         Ok(())
@@ -1097,6 +1289,11 @@ impl Sim {
                 return Some(Action::Spike { lav, i });
             }
         }
+        for (lav, vertices) in self.lavs.iter().enumerate() {
+            if let Some(i) = vertices.iter().position(|v| v.parallel) {
+                return Some(Action::Parallel { lav, i });
+            }
+        }
         // Only vertices and edges made at this instant can newly coincide; any other simultaneous hit is an event that
         // `next_event` predicts. (At the start everything is new.)
         let fresh = |v: &Wv| v.t0 >= t;
@@ -1112,7 +1309,8 @@ impl Sim {
                         if !(fresh(vert) || fresh(other) || fresh(&others[(target + 1) % k])) {
                             continue;
                         }
-                        if 1.0 - self.edge(other.eout).normal.dot(vert.vel) <= CLOSE_EPS
+                        let line = self.edge(other.eout);
+                        if line.w - line.normal.dot(vert.vel) <= CLOSE_EPS * self.speed
                             || self.splits_done.contains(&(vert.ein, vert.eout, other.eout))
                         {
                             continue;
@@ -1171,7 +1369,7 @@ impl Sim {
         }
         // A vertex made by an event cannot truly turn right while doubling back: the strip has closed over by more than
         // the tolerance can resolve, and what is left of it is a spike whatever its width.
-        let inverted = v.t0 > self.tol && cross < 0.0;
+        let inverted = v.t0 > self.time_tol && cross < 0.0;
         inverted || cross.abs() * prev.dist(here).min(next.dist(here)) <= THIN_WEDGE * self.tol
     }
 
@@ -1186,6 +1384,7 @@ impl Sim {
                 Some(Action::Finish(lav)) => self.finish(lav, t)?,
                 Some(Action::Cluster(group)) => self.merge_cluster(&group, t)?,
                 Some(Action::Spike { lav, i }) => self.collapse_spike(lav, i, t)?,
+                Some(Action::Parallel { lav, i }) => self.collapse_parallel(lav, i, t)?,
                 Some(Action::Split { lav, v, target_lav, target }) => self.split(lav, v, target_lav, target, t)?,
             }
         }
@@ -1206,7 +1405,7 @@ impl Sim {
                 let b = &vertices[(i + 1) % n];
                 let dir = self.edge(a.eout).dir;
                 let rate = dir.dot(b.vel - a.vel);
-                if rate >= -RATE_EPS {
+                if rate >= -RATE_EPS * self.speed {
                     continue;
                 }
                 let length = dir.dot(pos[lav][(i + 1) % n] - pos[lav][i]);
@@ -1227,9 +1426,9 @@ impl Sim {
                             continue;
                         }
                         let line = self.edge(a.eout);
-                        let closing = 1.0 - line.normal.dot(vert.vel);
-                        let ahead = line.normal.dot(pv) - (line.c + now);
-                        if closing <= CLOSE_EPS || ahead < -self.tol || self.splits_done.contains(&(vert.ein, vert.eout, a.eout)) {
+                        let closing = line.w - line.normal.dot(vert.vel);
+                        let ahead = line.normal.dot(pv) - (line.c + line.w * now);
+                        if closing <= CLOSE_EPS * self.speed || ahead < -self.tol || self.splits_done.contains(&(vert.ein, vert.eout, a.eout)) {
                             continue;
                         }
                         let dt = ahead.max(0.0) / closing;
@@ -1254,8 +1453,14 @@ impl Sim {
         }
     }
 
+    /// Every edge still on the wavefront has weight 0.
+    fn only_pinned_edges_left(&self) -> bool {
+        self.lavs.iter().flatten().all(|v| self.edge(v.ein).w == 0.0 && self.edge(v.eout).w == 0.0)
+    }
+
     /// Simulate until the wavefront has vanished, or, with `stop`, until time `stop`. Without `stop` a wavefront that
-    /// stops having events before it has vanished is an error (`EventLimit`).
+    /// stops having events before it has vanished is an error (`EventLimit`; `BadWeights` when what is left is only edges
+    /// that never move).
     fn run(&mut self, stop: Option<f64>) -> Result<(), SkeletonError> {
         self.resolve(self.time)?;
         loop {
@@ -1265,7 +1470,12 @@ impl Sim {
             }
             self.spend()?;
             let Some((time, event)) = self.next_event(self.time) else {
-                return if stop.is_some() { Ok(()) } else { Err(SkeletonError::EventLimit) };
+                return match stop {
+                    Some(_) => Ok(()),
+                    // Only edges that never move are left: nothing will ever sweep what they enclose.
+                    None if self.only_pinned_edges_left() => Err(SkeletonError::BadWeights),
+                    None => Err(SkeletonError::EventLimit),
+                };
             };
             if stop.is_some_and(|stop| time > stop) {
                 return Ok(());
@@ -1298,17 +1508,16 @@ fn find_root(parent: &mut [usize], mut k: usize) -> usize {
 // ---------------------------------------------------------------------------------------------------------------------
 
 /// One face per input edge. A face is bounded by its edge and by every arc that has that edge on one of its sides; walked
-/// from the edge's start vertex to its end vertex and onwards along those arcs it comes back to the start.
-fn build_faces(rings: &[Vec<Vec2>], arcs: &[ArcRec]) -> Vec<SkeletonFace> {
+/// from the edge's start vertex to its end vertex and onwards along those arcs it comes back to the start. An arc with the
+/// edge on both sides (a bridge to an island, see `walk_face`) is walked twice.
+fn build_faces(rings: &[Vec<Vec2>], arcs: &[ArcRec], nodes: &[SkeletonNode]) -> Vec<SkeletonFace> {
     let total: usize = rings.iter().map(Vec::len).sum();
     let mut bordering: Vec<Vec<usize>> = vec![Vec::new(); total];
     for (i, arc) in arcs.iter().enumerate() {
         if let Some(list) = bordering.get_mut(arc.sides.0) {
             list.push(i);
         }
-        if arc.sides.1 != arc.sides.0
-            && let Some(list) = bordering.get_mut(arc.sides.1)
-        {
+        if let Some(list) = bordering.get_mut(arc.sides.1) {
             list.push(i);
         }
     }
@@ -1318,7 +1527,7 @@ fn build_faces(rings: &[Vec<Vec2>], arcs: &[ArcRec]) -> Vec<SkeletonFace> {
         let n = pts.len();
         for edge in 0..n {
             let list = bordering.get(edge_id).map(Vec::as_slice).unwrap_or_default();
-            faces.push(SkeletonFace { ring, edge, nodes: walk_face(base + edge, base + (edge + 1) % n, list, arcs) });
+            faces.push(SkeletonFace { ring, edge, nodes: walk_face(edge_id, base + edge, base + (edge + 1) % n, list, arcs, nodes) });
             edge_id += 1;
         }
         base += n;
@@ -1327,38 +1536,155 @@ fn build_faces(rings: &[Vec<Vec2>], arcs: &[ArcRec]) -> Vec<SkeletonFace> {
 }
 
 /// The node loop of a face: `start`, `end`, then the arcs in `list` followed from `end` until they lead back to `start`.
-/// At a node where the face touches itself the first unused arc is taken.
-fn walk_face(start: usize, end: usize, list: &[usize], arcs: &[ArcRec]) -> Vec<usize> {
-    let mut used = vec![false; list.len()];
-    let mut nodes = vec![start, end];
-    let mut here = end;
-    for _ in 0..=list.len() {
-        let step = list.iter().enumerate().find_map(|(k, &ai)| {
-            let arc = arcs.get(ai)?;
-            if used[k] {
-                None
-            } else if arc.a == here {
-                Some((k, arc.b))
-            } else if arc.b == here {
-                Some((k, arc.a))
-            } else {
-                None
+/// At a node where the face touches itself there is a choice. Taking the first unused arc is simplest, but can take a
+/// shortcut round something the face encloses, or walk an enclosed island the wrong way round; so the face is also walked by
+/// turning (at every fork the arc that keeps the face on the left: the first clockwise from the way back; an island is
+/// walked clockwise). The simple walk is kept when it covers the same area, the turning walk otherwise. A face that
+/// encloses an island hangs the island on a bridge arc with the face on both sides (in `list` twice, walked there and
+/// back); such a face is always walked by turning.
+fn walk_face(face: usize, start: usize, end: usize, list: &[usize], arcs: &[ArcRec], nodes: &[SkeletonNode]) -> Vec<usize> {
+    let bridged = {
+        let mut sorted = list.to_vec();
+        sorted.sort_unstable();
+        sorted.windows(2).any(|pair| pair[0] == pair[1])
+    };
+    let (turning, turning_used) = walk_face_once(face, start, end, list, arcs, nodes, true);
+    if bridged {
+        return turning;
+    }
+    let (simple, simple_used) = walk_face_once(face, start, end, list, arcs, nodes, false);
+    let outline = |walk: &[usize]| -> Vec<Vec2> { walk.iter().filter_map(|&n| nodes.get(n).map(|node| node.pos)).collect() };
+    let (simple_outline, turning_outline) = (outline(&simple), outline(&turning));
+    let reach = extent(turning_outline.iter().copied()).map_or(0.0, |(lo, hi)| (hi.x - lo.x).max(hi.y - lo.y));
+    let same_area = (shoelace(&simple_outline) - shoelace(&turning_outline)).abs() <= EPS * reach * reach;
+    if same_area || simple_used > turning_used { simple } else { turning }
+}
+
+/// The arcs of one face, for walking round it.
+struct FaceArcs<'a> {
+    /// The face (its edge, counted over all rings).
+    face: usize,
+    /// The arcs bordering the face (a bridge arc, with the face on both sides, twice).
+    list: &'a [usize],
+    arcs: &'a [ArcRec],
+    nodes: &'a [SkeletonNode],
+    /// Arcs this short have no direction: a pole, or the gap between two nodes that events at nearly one place left a hair apart.
+    short: f64,
+}
+
+impl FaceArcs<'_> {
+    fn position(&self, node: usize) -> Option<Vec2> {
+        self.nodes.get(node).map(|n| n.pos)
+    }
+
+    /// The unused arcs of the face at `node`, as (index in `list`, node at the other end).
+    fn leaving(&self, node: usize, used: &[bool]) -> Vec<(usize, usize)> {
+        let mut out = Vec::new();
+        for (k, &ai) in self.list.iter().enumerate() {
+            let Some(arc) = self.arcs.get(ai) else { continue };
+            if used.get(k).copied().unwrap_or(true) {
+                continue;
+            }
+            if arc.a == node {
+                out.push((k, arc.b));
+            } else if arc.b == node {
+                out.push((k, arc.a));
+            }
+        }
+        out
+    }
+
+    /// How far clockwise, in [0, 2 pi], the way on along list entry `k` from `at` to `to` lies from the way back `back`. An arc
+    /// along the way back comes first (the face is the strip of no width between the two), the arc just walked (`arrived`)
+    /// last. A short arc counts as the best way on from its far end. Arcs on one line (strips of no width between faces)
+    /// are told apart by their sides: an arc's sides are (left, right) of its way from `a` to `b`, so going away from `at`
+    /// the face we are walking must be on the left of the next arc (counter-clockwise side, the one towards the way back);
+    /// a bridge (the face on both sides) comes before the arcs that have another face on their far side.
+    fn turn(&self, (k, to): (usize, usize), at: usize, back: Vec2, arrived: Option<usize>, used: &[bool], depth: usize) -> f64 {
+        let (Some(p), Some(q)) = (self.position(at), self.position(to)) else { return 0.0 };
+        let arc = self.list.get(k).copied();
+        if arrived.is_some() && arc == arrived {
+            return crate::TAU;
+        }
+        if p.dist(q) <= self.short && depth < 4 {
+            let beyond = self.leaving(to, used).into_iter().filter(|&(k2, _)| self.list.get(k2).copied() != arc);
+            return beyond.map(|c| self.turn(c, to, back, None, used, depth + 1)).fold(crate::TAU, f64::min);
+        }
+        let bias = arc.and_then(|ai| self.arcs.get(ai)).map_or(0.0, |arc| {
+            let (left, right) = if arc.a == at { arc.sides } else { (arc.sides.1, arc.sides.0) };
+            match (left == self.face, right == self.face) {
+                (true, true) => 2e-6,
+                (true, false) => 1e-6,
+                _ => 0.0,
             }
         });
+        let on = q - p;
+        if on.len() <= 0.0 || back.len() <= 0.0 {
+            return -bias;
+        }
+        // On the line of the way back (the end of the arc within a tolerance of it) and in the same direction.
+        if back.cross(on).abs() <= self.short * back.len() && back.dot(on) > 0.0 {
+            return -bias;
+        }
+        let cw = -back.cross(on).atan2(back.dot(on));
+        (if cw.is_finite() && cw > 0.0 { cw } else { cw + crate::TAU }) - bias
+    }
+}
+
+/// One walk of a face (see `walk_face`), `turning` choosing the arc at forks by angle; and how many of the face's arcs it used.
+fn walk_face_once(
+    id: usize,
+    start: usize,
+    end: usize,
+    list: &[usize],
+    arcs: &[ArcRec],
+    nodes: &[SkeletonNode],
+    turning: bool,
+) -> (Vec<usize>, usize) {
+    let reach = extent(nodes.iter().map(|node| node.pos)).map_or(0.0, |(lo, hi)| (hi.x - lo.x).max(hi.y - lo.y));
+    let face = FaceArcs { face: id, list, arcs, nodes, short: 1e-6 * reach };
+    let mut used = vec![false; list.len()];
+    let mut walk = vec![start, end];
+    let mut back = face.position(start).zip(face.position(end)).map_or(Vec2::ZERO, |(s, e)| s - e);
+    let (mut here, mut arrived) = (end, None);
+    for _ in 0..=list.len() {
+        let leaving = face.leaving(here, &used);
+        let step = match leaving.as_slice() {
+            [] => None,
+            [first, ..] if !turning => Some(*first),
+            many => many.iter().map(|&c| (face.turn(c, here, back, arrived, &used, 0), c)).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, c)| c),
+        };
         let Some((k, next)) = step else { break };
         used[k] = true;
         if next == start {
             break;
         }
-        nodes.push(next);
-        here = next;
+        walk.push(next);
+        if let Some((p, q)) = face.position(here).zip(face.position(next))
+            && p.dist(q) > face.short
+        {
+            back = p - q;
+        }
+        (here, arrived) = (next, list.get(k).copied());
     }
-    nodes
+    let count = used.iter().filter(|&&u| u).count();
+    (walk, count)
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Invariant checks
 // ---------------------------------------------------------------------------------------------------------------------
+
+/// One finite weight >= 0 per ring edge.
+fn check_weights(skeleton: &Skeleton, problems: &mut Vec<String>) {
+    let shaped = skeleton.weights.len() == skeleton.rings.len() && skeleton.weights.iter().zip(&skeleton.rings).all(|(w, r)| w.len() == r.len());
+    if !shaped {
+        problems.push("the weights do not match the rings edge for edge".to_string());
+    }
+    if skeleton.weights.iter().flatten().any(|w| !w.is_finite() || *w < 0.0) {
+        problems.push("a weight is negative or not finite".to_string());
+    }
+}
 
 /// The first nodes are the ring vertices, in order, at time 0.
 fn check_ring_nodes(skeleton: &Skeleton, ring_vertices: usize, tol: f64, problems: &mut Vec<String>) {
@@ -1382,7 +1708,8 @@ fn check_ring_nodes(skeleton: &Skeleton, ring_vertices: usize, tol: f64, problem
     }
 }
 
-/// Check one face (distance of every node from the edge's line equals its time, counter-clockwise, starts at the edge).
+/// Check one face (distance of every node from the edge's line equals the edge's weight times the node's time,
+/// counter-clockwise, starts at the edge).
 /// Returns the face's area for the total-area check.
 fn check_face(skeleton: &Skeleton, fi: usize, face: &SkeletonFace, tol: f64, area_tol: f64, problems: &mut Vec<String>) -> f64 {
     let Some(ring) = skeleton.rings.get(face.ring) else {
@@ -1399,17 +1726,18 @@ fn check_face(skeleton: &Skeleton, fi: usize, face: &SkeletonFace, tol: f64, are
         problems.push(format!("face {fi} (ring {} edge {}) does not start with the two end vertices of its edge", face.ring, face.edge));
     }
     let dir = unit(b - a);
+    let weight = skeleton.weights.get(face.ring).and_then(|ws| ws.get(face.edge)).copied().unwrap_or(1.0);
     let mut pts = Vec::with_capacity(face.nodes.len());
     for &ni in &face.nodes {
         let Some(node) = skeleton.nodes.get(ni) else {
             problems.push(format!("face {fi} refers to node {ni}, which does not exist"));
             continue;
         };
-        // Signed distance to the left of the edge (the inside) must be the node's time.
+        // Signed distance to the left of the edge (the inside) must be the edge's weight times the node's time.
         let dist = dir.cross(node.pos - a);
-        if (dist - node.time).abs() > tol {
+        if (dist - weight * node.time).abs() > tol {
             problems.push(format!(
-                "face {fi} (ring {} edge {}): node {ni} is {dist} from the edge's line but has time {}",
+                "face {fi} (ring {} edge {}): node {ni} is {dist} from the edge's line but has time {} (edge weight {weight})",
                 face.ring, face.edge, node.time
             ));
         }
@@ -2214,6 +2542,7 @@ mod tests {
                         if snap > 0.0 { Vec2::new((p.x / snap).round() * snap, (p.y / snap).round() * snap) } else { p }
                     })
                     .collect();
+                let star = tidy(star);
                 let holes = if case % 5 == 0 { vec![square(-1.0, -1.0, 1.0, 1.0)] } else { vec![] };
                 shapes += 1;
                 failures.extend(try_exercise(&format!("star {case} (seed {seed}, snap {snap})"), &star, &holes));
@@ -2248,5 +2577,801 @@ mod tests {
             failures.len(),
             failures.iter().take(2).cloned().collect::<Vec<_>>().join("\n\n")
         );
+    }
+    // -----------------------------------------------------------------------------------------------------------------
+    // Weighted skeleton
+    // -----------------------------------------------------------------------------------------------------------------
+
+    fn weighted(outer: &[Vec2], holes: &[Vec<Vec2>], weights: &[Vec<f64>]) -> Skeleton {
+        match weighted_skeleton(outer, holes, weights) {
+            Ok(sk) => sk,
+            Err(e) => panic!("{e}\nouter {outer:?}\nholes {holes:?}\nweights {weights:?}"),
+        }
+    }
+
+    /// The plan area of each face.
+    fn face_areas(sk: &Skeleton) -> Vec<f64> {
+        sk.faces.iter().map(|f| shoelace(&f.nodes.iter().map(|&i| sk.nodes[i].pos).collect::<Vec<_>>())).collect()
+    }
+
+    #[test]
+    fn unit_weights_give_the_plain_skeleton() {
+        let l = pts(&[(0.0, 0.0), (4.0, 0.0), (4.0, 2.0), (2.0, 2.0), (2.0, 4.0), (0.0, 4.0)]);
+        let frame_hole = vec![square(3.0, 3.0, 7.0, 7.0)];
+        let clockwise_l: Vec<Vec2> = l.iter().rev().copied().collect();
+        let cases: Vec<(Vec<Vec2>, Vec<Vec<Vec2>>)> = vec![
+            (square(0.0, 0.0, 4.0, 2.0), vec![]),
+            (l, vec![]),
+            (clockwise_l, vec![]),
+            (dumbbell(), vec![]),
+            (square(0.0, 0.0, 10.0, 10.0), frame_hole),
+        ];
+        for (outer, holes) in &cases {
+            let plain = straight_skeleton(outer, holes).unwrap();
+            let unit = weighted(outer, holes, &unit_weights(outer, holes));
+            assert_eq!(plain, unit);
+            assert!(plain.weights.iter().flatten().all(|&w| w == 1.0));
+            assert_eq!(plain.weights.iter().map(Vec::len).collect::<Vec<_>>(), plain.rings.iter().map(Vec::len).collect::<Vec<_>>());
+            assert_valid(&unit);
+        }
+    }
+
+    #[test]
+    fn gable_ends_put_the_ridge_on_the_short_edges() {
+        // Edges: bottom, right, top, left. The short edges (right and left) never move, so the ridge runs the full length.
+        let sk = weighted(&square(0.0, 0.0, 4.0, 2.0), &[], &[vec![1.0, 0.0, 1.0, 0.0]]);
+        assert_valid(&sk);
+        let inner = interior(&sk);
+        assert_eq!(inner.len(), 2);
+        assert_node(&inner[0], 0.0, 1.0, 1.0);
+        assert_node(&inner[1], 4.0, 1.0, 1.0);
+        assert_eq!(sk.weights, vec![vec![1.0, 0.0, 1.0, 0.0]]);
+        // The gable faces have no area in plan and every node of theirs lies on their edge; the long faces are rectangles.
+        let areas = face_areas(&sk);
+        assert!(areas[1].abs() < 1e-9 && areas[3].abs() < 1e-9, "{areas:?}");
+        assert!((areas[0] - 4.0).abs() < 1e-9 && (areas[2] - 4.0).abs() < 1e-9, "{areas:?}");
+        for face in [&sk.faces[1], &sk.faces[3]] {
+            let x = if face.edge == 1 { 4.0 } else { 0.0 };
+            assert!(face.nodes.iter().all(|&n| (sk.nodes[n].pos.x - x).abs() < 1e-9), "{face:?}");
+        }
+    }
+
+    #[test]
+    fn slower_short_edges_pull_the_ridge_in() {
+        let sk = weighted(&square(0.0, 0.0, 4.0, 2.0), &[], &[vec![1.0, 0.5, 1.0, 0.5]]);
+        assert_valid(&sk);
+        let inner = interior(&sk);
+        assert_eq!(inner.len(), 2);
+        assert_node(&inner[0], 0.5, 1.0, 1.0);
+        assert_node(&inner[1], 3.5, 1.0, 1.0);
+        // Different long edges: the top moves at half speed, so the ridge sits where bottom y = t meets top y = 2 - t/2.
+        let uneven = weighted(&square(0.0, 0.0, 4.0, 2.0), &[], &[vec![1.0, 1.0, 0.5, 1.0]]);
+        assert_valid(&uneven);
+        let inner = interior(&uneven);
+        assert_eq!(inner.len(), 2);
+        assert_node(&inner[0], 4.0 / 3.0, 4.0 / 3.0, 4.0 / 3.0);
+        assert_node(&inner[1], 8.0 / 3.0, 4.0 / 3.0, 4.0 / 3.0);
+    }
+
+    #[test]
+    fn one_gable_on_a_square() {
+        // Right edge pinned: the two corners on it slide up and down it and meet in the middle of it.
+        let sk = weighted(&square(0.0, 0.0, 2.0, 2.0), &[], &[vec![1.0, 0.0, 1.0, 1.0]]);
+        assert_valid(&sk);
+        let inner = interior(&sk);
+        assert_eq!(inner.len(), 2);
+        assert_node(&inner[0], 1.0, 1.0, 1.0);
+        assert_node(&inner[1], 2.0, 1.0, 1.0);
+        assert_eq!(sk.arcs.len(), 5);
+        let areas = face_areas(&sk);
+        assert!(areas[1].abs() < 1e-9, "{areas:?}");
+        // Bottom, top and left are trapezoid / triangle shaped: 1.5 + 1.5 + 1 of the square's 4.
+        assert!((areas.iter().sum::<f64>() - 4.0).abs() < 1e-9, "{areas:?}");
+    }
+
+    #[test]
+    fn uniform_weight_scales_every_time() {
+        let l = pts(&[(0.0, 0.0), (4.0, 0.0), (4.0, 2.0), (2.0, 2.0), (2.0, 4.0), (0.0, 4.0)]);
+        let hole = vec![square(3.0, 3.0, 7.0, 7.0)];
+        for (outer, holes) in [(square(0.0, 0.0, 4.0, 2.0), vec![]), (l, vec![]), (square(0.0, 0.0, 10.0, 10.0), hole)] {
+            let plain = straight_skeleton(&outer, &holes).unwrap();
+            for scale in [2.0, 0.25, 7.0, 1e-6, 1e6] {
+                let weights: Vec<Vec<f64>> = plain.rings.iter().map(|r| vec![scale; r.len()]).collect();
+                let fast = weighted(&outer, &holes, &weights);
+                assert_valid(&fast);
+                assert_eq!(fast.arcs, plain.arcs);
+                assert_eq!(fast.faces, plain.faces);
+                assert_eq!(fast.nodes.len(), plain.nodes.len());
+                for (a, b) in fast.nodes.iter().zip(&plain.nodes) {
+                    assert!(a.pos.near(b.pos, 1e-9) && (a.time * scale - b.time).abs() < 1e-9, "{a:?} vs {b:?} at weight {scale}");
+                }
+                assert!((fast.max_time() * scale - plain.max_time()).abs() < 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn roof_over_a_rectangle_with_gable_ends() {
+        let rect = square(0.0, 0.0, 4.0, 2.0);
+        let sk = roof_skeleton(&rect, &[], &[vec![1.0, f64::INFINITY, 1.0, f64::INFINITY]]).unwrap();
+        assert_valid(&sk);
+        assert_eq!(sk.weights, vec![vec![1.0, 0.0, 1.0, 0.0]]);
+        let inner = interior(&sk);
+        assert_eq!(inner.len(), 2);
+        assert_node(&inner[0], 0.0, 1.0, 1.0);
+        assert_node(&inner[1], 4.0, 1.0, 1.0);
+        // A shallower roof is lower: slope 1/2 gives the same ridge at half the height.
+        let low = roof_skeleton(&rect, &[], &[vec![0.5, f64::INFINITY, 0.5, f64::INFINITY]]).unwrap();
+        assert_valid(&low);
+        let inner = interior(&low);
+        assert_node(&inner[0], 0.0, 1.0, 0.5);
+        assert_node(&inner[1], 4.0, 1.0, 0.5);
+        assert!((low.height(4, 2.0) - 1.0).abs() < 1e-12);
+        // Without gables it is a hip roof, whose ridge is as high as the rectangle is wide / 2 times the slope.
+        let hip = roof_skeleton(&rect, &[], &[vec![0.5; 4]]).unwrap();
+        assert_valid(&hip);
+        let inner = interior(&hip);
+        assert_node(&inner[0], 1.0, 1.0, 0.5);
+        assert_node(&inner[1], 3.0, 1.0, 0.5);
+    }
+
+    /// A step in the outline whose lower side moves three times as fast: it catches up with the upper side when the edge
+    /// between them (the riser) has shrunk to nothing, and from then on carries the whole wavefront.
+    #[test]
+    fn a_faster_edge_consumes_the_slower_parallel_edge_it_catches() {
+        // Region [0, 7] x [0, 6] without the block [3, 7] x [0, 1]. Edges: 0 bottom of the left part (speed 3), 1 riser, 2 top of
+        // the block-shaped notch (the slow parallel edge), 3 right, 4 top, 5 left.
+        let outer = pts(&[(0.0, 0.0), (3.0, 0.0), (3.0, 1.0), (7.0, 1.0), (7.0, 6.0), (0.0, 6.0)]);
+        let sk = weighted(&outer, &[], &[vec![3.0, 1.0, 1.0, 1.0, 1.0, 1.0]]);
+        assert_valid(&sk);
+        let inner = interior(&sk);
+        assert_eq!(inner.len(), 4, "{inner:?}");
+        assert_node(&inner[0], 1.5, 4.5, 1.5);
+        assert_node(&inner[1], 2.5, 1.5, 0.5);
+        assert_node(&inner[2], 5.5, 4.5, 1.5);
+        assert_node(&inner[3], 6.5, 1.5, 0.5);
+        // The ridge along the consumed edge's last position joins the faces of the two parallel edges.
+        let y = node_index_at(&sk, 6.5, 1.5);
+        let x = node_index_at(&sk, 2.5, 1.5);
+        assert!(sk.arcs.iter().any(|&(a, b)| (a, b) == (x, y) || (a, b) == (y, x)), "{:?}", sk.arcs);
+        // The mirror image (the faster edge on the right, the step going down) does the same.
+        let mirrored = pts(&[(0.0, 1.0), (3.0, 1.0), (3.0, 0.0), (7.0, 0.0), (7.0, 6.0), (0.0, 6.0)]);
+        let sk = weighted(&mirrored, &[], &[vec![1.0, 1.0, 3.0, 1.0, 1.0, 1.0]]);
+        assert_valid(&sk);
+        let inner = interior(&sk);
+        assert_eq!(inner.len(), 4, "{inner:?}");
+        assert_node(&inner[0], 0.5, 1.5, 0.5);
+        assert_node(&inner[1], 1.5, 4.5, 1.5);
+        assert_node(&inner[2], 3.5, 1.5, 0.5);
+        assert_node(&inner[3], 5.5, 4.5, 1.5);
+        // The same step at equal speeds never meets: the riser keeps its length.
+        let flat = weighted(&outer, &[], &[vec![1.0; 6]]);
+        assert_valid(&flat);
+        assert!(flat.max_time() > 0.0);
+    }
+
+    fn node_index_at(sk: &Skeleton, x: f64, y: f64) -> usize {
+        sk.nodes.iter().position(|n| n.pos.near(Vec2::new(x, y), 1e-9) && n.time > 0.0).unwrap()
+    }
+
+    #[test]
+    fn weights_follow_their_edges_through_cleaning_and_reorientation() {
+        // Clockwise, with a repeated point, a vertex in the middle of the bottom edge and a repeated closing point.
+        // Edges: 0 left, 1 top, 2 empty, 3 right, 4 and 5 the bottom in two halves, 6 the empty closing edge.
+        let messy = pts(&[(0.0, 0.0), (0.0, 2.0), (4.0, 2.0), (4.0, 2.0), (4.0, 0.0), (2.0, 0.0), (0.0, 0.0)]);
+        let sk = weighted(&messy, &[], &[vec![0.0, 1.0, 9.0, 0.0, 1.0, 1.0, 9.0]]);
+        assert_valid(&sk);
+        assert_eq!(sk.rings, vec![pts(&[(4.0, 0.0), (4.0, 2.0), (0.0, 2.0), (0.0, 0.0)])]);
+        // Right, top, left, bottom of the counter-clockwise ring.
+        assert_eq!(sk.weights, vec![vec![0.0, 1.0, 0.0, 1.0]]);
+        let inner = interior(&sk);
+        assert_node(&inner[0], 0.0, 1.0, 1.0);
+        assert_node(&inner[1], 4.0, 1.0, 1.0);
+        // A repeated closing point may leave its empty edge's weight out.
+        let sk = weighted(&messy, &[], &[vec![0.0, 1.0, 9.0, 0.0, 1.0, 1.0]]);
+        assert_eq!(sk.weights, vec![vec![0.0, 1.0, 0.0, 1.0]]);
+        // Reversing the ring reverses which edge is which: left 2, top 3, right 5, bottom 7 become right, top, left, bottom.
+        let clockwise = pts(&[(0.0, 0.0), (0.0, 2.0), (4.0, 2.0), (4.0, 0.0)]);
+        let sk = weighted(&clockwise, &[], &[vec![2.0, 3.0, 5.0, 7.0]]);
+        assert_valid(&sk);
+        assert_eq!(sk.weights, vec![vec![5.0, 3.0, 2.0, 7.0]]);
+        // Holes are the second and later rings; a counter-clockwise hole is reversed too.
+        let hole = vec![square(3.0, 3.0, 7.0, 7.0)];
+        let sk = weighted(&square(0.0, 0.0, 10.0, 10.0), &hole, &[vec![1.0; 4], vec![2.0, 3.0, 4.0, 5.0]]);
+        assert_valid(&sk);
+        assert_eq!(sk.weights, vec![vec![1.0; 4], vec![4.0, 3.0, 2.0, 5.0]]);
+        // A vertex in the middle of an edge goes when both halves have the same weight, and -0.0 is 0.
+        let straight = pts(&[(0.0, 0.0), (2.0, 0.0), (4.0, 0.0), (4.0, 2.0), (0.0, 2.0)]);
+        let sk = weighted(&straight, &[], &[vec![1.0, 1.0, -0.0, 1.0, 0.0]]);
+        assert_valid(&sk);
+        assert_eq!(sk.weights, vec![vec![1.0, 0.0, 1.0, 0.0]]);
+        assert!(sk.weights[0][1].is_sign_positive());
+    }
+
+    #[test]
+    fn bad_weights_are_refused() {
+        let rect = square(0.0, 0.0, 4.0, 2.0);
+        let bad = |w: Vec<Vec<f64>>| weighted_skeleton(&rect, &[], &w);
+        assert!(bad(vec![vec![1.0; 4]]).is_ok());
+        // One vector per ring, one weight per edge (the closing edge counts).
+        assert_eq!(bad(vec![]), Err(SkeletonError::BadWeights));
+        assert_eq!(bad(vec![vec![1.0; 4], vec![1.0; 4]]), Err(SkeletonError::BadWeights));
+        for len in [0, 1, 3, 5, 8] {
+            assert_eq!(bad(vec![vec![1.0; len]]), Err(SkeletonError::BadWeights), "{len} weights");
+        }
+        let hole = vec![square(1.0, 0.5, 2.0, 1.5)];
+        assert_eq!(weighted_skeleton(&rect, &hole, &[vec![1.0; 4]]), Err(SkeletonError::BadWeights));
+        assert_eq!(weighted_skeleton(&rect, &hole, &[vec![1.0; 4], vec![1.0; 3]]), Err(SkeletonError::BadWeights));
+        assert!(weighted_skeleton(&rect, &hole, &[vec![1.0; 4], vec![1.0; 4]]).is_ok());
+        // Finite and not negative.
+        for w in [-1.0, -1e-300, f64::NEG_INFINITY, f64::NAN, f64::INFINITY] {
+            assert_eq!(bad(vec![vec![1.0, w, 1.0, 1.0]]), Err(SkeletonError::BadWeights), "weight {w}");
+        }
+        // Two collinear edges with different weights; with the same weight the vertex between them is dropped.
+        let straight = pts(&[(0.0, 0.0), (2.0, 0.0), (4.0, 0.0), (4.0, 2.0), (0.0, 2.0)]);
+        assert_eq!(weighted_skeleton(&straight, &[], &[vec![1.0, 2.0, 1.0, 1.0, 1.0]]), Err(SkeletonError::BadWeights));
+        assert_eq!(weighted_skeleton(&straight, &[], &[vec![1.0, 0.0, 1.0, 1.0, 1.0]]), Err(SkeletonError::BadWeights));
+        assert_eq!(weighted_skeleton(&straight, &[], &[vec![1.0, 1.0, 1.0, 1.0, 1.0]]).unwrap().rings[0].len(), 4);
+        // Nothing moves when every edge is pinned.
+        assert_eq!(bad(vec![vec![0.0; 4]]), Err(SkeletonError::BadWeights));
+        // Slopes: positive or infinite.
+        for s in [0.0, -1.0, f64::NAN, f64::NEG_INFINITY] {
+            assert_eq!(roof_skeleton(&rect, &[], &[vec![1.0, s, 1.0, 1.0]]), Err(SkeletonError::BadWeights), "slope {s}");
+        }
+        assert_eq!(roof_skeleton(&rect, &[], &[vec![f64::INFINITY; 4]]), Err(SkeletonError::BadWeights));
+        assert_eq!(roof_skeleton(&rect, &[], &[vec![1.0; 3]]), Err(SkeletonError::BadWeights));
+        // Geometry is still judged by its own errors.
+        let bowtie = pts(&[(0.0, 0.0), (2.0, 2.0), (2.0, 0.0), (0.0, 2.0)]);
+        assert_eq!(weighted_skeleton(&bowtie, &[], &[vec![1.0; 4]]), Err(SkeletonError::NotSimple));
+        assert_eq!(weighted_skeleton(&pts(&[(0.0, 0.0), (1.0, 0.0)]), &[], &[vec![1.0; 2]]), Err(SkeletonError::TooFewVertices));
+        assert_eq!(weighted_skeleton(&[], &[], &[vec![]]), Err(SkeletonError::TooFewVertices));
+        let nan = pts(&[(0.0, 0.0), (f64::NAN, 1.0), (1.0, 0.0)]);
+        assert_eq!(weighted_skeleton(&nan, &[], &[vec![1.0; 3]]), Err(SkeletonError::NotFinite));
+    }
+
+    /// The wavefront at time `d` of `sk`'s rings and weights, as loops.
+    fn wavefront_loops(outer: &[Vec2], holes: &[Vec<Vec2>], weights: &[Vec<f64>], d: f64) -> Vec<Vec<Vec2>> {
+        let prep = prepare(outer, holes, weights).unwrap();
+        let mut sim = Sim::new(&prep.rings, &prep.weights, prep.origin, prep.tol, 0);
+        sim.run(Some(d)).unwrap();
+        sim.loops_at(d).into_iter().map(|(pts, _)| pts).collect()
+    }
+
+    /// The height of a point (its distance to the line of the face it lies in, over that edge's weight) decides whether the
+    /// point is inside the wavefront: it is at time `d` exactly when its height exceeds `d`.
+    fn heights_match_wavefront(label: &str, outer: &[Vec2], holes: &[Vec<Vec2>], weights: &[Vec<f64>], sk: &Skeleton) {
+        let (lo, hi) = extent(sk.rings[0].iter().copied()).unwrap();
+        let mut rng = Lcg(99);
+        let face_polygons: Vec<Vec<Vec2>> = sk.faces.iter().map(|f| f.nodes.iter().map(|&i| sk.nodes[i].pos).collect()).collect();
+        let max = sk.max_time();
+        let levels: Vec<(f64, Vec<Vec<Vec2>>)> =
+            [0.137, 0.389, 0.641, 0.913].iter().map(|f| (max * f, wavefront_loops(outer, holes, weights, max * f))).collect();
+        // The wavefront never crosses itself (a missed event would make it). Touching is allowed: pinned edges can leave two
+        // parts of it resting against each other for good.
+        let tol = prepare(outer, holes, weights).unwrap().tol * 10.0;
+        for (d, loops) in &levels {
+            let rings: Vec<Vec<Vec2>> = loops.iter().filter_map(|l| tidy_loop(l, tol)).collect();
+            let edges: Vec<(usize, usize, Vec2, Vec2)> =
+                rings.iter().enumerate().flat_map(|(r, ring)| (0..ring.len()).map(move |i| (r, i, ring[i], ring[(i + 1) % ring.len()]))).collect();
+            // Which side of the line `a`-`b` the point lies on, if it is further than the tolerance from it.
+            let side = |a: Vec2, b: Vec2, p: Vec2| -> i8 {
+                let dist = (b - a).cross(p - a) / (b - a).len().max(f64::MIN_POSITIVE);
+                if dist > tol {
+                    1
+                } else if dist < -tol {
+                    -1
+                } else {
+                    0
+                }
+            };
+            for (x, &(r1, i1, a, b)) in edges.iter().enumerate() {
+                for &(r2, i2, c, e) in &edges[x + 1..] {
+                    let neighbours = r1 == r2 && (i2 == i1 + 1 || (i1 == 0 && i2 + 1 == rings[r1].len()));
+                    let crossing = side(a, b, c) * side(a, b, e) < 0 && side(c, e, a) * side(c, e, b) < 0;
+                    assert!(neighbours || !crossing, "{label}: the wavefront at {d} crosses itself: {a:?}-{b:?} and {c:?}-{e:?}");
+                }
+            }
+        }
+        for _ in 0..200 {
+            let p = Vec2::new(lo.x + (hi.x - lo.x) * rng.next(), lo.y + (hi.y - lo.y) * rng.next());
+            let Some((fi, _)) = face_polygons.iter().enumerate().find(|(_, poly)| point_in_polygon(poly, p)) else { continue };
+            let face = &sk.faces[fi];
+            let ring = &sk.rings[face.ring];
+            let (a, b) = (ring[face.edge], ring[(face.edge + 1) % ring.len()]);
+            let w = sk.weights[face.ring][face.edge];
+            if w <= 0.0 {
+                continue;
+            }
+            let height = unit(b - a).cross(p - a) / w;
+            for (d, loops) in &levels {
+                if (height - d).abs() < 1e-5 * (1.0 + height) {
+                    continue;
+                }
+                let inside = loops.iter().filter(|l| point_in_polygon(l, p)).count() % 2 == 1;
+                assert_eq!(inside, height > *d, "{label}: point {p:?} (face {fi}) has height {height} but the wavefront at {d} says {inside}");
+            }
+        }
+    }
+
+    /// Check a weighted skeleton thoroughly; `None` when it passes.
+    fn weighted_problem(label: &str, outer: &[Vec2], holes: &[Vec<Vec2>], weights: &[Vec<f64>]) -> Option<String> {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+        let trim = |m: String| -> String { m.chars().take(2500).collect() };
+        let sk = match catch_unwind(AssertUnwindSafe(|| weighted_skeleton(outer, holes, weights))) {
+            Err(_) => return Some(format!("{label}: panicked\nouter {outer:?}\nholes {holes:?}\nweights {weights:?}")),
+            Ok(Err(SkeletonError::NotSimple | SkeletonError::TooFewVertices | SkeletonError::HoleOutside)) => return None,
+            // Pinned edges can enclose a region nothing sweeps.
+            Ok(Err(SkeletonError::BadWeights)) if weights.iter().flatten().any(|&w| w == 0.0) => return None,
+            Ok(Err(e)) => return Some(trim(format!("{label}: {e}\nouter {outer:?}\nholes {holes:?}\nweights {weights:?}"))),
+            Ok(Ok(sk)) => sk,
+        };
+        let problems = check(&sk, 1e-6);
+        if !problems.is_empty() {
+            return Some(trim(format!("{label}: {problems:#?}\nouter {outer:?}\nholes {holes:?}\nweights {weights:?}")));
+        }
+        if sk.nodes.iter().any(|n| n.time < -1e-9) || !sk.max_time().is_finite() {
+            return Some(trim(format!("{label}: a node has a negative or infinite time\nouter {outer:?}\nweights {weights:?}")));
+        }
+        let failure = catch_unwind(AssertUnwindSafe(|| heights_match_wavefront(label, outer, holes, weights, &sk))).err()?;
+        let message = failure.downcast_ref::<String>().cloned().or_else(|| failure.downcast_ref::<&str>().map(|s| s.to_string()));
+        Some(trim(format!("{}\nouter {outer:?}\nholes {holes:?}\nweights {weights:?}", message.unwrap_or_else(|| label.to_string()))))
+    }
+
+    /// Random weights for rings of the given sizes: each edge is pinned (a gable) with probability `gable`, else drawn by
+    /// `mode` (0: uniform in [0.5, 2], 1: one of 0.5, 1, 2, 2: one of 1, 2, 3, 3 and 4: from 0.1 to 10 and from 0.01 to 100, evenly
+    /// in the logarithm, 5: as 0 but all of them scaled by one factor from 1e-6 to 1e6). The outer ring always has a moving edge.
+    fn random_weights(rng: &mut Lcg, lens: &[usize], gable: f64, mode: usize) -> Vec<Vec<f64>> {
+        let scale = if mode == 5 { 10f64.powf(rng.next() * 12.0 - 6.0) } else { 1.0 };
+        let mut weights: Vec<Vec<f64>> = lens
+            .iter()
+            .map(|&n| {
+                (0..n)
+                    .map(|_| match mode {
+                        _ if rng.next() < gable => 0.0,
+                        0 => 0.5 + 1.5 * rng.next(),
+                        1 => [0.5, 1.0, 2.0][rng.below(3)],
+                        2 => 1.0 + rng.below(3) as f64,
+                        3 => 10f64.powf(rng.next() * 2.0 - 1.0),
+                        4 => 10f64.powf(rng.next() * 4.0 - 2.0),
+                        _ => scale * (0.5 + 1.5 * rng.next()),
+                    })
+                    .collect()
+            })
+            .collect();
+        if let Some(outer) = weights.first_mut()
+            && outer.iter().all(|&w| w == 0.0)
+            && let Some(w) = outer.first_mut()
+        {
+            *w = 1.0;
+        }
+        weights
+    }
+
+    fn lens(outer: &[Vec2], holes: &[Vec<Vec2>]) -> Vec<usize> {
+        std::iter::once(outer.len()).chain(holes.iter().map(Vec::len)).collect()
+    }
+
+    /// Combs, crosses, Ts, Hs, Us, L-shapes, a dumbbell and stars: many parallel edges.
+    fn fixed_shapes() -> Vec<Vec<Vec2>> {
+        let comb = pts(&[
+            (0.0, 0.0),
+            (9.0, 0.0),
+            (9.0, 5.0),
+            (8.0, 5.0),
+            (8.0, 2.0),
+            (7.0, 2.0),
+            (7.0, 5.0),
+            (6.0, 5.0),
+            (6.0, 2.0),
+            (5.0, 2.0),
+            (5.0, 5.0),
+            (4.0, 5.0),
+            (4.0, 2.0),
+            (3.0, 2.0),
+            (3.0, 5.0),
+            (0.0, 5.0),
+        ]);
+        let cross = pts(&[
+            (2.0, 0.0),
+            (4.0, 0.0),
+            (4.0, 2.0),
+            (6.0, 2.0),
+            (6.0, 4.0),
+            (4.0, 4.0),
+            (4.0, 6.0),
+            (2.0, 6.0),
+            (2.0, 4.0),
+            (0.0, 4.0),
+            (0.0, 2.0),
+            (2.0, 2.0),
+        ]);
+        let t = pts(&[(0.0, 0.0), (10.0, 0.0), (10.0, 2.0), (6.0, 2.0), (6.0, 6.0), (4.0, 6.0), (4.0, 2.0), (0.0, 2.0)]);
+        let h = pts(&[
+            (0.0, 0.0),
+            (2.0, 0.0),
+            (2.0, 4.0),
+            (6.0, 4.0),
+            (6.0, 0.0),
+            (8.0, 0.0),
+            (8.0, 10.0),
+            (6.0, 10.0),
+            (6.0, 6.0),
+            (2.0, 6.0),
+            (2.0, 10.0),
+            (0.0, 10.0),
+        ]);
+        let u = pts(&[(0.0, 0.0), (6.0, 0.0), (6.0, 6.0), (4.0, 6.0), (4.0, 2.0), (2.0, 2.0), (2.0, 6.0), (0.0, 6.0)]);
+        let l = pts(&[(0.0, 0.0), (4.0, 0.0), (4.0, 2.0), (2.0, 2.0), (2.0, 4.0), (0.0, 4.0)]);
+        let star: Vec<Vec2> = (0..16).map(|i| Vec2::polar(Vec2::ZERO, if i % 2 == 0 { 10.0 } else { 4.0 }, crate::TAU * i as f64 / 16.0)).collect();
+        vec![comb, cross, t, h, u, l, dumbbell(), star, square(0.0, 0.0, 100.0, 0.5), pts(&[(0.0, 0.0), (50.0, 0.0), (0.0, 0.01)])]
+    }
+
+    /// The ring without repeated or straight-through vertices (which could not carry different weights).
+    fn tidy(ring: Vec<Vec2>) -> Vec<Vec2> {
+        clean_ring(&ring, 1e-9, Spikes::Reject).unwrap_or(ring)
+    }
+
+    /// A convex polygon: points on an ellipse at random angles.
+    fn random_convex(rng: &mut Lcg) -> Vec<Vec2> {
+        let n = 3 + rng.below(9);
+        let mut angles: Vec<f64> = (0..n).map(|_| rng.next() * crate::TAU).collect();
+        angles.sort_by(f64::total_cmp);
+        let (rx, ry) = (2.0 + 6.0 * rng.next(), 2.0 + 6.0 * rng.next());
+        angles.iter().map(|&a| Vec2::new(rx * a.cos(), ry * a.sin())).collect()
+    }
+
+    /// On a convex polygon the wavefront at time `t` is the intersection of the edges' moving half-planes, so a point's
+    /// height is the smallest `distance / weight` over the moving edges: every node's time must be exactly that.
+    fn convex_envelope_problem(label: &str, ring: &[Vec2], weights: &[f64]) -> Option<String> {
+        let sk = match weighted_skeleton(ring, &[], &[weights.to_vec()]) {
+            Ok(sk) => sk,
+            Err(SkeletonError::NotSimple | SkeletonError::TooFewVertices) => return None,
+            Err(e) => return Some(format!("{label}: {e}\nring {ring:?}\nweights {weights:?}")),
+        };
+        let problems = check(&sk, 1e-6);
+        if !problems.is_empty() {
+            return Some(format!("{label}: {problems:#?}\nring {ring:?}\nweights {weights:?}"));
+        }
+        let cleaned = &sk.rings[0];
+        let n = cleaned.len();
+        for (i, node) in sk.nodes.iter().enumerate().skip(n) {
+            let height = (0..n)
+                .filter(|&e| sk.weights[0][e] > 0.0)
+                .map(|e| unit(cleaned[(e + 1) % n] - cleaned[e]).cross(node.pos - cleaned[e]) / sk.weights[0][e])
+                .fold(f64::INFINITY, f64::min);
+            if (height - node.time).abs() > 1e-6 * (1.0 + node.time) {
+                return Some(format!(
+                    "{label}: node {i} has time {} but the lowest plane over it is at {height}\nring {ring:?}\nweights {weights:?}",
+                    node.time
+                ));
+            }
+        }
+        None
+    }
+
+    /// Weighted skeletons of random shapes (with random weights, some of them gables) satisfy every invariant. `seeds` x
+    /// `cases` rounds; returns how many shapes were tried and the failures.
+    fn weighted_campaign(seeds: &[u64], cases: usize) -> (usize, Vec<String>) {
+        let mut failures: Vec<String> = Vec::new();
+        let mut shapes = 0;
+        for &seed in seeds {
+            let mut rng = Lcg(seed);
+            for case in 0..cases {
+                let mode = case % 6;
+                let gable = [0.0, 0.0, 0.15, 0.3, 0.5][rng.below(5)];
+                // Polyominoes (axis-parallel outlines with holes, so parallel edges meet at different speeds).
+                let size = 3 + rng.below(6) as i32;
+                let mut cells = std::collections::HashSet::new();
+                for x in 0..size {
+                    for y in 0..size {
+                        if rng.next() < 0.45 + 0.4 * rng.next() {
+                            cells.insert((x, y));
+                        }
+                    }
+                }
+                if let Some(&first) = cells.iter().min() {
+                    let mut component = std::collections::HashSet::from([first]);
+                    let mut frontier = vec![first];
+                    while let Some((x, y)) = frontier.pop() {
+                        for n in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
+                            if cells.contains(&n) && component.insert(n) {
+                                frontier.push(n);
+                            }
+                        }
+                    }
+                    let (mut outlines, mut holes) = (Vec::new(), Vec::new());
+                    for ring in cell_loops(&component).unwrap_or_default() {
+                        let ring = tidy(ring);
+                        if shoelace(&ring) > 0.0 { outlines.push(ring) } else { holes.push(ring) }
+                    }
+                    if let Ok([outer]) = <[Vec<Vec2>; 1]>::try_from(outlines) {
+                        let angle = if case % 2 == 0 { 0.0 } else { rng.next() * crate::TAU };
+                        let noise = [0.0, 0.0, 1e-3, 1e-6, 1e-9][case % 5];
+                        let mut nudge = |p: &Vec2| *p + Vec2::new((rng.next() - 0.5) * noise, (rng.next() - 0.5) * noise);
+                        let o: Vec<Vec2> = rotated(&outer, angle).iter().map(&mut nudge).collect();
+                        let h: Vec<Vec<Vec2>> = holes.iter().map(|h| rotated(h, angle).iter().map(&mut nudge).collect()).collect();
+                        let weights = random_weights(&mut rng, &lens(&o, &h), gable, mode);
+                        shapes += 1;
+                        failures.extend(weighted_problem(
+                            &format!("polyomino {case} (seed {seed}, angle {angle}, noise {noise}, mode {mode})"),
+                            &o,
+                            &h,
+                            &weights,
+                        ));
+                    }
+                }
+                // Stars, snapped to a grid half of the time, with and without a hole.
+                let n = 3 + rng.below(20);
+                let snap = [0.0, 1.0, 0.5, 0.0][case % 4];
+                let star: Vec<Vec2> = (0..n)
+                    .map(|i| {
+                        let p = Vec2::polar(Vec2::ZERO, 2.0 + 8.0 * rng.next(), crate::TAU * (i as f64 + 0.9 * rng.next()) / n as f64);
+                        if snap > 0.0 { Vec2::new((p.x / snap).round() * snap, (p.y / snap).round() * snap) } else { p }
+                    })
+                    .collect();
+                let star = tidy(star);
+                let holes = if case % 5 == 0 { vec![square(-1.0, -1.0, 1.0, 1.0)] } else { vec![] };
+                let weights = random_weights(&mut rng, &lens(&star, &holes), gable, mode);
+                shapes += 1;
+                failures.extend(weighted_problem(&format!("star {case} (seed {seed}, snap {snap}, mode {mode})"), &star, &holes, &weights));
+                // Convex polygons, checked against the closed form.
+                let convex = random_convex(&mut rng);
+                let weights = random_weights(&mut rng, &[convex.len()], gable, mode);
+                shapes += 1;
+                failures.extend(convex_envelope_problem(&format!("convex {case} (seed {seed}, mode {mode})"), &convex, &weights[0]));
+                // Histograms: columns of integer heights, so many events coincide.
+                let columns = 2 + rng.below(5);
+                let mut ring = vec![Vec2::new(0.0, 0.0), Vec2::new(columns as f64, 0.0)];
+                for i in (0..columns).rev() {
+                    let h = 1.0 + rng.below(3) as f64;
+                    ring.push(Vec2::new(i as f64 + 1.0, h));
+                    ring.push(Vec2::new(i as f64, h));
+                }
+                let ring = tidy(ring);
+                let ring = if case % 2 == 0 { ring } else { rotated(&ring, rng.next() * crate::TAU) };
+                let weights = random_weights(&mut rng, &[ring.len()], gable, mode);
+                shapes += 1;
+                failures.extend(weighted_problem(&format!("histogram {case} (seed {seed}, mode {mode})"), &ring, &[], &weights));
+                // A room with rectangular holes on a grid.
+                let (cols, rows) = (2 + rng.below(3), 2 + rng.below(3));
+                let cell = 6.0;
+                let room = square(0.0, 0.0, cols as f64 * cell, rows as f64 * cell);
+                let mut holes = Vec::new();
+                for cx in 0..cols {
+                    for cy in 0..rows {
+                        if rng.next() < 0.5 {
+                            let (w, h) = (1.0 + rng.below(3) as f64, 1.0 + rng.below(3) as f64);
+                            let (x, y) = (cx as f64 * cell + 1.5 + rng.below(2) as f64, cy as f64 * cell + 1.5 + rng.below(2) as f64);
+                            holes.push(square(x, y, x + w, y + h));
+                        }
+                    }
+                }
+                let angle = if case % 3 == 0 { 0.0 } else { rng.next() * crate::TAU };
+                let turned: Vec<Vec<Vec2>> = holes.iter().map(|h| rotated(h, angle)).collect();
+                let weights = random_weights(&mut rng, &lens(&room, &holes), gable, mode);
+                shapes += 1;
+                failures.extend(weighted_problem(
+                    &format!("room {case} with {} holes (seed {seed}, mode {mode})", holes.len()),
+                    &rotated(&room, angle),
+                    &turned,
+                    &weights,
+                ));
+                // The fixed shapes of the unweighted tests, with their own random weights.
+                let shapes_list = fixed_shapes();
+                let fixed = &shapes_list[case % shapes_list.len()];
+                let fixed = if case % 2 == 0 { fixed.clone() } else { rotated(fixed, rng.next() * crate::TAU) };
+                let weights = random_weights(&mut rng, &[fixed.len()], gable, mode);
+                shapes += 1;
+                failures.extend(weighted_problem(
+                    &format!("fixed shape {} (case {case}, seed {seed}, mode {mode})", case % shapes_list.len()),
+                    &fixed,
+                    &[],
+                    &weights,
+                ));
+            }
+        }
+        (shapes, failures)
+    }
+
+    fn assert_campaign(seeds: &[u64], cases: usize) {
+        let (shapes, failures) = weighted_campaign(seeds, cases);
+        assert!(
+            failures.is_empty(),
+            "{} of {shapes} weighted shapes failed; the first:\n{}",
+            failures.len(),
+            failures.iter().take(3).cloned().collect::<Vec<_>>().join("\n\n")
+        );
+    }
+
+    #[test]
+    fn weighted_randomized_campaign() {
+        assert_campaign(&[101, 202, 303], 200);
+    }
+
+    /// A longer run of the same campaign (about a minute): `cargo test -p cadcraft-geom weighted_soak -- --ignored`.
+    #[test]
+    #[ignore]
+    fn weighted_soak() {
+        let seeds: Vec<u64> = (1..=100).collect();
+        assert_campaign(&seeds, 400);
+    }
+
+    /// Whatever the weights, the function returns (a result or an error) without panicking or looping.
+    #[test]
+    fn hostile_weights_never_panic() {
+        let mut rng = Lcg(4321);
+        let specials = [0.0, -0.0, 1.0, 2.0, 0.5, 1e-300, -1.0, 1e300, f64::MAX, f64::MIN_POSITIVE, f64::NAN, f64::INFINITY, f64::NEG_INFINITY];
+        let mut accepted = 0;
+        for _ in 0..1500 {
+            let ring = |rng: &mut Lcg, closed: bool| -> Vec<Vec2> {
+                let mut r: Vec<Vec2> = (0..3 + rng.below(6)).map(|_| Vec2::new((rng.next() - 0.5) * 10.0, (rng.next() - 0.5) * 10.0)).collect();
+                if closed && let Some(&first) = r.first() {
+                    r.push(first);
+                }
+                r
+            };
+            let closed = rng.next() < 0.3;
+            let outer = if rng.next() < 0.5 { square(0.0, 0.0, 4.0, 3.0) } else { ring(&mut rng, closed) };
+            let hole_count = rng.below(3);
+            let holes: Vec<Vec<Vec2>> = (0..hole_count).map(|_| ring(&mut rng, false)).collect();
+            let rings = 1 + if rng.next() < 0.8 { holes.len() } else { rng.below(4) };
+            let weights: Vec<Vec<f64>> = (0..rings)
+                .map(|r| {
+                    let n = if r == 0 { outer.len() } else { holes.get(r - 1).map_or(3, Vec::len) };
+                    let n = if rng.next() < 0.85 { n } else { rng.below(n + 3) };
+                    (0..n).map(|_| if rng.next() < 0.7 { 0.5 + rng.next() } else { specials[rng.below(specials.len())] }).collect()
+                })
+                .collect();
+            if weighted_skeleton(&outer, &holes, &weights).is_ok() {
+                accepted += 1;
+            }
+        }
+        assert!(accepted > 20, "{accepted} accepted");
+    }
+    #[test]
+    fn a_vertex_between_two_pinned_edges_does_not_move() {
+        // Top and left pinned: the corner between them stays put, and everything meets there at time 2.
+        let sk = weighted(&square(0.0, 0.0, 2.0, 2.0), &[], &[vec![1.0, 1.0, 0.0, 0.0]]);
+        assert_valid(&sk);
+        let inner = interior(&sk);
+        assert_eq!(inner.len(), 1, "{inner:?}");
+        assert_node(&inner[0], 0.0, 2.0, 2.0);
+        let areas = face_areas(&sk);
+        assert!((areas[0] - 2.0).abs() < 1e-9 && (areas[1] - 2.0).abs() < 1e-9 && areas[2].abs() < 1e-9 && areas[3].abs() < 1e-9, "{areas:?}");
+        // The corner's own ray rises straight up the roof: its two ends are at the same place.
+        let top_left = 3;
+        assert!(sk.arcs.iter().any(|&(a, b)| (a == top_left && b == 4) || (a == 4 && b == top_left)), "{:?}", sk.arcs);
+    }
+
+    /// A face can enclose an island: only the bottom edge moves, and it sweeps the whole region round a pinned hole. The face
+    /// then runs round the outer boundary, crosses to the hole on a bridge arc and walks round the hole clockwise.
+    #[test]
+    fn a_face_can_enclose_an_island() {
+        let hole = vec![square(3.0, 3.0, 7.0, 7.0)];
+        let weights = vec![vec![1.0, 0.0, 0.0, 0.0], vec![0.0; 4]];
+        let sk = weighted(&square(0.0, 0.0, 10.0, 10.0), &hole, &weights);
+        assert_valid(&sk);
+        let areas = face_areas(&sk);
+        assert!((areas[0] - 84.0).abs() < 1e-9, "{areas:?}");
+        assert!(areas[1..].iter().all(|a| a.abs() < 1e-9), "{areas:?}");
+        // The island's four corners are on the swept face's boundary (all the hole's nodes appear in it).
+        let bottom = &sk.faces[0].nodes;
+        assert!(bottom.len() > 8, "{bottom:?}");
+        heights_match_wavefront("island", &square(0.0, 0.0, 10.0, 10.0), &hole, &weights, &sk);
+    }
+
+    /// The structure of a weighted skeleton does not depend on the scale or position of the drawing.
+    #[test]
+    fn weighted_structure_is_scale_free() {
+        let l = pts(&[(0.0, 0.0), (4.0, 0.0), (4.0, 2.0), (2.0, 2.0), (2.0, 4.0), (0.0, 4.0)]);
+        let weights = vec![vec![1.0, 2.0, 0.5, 0.0, 3.0, 1.5]];
+        let base = weighted(&l, &[], &weights);
+        for scale in [1e-6, 1e-3, 1.0, 1e3, 1e6] {
+            let big: Vec<Vec2> = l.iter().map(|p| *p * scale + Vec2::new(5.0 * scale, -3.0 * scale)).collect();
+            let sk = weighted(&big, &[], &weights);
+            assert_eq!((sk.nodes.len(), sk.arcs.len(), sk.faces.len()), (base.nodes.len(), base.arcs.len(), base.faces.len()), "scale {scale}");
+            assert!(check(&sk, 1e-6 * scale.max(1.0)).is_empty(), "scale {scale}: {:?}", check(&sk, 1e-6 * scale.max(1.0)));
+            assert!((sk.max_time() - base.max_time() * scale).abs() < 1e-8 * scale, "scale {scale}");
+        }
+        // Very steep and very shallow roofs: slopes from 1e-3 to 1e3.
+        let rect = square(0.0, 0.0, 4.0, 2.0);
+        for slope in [1e-3, 0.1, 1.0, 10.0, 1e3] {
+            let sk = roof_skeleton(&rect, &[], &[vec![slope, f64::INFINITY, slope, f64::INFINITY]]).unwrap();
+            assert!(check(&sk, 1e-6 * slope.max(1.0)).is_empty(), "slope {slope}");
+            assert!((sk.max_time() - slope).abs() < 1e-9 * slope.max(1.0), "slope {slope}: {}", sk.max_time());
+        }
+    }
+
+    /// The same weighted polygon given in different ways (any starting vertex, either direction, repeated points, vertices
+    /// in the middle of edges, a repeated closing point) has the same skeleton, and the weights follow their edges.
+    #[test]
+    fn weighted_skeleton_does_not_depend_on_how_the_input_is_written() {
+        let mut rng = Lcg(2024);
+        for case in 0..300 {
+            // A star polygon with weights (some pinned) as the reference, counter-clockwise.
+            let n = 4 + rng.below(8);
+            let ring: Vec<Vec2> =
+                (0..n).map(|i| Vec2::polar(Vec2::ZERO, 3.0 + 6.0 * rng.next(), crate::TAU * (i as f64 + 0.8 * rng.next()) / n as f64)).collect();
+            let weights = random_weights(&mut rng, &[n], 0.2, case % 3).remove(0);
+            let Ok(reference) = weighted_skeleton(&ring, &[], std::slice::from_ref(&weights)) else { continue };
+            // Rewrite it: rotate the start, then maybe add repeated points and midpoints (the edge's weight on both halves).
+            let start = rng.below(n);
+            let mut points = Vec::new();
+            let mut ws = Vec::new();
+            for k in 0..n {
+                let i = (start + k) % n;
+                let j = (i + 1) % n;
+                points.push(ring[i]);
+                if rng.next() < 0.3 {
+                    // A repeated point: the edge between the two copies is empty and carries any weight.
+                    points.push(ring[i]);
+                    ws.push(7.0 + rng.next());
+                }
+                ws.push(weights[i]);
+                if rng.next() < 0.3 {
+                    points.push(ring[i].mid(ring[j]));
+                    ws.push(weights[i]);
+                }
+            }
+            if rng.next() < 0.3 {
+                // A repeated closing point.
+                if let Some(&first) = points.first() {
+                    points.push(first);
+                    ws.push(5.0);
+                }
+            }
+            let reversed = rng.next() < 0.5;
+            if reversed {
+                // Reversing the point order sends point m to len - 1 - m; edge e (from point e to e + 1) becomes the edge from point
+                // len - 1 - e - 1 + 1..., i.e. new edge (len - 2 - e) mod len.
+                let len = points.len();
+                points.reverse();
+                let old = ws.clone();
+                for (e, w) in old.iter().enumerate() {
+                    ws[(2 * len - 2 - e) % len] = *w;
+                }
+            }
+            let sk = match weighted_skeleton(&points, &[], &[ws.clone()]) {
+                Ok(sk) => sk,
+                Err(e) => panic!("case {case}: {e}\npoints {points:?}\nweights {ws:?}"),
+            };
+            assert!(check(&sk, 1e-6).is_empty(), "case {case}: {:?}", check(&sk, 1e-6));
+            assert_eq!(sk.rings[0].len(), reference.rings[0].len(), "case {case}");
+            // Same edges with the same weights: every cleaned edge is an edge of the reference with its weight.
+            let edges_of = |s: &Skeleton| -> Vec<(i64, i64, i64, i64, i64)> {
+                let r = &s.rings[0];
+                let key = |x: f64| (x * 1e6).round() as i64;
+                let mut v: Vec<_> = (0..r.len())
+                    .map(|e| (key(r[e].x), key(r[e].y), key(r[(e + 1) % r.len()].x), key(r[(e + 1) % r.len()].y), key(s.weights[0][e])))
+                    .collect();
+                v.sort_unstable();
+                v
+            };
+            assert_eq!(edges_of(&sk), edges_of(&reference), "case {case}");
+            let times = |s: &Skeleton| -> Vec<(i64, i64, i64)> {
+                let key = |x: f64| (x * 1e6).round() as i64;
+                let mut v: Vec<_> = s.nodes.iter().map(|n| (key(n.pos.x), key(n.pos.y), key(n.time))).collect();
+                v.sort_unstable();
+                v
+            };
+            assert_eq!(times(&sk), times(&reference), "case {case}");
+        }
+    }
+
+    /// A few hundred vertices with random weights (some pinned) is as routine as without.
+    #[test]
+    fn weighted_few_hundred_vertices() {
+        let mut rng = Lcg(5);
+        for (n, gable) in [(200usize, 0.0), (400, 0.0), (200, 0.1), (400, 0.05)] {
+            let ring: Vec<Vec2> =
+                (0..n).map(|i| Vec2::polar(Vec2::ZERO, 50.0 + 50.0 * rng.next(), crate::TAU * (i as f64 + 0.9 * rng.next()) / n as f64)).collect();
+            let weights = random_weights(&mut rng, &[n], gable, 0);
+            match weighted_skeleton(&ring, &[], &weights) {
+                Ok(sk) => assert!(check(&sk, 1e-6).is_empty(), "n={n} gable={gable}: {:?}", check(&sk, 1e-6)),
+                // Pinned edges can leave a part of the region nothing sweeps.
+                Err(SkeletonError::BadWeights) if gable > 0.0 => {}
+                Err(e) => panic!("n={n} gable={gable}: {e}"),
+            }
+        }
     }
 }
