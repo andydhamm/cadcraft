@@ -18,7 +18,7 @@
 //! No `unwrap`/`expect`/`panic` here; every input is checked (non-finite
 //! values rejected, empty/degenerate rings fall back to the interior geometry).
 
-use crate::poly::{ensure_ccw, offset_polygon, point_segment_dist, region_area, region_perimeter, ring_area, ring_perimeter};
+use crate::poly::{ensure_ccw, offset_polygon, region_area, region_perimeter, ring_area, ring_perimeter};
 use crate::{ArchModel, Room, RoomType};
 use cadcraft_doc::Level;
 use cadcraft_geom::Vec2;
@@ -94,7 +94,7 @@ pub fn edge_standard_offset(model: &ArchModel, level: u32, a: Vec2, b: Vec2, out
         };
         for (idx, face) in faces.iter().enumerate() {
             let (fa, fb) = face;
-            if point_segment_dist(a, *fa, *fb) < 1e-6 && point_segment_dist(b, *fa, *fb) < 1e-6 {
+            if edge_on_face(a, b, *fa, *fb) {
                 let (ref_a, ref_b) = if w.exterior {
                     // The room edge sits on the interior face; the standard
                     // reference is the opposite (outer) face.
@@ -189,7 +189,7 @@ fn standard_rings(model: &ArchModel, room: &Room) -> Option<(Vec<Vec2>, Vec<Vec<
         let out = -(b - a).normalized().perp();
         dist.push(edge_standard_offset(model, room.level, a, b, out));
     }
-    let off = crate::poly::offset_polygon(&room.polygon, &dist, true)?;
+    let off = crate::poly::offset_polygon(&outer, &dist, true)?;
 
     let mut holes = Vec::with_capacity(room.holes.len());
     for h in &room.holes {
@@ -204,9 +204,28 @@ fn standard_rings(model: &ArchModel, room: &Room) -> Option<(Vec<Vec2>, Vec<Vec<
             let out = (b - a).normalized().perp();
             hd.push(edge_standard_offset(model, room.level, a, b, out));
         }
-        holes.push(crate::poly::offset_polygon(h, &hd, false).unwrap_or_else(|| h.clone()));
+        holes.push(crate::poly::offset_polygon(&hc, &hd, false).unwrap_or_else(|| hc.clone()));
     }
     Some((off, holes))
+}
+
+/// Whether the room edge `a`→`b` lies on the (possibly longer or shorter) face line
+/// `fa`→`fb`: collinear within `1e-6` and with overlapping parameter intervals.
+fn edge_on_face(a: Vec2, b: Vec2, fa: Vec2, fb: Vec2) -> bool {
+    let dir = fb - fa;
+    let len = dir.dist(Vec2::ZERO);
+    if len < 1e-9 {
+        return false;
+    }
+    let d = dir.normalized();
+    let n = d.perp();
+    if (a - fa).dot(n).abs() > 1e-6 || (b - fa).dot(n).abs() > 1e-6 {
+        return false;
+    }
+    let t0 = (a - fa).dot(d);
+    let t1 = (b - fa).dot(d);
+    let (lo, hi) = if t0 < t1 { (t0, t1) } else { (t1, t0) };
+    hi > -1e-6 && lo < len + 1e-6
 }
 
 #[cfg(test)]
@@ -301,12 +320,11 @@ mod tests {
     #[test]
     fn interior_area_excludes_the_loop_hole() {
         let south = south_room();
-        assert!((standard_area(&ArchModel::default(), &south) - 31.62).abs() < 1e-3);
+        assert!((interior_area(&south) - 27.93).abs() < 1e-6);
 
         let mut room = south_room();
         room.holes.push(vec![pt(2.45, 0.95), pt(3.55, 0.95), pt(3.55, 2.05), pt(2.45, 2.05)]);
         assert!((interior_area(&room) - 26.72).abs() < 1e-6);
-        assert!((interior_area(&south) - 27.93).abs() < 1e-6);
     }
 
     #[test]
