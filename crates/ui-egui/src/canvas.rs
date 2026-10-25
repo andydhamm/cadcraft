@@ -1347,6 +1347,14 @@ fn wheel_zoom_points(events: &[egui::Event], opts: &egui::InputOptions, page: f3
     if points.is_finite() { points } else { 0.0 }
 }
 
+/// Draw the drawing area and handle its input (zoom and pan, picking, the crosshair) for this
+/// frame.
+///
+/// It also owns the cursor-visibility contract: the OS cursor is hidden only while the pointer is
+/// over the drawing area *and* the canvas is the topmost layer under it, so the drawn crosshair
+/// replaces the pointer over the drawing alone. A menu bar, an open menu (including its frame, not
+/// just its items), a tooltip or a floating palette above the canvas keeps the normal OS cursor
+/// visible (#1701), and so do the menus painted on the canvas itself (see [`over_canvas_menu`]).
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
     let full = ui.available_rect_before_wrap();
@@ -1381,7 +1389,17 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
             i.pointer.button_double_clicked(egui::PointerButton::Primary),
         )
     });
-    let inside = hover_pos.is_some_and(|p| rect.contains(p)) && resp.hovered();
+    // The drawing area alone: a menu popup's frame (between its items and its border), a tooltip
+    // or a floating palette lives on a layer above the canvas, where `hovered()` alone still
+    // counts the canvas. Over those the OS cursor stays visible and the crosshair stays put, as
+    // over the menu bar (#1701).
+    let inside = hover_pos.is_some_and(|p| rect.contains(p) && ui.ctx().layer_id_at(p) == Some(ui.layer_id()) && resp.hovered());
+    // The menus the canvas paints itself (selection cycling's rows, Dynamic Input's options) are
+    // menus too, but they share the canvas's layer: `layer_id_at` reports the drawing under them,
+    // so only their rectangles tell them apart from it ([`over_canvas_menu`]). They are excluded
+    // from the cursor contract below, though not from the canvas's input: a click on a row is
+    // taken by the row.
+    let on_menu = hover_pos.is_some_and(|p| over_canvas_menu(app, p));
     // Whether Ctrl is held right now. Written every frame (not just while a command prompts), so
     // previews that read `Session::ctrl_down` always see the current state. The engine
     // deliberately does not carry modifiers through `Input`, which is UI-agnostic (see PR
@@ -1919,10 +1937,12 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
         let gs = app.session.settings.gripsize as f32;
         for h in sel.iter().take(200) {
             if let Some(e) = st.doc.entity(*h) {
-                for (gi, g) in e.kind.grips().into_iter().enumerate() {
+                let grips = e.kind.grips();
+                let count = grips.len();
+                for (gi, g) in grips.into_iter().enumerate() {
                     let sp = xf.to_screen(g);
                     if rect.contains(sp) {
-                        let r = Rect::from_center_size(sp, vec2(gs * 2.0, gs * 2.0));
+                        let r = grip_rect(&e.kind, count, gi, sp, gs);
                         let hot = app.canvas.hot_grips.contains(&(*h, gi));
                         let warm = !hot && hover_pos.is_some_and(|hp| r.expand(2.0).contains(hp));
                         painter.rect_filled(
@@ -2007,7 +2027,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
         crate::cmdline::show(app, ui, full);
     }
     // Crosshair cursor.
-    if inside {
+    if inside && !on_menu {
         // Hide the OS cursor under the drawn crosshair, unless assistive tech needs it (#39).
         ui.ctx().set_cursor_icon(if app.ui.system_cursor { egui::CursorIcon::Crosshair } else { egui::CursorIcon::None });
         if let Some(hp) = hover_pos {
@@ -2019,15 +2039,16 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
                 cycle_badge(&painter, hp);
             }
         }
-        if app.session.settings.dynmode
-            && let Some(hp) = hover_pos
-        {
-            // A stretched grip shows its dimensions instead of the pointer boxes; a prompt asking
-            // for a distance shows its one field and keeps the prompt and its options.
-            let fields = crate::grip_dyn::draw(app, &painter);
-            if !fields || app.session.current_prompt().is_some_and(|p| p.distance) {
-                dynamic_input(app, &painter, hp, fields);
-            }
+    }
+    if inside
+        && app.session.settings.dynmode
+        && let Some(hp) = hover_pos
+    {
+        // A stretched grip shows its dimensions instead of the pointer boxes; a prompt asking for
+        // a distance shows its one field and keeps the prompt and its options.
+        let fields = crate::grip_dyn::draw(app, &painter);
+        if !fields || app.session.current_prompt().is_some_and(|p| p.distance) {
+            dynamic_input(app, &painter, hp, fields);
         }
     }
     // Over the crosshair, so the row under the pointer reads clearly.
@@ -2172,6 +2193,15 @@ fn cycle_badge(p: &egui::Painter, at: Pos2) {
         p.rect_filled(r, 1.0, t.cmd_bg);
         p.rect_stroke(r, 1.0, Stroke::new(1.0, t.text), egui::StrokeKind::Inside);
     }
+}
+
+/// Whether `p` lies on a menu the canvas paints itself — the selection cycling list's rows or the
+/// Dynamic Input options menu's rows. They are menus, so the OS cursor stays visible over them, but
+/// they share the canvas's layer: `layer_id_at` reports the drawing, and only their rectangles can
+/// tell them apart from it (#1701).
+fn over_canvas_menu(app: &CadApp, p: Pos2) -> bool {
+    app.canvas.cycle.as_ref().is_some_and(|c| c.rows.iter().any(|r| r.expand(2.0).contains(p)))
+        || app.cmd.option_rows.iter().any(|(r, _)| r.expand(2.0).contains(p))
 }
 
 /// The selection cycling list beside the click that opened it: a row per object, its type and
@@ -2640,11 +2670,18 @@ fn grip_menu(app: &mut CadApp, resp: &egui::Response) {
     }
 }
 
+/// Polyline segment midpoint grips are rectangular; vertex grips remain square.
+fn grip_rect(kind: &cadcraft_doc::EntityKind, count: usize, index: usize, center: Pos2, size: f32) -> Rect {
+    // The grip list interleaves vertices and available segment midpoints, then any remaining vertices.
+    let midpoint = matches!(kind, cadcraft_doc::EntityKind::LwPolyline(p) if index % 2 == 1 && index / 2 < count.saturating_sub(p.vertices.len()));
+    Rect::from_center_size(center, vec2(size * 2.0, if midpoint { size } else { size * 2.0 }))
+}
+
 /// The grip of a selected object under the cursor, if any: (object, grip index).
 fn grip_at(app: &CadApp, xf: &Xf, hover: Option<Pos2>) -> Option<(Handle, usize)> {
     let hp = hover?;
     let st = app.session.state().ok()?;
-    let gs = app.session.settings.gripsize as f32 + 3.0;
+    let gs = app.session.settings.gripsize as f32;
     let sel = app.session.selection();
     if !app.session.shows_grips(sel.len()) {
         return None;
@@ -2654,9 +2691,11 @@ fn grip_at(app: &CadApp, xf: &Xf, hover: Option<Pos2>) -> Option<(Handle, usize)
         if st.doc.layer(&e.common.layer).is_some_and(|l| l.locked) {
             continue;
         }
-        for (i, g) in e.kind.grips().into_iter().enumerate() {
+        let grips = e.kind.grips();
+        let count = grips.len();
+        for (i, g) in grips.into_iter().enumerate() {
             let sp = xf.to_screen(g);
-            if (sp.x - hp.x).abs() <= gs && (sp.y - hp.y).abs() <= gs {
+            if grip_rect(&e.kind, count, i, sp, gs).expand(3.0).contains(hp) {
                 return Some((*h, i));
             }
         }
