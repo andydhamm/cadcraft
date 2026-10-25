@@ -188,16 +188,17 @@ mod tests {
 
             // The execution must complete without panicking.
             let result = s.execute("roomdetect", g);
+            let is_err = result.is_err();
 
             // On an empty model with no `level` key, must be Ok with count == 0.
             if g == &json!({}) {
-                assert!(result.is_ok(), "empty model, no level: expected Ok, got {:?}", result);
+                assert!(!is_err, "empty model, no level: expected Ok, got {:?}", result);
                 let val = result.unwrap();
                 assert_eq!(val["count"], 0, "expected count 0 on empty model");
             }
             // A bad `level` must be Err and must not mutate the document.
             else if g == &json!({"level": "nope"}) || g == &json!({"level": 99}) {
-                assert!(result.is_err(), "bad level {:?} must be Err", g);
+                assert!(is_err, "bad level {:?} must be Err", g);
                 assert_eq!(s.doc().unwrap().arch.rooms.len(), rooms_before, "rooms must be unchanged after Err");
                 assert_eq!(s.doc().unwrap().arch_revision, rev_before, "arch_revision must be unchanged after Err");
             }
