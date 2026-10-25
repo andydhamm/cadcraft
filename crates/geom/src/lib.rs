@@ -14,6 +14,7 @@ mod intersect;
 mod mat;
 mod nurbs;
 pub mod region;
+pub mod skeleton;
 mod spline;
 mod spline_fit;
 mod vec;
@@ -27,6 +28,7 @@ pub use intersect::{circle_circle, intersect_ext, intersect_segments, line_circl
 pub use mat::{Mat3, Mat4};
 pub use spline::Spline;
 pub use spline_fit::{FitOptions, KnotParam};
+pub use skeleton::{OffsetRegion, Skeleton, SkeletonError, SkeletonFace, SkeletonNode, inset, outset, straight_skeleton};
 pub use vec::{Vec2, Vec3};
 
 /// Geometric tolerance for coincidence tests in drawing units.
@@ -78,5 +80,9 @@ pub fn arc_segments(radius: f64, sweep: f64, tol: f64) -> usize {
 
 #[cfg(test)]
 mod property_tests;
+#[cfg(test)]
+mod skeleton_property_tests;
+#[cfg(test)]
+mod skeleton_tests;
 #[cfg(test)]
 mod tests;
