@@ -7,8 +7,8 @@
 
 use crate::mesh::Mesh;
 use crate::ray::{box_tris, crossings_upward};
-use cadraft_doc::ArchId;
-use cadraft_geom::Vec3;
+use cadcraft_doc::ArchId;
+use cadcraft_geom::Vec3;
 
 /// Maximum number of triangles to scan for a single probe.
 ///
@@ -97,7 +97,8 @@ pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
     if p.x < b.min[0] || p.x > b.max[0] || p.y < b.min[1] || p.y > b.max[1] || p.z < b.min[2] || p.z > b.max[2] {
         return false;
     }
-    let tris = box_tris(mesh);
+    let b = mesh.bounds();
+    let tris = box_tris(Vec3::new(b.min[0], b.min[1], b.min[2]), Vec3::new(b.max[0], b.max[1], b.max[2]));
     let scan_count = tris.len().min(MAX_PROBE_TRIANGLES);
     crossings_upward(p, &tris[..scan_count]) % 2 == 1
 }
