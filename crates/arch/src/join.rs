@@ -121,6 +121,12 @@ pub struct WallShape {
 }
 
 impl WallShape {
+    /// A shape with no joins yet. `id`, `polygon` and `centre` are the required fields; build it
+    /// with this rather than an exhaustive literal so a new field cannot break other crates.
+    pub fn new(id: ArchId, polygon: Vec<Vec2>, centre: (Vec2, Vec2)) -> Self {
+        WallShape { id, polygon, centre, joins: Vec::new() }
+    }
+
     /// Bounds of the polygon; `Bounds2::EMPTY` for an empty polygon.
     pub fn bounds(&self) -> Bounds2 {
         if self.polygon.is_empty() {

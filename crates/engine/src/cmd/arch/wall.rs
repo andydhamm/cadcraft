@@ -14,7 +14,7 @@
 //!
 //! Returns JSON: `{"walls": [{"id": "w1", "handle": "a0000001"}, ...], "joins": 0}`
 
-use cadcraft_arch::{JoinKind, Level, Wall};
+use cadcraft_arch::{Level, Wall};
 use cadcraft_doc::Handle;
 use cadcraft_geom::Vec2;
 use serde_json::{Value, json};
@@ -304,10 +304,8 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
             to_ceiling: true,
             exterior,
             wall_type: wall_type.clone(),
-            join_start: JoinKind::default(),
-            join_end: JoinKind::default(),
             layers: layers.clone(),
-            divider: false,
+            ..Default::default()
         });
     }
 

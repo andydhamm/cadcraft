@@ -2,12 +2,6 @@
 use crate::cmd::{CommandSpec, Session, f64_or};
 use serde_json::Value;
 
-/// Default ceiling height (m) for a newly added level.
-const DEFAULT_CEILING_HEIGHT: f64 = 2.4;
-
-/// Default floor structure thickness (m) for a newly added level.
-const DEFAULT_FLOOR_STRUCTURE: f64 = 0.3;
-
 /// Find a level by name (string) or index (number). Returns the position in the levels vec.
 fn find_level(arch: &cadcraft_doc::arch::ArchModel, ref_val: &Value) -> Result<usize, crate::EngineError> {
     if let Some(n) = ref_val.as_str() {
@@ -56,12 +50,12 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
         let i = find_level(arch, above_ref)?;
         let base = &arch.levels[i];
         let new_elev = base.elevation + base.floor_to_floor();
+        // A new level takes `Level::default()`'s ceiling height and floor structure.
         let mut new_level = cadcraft_doc::arch::Level {
             index: arch.levels.len() as u32,
             name: format!("Level {}", arch.levels.len() + 1),
             elevation: new_elev,
-            ceiling_height: DEFAULT_CEILING_HEIGHT,
-            structure: DEFAULT_FLOOR_STRUCTURE,
+            ..Default::default()
         };
         if let Some(c) = ceiling {
             if !c.is_finite() || c <= 0.0 {
@@ -84,13 +78,8 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
         let i = find_level(arch, below_ref)?;
         let base = &arch.levels[i];
         let new_elev = base.elevation - base.floor_to_floor();
-        let mut new_level = cadcraft_doc::arch::Level {
-            index: i as u32,
-            name: format!("Level {}", i + 1),
-            elevation: new_elev,
-            ceiling_height: DEFAULT_CEILING_HEIGHT,
-            structure: DEFAULT_FLOOR_STRUCTURE,
-        };
+        let mut new_level =
+            cadcraft_doc::arch::Level { index: i as u32, name: format!("Level {}", i + 1), elevation: new_elev, ..Default::default() };
         if let Some(c) = ceiling {
             if !c.is_finite() || c <= 0.0 {
                 return Err(crate::EngineError::Other("level: ceiling must be finite and positive".into()));
@@ -160,7 +149,7 @@ pub fn specs() -> Vec<CommandSpec> {
 mod tests {
     use super::*;
     use crate::Session;
-    use cadcraft_doc::arch::{ArchId, JoinKind, Level, Wall};
+    use cadcraft_doc::arch::{Level, Wall};
     use cadcraft_geom::Vec2;
     use serde_json::json;
 
@@ -174,7 +163,7 @@ mod tests {
         {
             let doc = s.doc_mut().unwrap();
             doc.arch.levels.clear();
-            doc.arch.levels.push(Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 });
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
         }
         let result = s.execute("level", &json!({"above": "Level 1"})).unwrap();
         let doc = s.doc().unwrap();
@@ -184,27 +173,34 @@ mod tests {
     }
 
     #[test]
+    fn level_above_takes_the_default_ceiling_and_structure() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+        let doc = s.doc().unwrap();
+        let added = &doc.arch.levels[1];
+        assert!((added.ceiling_height - 2.4).abs() < 1e-9);
+        assert!((added.structure - 0.3).abs() < 1e-9);
+    }
+
+    #[test]
     fn level_below_renumbers_walls() {
         let mut s = setup_session();
         {
             let doc = s.doc_mut().unwrap();
             doc.arch.levels.clear();
-            doc.arch.levels.push(Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 });
-            doc.arch.levels.push(Level { index: 1, name: "Level 2".into(), elevation: 2.7, ceiling_height: 2.4, structure: 0.3 });
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+            doc.arch.levels.push(Level { index: 1, name: "Level 2".into(), elevation: 2.7, ..Default::default() });
             doc.arch.walls.push(Wall {
-                id: ArchId(0),
                 start: Vec2::new(0.0, 0.0),
                 end: Vec2::new(10.0, 0.0),
                 base_level: 1,
                 to_ceiling: true,
-                exterior: true,
-                wall_type: "Exterior".into(),
-                join_start: JoinKind::Mitre,
-                join_end: JoinKind::Mitre,
-                thickness: 0.2,
-                height: 2.4,
-                layers: vec![],
-                divider: false,
+                ..Default::default()
             });
         }
         let result = s.execute("level", &json!({"below": "Level 2"})).unwrap();
@@ -218,7 +214,7 @@ mod tests {
         let mut s = setup_session();
         {
             let doc = s.doc_mut().unwrap();
-            doc.arch.levels.push(Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 });
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
         }
         let result = s.execute("level", &json!({"above": "Level 99"}));
         assert!(result.is_err());
@@ -229,7 +225,7 @@ mod tests {
         let mut s = setup_session();
         {
             let doc = s.doc_mut().unwrap();
-            doc.arch.levels.push(Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 });
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
         }
         let result = s.execute("level", &json!({"name": "Level 1", "ceiling": -1.0}));
         assert!(result.is_err());

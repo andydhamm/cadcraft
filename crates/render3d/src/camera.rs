@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn orbit_camera_fits_the_scene_bounds() {
-        let bounds = Bounds3 { min: [-10.0, -10.0, 0.0], max: [10.0, 10.0, 4.0] };
+        let bounds = Bounds3::new([-10.0, -10.0, 0.0], [10.0, 10.0, 4.0]);
         let o = Orbit::fit(&bounds);
         assert!((o.target.x - 0.0).abs() < 1e-9);
         assert!((o.target.y - 0.0).abs() < 1e-9);
@@ -297,7 +297,7 @@ mod tests {
     fn projected_bounds_matches_the_camera() {
         let cam = Camera::Orbit(Orbit::new(Vec3::new(0.0, 0.0, 0.0), 0.0, 0.0, 10.0, 45.0));
         let size = (64u32, 64u32);
-        let tiny = Bounds3 { min: [-0.01, -0.01, -0.01], max: [0.01, 0.01, 0.01] };
+        let tiny = Bounds3::new([-0.01, -0.01, -0.01], [0.01, 0.01, 0.01]);
         let b = projected_bounds(&cam, &tiny, size);
         // Centre of the projected box is at the pixel centre.
         let cx = (b[0] + b[2]) / 2.0;
@@ -308,7 +308,7 @@ mod tests {
         assert!(b[0] >= 0.0 && b[2] <= 64.0);
         assert!(b[1] >= 0.0 && b[3] <= 64.0);
         // Doubling the box strictly grows the projected area.
-        let doubled = Bounds3 { min: [-0.1, -0.1, -0.1], max: [0.1, 0.1, 0.1] };
+        let doubled = Bounds3::new([-0.1, -0.1, -0.1], [0.1, 0.1, 0.1]);
         let b2 = projected_bounds(&cam, &doubled, size);
         let tiny_area = (b[2] - b[0]).abs() * (b[3] - b[1]).abs();
         let double_area = (b2[2] - b2[0]).abs() * (b2[3] - b2[1]).abs();
