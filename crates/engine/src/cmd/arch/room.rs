@@ -1,9 +1,10 @@
 //! The `room` command: create an architectural room from a drawn polygon.
 //!
 //! JSON parameters (create path):
-//! - `points`: required, `[[x, y], ...]` with 3 or more distinct points that form a
-//!   simple polygon. The ring is closed implicitly, so a trailing point that is
-//!   `near` the first within `1e-9` is dropped before the checks.
+//! - `points`: required, `[[x, y], ...]` — an explicitly closed ring (the last
+//!   point repeats the first within 1e-6). After dropping the trailing duplicate,
+//!   4 or more distinct points must form a simple polygon with finite area at
+//!   least `MIN_ROOM_AREA`.
 //! - `name`: optional, the room's name.
 //! - `type`: optional, case-insensitive
 //!   `living|bedroom|kitchen|bath|closet|utility|garage|porch|deck|openbelow|open-below|open below|other`.
@@ -28,8 +29,8 @@
 
 use std::str::FromStr;
 
-use cadcraft_arch::poly::{ensure_ccw, is_simple, region_area};
-use cadcraft_doc::arch::{ArchId, MAX_ROOMS, Room, RoomType};
+use cadcraft_arch::poly::{ensure_ccw, is_simple, region_area, ring_area};
+use cadcraft_doc::arch::{ArchId, MAX_ROOMS, MIN_ROOM_AREA, Room, RoomType};
 use cadcraft_geom::Vec2;
 use serde_json::{Value, json};
 
@@ -43,7 +44,7 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("room", "Room", run_room)
             .menu(&["Architecture", "Room"])
             .alias(&["rm"])
-            .params("{points: [[x,y],...], name?, type?, level?, ceiling?, floor?} | {id, name?, type?, ceiling?, floor?}")
+            .params("{points: closed-ring [[x,y],...], name?, type?, level?, ceiling?, floor?} | {id, name?, type?, ceiling?, floor?}")
             .interactive(|_| Ok(Box::new(RoomM::default()))),
     ]
 }
@@ -177,13 +178,18 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
 
     let arch = &d.arch;
 
-    // --- Points: required, distinct, >= 3, all finite, simple, CCW-normalised ---
-    let pts = points_param(p, "points").ok_or_else(|| bad("room", "`points` [[x,y],...] (3 or more) is required"))?;
+    // --- Points: required, distinct, explicitly closed, >= 4, finite, simple,
+    // CCW-normalised, finite area above MIN_ROOM_AREA ---
+    let pts = points_param(p, "points").ok_or_else(|| bad("room", "`points` [[x,y],...] (closed ring, 4 or more) is required"))?;
     let pts = distinct_points(&pts);
-    // The ring is closed implicitly: drop a trailing point coincident with the first.
-    let ring: Vec<Vec2> = if pts.len() >= 2 && pts[pts.len() - 1].near(pts[0], 1e-9) { pts[..pts.len() - 1].to_vec() } else { pts };
-    if ring.len() < 3 {
-        return Err(bad("room", "`points` [[x,y],...] must have 3 or more distinct points"));
+    // The ring must be explicitly closed: the last point repeats the first.
+    if pts.len() < 2 || !pts[pts.len() - 1].near(pts[0], 1e-6) {
+        return Err(bad("room", "points must be a closed ring: repeat the first point at the end"));
+    }
+    // Drop the trailing duplicate.
+    let ring: Vec<Vec2> = pts[..pts.len() - 1].to_vec();
+    if ring.len() < 4 {
+        return Err(bad("room", "`points` [[x,y],...] must have 4 or more distinct points"));
     }
     for pt in &ring {
         if !pt.is_finite() {
@@ -191,9 +197,14 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
         }
     }
     if !is_simple(&ring) {
-        return Err(bad("room", "`points` do not form a simple polygon (self-intersecting, zero area, or fewer than 3 points)"));
+        return Err(bad("room", "`points` do not form a simple polygon (self-intersecting or zero area)"));
     }
     let ring = ensure_ccw(&ring);
+    // Reject non-finite or too-small areas (e.g. 1e308 corners).
+    let area = ring_area(&ring);
+    if !area.is_finite() || area < MIN_ROOM_AREA {
+        return Err(bad("room", "`points` do not enclose a valid room area"));
+    }
 
     // --- Level: name or index, else 0; unknown is an error, never a silent default ---
     // `level` must be a string (a level name or a numeric index string). A present
@@ -346,9 +357,9 @@ mod tests {
         Session::new()
     }
 
-    /// A 3 x 3 m square (area 9.0).
+    /// A 3 x 3 m closed square (area 9.0).
     fn square_points() -> Value {
-        json!([[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0]])
+        json!([[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0], [0.0, 0.0]])
     }
 
     #[test]
@@ -527,7 +538,7 @@ mod tests {
 
         // The south room: 9.8 wide x 2.85 deep = 27.93 interior.
         let p = json!({
-            "points": [[0.1, 0.1], [9.9, 0.1], [9.9, 2.95], [0.1, 2.95]],
+            "points": [[0.1, 0.1], [9.9, 0.1], [9.9, 2.95], [0.1, 2.95], [0.1, 0.1]],
         });
         let r = s.execute("room", &p).unwrap();
         assert!((r["interiorArea"].as_f64().unwrap() - 27.93).abs() < 1e-3);
@@ -546,5 +557,58 @@ mod tests {
         let standard = r["standardArea"].as_f64().unwrap();
         assert!((standard - interior).abs() < 1e-9);
         assert!((interior - 9.0).abs() < 1e-9);
+    }
+
+    /// A non-closed point list (3 points, last != first) is refused with the
+    /// explicit-closure error, and the model is untouched.
+    #[test]
+    fn room_requires_an_explicitly_closed_ring() {
+        let mut s = new_session();
+        // Three points that form a triangle without repeating the first at the end.
+        let p = json!({ "points": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]] });
+        let r = s.execute("room", &p);
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 0);
+    }
+
+    /// A closed triangle (4 points, last == first) only yields 3 distinct
+    /// vertices after dropping the duplicate, so it is refused.
+    #[test]
+    fn room_rejects_a_closed_triangle() {
+        let mut s = new_session();
+        // Closed triangle: 4 points where the last repeats the first.
+        let p = json!({ "points": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 0.0]] });
+        let r = s.execute("room", &p);
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 0);
+    }
+
+    /// Coordinates of magnitude 1e308 make the area computation overflow to
+    /// infinity; such a ring is refused before any model write.
+    #[test]
+    fn room_rejects_non_finite_area() {
+        let mut s = new_session();
+        let big = 1e308f64;
+        let p = json!({
+            "points": [[0.0, 0.0], [big, 0.0], [big, big], [0.0, big], [0.0, 0.0]],
+        });
+        let r = s.execute("room", &p);
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 0);
+    }
+
+    /// The new explicit-closure requirement still accepts a valid closed
+    /// rectangle, so normal creation continues to work.
+    #[test]
+    fn room_create_still_accepts_a_closed_rectangle() {
+        let mut s = new_session();
+        let p = json!({
+            "points": [[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0], [0.0, 0.0]],
+        });
+        let r = s.execute("room", &p).unwrap();
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 1);
+        assert_eq!(r["id"].as_str().unwrap(), "r0");
+        assert_eq!(r["interiorArea"].as_f64().unwrap(), 9.0);
+        assert_eq!(r["standardArea"].as_f64().unwrap(), 9.0);
     }
 }

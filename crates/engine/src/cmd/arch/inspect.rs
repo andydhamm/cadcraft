@@ -3,6 +3,7 @@ use crate::cmd::CommandSpec;
 use crate::{EngineError, Session};
 use cadcraft_arch::area::is_living;
 use cadcraft_arch::join::solve_joins;
+use cadcraft_arch::label::label_point;
 use cadcraft_arch::opening::rough_offset;
 use cadcraft_arch::symbol::opening_symbol;
 use cadcraft_arch::wall::{wall_layer_polygons, wall_polygon};
@@ -119,7 +120,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
             let level = d.arch.level(r.level);
             let mut obj = JsonMap::new();
             obj.insert("id".to_string(), json!(room_label(r.id)));
-            obj.insert("handle".to_string(), json!(format!("{:016X}", room_handle(r.id).0)));
+            obj.insert("handle".to_string(), json!(room_handle(r.id).hex().to_lowercase()));
             obj.insert("name".to_string(), json!(r.name));
             obj.insert("type".to_string(), json!(room_type_key(r.room_type)));
             obj.insert("level".to_string(), json!(level.map(|l| l.name.clone()).unwrap_or_default()));
@@ -129,6 +130,8 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
             obj.insert("standardArea".to_string(), json!(r.standard_area));
             obj.insert("livingIncluded".to_string(), json!(is_living(r, level)));
             obj.insert("ceiling".to_string(), json!(r.ceiling_height));
+            let label_pt = label_point(&r.polygon, &r.holes).unwrap_or_else(|| centroid_points(&r.polygon));
+            obj.insert("label".to_string(), json!([label_pt.x, label_pt.y]));
             if labels_flag {
                 let label_pt = centroid_points(&r.polygon);
                 obj.insert("labelPoint".to_string(), json!([label_pt.x, label_pt.y]));
@@ -663,5 +666,60 @@ mod tests {
         let r = &rooms[0];
         assert!(r["labelPoint"].is_array(), "labelPoint must be an array");
         assert_eq!(r["labelText"].as_str().unwrap(), "Living Room\n12.00 m2");
+    }
+
+    #[test]
+    fn inspect_room_handle_is_lowercase_eight_digits() {
+        let mut s = session_with_one_room();
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        let r = &rooms[0];
+        let handle = r["handle"].as_str().expect("handle must be a string");
+        assert_eq!(handle.len(), 8, "handle must be 8 characters: {handle}");
+        assert!(handle.starts_with("a00"), "handle must start with 'a00': {handle}");
+        assert!(handle.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle must be lowercase hex: {handle}");
+    }
+
+    #[test]
+    fn inspect_room_label_is_inside_the_polygon() {
+        let mut s = session_with_one_room();
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        let r = &rooms[0];
+        let label = r["label"].as_array().expect("label must be an array");
+        assert_eq!(label.len(), 2, "label must be [x, y]");
+        let x = label[0].as_f64().expect("label x must be a number");
+        let y = label[1].as_f64().expect("label y must be a number");
+        // The room is a 4x3 rectangle from (0,0) to (4,3)
+        assert!(x >= 0.0 && x <= 4.0, "label x {x} outside polygon");
+        assert!(y >= 0.0 && y <= 3.0, "label y {y} outside polygon");
+    }
+
+    #[test]
+    fn inspect_room_label_falls_back_for_an_empty_polygon() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "Empty".into(),
+                    room_type: RoomType::Other,
+                    level: 0,
+                    polygon: vec![],
+                    ceiling_height: None,
+                    interior_area: 0.0,
+                    standard_area: 0.0,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        let r = &rooms[0];
+        let label = r["label"].as_array().expect("label must be an array");
+        assert_eq!(label.len(), 2, "label must be [x, y]");
+        assert_eq!(label[0].as_f64().expect("x"), 0.0);
+        assert_eq!(label[1].as_f64().expect("y"), 0.0);
     }
 }
