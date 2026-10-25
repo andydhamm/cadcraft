@@ -185,7 +185,7 @@ pub fn is_simple(pts: &[Vec2]) -> bool {
         }
     }
     true
-    }
+}
 
 /// Offset each edge of a closed ring by its own distance, then re-intersect
 /// adjacent edges.
@@ -216,17 +216,13 @@ pub fn offset_polygon(pts: &[Vec2], dist: &[f64], outward: bool) -> Option<Vec<V
         if dir == Vec2::ZERO {
             return None;
         }
-        let nrm = if outward {
-            -dir.perp()
-        } else {
-            dir.perp()
-        };
+        let nrm = if outward { -dir.perp() } else { dir.perp() };
         let oa = *a + nrm * dist[i];
         let ob = *b + nrm * dist[i];
         offset_lines.push((oa, ob));
     }
 
-    let mut out: Vec<Vec2>> = Vec::with_capacity(n);
+    let mut out: Vec<Vec2> = Vec::with_capacity(n);
     for i in 0..n {
         let (a1, b1) = &offset_lines[(i + n - 1) % n];
         let (a2, b2) = &offset_lines[i];
@@ -370,11 +366,10 @@ mod tests {
     fn offset_rectangle_outward_by_uniform_distance() {
         let pts = sq(&[(0.1, 0.1), (9.9, 0.1), (9.9, 2.95), (0.1, 2.95)]);
         let dist = [0.1, 0.2, 0.1, 0.2];
-        let out = offset_polygon(&pts, &dist, true)
-            .unwrap_or_else(|| {
-                assert!(false, "expected a valid outward offset");
-                vec![]
-            });
+        let out = offset_polygon(&pts, &dist, true).unwrap_or_else(|| {
+            assert!(false, "expected a valid outward offset");
+            vec![]
+        });
         assert!(close(out[0].x, -0.1) && close(out[0].y, 0.0));
         assert!(close(out[1].x, 10.1) && close(out[1].y, 0.0));
         assert!(close(out[2].x, 10.1) && close(out[2].y, 3.05));
@@ -386,11 +381,10 @@ mod tests {
     fn offset_hole_inward_shrinks_it() {
         let pts = sq(&[(2.45, 0.95), (3.55, 0.95), (3.55, 2.05), (2.45, 2.05)]);
         let dist = [0.05, 0.05, 0.05, 0.05];
-        let out = offset_polygon(&pts, &dist, false)
-            .unwrap_or_else(|| {
-                assert!(false, "expected a valid inward offset");
-                vec![]
-            });
+        let out = offset_polygon(&pts, &dist, false).unwrap_or_else(|| {
+            assert!(false, "expected a valid inward offset");
+            vec![]
+        });
         assert!(close(ring_area(&out), 1.0));
     }
 
@@ -398,11 +392,10 @@ mod tests {
     fn offset_uses_per_edge_distances() {
         let pts = sq(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]);
         let dist = [0.0, 0.5, 0.0, 0.5];
-        let out = offset_polygon(&pts, &dist, true)
-            .unwrap_or_else(|| {
-                assert!(false, "expected a valid per-edge offset");
-                vec![]
-            });
+        let out = offset_polygon(&pts, &dist, true).unwrap_or_else(|| {
+            assert!(false, "expected a valid per-edge offset");
+            vec![]
+        });
         assert!(close(out[0].x, -0.5) && close(out[0].y, 0.0));
         assert!(close(out[1].x, 1.5) && close(out[1].y, 0.0));
         assert!(close(out[2].x, 1.5) && close(out[2].y, 1.0));
@@ -434,11 +427,10 @@ mod tests {
     #[test]
     fn offset_zero_distance_is_identity() {
         let pts = sq(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]);
-        let out = offset_polygon(&pts, &[0.0; 4], true)
-            .unwrap_or_else(|| {
-                assert!(false, "zero distance should be the identity");
-                vec![]
-            });
+        let out = offset_polygon(&pts, &[0.0; 4], true).unwrap_or_else(|| {
+            assert!(false, "zero distance should be the identity");
+            vec![]
+        });
         assert_eq!(out.len(), 4);
         for (i, p) in pts.iter().enumerate() {
             assert!(close(out[i].x, p.x));
