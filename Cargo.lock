@@ -580,7 +580,7 @@ dependencies = [
 
 [[package]]
 name = "cadcraft-arch"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "cadcraft-doc",
  "cadcraft-geom",
@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "cadcraft-arch3d"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "cadcraft-arch",
  "cadcraft-color",
@@ -749,7 +749,7 @@ dependencies = [
 
 [[package]]
 name = "cadcraft-render3d"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "bytemuck",
  "cadcraft-arch3d",
