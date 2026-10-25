@@ -187,6 +187,66 @@ pub fn is_simple(pts: &[Vec2]) -> bool {
     true
 }
 
+/// Offset each edge of a closed ring by its own distance, then re-intersect
+/// adjacent edges.
+///
+/// `outward == true` offsets along `-(b - a).normalized().perp()` (outward for a CCW ring);
+/// `outward == false` along `(b - a).normalized().perp()` (inward for a CCW ring, i.e. outward
+/// from the region when the ring is a hole). Returns `None` on any degenerate input.
+pub fn offset_polygon(pts: &[Vec2], dist: &[f64], outward: bool) -> Option<Vec<Vec2>> {
+    let n = pts.len();
+    if n < 3 || dist.len() != n {
+        return None;
+    }
+    if pts.iter().any(|p| !p.is_finite()) {
+        return None;
+    }
+    if dist.iter().any(|d| !d.is_finite()) {
+        return None;
+    }
+    if ring_area(pts) <= 0.0 {
+        return None;
+    }
+
+    let mut offset_lines: Vec<(Vec2, Vec2)> = Vec::with_capacity(n);
+    for i in 0..n {
+        let a = &pts[i];
+        let b = &pts[(i + 1) % n];
+        let dir = (*b - *a).normalized();
+        if dir == Vec2::ZERO {
+            return None;
+        }
+        let nrm = if outward { -dir.perp() } else { dir.perp() };
+        let oa = *a + nrm * dist[i];
+        let ob = *b + nrm * dist[i];
+        offset_lines.push((oa, ob));
+    }
+
+    let mut out: Vec<Vec2> = Vec::with_capacity(n);
+    for i in 0..n {
+        let (a1, b1) = &offset_lines[(i + n - 1) % n];
+        let (a2, b2) = &offset_lines[i];
+        let d1 = *b1 - *a1;
+        let d2 = *b2 - *a2;
+        let den = d1.cross(d2);
+        if den.abs() < 1e-12 {
+            return None;
+        }
+        let t = (*a2 - *a1).cross(d2) / den;
+        let pt = *a1 + d1 * t;
+        if !pt.is_finite() {
+            return None;
+        }
+        out.push(pt);
+    }
+
+    if ring_area(&out) <= 1e-12 || !is_simple(&out) {
+        return None;
+    }
+
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,5 +360,84 @@ mod tests {
 
         let inf = vec![Vec2::ZERO, Vec2::X, Vec2::new(f64::INFINITY, 0.0)];
         assert!(!is_simple(&inf));
+    }
+
+    #[test]
+    fn offset_rectangle_outward_by_uniform_distance() {
+        let pts = sq(&[(0.1, 0.1), (9.9, 0.1), (9.9, 2.95), (0.1, 2.95)]);
+        let dist = [0.1, 0.2, 0.1, 0.2];
+        let out = offset_polygon(&pts, &dist, true).unwrap_or_else(|| {
+            assert!(false, "expected a valid outward offset");
+            vec![]
+        });
+        assert!(close(out[0].x, -0.1) && close(out[0].y, 0.0));
+        assert!(close(out[1].x, 10.1) && close(out[1].y, 0.0));
+        assert!(close(out[2].x, 10.1) && close(out[2].y, 3.05));
+        assert!(close(out[3].x, -0.1) && close(out[3].y, 3.05));
+        assert!(close(ring_area(&out), 10.2 * 3.05));
+    }
+
+    #[test]
+    fn offset_hole_inward_shrinks_it() {
+        let pts = sq(&[(2.45, 0.95), (3.55, 0.95), (3.55, 2.05), (2.45, 2.05)]);
+        let dist = [0.05, 0.05, 0.05, 0.05];
+        let out = offset_polygon(&pts, &dist, false).unwrap_or_else(|| {
+            assert!(false, "expected a valid inward offset");
+            vec![]
+        });
+        assert!(close(ring_area(&out), 1.0));
+    }
+
+    #[test]
+    fn offset_uses_per_edge_distances() {
+        let pts = sq(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]);
+        let dist = [0.0, 0.5, 0.0, 0.5];
+        let out = offset_polygon(&pts, &dist, true).unwrap_or_else(|| {
+            assert!(false, "expected a valid per-edge offset");
+            vec![]
+        });
+        assert!(close(out[0].x, -0.5) && close(out[0].y, 0.0));
+        assert!(close(out[1].x, 1.5) && close(out[1].y, 0.0));
+        assert!(close(out[2].x, 1.5) && close(out[2].y, 1.0));
+        assert!(close(out[3].x, -0.5) && close(out[3].y, 1.0));
+        assert!(close(ring_area(&out), 2.0));
+    }
+
+    #[test]
+    fn offset_returns_none_for_degenerate_or_bad_input() {
+        let pts = sq(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]);
+
+        // Length mismatch.
+        let dist = vec![0.1, 0.2, 0.3];
+        assert!(offset_polygon(&pts, &dist, true).is_none());
+
+        // Two-point ring.
+        let two = vec![Vec2::ZERO, Vec2::X];
+        assert!(offset_polygon(&two, &[0.1; 2], true).is_none());
+
+        // Non-finite distance.
+        let nan_dist = vec![0.1, f64::NAN, 0.1, 0.1];
+        assert!(offset_polygon(&pts, &nan_dist, true).is_none());
+
+        // A slot open at the top: the two slot walls offset onto the same line,
+        // so the resulting ring has overlapping (self-intersecting) edges and
+        // fails `is_simple`.
+        let notch = sq(&[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (7.0, 10.0), (7.0, 4.0), (5.0, 4.0), (5.0, 10.0), (0.0, 10.0)]);
+        assert!(offset_polygon(&notch, &[1.0; 8], true).is_none());
+    }
+
+    #[test]
+    fn offset_zero_distance_is_identity() {
+        let pts = sq(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]);
+        let out = offset_polygon(&pts, &[0.0; 4], true).unwrap_or_else(|| {
+            assert!(false, "zero distance should be the identity");
+            vec![]
+        });
+        assert_eq!(out.len(), 4);
+        for (i, p) in pts.iter().enumerate() {
+            assert!(close(out[i].x, p.x));
+            assert!(close(out[i].y, p.y));
+        }
+        assert!(close(ring_area(&out), 1.0));
     }
 }
