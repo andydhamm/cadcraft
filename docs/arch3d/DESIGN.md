@@ -153,3 +153,46 @@ Phase 3 (ARCH-8) landed rooms, floors, ceilings and levels. Key decisions to rec
 - `geom::skeleton` (2026-10-25, assisted draft: written by Claude ahead of phase 4, not by the swarm): `straight_skeleton(outer, holes)` for a polygon with holes, `inset(.., d)` and `outset(.., d)` for mitred offsets, and `check` for its invariants. Each input edge sweeps one face; a node's `time` is its distance to that face's edge, so a hip roof is the skeleton lifted by `time * slope` with one roof plane per face. Use it for phase 4 roofs and for room or area offsets instead of writing new offset code.
 - `geom::roof_skeleton(outer, holes, slopes)` and `weighted_skeleton(.., weights)` (2026-10-25, assisted draft): per-edge roof pitch and gable ends. `slopes[ring][edge]` is rise per run for each input edge (`f64::INFINITY` for a gable, whose face stands vertical); every node's `time` is its roof height, and each face is the roof plane over its edge. Build phase 4 roofs on this rather than lifting the plain skeleton.
 - `render3d` drawing and the 3D pane (2026-10-25, assisted draft, written by Claude after the swarm's offscreen segments made no gate pass in 7–37 rounds each): `Offscreen` owns colour (`Rgba8UnormSrgb`) and depth (`Depth32Float`) targets on its own device (`Offscreen::create`, for the CLI and tests) or the window's (`Offscreen::with_device`, for the pane). `encode`/`render` draw `Scene3d` depth-tested with the directional light plus ambient, one uniform slot per mesh (dynamic offsets), albedo from `material_albedo(mesh.material)`; meshes re-upload only when the scene key changes. Shading is flat, from each triangle's own plane (`cross(dpdy, dpdx)` of the world position, facing the camera): arch3d's boxes share 8 corners with averaged normals, which speckled every face, and its winding is not consistent. `read_rgba`/`read_png` are synchronous and bounded (`READBACK_TIMEOUT`). The CLI's `PROJECTED` comes from `projected_scene_bounds` (mesh vertices), which matches the silhouette where room slabs leave the bounding box's corners empty; check 06 now looks for a flat fill over every pixel and parses `PROJECTED x0,y0,x1,y1`. The pane (`ui-egui/src/pane3d.rs`) renders through an `egui_wgpu` callback: `install` at `set_wgpu`, the scene syncs per document and `arch_revision`, the target is redrawn only when the scene, camera or size changed (`Resources.draws`), then sampled into the pane; drag orbits, the wheel zooms. **Headless instances use `Backends::PRIMARY` (`offscreen::headless_instance`)**: several threads starting the GL/EGL backend at once hung test binaries for 900 s on cgyws2, which is what stalled the offscreen segments; GPU tests share one device (`gputest::shared_device`). wgpu moved from 29 to 30, the version egui-wgpu uses, so the pane can share the window's device.
+
+---
+
+## Assisted building block (2026-10-25): feature edges, hidden-line removal and section cuts (phases 6-7)
+
+Pure CPU, deterministic geometry in `arch3d`, merged ahead of phases 6 and 7 so they build on it instead of writing
+their own. Tests: `crates/arch3d/tests/hlr_section.rs`.
+
+- **`arch3d::edges`.** `feature_edges(mesh, CREASE_DEG)` / `scene_feature_edges`: vertices welded at `WELD` (1e-5 m)
+  first, then every edge used by one triangle (`Boundary`), more than two (`NonManifold`), or two whose faces meet at
+  more than 20° (`Crease`). Diagonals of a planar face never come out. With a view direction the HLR also adds
+  `Silhouette` edges (one face toward the viewer, one away), so a round column has an outline. Phase 6's "shaded with
+  edges" draws these.
+- **`arch3d::hlr`.** `OrthoView::new(dir, up)` / `OrthoView::elevation([x, y])` (looks along `dir`; sheet `u` right,
+  `v` up, depth away); `visible_lines(scene, view) -> Vec<Line2>` (sheet metres, each line tagged with its `ArchId`).
+  Exact: where a triangle covers part of an edge on the sheet, the depth difference is linear along the edge, so the
+  hidden part is one interval; the union of hidden intervals is removed. Covering is closed (a point within `EPS_SHEET`
+  of a triangle's outline is covered), so an edge behind a face never leaks through the face's triangulation
+  diagonals; a triangle hides only what is more than `EPS_DEPTH` (0.1 mm) behind its plane plus its slope across that
+  band, so an edge is never hidden by the faces it lies in and a face seen almost edge-on hides nothing.
+  `merge_collinear` joins one object's overlapping runs; lines of different objects never merge (each keeps its id), so
+  a casing outline flush with a wall face can appear twice, once per object.
+- **`arch3d::section`.** `Plane::new(point, normal)`; `section_cut(scene, plane, view) -> SectionCut { rings, lines }`:
+  crossing points are computed once per welded edge and chained by edge, so a closed solid gives closed rings (counter-
+  clockwise on the sheet, `signed_area()`, fill even-odd) and an open surface (a ceiling) gives lines. A corner exactly
+  on the plane counts as in front, so a face lying in the plane cuts nothing. `section_view(scene, plane, up)` looks
+  along the normal: the cut, plus `visible_lines` of the part beyond the plane, with each object's cut face hiding what
+  lies inside its poché.
+
+**What the HLR exposed in the 3D build (not fixed here):**
+
+- **Walls are not cut by openings.** `Scene3d::build` extrudes each wall's plan shape whole; the opening's parts sit
+  inside a solid wall. From outside, flush casings and frames still draw; from inside (interior elevations, the far side
+  of a section, the 3D view from a room) the wall face hides the whole opening. The brief now puts the fix in phase 4,
+  with the gable walls: openings become holes in the wall's elevation profile. `hlr_section.rs` keeps an ignored test
+  for it.
+- **The header is flush with both wall faces** (0.2 m deep in a 0.2 m wall), so once walls are cut it draws as a
+  rectangle above every opening in elevations and sections. Make it narrower than the wall, or leave it out of the 3D
+  build.
+- **Casings are clamped inside the wall band**, flush with the face, instead of standing proud of it by
+  `casing_depth`.
+- `Opening::new` gives every opening sill 0, windows included (the `window` command defaults it to 0.9), so tests
+  that build windows with `Opening::new` set `sill` themselves.
