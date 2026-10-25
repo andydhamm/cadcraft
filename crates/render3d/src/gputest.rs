@@ -23,9 +23,7 @@ pub(crate) fn device_and_queue() -> Option<(wgpu::Device, wgpu::Queue)> {
 /// which is what made test binaries hang on a busy GPU.
 pub(crate) fn shared_device() -> Option<(wgpu::Device, wgpu::Queue)> {
     static SHARED: std::sync::OnceLock<Option<(wgpu::Device, wgpu::Queue)>> = std::sync::OnceLock::new();
-    SHARED
-        .get_or_init(|| crate::offscreen::device_within(SHARED_DEVICE_BUDGET))
-        .clone()
+    SHARED.get_or_init(|| crate::offscreen::device_within(SHARED_DEVICE_BUDGET)).clone()
 }
 
 /// How long [`shared_device`] waits for the adapter and device.
