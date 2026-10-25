@@ -1376,23 +1376,6 @@
 	Discard	Скасувати зміни
 	Customize	Налаштування інтерфейсу
 	Edit Command Aliases (PGP)...	Редагувати псевдоніми команд (PGP)...
-
-# Architecture (arch3d)
-	Door	Дверь
-	Window	Вікно
-	Garage Door	Гаражна дверь
-	Move Opening	Перемістити отвір
-	Level	Рівень
-	Room	Кімната
-	Room Detect	Виявити кімнати
-	Interior (inner surfaces)	Внутрішній (внутрішні поверхні)
-	Standard (centre of walls)	Стандартний (центр стін)
-	Living (living areas)	Жилій (жилові зони)
-	Area basis	База вимірювання площі
-	Enter elevation:	Введіть відмітку:
-	Enter ceiling height:	Введіть висоту стелажу:
-	Enter floor structure thickness:	Введіть товщину конструкції підлоги
-	Ceiling height	Висота стелажу
-	Floor structure thickness	Товщина конструкції підлоги
-	Select walls for room detection	Виберіть стіни для виявлення кімнат
-	Room detection complete: {n} rooms	Виявлено кімнат: {n}
+	Check for Updates…	Перевірити оновлення…
+	CADCraft is up to date.	Встановлено найновішу версію CADCraft.
+	Could not check for updates.	Не вдалося перевірити оновлення.
