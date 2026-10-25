@@ -45,7 +45,7 @@ tokio = "1"
 
 # rendering / formats
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
-wgpu = "29"
+wgpu = "30"
 lyon_tessellation = "1.0.22"
 skrifa = "0.48"
 # Text shaping (OpenType GSUB/GPOS, HarfBuzz port on read-fonts; egui's epaint is still on 0.12,
