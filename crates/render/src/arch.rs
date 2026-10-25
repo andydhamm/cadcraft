@@ -536,8 +536,8 @@ mod tests {
         let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
         assert!(!label_prims.is_empty(), "no room label prims emitted for room {rid}");
         for p in &label_prims {
-            assert_eq!(p.kind, Kind::Polyline, "room label prim kind: {}", p.kind as u32);
-            assert!(!p.verts.is_empty(), "room label prim has no vertices");
+            assert_eq!(p.kind, Kind::Polyline, "room label prim kind wrong");
+            assert!(p.len >= 2, "room label prim has fewer than 2 vertices: {}", p.len);
         }
     }
 }
