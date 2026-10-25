@@ -53,7 +53,7 @@ struct Payload {
 /// Returns `None` when the model has no walls (nothing to write); otherwise the escaped,
 /// chunked payload, exactly like [`dxf_ext::constraint_chunks`](crate::dxf_ext).
 pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
-    if m.is_empty() {
+    if m.walls.is_empty() && m.openings.is_empty() && m.rooms.is_empty() {
         return None;
     }
     let json = serde_json::to_string(&Payload { version: 3, model: m.clone() }).ok()?;
@@ -256,8 +256,8 @@ mod tests {
 
     #[test]
     fn parse_arch_rejects_unknown_versions() {
-        // Only schema versions 1 and 2 are understood; 3 and later are unknown.
-        assert!(parse_arch(r#"{"version": 3, "model": { "walls": [] }}"#).is_none());
+        // Versions 1, 2, and 3 are understood; 0 and 4+ are unknown.
+        assert!(parse_arch(r#"{"version": 4, "model": { "walls": [] }}"#).is_none());
         assert!(parse_arch(r#"{"version": 0, "model": { "walls": [] }}"#).is_none());
     }
 
