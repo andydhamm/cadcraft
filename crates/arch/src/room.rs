@@ -21,6 +21,12 @@ use cadcraft_geom::Vec2;
 
 use crate::poly::{ensure_ccw, region_area};
 
+/// Minimum area (in m²) for a face to qualify as a room.
+const MIN_ROOM_AREA: f64 = 0.1;
+
+/// Maximum number of rooms detected per level.
+const MAX_ROOMS: u32 = 4096;
+
 /// Detect rooms on every level present in `model.levels`, concatenating per-level
 /// results. Each returned room's `level` field is set to that level's index.
 ///
@@ -158,7 +164,7 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
         }
 
         let area = region_area(&outer, &holes);
-        if !area.is_finite() || area <= cadcraft_doc::MIN_ROOM_AREA {
+        if !area.is_finite() || area <= MIN_ROOM_AREA {
             continue;
         }
 
@@ -177,7 +183,7 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
             continue;
         }
 
-        if rooms.len() >= cadcraft_doc::MAX_ROOMS {
+        if rooms.len() as usize >= MAX_ROOMS as usize {
             break;
         }
 
