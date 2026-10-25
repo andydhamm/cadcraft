@@ -5,6 +5,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+use crate::Scene3d;
 use crate::mesh::Mesh;
 use crate::ray::{box_tris, crossings_upward};
 use cadcraft_doc::ArchId;
@@ -117,6 +118,27 @@ pub fn mesh_label(mesh: &Mesh) -> String {
 /// recorded on the mesh.
 pub fn mesh_level(mesh: &Mesh) -> f64 {
     mesh.bounds().min[2]
+}
+
+/// Probe the scene at point `p`, returning the first mesh that contains it.
+///
+/// Returns `None` immediately if any coordinate of `p` is non-finite.
+/// Otherwise iterates `scene.meshes` in build order and returns the first
+/// mesh for which [`probe_mesh`] is true, as a [`Hit`] with the mesh's
+/// label, part name and level elevation. First match wins; no merging or
+/// sorting.
+///
+/// `Scene3d::probe` (in `lib.rs`) delegates to this function.
+pub fn probe(scene: &Scene3d, p: Vec3) -> Option<Hit> {
+    if !p.is_finite() {
+        return None;
+    }
+    for mesh in &scene.meshes {
+        if probe_mesh(mesh, p) {
+            return Some(Hit { id: mesh_label(mesh), part: part_of(mesh).to_string(), level: mesh_level(mesh) });
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -260,5 +282,130 @@ mod tests {
         assert!(!probe_mesh(&mesh, Vec3::new(f64::NAN, 0.5, 0.5)));
         assert!(!probe_mesh(&mesh, Vec3::new(0.5, f64::INFINITY, 0.5)));
         assert!(!probe_mesh(&mesh, Vec3::new(0.5, 0.5, f64::NEG_INFINITY)));
+    }
+
+    use crate::Scene3d;
+    use cadcraft_doc::{ArchModel, Level, Room, Wall};
+    use cadcraft_geom::Vec2;
+
+    /// Build the phase-1 house model and its 3D scene.
+    ///
+    /// Exterior centre lines (0,0)-(10,0)-(10,8)-(0,8), 0.2 m thick;
+    /// interior (0,3)-(10,3) and (6,3)-(6,8), 0.1 m thick;
+    /// Level 1 at elevation 0, ceiling 2.4, structure 0.3, so a Level-2
+    /// slab occupies z 2.4…2.7. Outer faces span x -0.1…10.1, y -0.1…8.1.
+    fn house_scene() -> Scene3d {
+        let mut model = ArchModel::default();
+
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+
+        let wall = |id: u32, a: (f64, f64), b: (f64, f64), t: f64| -> Wall {
+            Wall { id: ArchId(id), start: Vec2::new(a.0, a.1), end: Vec2::new(b.0, b.1), thickness: t, height: 2.7, ..Default::default() }
+        };
+
+        // Exterior walls.
+        model.walls.push(wall(1, (0.0, 0.0), (10.0, 0.0), 0.2));
+        model.walls.push(wall(2, (10.0, 0.0), (10.0, 8.0), 0.2));
+        model.walls.push(wall(3, (10.0, 8.0), (0.0, 8.0), 0.2));
+        model.walls.push(wall(4, (0.0, 8.0), (0.0, 0.0), 0.2));
+
+        // Interior walls.
+        model.walls.push(wall(5, (0.0, 3.0), (10.0, 3.0), 0.1));
+        model.walls.push(wall(6, (6.0, 3.0), (6.0, 8.0), 0.1));
+
+        // Level-2 room providing the floor slab at z 2.4…2.7.
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 1,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+            ..Default::default()
+        });
+
+        Scene3d::build(&model)
+    }
+
+    /// Assert the scene actually contains wall and floor meshes before probing,
+    /// so a missing floor mesh fails loudly as a scene-builder bug rather than
+    /// looking like a probe bug.
+    fn assert_scene_has_meshes(scene: &Scene3d) {
+        assert!(scene.meshes.iter().any(|m| part_of(m) == "wall"), "scene has no wall mesh");
+        assert!(scene.meshes.iter().any(|m| part_of(m) == "floor"), "scene has no floor mesh");
+    }
+
+    #[test]
+    fn probe_inside_a_wall_hits_the_wall() {
+        let scene = house_scene();
+        assert_scene_has_meshes(&scene);
+
+        let hit = probe(&scene, Vec3::new(5.0, 0.0, 1.0));
+        assert!(hit.is_some(), "probe(5,0,1) should hit the south wall");
+        let hit = hit.unwrap();
+        assert_eq!(hit.part, "wall");
+        assert!(!hit.id.is_empty(), "hit id is empty");
+    }
+
+    #[test]
+    fn probe_in_the_house_volume_hits_nothing() {
+        let scene = house_scene();
+        assert_scene_has_meshes(&scene);
+
+        // Inside the house volume; catches ceilings being probed as solids.
+        assert!(probe(&scene, Vec3::new(5.0, 4.0, 1.0)).is_none(), "probe(5,4,1) should be None");
+    }
+
+    #[test]
+    fn probe_inside_a_floor_slab_hits_the_floor() {
+        let scene = house_scene();
+        assert_scene_has_meshes(&scene);
+
+        // Inside the Level-2 slab (z 2.4…2.7).
+        let hit = probe(&scene, Vec3::new(2.0, 1.0, 2.55));
+        assert!(hit.is_some(), "probe(2,1,2.55) should hit the floor slab");
+        assert_eq!(hit.unwrap().part, "floor");
+
+        // Below the slab: the +z ray crosses bottom (2.4) and top (2.7) —
+        // two crossings, even, so not inside.
+        assert!(probe(&scene, Vec3::new(2.0, 1.0, 1.0)).is_none(), "probe(2,1,1) should be None");
+    }
+
+    #[test]
+    fn probe_outside_the_building_hits_nothing() {
+        let scene = house_scene();
+        assert_scene_has_meshes(&scene);
+
+        assert!(probe(&scene, Vec3::new(-5.0, -5.0, 1.0)).is_none(), "probe(-5,-5,1) should be None");
+        assert!(probe(&scene, Vec3::new(5.0, 4.0, 50.0)).is_none(), "probe(5,4,50) should be None");
+    }
+
+    #[test]
+    fn probe_survives_nan_and_huge_points() {
+        let scene = house_scene();
+        assert_scene_has_meshes(&scene);
+
+        let all: [f64; 5] = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e300, -1e300];
+
+        for &v in &all {
+            let non_finite = !v.is_finite();
+
+            // x
+            let r = probe(&scene, Vec3::new(v, 0.0, 0.0));
+            if non_finite {
+                assert!(r.is_none(), "probe(x={v}) should be None");
+            }
+            // y
+            let r = probe(&scene, Vec3::new(0.0, v, 0.0));
+            if non_finite {
+                assert!(r.is_none(), "probe(y={v}) should be None");
+            }
+            // z
+            let r = probe(&scene, Vec3::new(0.0, 0.0, v));
+            if non_finite {
+                assert!(r.is_none(), "probe(z={v}) should be None");
+            }
+        }
+
+        // Finite but far away: no panic, and not inside anything.
+        assert!(probe(&scene, Vec3::new(1e6, 1e6, 1e6)).is_none(), "probe(1e6,1e6,1e6) should be None");
     }
 }
