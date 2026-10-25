@@ -38,6 +38,7 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("ui.toggle.filetabs", "File Tab", &["Window", "File Tab"], None),
     ("ui.toggle.statusbar", "Status Bar", &["Window", "Status Bar"], None),
     ("ui.toggle.cmdline", "Command Line", &["Window", "Command Line"], Some("Cmd+9")),
+    ("ui.show3d", "3D View", &[], None),
     ("ui.toggle.viewcube", "ViewCube", &["View", "ViewCube", "On"], None),
     ("ui.toggle.ucsicon", "UCS Icon", &["View", "UCS Icon", "On"], None),
     ("ui.theme.system", "Use System Setting", &["View", "Interface Theme", "Use System Setting"], None),
