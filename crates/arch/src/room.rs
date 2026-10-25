@@ -39,8 +39,8 @@ pub fn detect_rooms(model: &ArchModel) -> Vec<Room> {
 /// empty `Vec` when the level has no walls or no enclosed area.
 pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
     // Step 1: collect walls on this level.
-    let level_walls: Vec<&Wall> = model.walls.iter().filter(|w| w.base_level == level).collect();
-    if level_walls.is_empty() {
+    let level_has_walls = model.walls.iter().any(|w| w.base_level == level);
+    if !level_has_walls {
         return Vec::new();
     }
 
@@ -50,10 +50,11 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
     // Non-divider walls: solve the poché on a temporary model containing ONLY
     // this level's non-divider walls, then push each resulting ring as a closed
     // polyline.
-    let non_dividers: Vec<&Wall> = level_walls.iter().filter(|w| !w.divider).collect();
     let mut temp = ArchModel::default();
-    for w in &non_dividers {
-        temp.push_wall(w.clone());
+    for w in &model.walls {
+        if w.base_level == level && !w.divider {
+            temp.push_wall((*w).clone());
+        }
     }
     for shape in crate::join::solve_joins(&temp) {
         if shape.polygon.len() < 3 || shape.polygon.iter().any(|p| !p.is_finite()) {
@@ -66,8 +67,8 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
 
     // Divider walls (thickness 0, no poché): push the 2-point centre line as an
     // open polyline. They enclose rooms but produce no poché.
-    for w in level_walls {
-        if w.divider && w.start.is_finite() && w.end.is_finite() {
+    for w in &model.walls {
+        if w.base_level == level && w.divider && w.start.is_finite() && w.end.is_finite() {
             soup.push(vec![w.start, w.end]);
         }
     }
@@ -157,7 +158,7 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
         }
 
         let area = region_area(&outer, &holes);
-        if !area.is_finite() || area <= crate::area::MIN_ROOM_AREA {
+        if !area.is_finite() || area <= cadcraft_doc::MIN_ROOM_AREA {
             continue;
         }
 
