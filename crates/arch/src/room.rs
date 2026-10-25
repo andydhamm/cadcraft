@@ -16,7 +16,7 @@
 
 use std::collections::HashSet;
 
-use cadcraft_doc::{ArchId, ArchModel, Room, RoomType};
+use cadcraft_doc::{ArchId, ArchModel, Room, RoomType, Wall};
 use cadcraft_geom::Vec2;
 
 use crate::poly::{ensure_ccw, region_area};
@@ -157,7 +157,7 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
         }
 
         let area = region_area(&outer, &holes);
-        if !area.is_finite() || area <= cadcraft_doc::MIN_ROOM_AREA {
+        if !area.is_finite() || area <= crate::area::MIN_ROOM_AREA {
             continue;
         }
 
@@ -172,7 +172,7 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
         // Dedup key: (outer centroid, area), each rounded to 1e-6.
         let oc = centroid(&outer);
         let key = (round6(oc.x), round6(oc.y), round6(area));
-        if seen.insert(key).is_none() {
+        if !seen.insert(key) {
             continue;
         }
 
