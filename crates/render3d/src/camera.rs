@@ -147,7 +147,6 @@ fn clamp_pos(x: f64, lo: f64, hi: f64) -> f64 {
 /// input (empty bounds, non-finite corners, zero-size viewport).
 pub fn projected_bounds(camera: &Camera, bounds: &Bounds3, size: (u32, u32)) -> [f32; 4] {
     let (w, h) = size;
-    let aspect = w as f64 / h.max(1) as f64;
     let w_f = w as f64;
     let h_f = h.max(1) as f64;
     let orbit = match camera {
@@ -159,8 +158,6 @@ pub fn projected_bounds(camera: &Camera, bounds: &Bounds3, size: (u32, u32)) -> 
         let cy = (h_f / 2.0).clamp(0.0, h_f) as f32;
         return [cx, cy, cx, cy];
     }
-    let view = orbit.view();
-    let proj = orbit.proj(aspect);
     let corners = [
         [bounds.min[0], bounds.min[1], bounds.min[2]],
         [bounds.max[0], bounds.min[1], bounds.min[2]],
@@ -171,12 +168,37 @@ pub fn projected_bounds(camera: &Camera, bounds: &Bounds3, size: (u32, u32)) -> 
         [bounds.max[0], bounds.max[1], bounds.max[2]],
         [bounds.min[0], bounds.max[1], bounds.max[2]],
     ];
+    project_points(orbit, corners.into_iter(), size)
+}
+
+/// Project every mesh vertex of `scene` into viewport pixels: `[min_x, min_y, max_x, max_y]`,
+/// y-down, clamped like [`projected_bounds`]. Unlike the bounding box's corners, the vertices are
+/// what the rasteriser covers, so this matches the rendered silhouette when the geometry does not
+/// fill its bounding box (room slabs sit inside the walls' outer faces). Falls back to
+/// [`projected_bounds`] for a scene with no vertices.
+pub fn projected_scene_bounds(camera: &Camera, scene: &cadcraft_arch3d::Scene3d, size: (u32, u32)) -> [f32; 4] {
+    let Camera::Orbit(orbit) = camera;
+    let mut points = scene.meshes.iter().flat_map(|m| m.positions.iter()).map(|p| [f64::from(p[0]), f64::from(p[1]), f64::from(p[2])]).peekable();
+    if points.peek().is_none() {
+        return projected_bounds(camera, &scene.bounds, size);
+    }
+    project_points(orbit, points, size)
+}
+
+/// The pixel bounding box of `points` seen by `orbit` (see [`projected_bounds`]).
+fn project_points(orbit: &Orbit, points: impl Iterator<Item = [f64; 3]>, size: (u32, u32)) -> [f32; 4] {
+    let (w, h) = size;
+    let aspect = w as f64 / h.max(1) as f64;
+    let w_f = w as f64;
+    let h_f = h.max(1) as f64;
+    let view = orbit.view();
+    let proj = orbit.proj(aspect);
     let mut px_min = f64::MAX;
     let mut py_min = f64::MAX;
     let mut px_max = f64::NEG_INFINITY;
     let mut py_max = f64::NEG_INFINITY;
     let mut any_finite = false;
-    for c in &corners {
+    for c in points {
         let vs = apply_col(&view, [c[0], c[1], c[2]]);
         let clip = apply_col(&proj, [vs[0], vs[1], vs[2]]);
         let w_clip = clip[3];

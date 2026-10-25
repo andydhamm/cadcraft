@@ -322,6 +322,7 @@ impl CadApp {
     pub fn set_wgpu(&mut self, rs: &egui_wgpu::RenderState, stencil: Option<egui_wgpu::wgpu::TextureFormat>) {
         self.canvas.gpu = Some(gpu::install(rs, &self.gpu_faults, stencil));
         self.canvas.gpu_device = Some(rs.device.clone());
+        pane3d::install(&mut self.pane3d, rs, stencil);
     }
 
     pub fn with_control(mut self, rx: Receiver<ControlRequest>) -> Self {
@@ -672,6 +673,10 @@ impl CadApp {
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
             if has_doc {
                 if self.ui.show_three_d {
+                    // Rebuilds only when the arch model's revision (or the document) changed.
+                    if let Ok(st) = self.session.state() {
+                        self.pane3d.sync_doc(st.uid, st.doc.arch_revision, Some(&st.doc.arch));
+                    }
                     pane3d::draw(ui, &mut self.pane3d);
                 } else {
                     docking::show(self, ui);
