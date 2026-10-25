@@ -8,11 +8,14 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+pub mod edges;
 pub mod floors;
+pub mod hlr;
 pub mod mesh;
 pub mod openings;
 pub mod probe;
 pub mod ray;
+pub mod section;
 pub mod walls;
 
 pub use crate::mesh::{Bounds3, Mesh};
