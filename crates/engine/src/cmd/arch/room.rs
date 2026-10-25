@@ -223,15 +223,15 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
 
     // --- Areas ---
     let interior_area = region_area(&ring, &[]);
-    // `crates/arch/src/area.rs` does not yet expose a standard-area helper, so the
-    // standard area equals the interior area for now (see `arch::area`).
-    let standard_area = interior_area;
 
     // --- Cap, then build and push (all checks above ran before touching the model) ---
     if d.arch.rooms.len() >= MAX_ROOMS {
         return Err(bad("room", "room limit reached"));
     }
-    let room = Room {
+    // The standard area is measured against the surrounding walls, so the room must
+    // first sit in the model. `standard_area` only reads `arch`; that immutable
+    // borrow ends before `push_room` mutates `d`.
+    let mut room = Room {
         name,
         room_type,
         level: level as u32,
@@ -239,9 +239,11 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
         ceiling_height: ceiling,
         floor_height: floor,
         interior_area,
-        standard_area,
+        standard_area: 0.0,
         ..Default::default()
     };
+    let standard_area = cadcraft_arch::area::standard_area(arch, &room);
+    room.standard_area = standard_area;
     let id = d.arch.push_room(room);
     d.touch_arch();
 
@@ -500,5 +502,49 @@ mod tests {
         assert_eq!(s.doc().unwrap().arch.rooms[0].name, "");
         assert_eq!(s.doc().unwrap().arch.rooms[0].room_type, RoomType::Other);
         assert_eq!(s.doc().unwrap().arch.rooms[0].ceiling_height, None);
+    }
+
+    /// The south room's standard area is measured against the host walls'
+    /// reference lines (outer face for exterior, centre line for interior), so it
+    /// exceeds the interior area.
+    #[test]
+    fn room_standard_area_follows_wall_reference_lines() {
+        let mut s = new_session();
+
+        // Phase-1 house: four exterior walls (thickness 0.2), two interior
+        // walls (thickness 0.1, `exterior: false`).
+        let ext: f64 = 0.2;
+        for w in [
+            json!({ "points": [[0.0, 0.0], [10.0, 0.0]], "thickness": ext }),
+            json!({ "points": [[10.0, 0.0], [10.0, 8.0]], "thickness": ext }),
+            json!({ "points": [[10.0, 8.0], [0.0, 8.0]], "thickness": ext }),
+            json!({ "points": [[0.0, 8.0], [0.0, 0.0]], "thickness": ext }),
+            json!({ "points": [[0.0, 3.0], [10.0, 3.0]], "thickness": 0.1, "exterior": false }),
+            json!({ "points": [[6.0, 3.0], [6.0, 8.0]], "thickness": 0.1, "exterior": false }),
+        ] {
+            let _ = s.execute("wall", &w).unwrap();
+        }
+
+        // The south room: 9.8 wide x 2.85 deep = 27.93 interior.
+        let p = json!({
+            "points": [[0.1, 0.1], [9.9, 0.1], [9.9, 2.95], [0.1, 2.95]],
+        });
+        let r = s.execute("room", &p).unwrap();
+        assert!((r["interiorArea"].as_f64().unwrap() - 27.93).abs() < 1e-3);
+        // Exterior faces pushed to -0.1 / 10.1, interior wall to its centre line
+        // at y = 3.0 -> 10.2 x 3.1 = 31.62.
+        assert!((r["standardArea"].as_f64().unwrap() - 31.62).abs() < 1e-3);
+    }
+
+    /// With no host walls the offset is degenerate, so the standard area falls
+    /// back to the interior area.
+    #[test]
+    fn room_standard_area_falls_back_without_walls() {
+        let mut s = new_session();
+        let r = s.execute("room", &json!({ "points": square_points() })).unwrap();
+        let interior = r["interiorArea"].as_f64().unwrap();
+        let standard = r["standardArea"].as_f64().unwrap();
+        assert!((standard - interior).abs() < 1e-9);
+        assert!((interior - 9.0).abs() < 1e-9);
     }
 }

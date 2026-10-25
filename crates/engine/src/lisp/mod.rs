@@ -577,6 +577,20 @@ impl Session {
         self.lisp.active
     }
 
+    /// The commands the active drawing's LISP defines (`c:` functions), uppercase and sorted.
+    pub fn lisp_commands(&self) -> Vec<String> {
+        let Ok(uid) = self.state().map(|s| s.uid) else { return Vec::new() };
+        let Some(env) = self.lisp.envs.get(&uid) else { return Vec::new() };
+        let mut names: Vec<String> = env
+            .globals
+            .iter()
+            .filter(|(name, f)| name.name().starts_with("C:") && matches!(f, Value::Func(_) | Value::Subr(_)))
+            .filter_map(|(name, _)| name.name().strip_prefix("C:").filter(|n| !n.is_empty()).map(str::to_string))
+            .collect();
+        names.sort();
+        names
+    }
+
     /// A `c:` function for a command name typed at the command line.
     pub(crate) fn lisp_command(&self, name: &str) -> Option<Value> {
         if self.lisp.active {
@@ -610,7 +624,7 @@ impl Session {
         self.lisp.files.insert(file_key(name), text.to_string());
         let r = self.lisp_eval(text, false, blocking, Vec::new())?;
         if !matches!(r, Some(Err(_))) {
-            let shown = std::path::Path::new(name).file_name().and_then(|n| n.to_str()).unwrap_or(name).to_string();
+            let shown = std::path::Path::new(name).file_name().and_then(std::ffi::OsStr::to_str).unwrap_or(name).to_string();
             self.echo(format!("{shown} successfully loaded."));
         }
         Ok(r)
@@ -618,7 +632,7 @@ impl Session {
 }
 
 fn file_key(name: &str) -> String {
-    let base = std::path::Path::new(&name.replace('\\', "/")).file_name().and_then(|n| n.to_str()).unwrap_or(name).to_ascii_lowercase();
+    let base = std::path::Path::new(&name.replace('\\', "/")).file_name().and_then(std::ffi::OsStr::to_str).unwrap_or(name).to_ascii_lowercase();
     base.strip_suffix(".lsp").map(str::to_string).unwrap_or(base)
 }
 

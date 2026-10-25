@@ -420,6 +420,105 @@ mod tests {
     }
 
     #[test]
+    fn standard_areas_match_the_brief() {
+        let mut model = ArchModel::default();
+        push_exterior(&mut model, pt(0.0, 0.0), pt(10.0, 0.0));
+        push_exterior(&mut model, pt(10.0, 0.0), pt(10.0, 8.0));
+        push_exterior(&mut model, pt(10.0, 8.0), pt(0.0, 8.0));
+        push_exterior(&mut model, pt(0.0, 8.0), pt(0.0, 0.0));
+        push_interior(&mut model, pt(0.0, 3.0), pt(10.0, 3.0), 0.1);
+        push_interior(&mut model, pt(6.0, 3.0), pt(6.0, 8.0), 0.1);
+
+        assert!((standard_area(&model, &south_room()) - 31.62).abs() < 1e-3);
+        assert!((standard_area(&model, &north_west_room()) - 31.11).abs() < 1e-3);
+        assert!((standard_area(&model, &north_east_room()) - 20.91).abs() < 1e-3);
+    }
+
+    #[test]
+    fn standard_areas_sum_to_envelope() {
+        let mut model = ArchModel::default();
+        push_exterior(&mut model, pt(0.0, 0.0), pt(10.0, 0.0));
+        push_exterior(&mut model, pt(10.0, 0.0), pt(10.0, 8.0));
+        push_exterior(&mut model, pt(10.0, 8.0), pt(0.0, 8.0));
+        push_exterior(&mut model, pt(0.0, 8.0), pt(0.0, 0.0));
+        push_interior(&mut model, pt(0.0, 3.0), pt(10.0, 3.0), 0.1);
+        push_interior(&mut model, pt(6.0, 3.0), pt(6.0, 8.0), 0.1);
+
+        let total = standard_area(&model, &south_room()) + standard_area(&model, &north_west_room()) + standard_area(&model, &north_east_room());
+        assert!((total - 83.64).abs() < 1e-3);
+    }
+
+    #[test]
+    fn living_area_excludes_garage_porch_deck() {
+        let mut model = ArchModel::default();
+        let make = |room_type: RoomType| Room {
+            standard_area: 10.0,
+            room_type,
+            level: 0,
+            polygon: vec![pt(0.0, 0.0), pt(1.0, 0.0), pt(1.0, 1.0), pt(0.0, 1.0)],
+            ..Default::default()
+        };
+        model.rooms.push(make(RoomType::Living));
+        model.rooms.push(make(RoomType::Garage));
+        model.rooms.push(make(RoomType::Porch));
+        model.rooms.push(make(RoomType::Deck));
+        model.rooms.push(make(RoomType::OpenBelow));
+
+        assert!((living_area(&model) - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn low_ceiling_room_excluded_from_living() {
+        let mut model = ArchModel::default();
+        let polygon = vec![pt(0.0, 0.0), pt(1.0, 0.0), pt(1.0, 1.0), pt(0.0, 1.0)];
+        model.rooms.push(Room {
+            standard_area: 12.0,
+            room_type: RoomType::Living,
+            level: 0,
+            ceiling_height: Some(2.4),
+            polygon: polygon.clone(),
+            ..Default::default()
+        });
+        model.rooms.push(Room {
+            standard_area: 12.0,
+            room_type: RoomType::Living,
+            level: 0,
+            ceiling_height: Some(1.0),
+            polygon,
+            ..Default::default()
+        });
+
+        assert!((living_area(&model) - 12.0).abs() < 1e-9);
+
+        model.rooms[1].ceiling_height = Some(1.2);
+        assert!((living_area(&model) - 24.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn compute_areas_is_total() {
+        let mut model = ArchModel::default();
+        push_exterior(&mut model, pt(0.0, 0.0), pt(10.0, 0.0));
+        push_exterior(&mut model, pt(10.0, 0.0), pt(10.0, 8.0));
+        push_exterior(&mut model, pt(10.0, 8.0), pt(0.0, 8.0));
+        push_exterior(&mut model, pt(0.0, 8.0), pt(0.0, 0.0));
+        push_interior(&mut model, pt(0.0, 3.0), pt(10.0, 3.0), 0.1);
+        push_interior(&mut model, pt(6.0, 3.0), pt(6.0, 8.0), 0.1);
+        model.rooms.push(south_room());
+        model.rooms.push(north_west_room());
+
+        refresh_areas(&mut model);
+        let snapshot: Vec<(f64, f64)> = model.rooms.iter().map(|room| (room.interior_area, room.standard_area)).collect();
+
+        refresh_areas(&mut model);
+
+        for (room, expected) in model.rooms.iter().zip(snapshot.iter()) {
+            assert_eq!((room.interior_area, room.standard_area), *expected);
+        }
+        assert!((model.rooms[0].standard_area - 31.62).abs() < 1e-3);
+        assert!((model.rooms[0].interior_area - 27.93).abs() < 1e-3);
+    }
+
+    #[test]
     fn refresh_areas_stores_both_fields() {
         let mut model = ArchModel::default();
         push_exterior(&mut model, pt(0.0, 0.0), pt(10.0, 0.0));
