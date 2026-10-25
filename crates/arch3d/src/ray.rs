@@ -113,7 +113,14 @@ pub(crate) fn point_in_triangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> bool {
     }
     // Drop the axis with the largest |component|; project onto the other two.
     // Horizontal triangles → XY; near-vertical → XZ or YZ.
-    let drop = (n.x.abs(), n.y.abs(), n.z.abs()).iter().enumerate().max_by(|(_, ax), (_, ay)| ax.cmp(ay)).map(|(i, _)| i).unwrap_or(2);
+    let nabs = [n.x.abs(), n.y.abs(), n.z.abs()];
+    let drop = if nabs[1] >= nabs[0] && nabs[1] >= nabs[2] {
+        1
+    } else if nabs[2] >= nabs[0] && nabs[2] >= nabs[1] {
+        2
+    } else {
+        0
+    };
     let map = |v: Vec3| match drop {
         0 => Vec3::new(v.y, v.z, 0.0),
         1 => Vec3::new(v.x, v.z, 0.0),
@@ -235,7 +242,7 @@ mod tests {
         let p10 = Vec3::new(2.0, 0.0, z);
         let p11 = Vec3::new(2.0, 2.0, z);
         let p01 = Vec3::new(0.0, 2.0, z);
-        let ts: [[Vec3; 3]] = [[p00, p10, p11], [p00, p11, p01]];
+        let ts = vec![[p00, p10, p11], [p00, p11, p01]];
         let o = Vec3::new(1.0, 1.0, 1.0);
         let n = crossings_upward(o, &ts[..]);
         assert_eq!(n, 1, "diagonal of one face must be 1 crossing, got {n}");
@@ -249,7 +256,7 @@ mod tests {
         // NaN in the ray origin → false, no panic.
         let o = Vec3::new(f64::NAN, 1.0, 1.0);
         assert!(!crosses_upward(o, a, b, c));
-        let ts: [[Vec3; 3]] = [[a, b, c]];
+        let ts = vec![[a, b, c]];
         assert_eq!(crossings_upward(o, &ts[..]), 0);
         // NaN/Inf in triangle vertices → false.
         let bad = Vec3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
