@@ -37,13 +37,32 @@ fn is_auto_level_name(name: &str) -> bool {
     !rest.is_empty() && rest.parse::<i32>().is_ok()
 }
 
-/// Renames levels whose name parses as `Level <n>` (case-insensitive) to `Level <pos+1>`.
-fn renumber_auto_levels(levels: &mut [cadcraft_doc::arch::Level]) {
-    for (pos, level) in levels.iter_mut().enumerate() {
-        if is_auto_level_name(&level.name) {
-            level.name = format!("Level {}", pos + 1);
+/// Derives an auto-generated level name based on a neighbour's name or a fallback index.
+///
+/// If `neighbour` looks like `Level N`, the new name starts at `Level N+1`.
+/// Otherwise it starts at `Level {fallback}`.
+/// Collisions with existing names in `levels` are resolved by incrementing the number.
+fn auto_level_name(levels: &[cadcraft_doc::arch::Level], neighbour: &str, fallback: usize) -> String {
+    let mut n = if is_auto_level_name(neighbour) {
+        let lower = neighbour.to_ascii_lowercase();
+        let lower = lower.trim();
+        let rest = &lower["level".len()..].trim();
+        rest.parse::<i32>().unwrap_or(fallback as i32) + 1
+    } else {
+        fallback as i32
+    };
+
+    let mut name = format!("Level {n}");
+    let mut count = 0;
+    while levels.iter().any(|l| l.name == name) {
+        n += 1;
+        name = format!("Level {n}");
+        count += 1;
+        if count > levels.len() + 2 {
+            break;
         }
     }
+    name
 }
 
 /// Run the `level` command.
@@ -72,9 +91,10 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
         let new_elev = base.elevation + base.floor_to_floor();
         // A new level takes `Level::default()`'s ceiling height and floor structure.
         let name_str = name.map(|n| n.trim()).filter(|n| !n.is_empty()).map(String::from);
+        let auto_name = auto_level_name(&arch.levels, &base.name, arch.levels.len());
         let mut new_level = cadcraft_doc::arch::Level {
             index: arch.levels.len() as u32,
-            name: name_str.unwrap_or_else(|| format!("Level {}", arch.levels.len() + 1)),
+            name: name_str.unwrap_or(auto_name),
             elevation: new_elev,
             ..Default::default()
         };
@@ -100,12 +120,11 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
         let base = &arch.levels[i];
         let new_elev = base.elevation - base.floor_to_floor();
         let name_str = name.map(|n| n.trim()).filter(|n| !n.is_empty()).map(String::from);
-        let mut new_level = cadcraft_doc::arch::Level {
-            index: i as u32,
-            name: name_str.unwrap_or_else(|| format!("Level {}", i + 1)),
-            elevation: new_elev,
-            ..Default::default()
-        };
+
+        let auto_name = if i == 0 && name_str.is_none() { "Basement".to_string() } else { auto_level_name(&arch.levels, &base.name, i + 1) };
+
+        let mut new_level =
+            cadcraft_doc::arch::Level { index: i as u32, name: name_str.unwrap_or(auto_name), elevation: new_elev, ..Default::default() };
         if let Some(c) = ceiling {
             if !c.is_finite() || c <= 0.0 {
                 return Err(crate::EngineError::Other("level: ceiling must be finite and positive".into()));
@@ -286,5 +305,70 @@ mod tests {
         let arch = &doc.arch;
         assert_eq!(arch.levels.len(), 2);
         assert_eq!(arch.levels[1].name, "Level 2");
+    }
+
+    #[test]
+    fn level_above_names_the_new_level_after_a_basement() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        // Add a basement below Level 1
+        s.execute("level", &json!({"name": "Basement", "below": "Level 1", "ceiling": 2.4, "structure": 0.3})).unwrap();
+        // Add a level above Level 1
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 3);
+        assert_eq!(arch.levels[0].name, "Basement");
+        assert_eq!(arch.levels[1].name, "Level 1");
+        assert_eq!(arch.levels[2].name, "Level 2");
+
+        // Check elevations: Basement (-2.7), Level 1 (0.0), Level 2 (2.7)
+        assert!((arch.levels[0].elevation - (-2.7)).abs() < 1e-9);
+        assert!((arch.levels[1].elevation - 0.0).abs() < 1e-9);
+        assert!((arch.levels[2].elevation - 2.7).abs() < 1e-9);
+    }
+
+    #[test]
+    fn level_below_the_bottom_level_defaults_to_basement() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        // Add a level below Level 1 without specifying a name
+        s.execute("level", &json!({"below": "Level 1"})).unwrap();
+
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 2);
+        assert_eq!(arch.levels[0].name, "Basement");
+        assert_eq!(arch.levels[1].name, "Level 1");
+    }
+
+    #[test]
+    fn level_auto_names_never_collide() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+            doc.arch.levels.push(Level { name: "Level 2".into(), elevation: 2.7, ..Default::default() });
+        }
+        // Add a level above Level 1. Auto name would try "Level 2", which collides.
+        // It should increment to "Level 3".
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 3);
+        assert_eq!(arch.levels[0].name, "Level 1");
+        assert_eq!(arch.levels[1].name, "Level 2");
+        assert_eq!(arch.levels[2].name, "Level 3");
     }
 }
