@@ -26,7 +26,7 @@ use serde_json::{Value, json};
 
 use crate::Session;
 use cadcraft_arch::opening::validate_placement;
-use cadcraft_doc::arch::{ArchId, ArchModel, MAX_OPENINGS, Opening, OpeningKind};
+use cadcraft_doc::arch::{ArchId, ArchModel, Level, MAX_OPENINGS, Opening, OpeningKind};
 
 /// Seeded xorshift64*, copied bit-for-bit from the CLI's `Rng`.
 struct Rng(u64);
@@ -165,13 +165,106 @@ fn seed_openings(model: &mut ArchModel, max: usize) -> usize {
     placed
 }
 
+/// The four 0.2 m exterior walls of the 10×8 m phase-1 house on `level`,
+/// centre lines (0,0)→(10,0)→(10,8)→(0,8)→(0,0).
+fn house_exterior(level: u32) -> Vec<cadcraft_doc::Wall> {
+    let w = |s: (f64, f64), e: (f64, f64), lvl: u32| -> cadcraft_doc::Wall {
+        cadcraft_doc::Wall {
+            start: cadcraft_geom::Vec2::new(s.0, s.1),
+            end: cadcraft_geom::Vec2::new(e.0, e.1),
+            base_level: lvl,
+            ..cadcraft_doc::Wall::default()
+        }
+    };
+    vec![w((0.0, 0.0), (10.0, 0.0), level), w((10.0, 0.0), (10.0, 8.0), level), w((10.0, 8.0), (0.0, 8.0), level), w((0.0, 8.0), (0.0, 0.0), level)]
+}
+
+/// The thickness-0 interior divider (5,0)→(5,8) on `level`.
+fn central_divider(level: u32) -> cadcraft_doc::Wall {
+    cadcraft_doc::Wall {
+        start: cadcraft_geom::Vec2::new(5.0, 0.0),
+        end: cadcraft_geom::Vec2::new(5.0, 8.0),
+        base_level: level,
+        exterior: false,
+        wall_type: "Interior".into(),
+        thickness: 0.0,
+        divider: true,
+        ..cadcraft_doc::Wall::default()
+    }
+}
+
+/// Run `arch.sample` with `{"house": true}` — phase-1 10×8 house on Level 1,
+/// `roomdetect` → 1 room.
+fn run_house(s: &mut Session, _params: &Value) -> crate::Result<Value> {
+    let mut m = cadcraft_doc::ArchModel::default();
+    m.levels = vec![cadcraft_doc::Level { index: 1, name: "Level 1".into(), ..cadcraft_doc::Level::default() }];
+    for w in house_exterior(1) {
+        m.push_wall(w);
+    }
+    let rooms = cadcraft_arch::room::detect_rooms(&m);
+    let placed = rooms.into_iter().map(|r| m.push_room(r)).count();
+    let d = s.doc_mut()?;
+    d.arch = m;
+    d.touch_arch();
+    Ok(json!({
+        "walls": d.arch.walls.len(),
+        "levels": d.arch.levels.len(),
+        "rooms": placed,
+        "revision": d.arch_revision
+    }))
+}
+
+/// Run `arch.sample` with `{"house2": true}` — three-storey demo: basement
+/// (elevation −2.7) + Level 1 (elevation 0) + Level 2 (elevation 2.7),
+/// exterior walls on all three levels, central divider on the basement and
+/// Level 2, `roomdetect` on all three levels → 5 rooms.
+fn run_house2(s: &mut Session, _params: &Value) -> crate::Result<Value> {
+    let mut m = cadcraft_doc::ArchModel::default();
+    m.levels = vec![
+        cadcraft_doc::Level { index: 0, name: "Basement".into(), elevation: -2.7, ..cadcraft_doc::Level::default() },
+        cadcraft_doc::Level { index: 1, name: "Level 1".into(), ..cadcraft_doc::Level::default() },
+        cadcraft_doc::Level { index: 2, name: "Level 2".into(), elevation: 2.7, ..cadcraft_doc::Level::default() },
+    ];
+    for w in house_exterior(0) {
+        m.push_wall(w);
+    }
+    m.push_wall(central_divider(0));
+    for w in house_exterior(1) {
+        m.push_wall(w);
+    }
+    for w in house_exterior(2) {
+        m.push_wall(w);
+    }
+    m.push_wall(central_divider(2));
+    let rooms = cadcraft_arch::room::detect_rooms(&m);
+    let placed = rooms.into_iter().map(|r| m.push_room(r)).count();
+    let d = s.doc_mut()?;
+    d.arch = m;
+    d.touch_arch();
+    Ok(json!({
+        "walls": d.arch.walls.len(),
+        "levels": d.arch.levels.len(),
+        "rooms": placed,
+        "revision": d.arch_revision
+    }))
+}
+
 /// Run `arch.sample`: inject a deterministic wall chain into the drawing.
 ///
 /// `walls` defaults to 64, clamped to `1..=MAX_WALLS`; `openings` defaults to
 /// 0 and is clamped to `MAX_OPENINGS`. This replaces the existing walls
 /// *and* openings, calls `touch_arch()`; it is `.noundo()` because it is a
 /// benchmark fixture.
+///
+/// `{"house": true}` and `{"house2": true}` override the wall chain with a
+/// fixed demo (see `run_house` / `run_house2`).
 fn run_sample(s: &mut Session, params: &Value) -> crate::Result<Value> {
+    if let Some(true) = params.get("house2").and_then(|v| v.as_bool()) {
+        return run_house2(s, params);
+    }
+    if let Some(true) = params.get("house").and_then(|v| v.as_bool()) {
+        return run_house(s, params);
+    }
     let n = params.get("walls").and_then(|v| v.as_u64()).unwrap_or(64).clamp(1, crate::cmd::arch::MAX_WALLS as u64) as usize;
     let count = params.get("openings").and_then(|v| v.as_u64()).unwrap_or(0).clamp(0, MAX_OPENINGS as u64) as usize;
 
@@ -189,7 +282,12 @@ fn run_sample(s: &mut Session, params: &Value) -> crate::Result<Value> {
 
 /// Command spec for `arch.sample`.
 pub fn specs() -> Vec<crate::cmd::CommandSpec> {
-    vec![crate::cmd::CommandSpec::new("arch.sample", "Arch Sample", run_sample).menu(&[]).noundo().params("{walls?: N, openings?: N}")]
+    vec![
+        crate::cmd::CommandSpec::new("arch.sample", "Arch Sample", run_sample)
+            .menu(&[])
+            .noundo()
+            .params("{walls?: N, openings?: N, house?: bool, house2?: bool}"),
+    ]
 }
 
 #[cfg(test)]
@@ -391,5 +489,70 @@ mod tests {
         assert_eq!(s1.doc().unwrap().arch.walls.len(), 64);
         assert!(s2.doc().unwrap().arch.openings.is_empty());
         assert_eq!(s2.doc().unwrap().arch.walls.len(), 24);
+    }
+
+    /// `{"house":true}` is the phase-1 10×8 house on Level 1: four exterior
+    /// walls, one detected room; the existing `{"walls": N}` path is unchanged.
+    #[test]
+    fn sample_house_is_unchanged() {
+        let mut s1 = fresh_session();
+        let mut s2 = fresh_session();
+        s1.execute("arch.sample", &json!({ "house": true })).unwrap();
+        s2.execute("arch.sample", &json!({ "house": true })).unwrap();
+
+        for (a, b) in s1.doc().unwrap().arch.walls.iter().zip(s2.doc().unwrap().arch.walls.iter()) {
+            assert_eq!(a, b);
+        }
+        let d = &s1.doc().unwrap().arch;
+        assert_eq!(d.levels.len(), 1);
+        assert_eq!(d.levels[0].index, 1);
+        assert_eq!(d.levels[0].elevation, 0.0);
+        assert_eq!(d.walls.len(), 4);
+        assert_eq!(d.rooms.len(), 1);
+        assert_eq!(d.rooms[0].level, 1);
+
+        // Existing `{"walls": N}` path still produces the deterministic chain.
+        let mut s3 = fresh_session();
+        let mut s4 = fresh_session();
+        s3.execute("arch.sample", &json!({ "walls": 64 })).unwrap();
+        s4.execute("arch.sample", &json!({ "walls": 64 })).unwrap();
+        for (a, b) in s3.doc().unwrap().arch.walls.iter().zip(s4.doc().unwrap().arch.walls.iter()) {
+            assert_eq!(a, b);
+        }
+        assert_eq!(s3.doc().unwrap().arch.walls.len(), 64);
+        assert!(s3.doc().unwrap().arch.openings.is_empty());
+    }
+
+    /// `{"house2":true}` is the three-storey demo: basement (−2.7) + Level 1
+    /// (0) + Level 2 (2.7), exterior on all levels, divider on basement and
+    /// Level 2, `roomdetect` on all three → 5 rooms (2 + 1 + 2).
+    #[test]
+    fn sample_house2_has_two_levels_and_five_rooms() {
+        let mut s1 = fresh_session();
+        let mut s2 = fresh_session();
+        s1.execute("arch.sample", &json!({ "house2": true })).unwrap();
+        s2.execute("arch.sample", &json!({ "house2": true })).unwrap();
+
+        for (a, b) in s1.doc().unwrap().arch.walls.iter().zip(s2.doc().unwrap().arch.walls.iter()) {
+            assert_eq!(a, b);
+        }
+        for (a, b) in s1.doc().unwrap().arch.rooms.iter().zip(s2.doc().unwrap().arch.rooms.iter()) {
+            assert_eq!(a, b);
+        }
+
+        let d = &s1.doc().unwrap().arch;
+        assert_eq!(d.levels.len(), 3);
+        assert_eq!(d.levels[0].index, 0);
+        assert_eq!(d.levels[1].index, 1);
+        assert_eq!(d.levels[2].index, 2);
+        assert_eq!(d.levels[0].elevation, -2.7);
+        assert_eq!(d.levels[1].elevation, 0.0);
+        assert_eq!(d.levels[2].elevation, 2.7);
+        assert_eq!(d.walls.len(), 14);
+        assert_eq!(d.rooms.len(), 5);
+        let rooms_on = |lvl: u32| d.rooms.iter().filter(|r| r.level == lvl).count();
+        assert_eq!(rooms_on(0), 2);
+        assert_eq!(rooms_on(1), 1);
+        assert_eq!(rooms_on(2), 2);
     }
 }
