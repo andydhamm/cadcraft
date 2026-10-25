@@ -17,6 +17,7 @@ pub use cadcraft_doc::{
     ArchId, ArchModel, JoinKind, Level, RefSide, Room, RoomType, Wall, WallLayer, WallType, is_room_handle, room_handle, room_label,
 };
 
+pub mod area;
 pub mod graph;
 pub mod join;
 pub mod label;
