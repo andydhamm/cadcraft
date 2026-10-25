@@ -694,8 +694,7 @@ mod tests {
     /// A degenerate ring (fewer than 3 vertices) yields `None`.
     #[test]
     fn degenerate_wall_produces_no_mesh() {
-        let degenerate =
-            WallShape { id: ArchId(1), centre: (Vec2::ZERO, Vec2::ZERO), polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)], joins: Vec::new() };
+        let degenerate = WallShape::new(ArchId(1), vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)], (Vec2::ZERO, Vec2::ZERO));
         let m = crate::walls::extrude_wall(&degenerate, 2.5, 0.0, "wall");
         assert!(m.is_none(), "degenerate (2-vertex) wall must produce no mesh");
     }

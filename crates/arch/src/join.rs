@@ -121,6 +121,13 @@ pub struct WallShape {
 }
 
 impl WallShape {
+    /// A shape with no joins yet. Outside this module build shapes with this (or
+    /// `WallShape { joins, ..WallShape::new(id, polygon, centre) }`) so a new field does not
+    /// break callers (`cargo xtask literals`).
+    pub fn new(id: ArchId, polygon: Vec<Vec2>, centre: (Vec2, Vec2)) -> Self {
+        WallShape { id, polygon, centre, joins: Vec::new() }
+    }
+
     /// Bounds of the polygon; `Bounds2::EMPTY` for an empty polygon.
     pub fn bounds(&self) -> Bounds2 {
         if self.polygon.is_empty() {

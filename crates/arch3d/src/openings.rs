@@ -271,8 +271,7 @@ fn box_between(a: Vec2, b: Vec2, z0: f64, z1: f64, depth: f64, material: &str, i
     let p2 = b - n * half;
     let p3 = b + n * half;
 
-    let mut mesh =
-        Mesh { object: id, material: material.to_string(), positions: Vec::new(), normals: Vec::new(), uvs: Vec::new(), indices: Vec::new() };
+    let mut mesh = Mesh::new(material, id);
     mesh.push_prism(&[p0, p1, p2, p3], z0, z1);
     if mesh.positions.is_empty() { None } else { Some(mesh) }
 }

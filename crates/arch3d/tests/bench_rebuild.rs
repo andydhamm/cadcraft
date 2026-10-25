@@ -30,19 +30,14 @@ fn build_300_wall_grid() -> ArchModel {
             let x1 = (c + 1) as f64 * cell_w;
             let y = (r as f64) * cell_h;
             model.add_wall(Wall {
-                id: ArchId(0),
                 start: Vec2::new(x0, y),
                 end: Vec2::new(x1, y),
                 thickness,
                 height,
-                base_level: 0,
                 to_ceiling: true,
                 exterior: r == 0 || r == rows - 1 || c == 0 || c == cols - 1,
                 wall_type: "Default".to_string(),
-                join_start: Default::default(),
-                join_end: Default::default(),
-                layers: Vec::new(),
-                divider: false,
+                ..Default::default()
             });
             count += 1;
         }
@@ -59,19 +54,14 @@ fn build_300_wall_grid() -> ArchModel {
         let y0 = (r as f64) * cell_h;
         let y1 = (r + 1) as f64 * cell_h;
         model.add_wall(Wall {
-            id: ArchId(0),
             start: Vec2::new(x, y0),
             end: Vec2::new(x, y1),
             thickness,
             height,
-            base_level: 0,
             to_ceiling: true,
             exterior: false,
             wall_type: "Default".to_string(),
-            join_start: Default::default(),
-            join_end: Default::default(),
-            layers: Vec::new(),
-            divider: false,
+            ..Default::default()
         });
         count += 1;
     }

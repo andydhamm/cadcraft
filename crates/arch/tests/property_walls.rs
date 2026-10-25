@@ -7,7 +7,7 @@ use cadcraft_arch::join::End;
 use cadcraft_arch::join::WallShape;
 use cadcraft_arch::join::{solve_joins, stretch_wall};
 use cadcraft_doc::geom::Vec2;
-use cadcraft_doc::{ArchId, ArchModel, JoinKind, Wall, WallType};
+use cadcraft_doc::{ArchId, ArchModel, Wall, WallType};
 
 /// A minimal xorshift64* PRNG with a fixed non-zero initial state.
 #[derive(Clone, Copy)]
@@ -95,19 +95,14 @@ fn build_random_model(seed: u64, num_walls: usize) -> (ArchModel, Vec<ArchId>) {
         };
 
         let wall = Wall {
-            id: ArchId(0),
             start: Vec2::new(x1, y1),
             end: Vec2::new(ex, ey),
             thickness,
             height,
-            base_level: 0,
             to_ceiling: true,
             exterior,
             wall_type: "Default".to_string(),
-            join_start: JoinKind::default(),
-            join_end: JoinKind::default(),
-            layers: Vec::new(),
-            divider: false,
+            ..Default::default()
         };
 
         let id = model.add_wall(wall);

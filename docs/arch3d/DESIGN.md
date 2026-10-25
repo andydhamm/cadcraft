@@ -92,6 +92,7 @@ Precedent copied: **`constraints` (L2) — plain data in `doc`, algorithms in a 
 10. **Proxy handles, not entities.** Arch objects are not `Entity`s; plan geometry is tagged `Handle(0xA000_0000 + arch_id)` so picking/selection work without polluting the entity store or breaking COPY/MIRROR/ARRAY.
 11. **Rough vs finished are separate fields** (Chief's rule). The 3D rough opening uses `rough`; the 2D symbol and the 3D frame/casing use finished. `ROUGH_ALLOWANCE` is one constant shared by commands, CLI and future detection.
 12. **Placement limits are data in `arch`, not logic in commands.** So `door`/`window`/`garagedoor`, `cadcraft-cli`, MCP and `ARCHDETECT` (phase 8) all enforce the same numbers.
+13. **Shared structs are never built with an exhaustive literal outside their own module.** Outside the module that defines `Scene3d`, `Mesh`, `Wall`, `Level`, `Opening`, `Room`, `WallType`, `WallLayer`, `ArchModel` or `WallShape`, write `Type { the_fields_you_need, ..Default::default() }` or call the type's constructor (`Wall::new`, `Opening::new`, `Mesh::new`, `WallShape::new`), so a field another segment adds does not break your code after the merge. `cargo xtask literals` (also run by `cargo xtask ci`; the list is in `xtask/src/literals.rs`) enforces it.
 
 ---
 
