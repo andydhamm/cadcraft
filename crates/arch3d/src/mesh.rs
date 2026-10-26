@@ -289,22 +289,33 @@ impl Mesh {
             self.indices.extend([(b_base + m + tri[0]) as u32, (b_base + m + tri[1]) as u32, (b_base + m + tri[2]) as u32]);
         }
 
-        // Detect bridge edges: an edge (ring[i], ring[j]) is a bridge if another
+        // Detect bridge edges: an edge (ring[i], ring[i+1]) is a bridge if another
         // edge has the same endpoints (in either orientation). Both occurrences
-        // are skipped in the side loop.
-        let mut edge_count: HashMap<(u32, u32), u32> = HashMap::new();
-        for i in 0..m {
-            let j = (i + 1) % m;
-            let key = if i < j { (i, j) } else { (j, i) };
-            *edge_count.entry(key).or_insert(0) += 1;
-        }
+        // are skipped in the side loop. Compare by position, not index, because
+        // the bridge vertices appear at different indices in the merged ring.
         let mut is_bridge = vec![false; m as usize];
         for i in 0..m {
+            if is_bridge[i as usize] {
+                continue;
+            }
             let j = (i + 1) % m;
-            let key = if i < j { (i, j) } else { (j, i) };
-            if let Some(&count) = edge_count.get(&key) {
-                if count >= 2 {
+            for k in (i + 2)..m {
+                if is_bridge[k as usize] {
+                    continue;
+                }
+                let l = (k + 1) % m;
+                if l == i {
+                    continue;
+                }
+                let pi = &ring[i as usize];
+                let pj = &ring[j as usize];
+                let pk = &ring[k as usize];
+                let pl = &ring[l as usize];
+                let same = (pi.x - pk.x).abs() < 1e-9 && (pi.y - pk.y).abs() < 1e-9 && (pj.x - pl.x).abs() < 1e-9 && (pj.y - pl.y).abs() < 1e-9;
+                if same {
                     is_bridge[i as usize] = true;
+                    is_bridge[k as usize] = true;
+                    break;
                 }
             }
         }
@@ -1144,5 +1155,51 @@ mod tests {
         let area = top_cap_area(&mesh);
         assert!((area - 15.19).abs() < 1e-6, "cap area {area} not within 1e-6 of 15.19");
         assert!(mesh.is_manifold(), "hole close to outer must be a closed manifold");
+    }
+
+    /// A hole sharing two edges with the outer (corner hole) is cut out correctly.
+    #[test]
+    fn prism_with_holes_corner_hole_sharing_two_edges() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        // Hole in the top-left corner sharing edges (0,4)-(2,4) and (0,4)-(0,2).
+        let hole = vec![Vec2::new(0.0, 4.0), Vec2::new(2.0, 4.0), Vec2::new(2.0, 2.0), Vec2::new(0.0, 2.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        assert!(mesh.triangle_count() > 0, "corner hole must produce geometry");
+        let area = top_cap_area(&mesh);
+        assert!((area - 12.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 12.0");
+        assert!(mesh.is_manifold(), "corner hole must be a closed manifold");
+    }
+
+    /// A hole touching the outer at a single vertex is cut out correctly.
+    #[test]
+    fn prism_with_holes_hole_touching_outer_at_vertex() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        // Hole touching the outer at vertex (0,4).
+        let hole = vec![Vec2::new(0.0, 4.0), Vec2::new(1.0, 3.0), Vec2::new(0.0, 2.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        assert!(mesh.triangle_count() > 0, "vertex-touching hole must produce geometry");
+        let area = top_cap_area(&mesh);
+        // Outer area 16, hole area 1.0 (base 2, height 1, triangle).
+        assert!((area - 15.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 15.0");
+        assert!(mesh.is_manifold(), "vertex-touching hole must be a closed manifold");
+    }
+
+    /// Multiple holes, some sharing edges with the outer, are all cut out correctly.
+    #[test]
+    fn prism_with_holes_multiple_holes_some_sharing_edges() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(6.0, 0.0), Vec2::new(6.0, 6.0), Vec2::new(0.0, 6.0)];
+        // Hole 1: shares edge with outer at top-left corner.
+        let hole1 = vec![Vec2::new(0.0, 6.0), Vec2::new(2.0, 6.0), Vec2::new(2.0, 4.0), Vec2::new(0.0, 4.0)];
+        // Hole 2: interior hole.
+        let hole2 = vec![Vec2::new(3.0, 1.0), Vec2::new(4.0, 1.0), Vec2::new(4.0, 2.0), Vec2::new(3.0, 2.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole1.clone(), hole2.clone()], 0.0, 2.5);
+        assert!(mesh.triangle_count() > 0, "multiple holes must produce geometry");
+        let area = top_cap_area(&mesh);
+        // Outer area 36, hole1 area 4, hole2 area 1. Expected: 31.
+        assert!((area - 31.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 31.0");
+        assert!(mesh.is_manifold(), "multiple holes must be a closed manifold");
     }
 }
