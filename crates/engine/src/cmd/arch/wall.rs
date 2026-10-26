@@ -270,9 +270,11 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     // --- Thickness: explicit or default (divider allows 0, else size_param
     // or the exterior/interior default from the preliminary exterior above) ---
     let thickness = if divider {
+        let has_thickness = p.as_object().is_some_and(|o| o.contains_key("thickness"));
         match p.get("thickness").and_then(Value::as_f64) {
             Some(t) if t.is_finite() && t >= 0.0 => t,
             Some(_) => return Err(bad("wall", "divider `thickness` must be finite and non-negative")),
+            None if has_thickness => return Err(bad("wall", "divider `thickness` must be a number")),
             None => 0.0,
         }
     } else {
@@ -972,5 +974,76 @@ mod tests {
             "thickness": f64::NAN,
         });
         assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
+    }
+
+    #[test]
+    fn wall_divider_with_explicit_exterior_type() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "divider": true,
+            "type": "exterior",
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!(d.arch.walls[0].divider);
+        assert!(!d.arch.walls[0].exterior);
+        assert_eq!(d.arch.walls[0].wall_type, "exterior".to_string());
+    }
+
+    #[test]
+    fn wall_divider_rejects_negative_thickness() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "divider": true,
+            "thickness": -1.0,
+        });
+        assert!(s.execute("wall", &p).is_err());
+    }
+
+    #[test]
+    fn wall_divider_rejects_nan_thickness() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "divider": true,
+            "thickness": f64::NAN,
+        });
+        assert!(s.execute("wall", &p).is_err());
+    }
+
+    #[test]
+    fn wall_divider_rejects_infinity_thickness() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "divider": true,
+            "thickness": f64::INFINITY,
+        });
+        assert!(s.execute("wall", &p).is_err());
+    }
+
+    #[test]
+    fn wall_with_type_knee_is_interior() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "type": "knee",
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!(!d.arch.walls[0].exterior);
+        assert_eq!(d.arch.walls[0].wall_type, "knee".to_string());
+    }
+
+    #[test]
+    fn wall_with_unknown_type_fails() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "type": "unknown",
+        });
+        assert!(s.execute("wall", &p).is_err());
     }
 }

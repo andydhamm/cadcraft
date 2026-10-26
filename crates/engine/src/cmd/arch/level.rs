@@ -172,7 +172,8 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
         }
         l.ceiling_height = c;
     }
-    if let Some(s) = structure {
+    if p.get("structure").is_some() {
+        let s = structure.ok_or_else(|| crate::EngineError::Other("level: structure must be a number".into()))?;
         if !s.is_finite() || s <= 0.0 {
             return Err(crate::EngineError::Other("level: structure must be finite and positive".into()));
         }
@@ -484,5 +485,63 @@ mod tests {
         assert!(!is_auto_level_name("Level 1.5"));
         assert!(!is_auto_level_name("Level 1abc"));
         assert!(!is_auto_level_name("Floor 1"));
+    }
+
+    #[test]
+    fn level_above_uses_the_requested_name() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        let _ = s.execute("level", &json!({"above": "Level 1", "name": "Second Floor"})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 2);
+        assert_eq!(arch.levels[1].name, "Second Floor");
+    }
+
+    #[test]
+    fn level_edit_rejects_nan_structure() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        let mut map = serde_json::Map::new();
+        map.insert("name".to_string(), Value::from("Level 1"));
+        map.insert("structure".to_string(), Value::from(f64::NAN));
+        let result = s.execute("level", &Value::Object(map));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn level_edit_rejects_non_positive_structure() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        let result = s.execute("level", &json!({"name": "Level 1", "structure": 0.0}));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn level_below_with_explicit_ceiling_and_structure() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        let _ = s.execute("level", &json!({"below": "Level 1", "ceiling": 2.0, "structure": 0.2})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 2);
+        assert!((arch.levels[0].ceiling_height - 2.0).abs() < 1e-9);
+        assert!((arch.levels[0].structure - 0.2).abs() < 1e-9);
     }
 }
