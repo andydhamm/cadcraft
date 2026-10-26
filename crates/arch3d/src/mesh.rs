@@ -251,6 +251,12 @@ impl Mesh {
             }
         }
 
+        // If no holes were bridged, the result is identical to push_prism.
+        if ring.len() == outer.len() {
+            self.push_prism(outer, z0, z1);
+            return;
+        }
+
         // Triangulate the merged ring once; both caps share it.
         let tris = triangulate_simple(&ring);
         if tris.is_empty() {
