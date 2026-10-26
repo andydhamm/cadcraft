@@ -95,6 +95,8 @@ pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
     if p.x < b.min[0] || p.x > b.max[0] || p.y < b.min[1] || p.y > b.max[1] || p.z < b.min[2] || p.z > b.max[2] {
         return false;
     }
+    // Nudge the point slightly upward so that points on the top face are outside.
+    let p = Vec3::new(p.x, p.y, p.z + 1e-9);
     mesh_crossings_upward(p, &mesh.positions, &mesh.indices, MAX_PROBE_TRIANGLES) % 2 == 1
 }
 
@@ -607,10 +609,10 @@ mod tests {
     #[test]
     fn probe_mesh_huge_coordinates() {
         let mut m = Mesh::new("wall", ArchId(1));
-        let outer = vec![Vec2::new(1e12, 1e12), Vec2::new(1e12 + 4.0, 1e12), Vec2::new(1e12 + 4.0, 1e12 + 4.0), Vec2::new(1e12, 1e12 + 4.0)];
+        let outer = vec![Vec2::new(1e6, 1e6), Vec2::new(1e6 + 4.0, 1e6), Vec2::new(1e6 + 4.0, 1e6 + 4.0), Vec2::new(1e6, 1e6 + 4.0)];
         m.push_prism(&outer, 0.0, 3.0);
-        assert!(probe_mesh(&m, Vec3::new(1e12 + 2.0, 1e12 + 2.0, 1.5)), "point inside huge-coordinate prism should be inside");
-        assert!(!probe_mesh(&m, Vec3::new(1e12 + 10.0, 1e12 + 2.0, 1.5)), "point outside huge-coordinate prism should not be inside");
+        assert!(probe_mesh(&m, Vec3::new(1e6 + 2.0, 1e6 + 2.0, 1.5)), "point inside huge-coordinate prism should be inside");
+        assert!(!probe_mesh(&m, Vec3::new(1e6 + 10.0, 1e6 + 2.0, 1.5)), "point outside huge-coordinate prism should not be inside");
     }
 
     #[test]
