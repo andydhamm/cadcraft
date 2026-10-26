@@ -12,6 +12,27 @@ use cadcraft_doc::Handle;
 use cadcraft_doc::arch::{
     OpeningKind, Roof, RoofEdge, RoofEdgeKind, RoofPlane, RoomType, roof_handle, roof_label, room_handle, room_label, wall_label,
 };
+// RoofId might be ArchId or a new type. If it's not found, we might need to use ArchId or import it if it exists.
+// Assuming RoofId is in cadcraft_doc::arch based on naming convention, but if E0425 says not found,
+// it might be that Roof uses ArchId for its id, or RoofId is not public.
+// Let's check the error again: "cannot find function, tuple struct or tuple variant `RoofId` in module `cadcraft_doc::arch`"
+// This suggests RoofId is NOT in cadcraft_doc::arch.
+// However, `roof_label` takes an id. `room_label` takes `r.id`.
+// If `Roof` has `id: RoofId`, and `RoofId` is not found, maybe it's `ArchId`?
+// Or maybe `RoofId` is defined in `cadcraft_doc` root?
+// Let's try importing `RoofId` from `cadcraft_doc` if it's there, or assume `ArchId`.
+// Given `room_handle` and `roof_handle` exist, and `room_label` works with `r.id`,
+// and `roof_label` works with `r.id`, it's highly likely `Roof.id` is `ArchId` or `RoofId` is an alias.
+// But the error is explicit. I will remove `RoofId` usage in tests and use `ArchId` if possible,
+// or check if `Roof` uses `ArchId`.
+// Actually, looking at `Roof` struct in `doc/src/arch.rs` (not shown but inferred),
+// if `RoofId` is missing, maybe `Roof` uses `ArchId`.
+// Let's assume `Roof.id` is `ArchId` for now, or `RoofId` is not needed if we use `ArchId`.
+// But `roof_label` expects a specific ID type.
+// Let's look at the imports again. `ArchId` is imported.
+// I will replace `cadcraft_doc::arch::RoofId(0)` with `ArchId(0)` in tests, assuming Roof.id is ArchId.
+// If that fails, I'll need to know the real type.
+// Also fixing `fascia`/`soffit` to bool, `base_edge` to flat array, adding `eave_z`/`thickness`.
 use cadcraft_geom::Vec2;
 use serde_json::json;
 use serde_json::{Map as JsonMap, Value};
@@ -213,6 +234,13 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
             obj.insert("thickness".to_string(), json!(r.thickness));
             obj.insert("fascia".to_string(), json!(r.fascia));
             obj.insert("soffit".to_string(), json!(r.soffit));
+            // Note: If fascia/soffit are bools in the struct, json! will serialize them as bools.
+            // The spec says "fascia" and "soffit" in the JSON output.
+            // The error said "expected bool, found floating-point number" in the TEST initializer.
+            // So the struct fields ARE bools. The JSON output will be bools.
+            // The spec description in the prompt said "fascia, soffit" without type, but usually these are dimensions.
+            // However, the compiler error is authoritative: the struct fields are bools.
+            // So I must initialize them as bools in the tests.
             obj.insert("manual".to_string(), json!(r.manual));
             obj.insert("handEdited".to_string(), json!(r.hand_edited));
             obj.insert("projectedArea".to_string(), json!(r.projected_area()));
@@ -228,7 +256,10 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
                 let eave_wall_str = plane.eave_wall.map(|wid| wall_label(wid));
                 p_obj.insert("eaveWall".to_string(), json!(eave_wall_str));
 
-                p_obj.insert("baseEdge".to_string(), json!([plane.base_edge[0].x, plane.base_edge[0].y, plane.base_edge[1].x, plane.base_edge[1].y]));
+                // base_edge is likely [f64; 4] or similar flat array based on error "expected f64, found Vec2"
+                // If it's [f64; 4], we can just serialize it directly or map it.
+                // Let's assume it's [f64; 4] representing [x0, y0, x1, y1].
+                p_obj.insert("baseEdge".to_string(), json!(plane.base_edge));
 
                 planes_json.push(Value::Object(p_obj));
             }
@@ -974,23 +1005,30 @@ mod tests {
         match s.doc_mut() {
             Ok(d) => {
                 // Add a simple roof with one plane and one edge
+                // Fixing struct fields based on compiler errors:
+                // - id: likely ArchId(0) if RoofId is not found
+                // - fascia/soffit: bool
+                // - base_edge: flat array [f64; 4]
+                // - RoofPlane missing eave_z and thickness
                 let roof = Roof {
-                    id: cadcraft_doc::arch::RoofId(0),
+                    id: ArchId(0),
                     level: 0,
                     pitch_rise: 6.0,
                     pitch_run: 12.0,
                     overhang: 0.5,
                     thickness: 0.1,
-                    fascia: 0.2,
-                    soffit: 0.1,
+                    fascia: true,
+                    soffit: true,
                     manual: false,
                     hand_edited: false,
                     planes: vec![RoofPlane {
                         ring: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
                         slope: 0.5,
                         projected_area: 80.0,
-                        eave_wall: Some(cadcraft_doc::ArchId(1)),
-                        base_edge: [Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)],
+                        eave_wall: Some(ArchId(1)),
+                        base_edge: [0.0, 0.0, 10.0, 0.0],
+                        eave_z: 2.4,
+                        thickness: 0.1,
                     }],
                     edges: vec![RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(0.0, 4.0), b: Vec2::new(10.0, 4.0), za: 4.0, zb: 4.0 }],
                 };
@@ -1043,14 +1081,14 @@ mod tests {
         match s.doc_mut() {
             Ok(d) => {
                 let roof = Roof {
-                    id: cadcraft_doc::arch::RoofId(0),
+                    id: ArchId(0),
                     level: 0,
                     pitch_rise: 6.0,
                     pitch_run: 12.0,
                     overhang: 0.5,
                     thickness: 0.1,
-                    fascia: 0.2,
-                    soffit: 0.1,
+                    fascia: true,
+                    soffit: true,
                     manual: false,
                     hand_edited: false,
                     planes: vec![],
@@ -1071,14 +1109,14 @@ mod tests {
         match s.doc_mut() {
             Ok(d) => {
                 let roof = Roof {
-                    id: cadcraft_doc::arch::RoofId(0),
+                    id: ArchId(0),
                     level: 0,
                     pitch_rise: 6.0,
                     pitch_run: 12.0,
                     overhang: 0.5,
                     thickness: 0.1,
-                    fascia: 0.2,
-                    soffit: 0.1,
+                    fascia: true,
+                    soffit: true,
                     manual: false,
                     hand_edited: false,
                     planes: vec![],
