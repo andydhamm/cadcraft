@@ -856,6 +856,6 @@ mod tests {
         });
         let _ = s.execute("wall", &p).unwrap();
         let d = s.doc().unwrap();
-        assert!((d.arch.walls[0].height - super::DEFAULT_WALL_HEIGHT).abs() < 1e-9);
+        assert!((d.arch.walls[0].height - super::super::DEFAULT_WALL_HEIGHT).abs() < 1e-9);
     }
 }
