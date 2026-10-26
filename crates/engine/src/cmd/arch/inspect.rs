@@ -1154,4 +1154,287 @@ mod tests {
             assert!(k == "ridge" || k == "hip" || k == "valley" || k == "eave" || k == "gableEnd", "unexpected edge kind: {k}");
         }
     }
+
+    /// A roof with no planes and no edges still reports correctly.
+    #[test]
+    fn inspect_roof_with_empty_planes_and_edges() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                let roof = Roof {
+                    id: ArchId(0),
+                    level: 0,
+                    pitch_rise: 6.0,
+                    pitch_run: 12.0,
+                    overhang: 0.0,
+                    thickness: 0.1,
+                    fascia: false,
+                    soffit: false,
+                    manual: true,
+                    hand_edited: true,
+                    planes: vec![],
+                    edges: vec![],
+                    ..Default::default()
+                };
+                d.arch.roofs.push(roof);
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "roofs": true }));
+        let roofs = v["roofs"].as_array().expect("roofs array missing");
+        assert_eq!(roofs.len(), 1, "expected one roof");
+        let r = &roofs[0];
+        assert_eq!(r["planes"].as_array().expect("planes must be array").len(), 0, "planes should be empty");
+        assert_eq!(r["edges"].as_array().expect("edges must be array").len(), 0, "edges should be empty");
+        assert_eq!(r["manual"].as_bool().unwrap(), true, "manual should be true");
+        assert_eq!(r["handEdited"].as_bool().unwrap(), true, "handEdited should be true");
+        assert_eq!(r["fascia"].as_bool().unwrap(), false, "fascia should be false");
+        assert_eq!(r["soffit"].as_bool().unwrap(), false, "soffit should be false");
+    }
+
+    /// A plane with no eave wall reports `eaveWall` as null.
+    #[test]
+    fn inspect_roof_null_eave_wall() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                let roof = Roof {
+                    id: ArchId(0),
+                    level: 0,
+                    pitch_rise: 6.0,
+                    pitch_run: 12.0,
+                    overhang: 0.0,
+                    thickness: 0.1,
+                    fascia: false,
+                    soffit: false,
+                    manual: false,
+                    hand_edited: false,
+                    planes: vec![RoofPlane {
+                        ring: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+                        slope: 0.5,
+                        projected_area: 80.0,
+                        eave_wall: None,
+                        base_edge: [0.0, 0.0, 10.0, 0.0],
+                        ..Default::default()
+                    }],
+                    edges: vec![],
+                    ..Default::default()
+                };
+                d.arch.roofs.push(roof);
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "roofs": true }));
+        let roofs = v["roofs"].as_array().expect("roofs array missing");
+        let planes = roofs[0]["planes"].as_array().expect("planes array missing");
+        assert_eq!(planes.len(), 1, "expected one plane");
+        assert!(planes[0]["eaveWall"].is_null(), "eaveWall should be null when the plane has no eave wall");
+    }
+
+    /// Multiple roofs are all reported with distinct ids and levels.
+    #[test]
+    fn inspect_multiple_roofs() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                let roof0 = Roof {
+                    id: ArchId(0),
+                    level: 0,
+                    pitch_rise: 6.0,
+                    pitch_run: 12.0,
+                    overhang: 0.0,
+                    thickness: 0.1,
+                    fascia: false,
+                    soffit: false,
+                    manual: false,
+                    hand_edited: false,
+                    planes: vec![],
+                    edges: vec![],
+                    ..Default::default()
+                };
+                let roof1 = Roof {
+                    id: ArchId(1),
+                    level: 1,
+                    pitch_rise: 4.0,
+                    pitch_run: 12.0,
+                    overhang: 0.5,
+                    thickness: 0.15,
+                    fascia: true,
+                    soffit: true,
+                    manual: true,
+                    hand_edited: false,
+                    planes: vec![],
+                    edges: vec![],
+                    ..Default::default()
+                };
+                d.arch.roofs.push(roof0);
+                d.arch.roofs.push(roof1);
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "roofs": true }));
+        let roofs = v["roofs"].as_array().expect("roofs array missing");
+        assert_eq!(roofs.len(), 2, "expected two roofs");
+        assert_eq!(roofs[0]["id"].as_str().unwrap(), "r0", "first roof id should be r0");
+        assert_eq!(roofs[1]["id"].as_str().unwrap(), "r1", "second roof id should be r1");
+        assert_eq!(roofs[0]["level"].as_i64().unwrap(), 0, "first roof level should be 0");
+        assert_eq!(roofs[1]["level"].as_i64().unwrap(), 1, "second roof level should be 1");
+        assert_eq!(roofs[0]["pitchRise"].as_f64().unwrap(), 6.0, "first roof pitchRise should be 6.0");
+        assert_eq!(roofs[1]["pitchRise"].as_f64().unwrap(), 4.0, "second roof pitchRise should be 4.0");
+    }
+
+    /// Roof handles are lowercase hex, matching the room handle convention.
+    #[test]
+    fn inspect_roof_handle_format() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                let roof = Roof {
+                    id: ArchId(0),
+                    level: 0,
+                    pitch_rise: 6.0,
+                    pitch_run: 12.0,
+                    overhang: 0.0,
+                    thickness: 0.1,
+                    fascia: false,
+                    soffit: false,
+                    manual: false,
+                    hand_edited: false,
+                    planes: vec![],
+                    edges: vec![],
+                    ..Default::default()
+                };
+                d.arch.roofs.push(roof);
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "roofs": true }));
+        let roofs = v["roofs"].as_array().expect("roofs array missing");
+        let handle = roofs[0]["handle"].as_str().expect("handle must be a string");
+        assert!(handle.starts_with("a00"), "handle must start with 'a00': {handle}");
+        assert!(handle.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle must be lowercase hex: {handle}");
+    }
+
+    /// Inspecting roofs must not bump the arch revision.
+    #[test]
+    fn inspect_roofs_does_not_bump_revision() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                let roof = Roof {
+                    id: ArchId(0),
+                    level: 0,
+                    pitch_rise: 6.0,
+                    pitch_run: 12.0,
+                    overhang: 0.0,
+                    thickness: 0.1,
+                    fascia: false,
+                    soffit: false,
+                    manual: false,
+                    hand_edited: false,
+                    planes: vec![],
+                    edges: vec![],
+                    ..Default::default()
+                };
+                d.arch.roofs.push(roof);
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let before = match s.doc().map(|d| d.arch_revision) {
+            Ok(b) => b,
+            Err(_) => return,
+        };
+        exec(&mut s, "arch.inspect", &json!({ "roofs": true }));
+        let after = match s.doc().map(|d| d.arch_revision) {
+            Ok(a) => a,
+            Err(_) => return,
+        };
+        assert_eq!(before, after, "arch.inspect must not bump arch_revision");
+    }
+
+    /// The roof slope is pitch_rise divided by pitch_run.
+    #[test]
+    fn inspect_roof_slope_is_pitch_ratio() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                let roof = Roof {
+                    id: ArchId(0),
+                    level: 0,
+                    pitch_rise: 6.0,
+                    pitch_run: 12.0,
+                    overhang: 0.0,
+                    thickness: 0.1,
+                    fascia: false,
+                    soffit: false,
+                    manual: false,
+                    hand_edited: false,
+                    planes: vec![],
+                    edges: vec![],
+                    ..Default::default()
+                };
+                d.arch.roofs.push(roof);
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "roofs": true }));
+        let roofs = v["roofs"].as_array().expect("roofs array missing");
+        let slope = roofs[0]["slope"].as_f64().expect("slope must be a number");
+        assert!((slope - 0.5).abs() < 1e-9, "slope should be pitch_rise/pitch_run = 0.5, got {slope}");
+    }
+
+    /// The roof projected area is the sum of its planes' projected areas.
+    #[test]
+    fn inspect_roof_projected_area_is_sum_of_planes() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                let roof = Roof {
+                    id: ArchId(0),
+                    level: 0,
+                    pitch_rise: 6.0,
+                    pitch_run: 12.0,
+                    overhang: 0.0,
+                    thickness: 0.1,
+                    fascia: false,
+                    soffit: false,
+                    manual: false,
+                    hand_edited: false,
+                    planes: vec![
+                        RoofPlane {
+                            ring: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 4.0), Vec2::new(0.0, 4.0)],
+                            slope: 0.5,
+                            projected_area: 40.0,
+                            eave_wall: None,
+                            base_edge: [0.0, 0.0, 10.0, 0.0],
+                            ..Default::default()
+                        },
+                        RoofPlane {
+                            ring: vec![Vec2::new(0.0, 4.0), Vec2::new(10.0, 4.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+                            slope: 0.5,
+                            projected_area: 40.0,
+                            eave_wall: None,
+                            base_edge: [0.0, 8.0, 10.0, 8.0],
+                            ..Default::default()
+                        },
+                    ],
+                    edges: vec![],
+                    ..Default::default()
+                };
+                d.arch.roofs.push(roof);
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "roofs": true }));
+        let roofs = v["roofs"].as_array().expect("roofs array missing");
+        let area = roofs[0]["projectedArea"].as_f64().expect("projectedArea must be a number");
+        assert!((area - 80.0).abs() < 1e-9, "projectedArea should be 80.0 (40+40), got {area}");
+    }
 }
