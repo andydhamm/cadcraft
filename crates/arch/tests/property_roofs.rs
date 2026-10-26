@@ -341,11 +341,13 @@ fn different_pitches_produce_different_roof_heights() {
 
     let r4 = roof(4.0, 0.0);
     let built4 = build_roof(&model, 0, &r4).expect("pitch 4 build failed");
-    let max_z4 = built4.planes.iter().flat_map(|p| p.ring.iter()).map(|pt| pt.z).fold(f64::MIN, f64::max);
+    let geom4 = roof_geometry(&model, 0, &r4).expect("pitch 4 geometry failed");
+    let max_z4 = geom4.skel.nodes.iter().map(|n| n.time).fold(f64::MIN, f64::max);
 
     let r12 = roof(12.0, 0.0);
     let built12 = build_roof(&model, 0, &r12).expect("pitch 12 build failed");
-    let max_z12 = built12.planes.iter().flat_map(|p| p.ring.iter()).map(|pt| pt.z).fold(f64::MIN, f64::max);
+    let geom12 = roof_geometry(&model, 0, &r12).expect("pitch 12 geometry failed");
+    let max_z12 = geom12.skel.nodes.iter().map(|n| n.time).fold(f64::MIN, f64::max);
 
     assert!(max_z12 > max_z4, "higher pitch should be taller: {} vs {}", max_z12, max_z4);
 }
