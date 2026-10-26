@@ -103,6 +103,34 @@ pub fn wall_label(id: ArchId) -> String {
     format!("w{}", id.0)
 }
 
+/// Offset within the arch-handle range reserved for roof proxy handles.
+/// Roof handles occupy `[ARCH_HANDLE_BASE + ROOF_HANDLE_OFFSET, ...)`.
+pub const ROOF_HANDLE_OFFSET: u64 = 0x18000;
+
+/// Maximum number of roofs in a drawing.
+pub const MAX_ROOFS: usize = 64;
+
+/// Maximum number of roof edges in a single roof.
+pub const MAX_ROOF_EDGES: usize = 256;
+
+/// Maximum number of roof planes in a single roof.
+pub const MAX_ROOF_PLANES: usize = 256;
+
+/// The synthetic proxy handle for an architectural roof.
+pub fn roof_handle(id: ArchId) -> Handle {
+    Handle(ARCH_HANDLE_BASE.saturating_add(ROOF_HANDLE_OFFSET).saturating_add(u64::from(id.0)))
+}
+
+/// Whether `h` falls in the synthetic roof-handle range.
+pub fn is_roof_handle(h: Handle) -> bool {
+    h.0 >= ARCH_HANDLE_BASE.saturating_add(ROOF_HANDLE_OFFSET) && h.0 < ARCH_HANDLE_BASE.saturating_add(ROOF_HANDLE_OFFSET).saturating_add(1u64 << 15)
+}
+
+/// Human-readable label for a roof id, e.g. `r0`, `r1`.
+pub fn roof_label(id: ArchId) -> String {
+    format!("r{}", id.0)
+}
+
 /// Maximum number of walls in a drawing (caps join-stretch BFS and allocations).
 pub const MAX_WALLS: usize = 4096;
 
@@ -161,6 +189,18 @@ pub struct Wall {
     /// Whether this wall is a room-divider (encloses rooms but produces no poché/3D).
     #[serde(default)]
     pub divider: bool,
+    /// How the roof meets this wall (auto-detected, hip, gable, or valley).
+    #[serde(default)]
+    pub roof_directive: RoofDirective,
+    /// Per-wall roof pitch override as rise (e.g. 6 for 6/12); `None` means use the roof's default.
+    #[serde(default)]
+    pub roof_pitch: Option<f64>,
+    /// Per-wall overhang override; `None` means use the roof's overhang.
+    #[serde(default)]
+    pub roof_overhang: Option<f64>,
+    /// Eave height above the level floor; `None` means derive from level.
+    #[serde(default)]
+    pub eave_height: Option<f64>,
 }
 
 fn default_wall_type() -> String {
@@ -184,6 +224,10 @@ impl Wall {
             join_start: JoinKind::Mitre,
             join_end: JoinKind::Mitre,
             divider: false,
+            roof_directive: RoofDirective::default(),
+            roof_pitch: None,
+            roof_overhang: None,
+            eave_height: None,
         }
     }
 }
@@ -204,6 +248,10 @@ impl Default for Wall {
             join_start: JoinKind::Mitre,
             join_end: JoinKind::Mitre,
             divider: false,
+            roof_directive: RoofDirective::default(),
+            roof_pitch: None,
+            roof_overhang: None,
+            eave_height: None,
         }
     }
 }
@@ -488,6 +536,129 @@ impl Default for Room {
     }
 }
 
+/// How a roof meets a wall: auto-detected, hip, gable, or valley.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RoofDirective {
+    /// No explicit preference; the roof generator decides.
+    #[default]
+    Auto,
+    /// Hip roof meets this wall.
+    Hip,
+    /// Gable roof meets this wall.
+    Gable,
+    /// Valley where two gable roofs meet.
+    Valley,
+}
+
+/// Classification of a roof edge.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RoofEdgeKind {
+    /// The lower edge where the roof meets the walls.
+    #[default]
+    Eave,
+    /// The upper ridge line where two planes meet.
+    Ridge,
+    /// A sloped corner edge (hip).
+    Hip,
+    /// A valley corner edge.
+    Valley,
+    /// A vertical gable end face edge.
+    GableEnd,
+}
+
+/// A single roof plane: its footprint ring, slope, and dimensions.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RoofPlane {
+    /// Planar ring (outer boundary) of this roof plane, CCW.
+    pub ring: Vec<Vec2>,
+    /// Slope (rise/run) of this plane.
+    pub slope: f64,
+    /// Projected area onto the plan, in square metres.
+    pub projected_area: f64,
+    /// Wall id this plane's eave rests on (if any).
+    pub eave_wall: Option<ArchId>,
+    /// 4-float encoding of the plane's base edge (x0, y0, x1, y1) in plan.
+    pub base_edge: [f64; 4],
+    /// Vertical thickness of the roof material at this plane.
+    pub thickness: f64,
+}
+
+/// A classified edge of a roof (eave, ridge, hip, valley, gable end).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RoofEdge {
+    pub kind: RoofEdgeKind,
+    /// Plan point A.
+    pub a: Vec2,
+    /// Plan point B.
+    pub b: Vec2,
+    /// Height (elevation) at A.
+    pub za: f64,
+    /// Height (elevation) at B.
+    pub zb: f64,
+}
+
+/// An automatic or manual roof model, stored per level.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Roof {
+    /// Stable identifier assigned by [`ArchModel::push_roof`].
+    pub id: ArchId,
+    pub level: u32,
+    /// Roof pitch rise (e.g. 6 for 6/12).
+    pub pitch_rise: f64,
+    /// Roof pitch run (e.g. 12 for 6/12).
+    pub pitch_run: f64,
+    /// Uniform overhang, in metres.
+    pub overhang: f64,
+    /// Roof material thickness, in metres.
+    pub thickness: f64,
+    /// Emit fascia boards around the eave.
+    pub fascia: bool,
+    /// Emit soffit panels under the fascia.
+    pub soffit: bool,
+    /// Created by a manual `roofplane` command rather than `ROOFAUTO`.
+    pub manual: bool,
+    /// User-edited planes; rebuilds stop touching this roof.
+    pub hand_edited: bool,
+    pub planes: Vec<RoofPlane>,
+    pub edges: Vec<RoofEdge>,
+}
+
+impl Default for Roof {
+    fn default() -> Self {
+        Roof {
+            id: ArchId(0),
+            level: 0,
+            pitch_rise: 6.0,
+            pitch_run: 12.0,
+            overhang: 0.4,
+            thickness: 0.25,
+            fascia: true,
+            soffit: true,
+            manual: false,
+            hand_edited: false,
+            planes: Vec::new(),
+            edges: Vec::new(),
+        }
+    }
+}
+
+impl Roof {
+    /// Rise/run ratio when both are finite and run > 0, else 0.5.
+    pub fn slope(&self) -> f64 {
+        if self.pitch_rise.is_finite() && self.pitch_run.is_finite() && self.pitch_run > 0.0 { self.pitch_rise / self.pitch_run } else { 0.5 }
+    }
+
+    /// Sum of all finite plane projected areas.
+    pub fn projected_area(&self) -> f64 {
+        self.planes.iter().filter(|p| p.projected_area.is_finite()).map(|p| p.projected_area).sum()
+    }
+}
+
 /// The architectural object model for a drawing.
 ///
 /// Stored on [`Drawing::arch`]; the 3D pane and incremental rebuilds key off
@@ -510,6 +681,10 @@ pub struct ArchModel {
     pub levels: Vec<Level>,
     #[serde(default)]
     pub types: Vec<WallType>,
+    #[serde(default)]
+    pub roofs: Vec<Roof>,
+    #[serde(default)]
+    pub next_roof_id: u32,
 }
 
 impl Default for ArchModel {
@@ -521,6 +696,8 @@ impl Default for ArchModel {
             next_id: 0,
             next_opening_id: 0,
             next_room_id: 0,
+            roofs: Vec::new(),
+            next_roof_id: 0,
             levels: vec![Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 }],
             types: vec![
                 WallType {
@@ -673,6 +850,30 @@ impl ArchModel {
     /// Iterate over all room ids.
     pub fn room_ids(&self) -> impl Iterator<Item = ArchId> + '_ {
         self.rooms.iter().map(|r| r.id)
+    }
+
+    /// Add a roof and return its new id.
+    pub fn push_roof(&mut self, mut r: Roof) -> ArchId {
+        let id = ArchId(self.next_roof_id);
+        self.next_roof_id = self.next_roof_id.saturating_add(1);
+        r.id = id;
+        self.roofs.push(r);
+        id
+    }
+
+    /// Look up a roof by id.
+    pub fn roof(&self, id: ArchId) -> Option<&Roof> {
+        self.roofs.iter().find(|r| r.id == id)
+    }
+
+    /// The index of a roof by id, or `None` if not found.
+    pub fn roof_index(&self, id: ArchId) -> Option<usize> {
+        self.roofs.iter().position(|r| r.id == id)
+    }
+
+    /// Iterate over all roof ids.
+    pub fn roof_ids(&self) -> impl Iterator<Item = ArchId> + '_ {
+        self.roofs.iter().map(|r| r.id)
     }
 
     /// Union of every wall's poché ring bounds.
@@ -1393,5 +1594,75 @@ mod tests {
         assert!(!w.divider);
         let w2 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
         assert!(!w2.divider);
+    }
+
+    #[test]
+    fn roof_default_is_six_twelfths() {
+        let r = Roof::default();
+        assert_eq!(r.pitch_rise, 6.0);
+        assert_eq!(r.pitch_run, 12.0);
+        assert!((r.slope() - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn push_roof_assigns_ids() {
+        let mut m = ArchModel::default();
+        let id1 = m.push_roof(Roof::default());
+        let id2 = m.push_roof(Roof::default());
+        assert_eq!(id1, ArchId(0));
+        assert_eq!(id2, ArchId(1));
+        assert!(m.roof(id1).is_some());
+        assert!(m.roof(id2).is_some());
+        assert_eq!(m.next_roof_id, 2);
+    }
+
+    #[test]
+    fn roof_handle_is_disjoint_from_room_and_opening() {
+        let rh = roof_handle(ArchId(0));
+        let rhm = room_handle(ArchId(0));
+        let oh = opening_handle(ArchId(0));
+        assert!(is_roof_handle(rh));
+        assert!(is_arch_handle(rh));
+        assert_ne!(rh, rhm);
+        assert_ne!(rh, oh);
+        assert!(!is_room_handle(rh));
+        assert!(!is_opening_handle(rh));
+    }
+
+    #[test]
+    fn wall_roof_fields_default_to_auto() {
+        let w = Wall::default();
+        assert_eq!(w.roof_directive, RoofDirective::default());
+        assert!(w.roof_pitch.is_none());
+        assert!(w.roof_overhang.is_none());
+        assert!(w.eave_height.is_none());
+
+        let w2 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), 0.15);
+        assert_eq!(w2.roof_directive, RoofDirective::default());
+        assert!(w2.roof_pitch.is_none());
+        assert!(w2.roof_overhang.is_none());
+        assert!(w2.eave_height.is_none());
+    }
+
+    #[test]
+    fn roof_projected_area_sums_planes() {
+        let mut r = Roof::default();
+        r.planes.push(RoofPlane {
+            ring: Vec::new(),
+            slope: 0.5,
+            projected_area: 10.5,
+            eave_wall: None,
+            base_edge: [0.0, 0.0, 0.0, 0.0],
+            thickness: 0.25,
+        });
+        r.planes.push(RoofPlane {
+            ring: Vec::new(),
+            slope: 0.5,
+            projected_area: 7.3,
+            eave_wall: None,
+            base_edge: [0.0, 0.0, 0.0, 0.0],
+            thickness: 0.25,
+        });
+        assert!((r.projected_area() - 17.8).abs() < 1e-9);
     }
 }
