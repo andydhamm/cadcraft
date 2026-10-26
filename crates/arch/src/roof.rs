@@ -74,11 +74,13 @@ pub fn outer_footprint(model: &ArchModel, level: u32) -> Option<Footprint> {
         let Some(shape) = shapes.iter().find(|s| s.id == wall.id) else {
             continue;
         };
-        let Some(edge) = outer_face_edge(&shape.polygon, wall, &centroid) else {
+        let Some((a, b)) = outer_face_edge(&shape.polygon, wall, &centroid) else {
             continue;
         };
-        let mid = Vec2::new((edge.a.x + edge.b.x) / 2.0, (edge.a.y + edge.b.y) / 2.0);
-        tagged.push(((mid - centroid).atan(), edge));
+        let edge = FootprintEdge { wall: wall.id, a, b };
+        let mid = Vec2::new((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
+        let v = mid - centroid;
+        tagged.push((v.y.atan2(v.x), edge));
     }
     if tagged.len() < 3 {
         return None;
@@ -150,7 +152,7 @@ fn outer_face_edge(ring: &[Vec2], wall: &Wall, centroid: &Vec2) -> Option<(Vec2,
         return None;
     };
     let centre_mid = Vec2::new((wall.start.x + wall.end.x) / 2.0, (wall.start.y + wall.end.y) / 2.0);
-    let to_centroid = centroid - centre_mid;
+    let to_centroid = *centroid - centre_mid;
     let perp = dir.perp();
     // Outer side = the side of the centre line opposite the centroid.
     let outer_side = if to_centroid.dot(perp) > 0.0 { -perp } else { perp };
@@ -173,7 +175,7 @@ fn outer_face_edge(ring: &[Vec2], wall: &Wall, centroid: &Vec2) -> Option<(Vec2,
         let side = (mid - centre_mid).dot(outer_side);
         if parallel > 0.5 && side > 0.0 {
             let score = parallel * side;
-            if best.map_or(true, |(_, ref bs)| score > bs) {
+            if best.map_or(true, |b| score > b.0) {
                 best = Some((score, (a, b)));
             }
         }
