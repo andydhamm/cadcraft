@@ -356,6 +356,113 @@ fn hostile_inputs_never_panic_and_never_give_a_partial_roof() {
 }
 
 #[test]
+fn coincident_vertices_do_not_break_roof() {
+    // Two consecutive walls share the same endpoint (degenerate zero-length wall)
+    let pts = vec![(0.0, 0.0), (0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+    let r = roof(6.0, 0.0);
+    let res = build_roof(&model, 0, &r);
+    // Should either error or produce a valid roof; must not panic
+    if let Ok(built) = res {
+        assert!(!built.planes.is_empty(), "coincident vertices: roof has no planes");
+        for plane in &built.planes {
+            assert!(plane.slope.is_finite() || plane.slope.is_infinite(), "coincident vertices: non-finite slope");
+            assert!(plane.projected_area >= 0.0, "coincident vertices: negative area");
+            for p in &plane.ring {
+                assert!(p.is_finite(), "coincident vertices: non-finite vertex {:?}", p);
+            }
+        }
+    }
+}
+
+#[test]
+fn collinear_vertices_do_not_break_roof() {
+    // Three consecutive vertices on the same line
+    let pts = vec![(0.0, 0.0), (5.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+    let r = roof(6.0, 0.0);
+    let res = build_roof(&model, 0, &r);
+    if let Ok(built) = res {
+        assert!(!built.planes.is_empty(), "collinear vertices: roof has no planes");
+        for plane in &built.planes {
+            assert!(plane.slope.is_finite() || plane.slope.is_infinite(), "collinear vertices: non-finite slope");
+            assert!(plane.projected_area >= 0.0, "collinear vertices: negative area");
+            for p in &plane.ring {
+                assert!(p.is_finite(), "collinear vertices: non-finite vertex {:?}", p);
+            }
+        }
+    }
+}
+
+#[test]
+fn huge_coordinates_do_not_break_roof() {
+    // Very large coordinates (1 km scale)
+    let pts = vec![(0.0, 0.0), (1_000_000.0, 0.0), (1_000_000.0, 800_000.0), (0.0, 800_000.0)];
+    let model = house(&pts, 2.4);
+    let r = roof(6.0, 0.0);
+    let res = build_roof(&model, 0, &r);
+    if let Ok(built) = res {
+        assert!(!built.planes.is_empty(), "huge coords: roof has no planes");
+        for plane in &built.planes {
+            assert!(plane.slope.is_finite() || plane.slope.is_infinite(), "huge coords: non-finite slope");
+            assert!(plane.projected_area >= 0.0, "huge coords: negative area");
+            for p in &plane.ring {
+                assert!(p.is_finite(), "huge coords: non-finite vertex {:?}", p);
+            }
+        }
+    }
+}
+
+#[test]
+fn roof_overhang_on_l_and_t_shapes() {
+    // L-shape with overhang
+    let l_shape = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (6.0, 8.0), (6.0, 12.0), (0.0, 12.0)];
+    let model_l = house(&l_shape, 2.4);
+    let r_over = roof(6.0, 0.5);
+    let built_l = build_roof(&model_l, 0, &r_over).expect("L-shape with overhang should build");
+    assert!(!built_l.planes.is_empty(), "L overhang: roof has no planes");
+    for plane in &built_l.planes {
+        assert!(plane.slope.is_finite() || plane.slope.is_infinite(), "L overhang: non-finite slope");
+        assert!(plane.projected_area >= 0.0, "L overhang: negative area");
+        for p in &plane.ring {
+            assert!(p.is_finite(), "L overhang: non-finite vertex {:?}", p);
+        }
+    }
+
+    // T-shape with overhang
+    let t_shape = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (7.0, 8.0), (7.0, 12.0), (3.0, 12.0), (3.0, 8.0), (0.0, 8.0)];
+    let model_t = house(&t_shape, 2.4);
+    let built_t = build_roof(&model_t, 0, &r_over).expect("T-shape with overhang should build");
+    assert!(!built_t.planes.is_empty(), "T overhang: roof has no planes");
+    for plane in &built_t.planes {
+        assert!(plane.slope.is_finite() || plane.slope.is_infinite(), "T overhang: non-finite slope");
+        assert!(plane.projected_area >= 0.0, "T overhang: negative area");
+        for p in &plane.ring {
+            assert!(p.is_finite(), "T overhang: non-finite vertex {:?}", p);
+        }
+    }
+}
+
+#[test]
+fn roof_geometry_matches_build_roof() {
+    // roof_geometry should return the same skeleton that build_roof used
+    let rect = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&rect, 2.4);
+    let r = roof(6.0, 0.0);
+    let built = build_roof(&model, 0, &r).expect("roof should build");
+    let geom = roof_geometry(&model, 0, &built).expect("roof_geometry should succeed");
+
+    // The skeleton should have the same number of faces as the roof has planes
+    assert_eq!(geom.skel.faces.len(), built.planes.len(), "face count mismatch");
+
+    // All nodes should be finite
+    for node in &geom.skel.nodes {
+        assert!(node.x.is_finite() && node.y.is_finite(), "non-finite skeleton node");
+        assert!(node.time.is_finite() || node.time.is_infinite(), "non-finite node time");
+    }
+}
+
+#[test]
 fn random_wall_rings_never_panic() {
     let mut seed = 0x5eedu64;
     let mut next_rand = || {
