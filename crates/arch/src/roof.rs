@@ -323,9 +323,9 @@ mod tests {
         let fp = outer_footprint(&model, 0).unwrap();
         let slopes = wall_slopes(&model, 0, &fp, &roof);
         assert_eq!(slopes.len(), 4);
-        assert!(slopes.iter().any(|s| s.is_infinite() && s > 0.0), "expected an INFINITY slope for the gable wall");
+        assert!(slopes.iter().any(|s| s.is_infinite() && *s > 0.0), "expected an INFINITY slope for the gable wall");
         let default = roof.slope();
-        assert!(slopes.iter().all(|s| s == default || s.is_infinite()), "non-gable slopes must equal the roof default");
+        assert!(slopes.iter().all(|s| *s == default || s.is_infinite()), "non-gable slopes must equal the roof default");
     }
 
     #[test]
