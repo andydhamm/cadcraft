@@ -96,7 +96,7 @@ pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
         return false;
     }
     // Nudge the point slightly upward so that points on the top face are outside.
-    let p = Vec3::new(p.x, p.y, p.z + 1e-9);
+    let p = Vec3::new(p.x, p.y, p.z + 1e-6);
     mesh_crossings_upward(p, &mesh.positions, &mesh.indices, MAX_PROBE_TRIANGLES) % 2 == 1
 }
 
