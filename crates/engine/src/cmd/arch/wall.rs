@@ -537,6 +537,18 @@ mod tests {
     }
 
     #[test]
+    fn wall_height_defaults_to_derived_floor_to_floor() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        // Default level 0 (ceiling 2.4 + structure 0.3) gives derived floor-to-floor 2.7
+        assert!((d.arch.walls[0].height - 2.7).abs() < 1e-9);
+    }
+
+    #[test]
     fn wall_height_defaults_to_the_derived_floor_to_floor() {
         let mut s = new_session_with_level();
         let p = json!({
