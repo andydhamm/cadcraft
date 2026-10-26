@@ -254,6 +254,124 @@ mod tests {
         assert!(r["revision"].is_number(), "missing `revision` key");
     }
 
+    /// A session whose arch model holds a level and a `Deck` room.
+    fn deck_session() -> Session {
+        let mut s = fresh_session();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { ..Level::default() });
+        d.arch.rooms.push(Room {
+            level: 0,
+            room_type: RoomType::Deck,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 5.0), Vec2::new(0.0, 5.0)],
+            ..Room::default()
+        });
+        d.touch_arch();
+        s
+    }
+
+    /// A session whose arch model holds a level and a `Porch` room.
+    fn porch_session() -> Session {
+        let mut s = fresh_session();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { ..Level::default() });
+        d.arch.rooms.push(Room {
+            level: 0,
+            room_type: RoomType::Porch,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 5.0), Vec2::new(0.0, 5.0)],
+            ..Room::default()
+        });
+        d.touch_arch();
+        s
+    }
+
+    /// A session with mixed room types on one level.
+    fn mixed_rooms_session() -> Session {
+        let mut s = fresh_session();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { ..Level::default() });
+        d.arch.rooms.push(Room {
+            level: 0,
+            room_type: RoomType::Living,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 5.0), Vec2::new(0.0, 5.0)],
+            ..Room::default()
+        });
+        d.arch.rooms.push(Room {
+            level: 0,
+            room_type: RoomType::Bedroom,
+            polygon: vec![Vec2::new(5.0, 0.0), Vec2::new(9.0, 0.0), Vec2::new(9.0, 5.0), Vec2::new(5.0, 5.0)],
+            ..Room::default()
+        });
+        d.arch.rooms.push(Room {
+            level: 0,
+            room_type: RoomType::OpenBelow,
+            polygon: vec![Vec2::new(0.0, 6.0), Vec2::new(4.0, 6.0), Vec2::new(4.0, 11.0), Vec2::new(0.0, 11.0)],
+            ..Room::default()
+        });
+        d.arch.rooms.push(Room {
+            level: 0,
+            room_type: RoomType::Deck,
+            polygon: vec![Vec2::new(5.0, 6.0), Vec2::new(9.0, 6.0), Vec2::new(9.0, 11.0), Vec2::new(5.0, 11.0)],
+            ..Room::default()
+        });
+        d.touch_arch();
+        s
+    }
+
+    /// A session with rooms on two levels.
+    fn two_level_rooms_session() -> Session {
+        let mut s = fresh_session();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { ..Level::default() });
+        d.arch.levels.push(Level { ..Level::default() });
+        d.arch.rooms.push(Room {
+            level: 0,
+            room_type: RoomType::Living,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 5.0), Vec2::new(0.0, 5.0)],
+            ..Room::default()
+        });
+        d.arch.rooms.push(Room {
+            level: 1,
+            room_type: RoomType::Bedroom,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 5.0), Vec2::new(0.0, 5.0)],
+            ..Room::default()
+        });
+        d.touch_arch();
+        s
+    }
+
+    #[test]
+    fn build3d_deck_room_has_floor_no_ceiling() {
+        let mut s = deck_session();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["floors"].as_u64(), Some(1), "Deck room gets a floor slab");
+        assert_eq!(r["ceilings"].as_u64(), Some(0), "Deck room gets no ceiling");
+    }
+
+    #[test]
+    fn build3d_porch_room_has_floor_no_ceiling() {
+        let mut s = porch_session();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["floors"].as_u64(), Some(1), "Porch room gets a floor slab");
+        assert_eq!(r["ceilings"].as_u64(), Some(0), "Porch room gets no ceiling");
+    }
+
+    #[test]
+    fn build3d_mixed_room_types_counts() {
+        let mut s = mixed_rooms_session();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        // Living (floor+ceiling) + Bedroom (floor+ceiling) + OpenBelow (ceiling only) + Deck (floor only)
+        assert_eq!(r["floors"].as_u64(), Some(3), "Living + Bedroom + Deck = 3 floors");
+        assert_eq!(r["ceilings"].as_u64(), Some(3), "Living + Bedroom + OpenBelow = 3 ceilings");
+    }
+
+    #[test]
+    fn build3d_rooms_on_two_levels_both_build() {
+        let mut s = two_level_rooms_session();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["floors"].as_u64(), Some(2), "one room per level -> 2 floors");
+        assert_eq!(r["ceilings"].as_u64(), Some(2), "one room per level -> 2 ceilings");
+    }
+
     #[test]
     fn build3d_probe_answers_every_point() {
         let mut s = wall_session();
