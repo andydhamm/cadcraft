@@ -1038,4 +1038,139 @@ mod tests {
         let polylines = back.model.iter().filter(|e| matches!(&e.kind, EntityKind::LwPolyline(_))).count();
         assert_eq!(polylines, 0, "proxy linework survived the read");
     }
+
+    #[test]
+    fn proxy_roof_polylines_empty_model() {
+        let m = ArchModel::default();
+        let polys = proxy_roof_polylines(&m);
+        assert_eq!(polys.len(), 0, "empty model should produce no roof proxies");
+    }
+
+    #[test]
+    fn roof_with_only_eave_edges_produces_no_proxy() {
+        let mut m = ArchModel::default();
+        m.push_roof(Roof {
+            level: 0,
+            pitch_rise: 6.0,
+            pitch_run: 12.0,
+            edges: vec![
+                RoofEdge { kind: RoofEdgeKind::Eave, a: Vec2::new(0.0, 0.0), b: Vec2::new(10.0, 0.0), za: 2.4, zb: 2.4, ..Default::default() },
+                RoofEdge { kind: RoofEdgeKind::Eave, a: Vec2::new(0.0, 0.0), b: Vec2::new(0.0, 8.0), za: 2.4, zb: 2.4, ..Default::default() },
+            ],
+            ..Roof::default()
+        });
+        let polys = proxy_roof_polylines(&m);
+        assert_eq!(polys.len(), 0, "roof with only eave edges should produce no proxies");
+    }
+
+    #[test]
+    fn roof_edge_with_non_finite_endpoints_is_skipped() {
+        let mut m = ArchModel::default();
+        m.push_roof(Roof {
+            level: 0,
+            pitch_rise: 6.0,
+            pitch_run: 12.0,
+            edges: vec![
+                RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(f64::NAN, 4.0), b: Vec2::new(6.0, 4.0), za: 4.45, zb: 4.45, ..Default::default() },
+                RoofEdge {
+                    kind: RoofEdgeKind::Ridge,
+                    a: Vec2::new(4.0, f64::INFINITY),
+                    b: Vec2::new(6.0, 4.0),
+                    za: 4.45,
+                    zb: 4.45,
+                    ..Default::default()
+                },
+                RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(4.0, 4.0), b: Vec2::new(6.0, 4.0), za: 4.45, zb: 4.45, ..Default::default() },
+            ],
+            ..Roof::default()
+        });
+        let polys = proxy_roof_polylines(&m);
+        assert_eq!(polys.len(), 1, "only the finite edge should produce a proxy");
+    }
+
+    #[test]
+    fn multiple_roofs_produce_proxies_for_all() {
+        let mut m = ArchModel::default();
+        m.push_roof(Roof {
+            level: 0,
+            pitch_rise: 6.0,
+            pitch_run: 12.0,
+            edges: vec![RoofEdge {
+                kind: RoofEdgeKind::Ridge,
+                a: Vec2::new(4.0, 4.0),
+                b: Vec2::new(6.0, 4.0),
+                za: 4.45,
+                zb: 4.45,
+                ..Default::default()
+            }],
+            ..Roof::default()
+        });
+        m.push_roof(Roof {
+            level: 1,
+            pitch_rise: 4.0,
+            pitch_run: 12.0,
+            edges: vec![RoofEdge { kind: RoofEdgeKind::Hip, a: Vec2::new(0.0, 0.0), b: Vec2::new(5.0, 5.0), za: 2.4, zb: 3.0, ..Default::default() }],
+            ..Roof::default()
+        });
+        let polys = proxy_roof_polylines(&m);
+        assert_eq!(polys.len(), 2, "each roof should produce one proxy");
+    }
+
+    #[test]
+    fn multiple_roofs_round_trip_through_dxf() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer(ARCH_ROOF_LAYER);
+        d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        d.arch.push_roof(Roof {
+            level: 0,
+            pitch_rise: 6.0,
+            pitch_run: 12.0,
+            edges: vec![RoofEdge {
+                kind: RoofEdgeKind::Ridge,
+                a: Vec2::new(4.0, 4.0),
+                b: Vec2::new(6.0, 4.0),
+                za: 4.45,
+                zb: 4.45,
+                ..Default::default()
+            }],
+            ..Roof::default()
+        });
+        d.arch.push_roof(Roof {
+            level: 1,
+            pitch_rise: 4.0,
+            pitch_run: 12.0,
+            edges: vec![RoofEdge { kind: RoofEdgeKind::Hip, a: Vec2::new(0.0, 0.0), b: Vec2::new(5.0, 5.0), za: 2.4, zb: 3.0, ..Default::default() }],
+            ..Roof::default()
+        });
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.roofs.len(), 2, "both roofs should survive round trip");
+        assert_eq!(back.arch.roofs[0].edges.len(), 1);
+        assert_eq!(back.arch.roofs[1].edges.len(), 1);
+
+        // No proxy linework should survive
+        let polylines = back.model.iter().filter(|e| matches!(&e.kind, EntityKind::LwPolyline(_))).count();
+        assert_eq!(polylines, 0, "proxy linework survived the read");
+    }
+
+    #[test]
+    fn roof_edge_count_is_capped() {
+        let mut m = ArchModel::default();
+        let mut edges = Vec::new();
+        for i in 0..(cadcraft_doc::arch::MAX_ROOF_EDGES + 10) {
+            edges.push(RoofEdge {
+                kind: RoofEdgeKind::Ridge,
+                a: Vec2::new(i as f64, 0.0),
+                b: Vec2::new((i + 1) as f64, 0.0),
+                za: 2.4,
+                zb: 2.4,
+                ..Default::default()
+            });
+        }
+        m.push_roof(Roof { level: 0, pitch_rise: 6.0, pitch_run: 12.0, edges, ..Roof::default() });
+        let polys = proxy_roof_polylines(&m);
+        assert_eq!(polys.len(), cadcraft_doc::arch::MAX_ROOF_EDGES, "edge count should be capped at MAX_ROOF_EDGES");
+    }
 }
