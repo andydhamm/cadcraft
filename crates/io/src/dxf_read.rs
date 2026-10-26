@@ -387,7 +387,9 @@ fn entity_with_table_budget(kind: &str, tags: &[Tag], table_cells_left: &mut usi
         "ARC" => EntityKind::Arc(arc(&c, &t)),
         "ELLIPSE" => EntityKind::Ellipse(ellipse(&c, &t)),
         "LWPOLYLINE" => {
-            if crate::dxf_arch::is_arch_proxy(tags) || (drop_room_proxies && crate::dxf_arch::is_room_proxy(tags)) {
+            if crate::dxf_arch::is_arch_proxy(tags)
+                || (drop_room_proxies && (crate::dxf_arch::is_room_proxy(tags) || crate::dxf_arch::is_roof_proxy(tags)))
+            {
                 return None;
             }
             lwpolyline(tags, &c, &t)?
