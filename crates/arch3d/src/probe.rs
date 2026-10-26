@@ -676,4 +676,80 @@ mod tests {
         m.push_prism(&outer, 0.0, 0.3);
         assert!(!probe_mesh(&m, Vec3::new(2.0, 2.0, 0.3)), "point on top face should not be inside");
     }
+
+    #[test]
+    fn probe_roof_mesh_hits_inside_the_roof_volume() {
+        use crate::roof::roof_plane_mesh;
+        use cadcraft_doc::arch::RoofPlane;
+
+        let mut plane = RoofPlane::default();
+        plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
+        plane.slope = 0.5;
+        plane.thickness = 0.2;
+
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        // Point inside the roof volume: at (5, 2.5), z should be between bottom and top
+        // Bottom z at (5, 2.5): distance from base edge (y=0) is 2.5, so z = 2.5 + 0.5*2.5 = 3.75
+        // Top z: 3.75 + 0.2 * n.z where n.z = 1/sqrt(1+0.25) ≈ 0.894
+        // Top z ≈ 3.75 + 0.179 = 3.929
+        // Probe at z = 3.8 (inside)
+        assert!(probe_mesh(&mesh, Vec3::new(5.0, 2.5, 3.8)), "point inside roof should hit");
+
+        // Point below the roof
+        assert!(!probe_mesh(&mesh, Vec3::new(5.0, 2.5, 2.0)), "point below roof should not hit");
+
+        // Point above the roof
+        assert!(!probe_mesh(&mesh, Vec3::new(5.0, 2.5, 5.0)), "point above roof should not hit");
+    }
+
+    #[test]
+    fn probe_fascia_mesh_hits_inside() {
+        use crate::roof::fascia_mesh;
+        use cadcraft_doc::arch::RoofPlane;
+
+        let mut plane = RoofPlane::default();
+        plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
+        plane.slope = 0.5;
+        plane.thickness = 0.2;
+
+        let mesh = fascia_mesh(&plane, 2.5, 0.2, ArchId(1)).unwrap();
+
+        // Fascia is at the base edge (y=0), from z=2.5 down to z=2.3, width 0.2 in +y direction
+        // Probe at (5, 0.1, 2.4) - inside the fascia
+        assert!(probe_mesh(&mesh, Vec3::new(5.0, 0.1, 2.4)), "point inside fascia should hit");
+
+        // Outside the fascia (too high)
+        assert!(!probe_mesh(&mesh, Vec3::new(5.0, 0.1, 2.6)), "point above fascia should not hit");
+
+        // Outside the fascia (too low)
+        assert!(!probe_mesh(&mesh, Vec3::new(5.0, 0.1, 2.2)), "point below fascia should not hit");
+    }
+
+    #[test]
+    fn probe_soffit_mesh_hits_inside() {
+        use crate::roof::soffit_mesh;
+        use cadcraft_doc::arch::RoofPlane;
+
+        let mut plane = RoofPlane::default();
+        plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
+        plane.slope = 0.5;
+        plane.thickness = 0.2;
+
+        let mesh = soffit_mesh(&plane, 2.5, ArchId(1)).unwrap();
+
+        // Soffit is horizontal at z = 2.5 - 0.2 = 2.3 (top), bottom at 2.28
+        // Width 0.3 in +y direction from y=0
+        // Probe at (5, 0.15, 2.29) - inside the soffit
+        assert!(probe_mesh(&mesh, Vec3::new(5.0, 0.15, 2.29)), "point inside soffit should hit");
+
+        // Above the soffit
+        assert!(!probe_mesh(&mesh, Vec3::new(5.0, 0.15, 2.4)), "point above soffit should not hit");
+
+        // Below the soffit
+        assert!(!probe_mesh(&mesh, Vec3::new(5.0, 0.15, 2.2)), "point below soffit should not hit");
+    }
 }

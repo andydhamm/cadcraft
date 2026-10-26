@@ -1234,6 +1234,7 @@ mod tests {
         // Add a plane so it generates meshes
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
         plane.eave_wall = Some(ArchId(0));
@@ -1265,6 +1266,7 @@ mod tests {
         roof.level = 0;
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
         plane.eave_wall = Some(ArchId(0));
@@ -1300,6 +1302,7 @@ mod tests {
         roof.level = 0;
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
         plane.eave_wall = Some(ArchId(0));
@@ -1358,6 +1361,7 @@ mod tests {
         roof.level = 0;
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
         plane.eave_wall = Some(ArchId(0));
@@ -1444,6 +1448,7 @@ mod tests {
         roof.level = 0;
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
         plane.eave_wall = None; // No eave wall reference
@@ -1489,6 +1494,7 @@ mod tests {
         roof1.level = 0;
         let mut plane1 = RoofPlane::default();
         plane1.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane1.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane1.slope = 0.5;
         plane1.eave_z = 2.4;
         roof1.planes.push(plane1);
@@ -1499,6 +1505,7 @@ mod tests {
         roof2.level = 0;
         let mut plane2 = RoofPlane::default();
         plane2.base_edge = [0.0, 5.0, 10.0, 5.0];
+        plane2.ring = vec![Vec2::new(0.0, 5.0), Vec2::new(10.0, 5.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
         plane2.slope = 0.4;
         plane2.eave_z = 2.4;
         roof2.planes.push(plane2);
@@ -1521,6 +1528,7 @@ mod tests {
         roof.level = 0;
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.5;
         plane.eave_z = 1.5; // Should be level elevation since no walls
         roof.planes.push(plane);
@@ -1552,6 +1560,7 @@ mod tests {
         roof.level = 0;
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.0; // Flat roof
         plane.eave_z = 2.4;
         roof.planes.push(plane);
@@ -1561,5 +1570,152 @@ mod tests {
         assert_eq!(scene.roofs, 1, "flat roof should be counted");
         let roof_meshes: Vec<&Mesh> = scene.meshes.iter().filter(|m| m.object == ArchId(100)).collect();
         assert!(!roof_meshes.is_empty(), "flat roof should produce meshes");
+    }
+
+    #[test]
+    fn probe_inside_roof_hits_roof() {
+        use cadcraft_doc::arch::{Roof, RoofPlane};
+
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.walls.push(Wall {
+            id: ArchId(0),
+            base_level: 0,
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.4,
+            ..Default::default()
+        });
+
+        let mut roof = Roof::default();
+        roof.id = ArchId(100);
+        roof.level = 0;
+        let mut plane = RoofPlane::default();
+        plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.slope = 0.5;
+        plane.thickness = 0.2;
+        plane.eave_z = 2.4;
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
+        roof.planes.push(plane);
+        model.roofs.push(roof);
+
+        let scene = Scene3d::build(&model);
+
+        // Probe inside the roof volume
+        // At (5, 2.5), bottom z = 2.4 + 0.5*2.5 = 3.65, top z ≈ 3.65 + 0.179 = 3.829
+        // Probe at z = 3.7
+        let hit = scene.probe(Vec3::new(5.0, 2.5, 3.7));
+        assert!(hit.is_some(), "probe inside roof should hit");
+        assert_eq!(hit.unwrap().part, "roof", "probe inside roof should hit roof part");
+    }
+
+    #[test]
+    fn probe_above_roof_hits_nothing() {
+        use cadcraft_doc::arch::{Roof, RoofPlane};
+
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.walls.push(Wall {
+            id: ArchId(0),
+            base_level: 0,
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.4,
+            ..Default::default()
+        });
+
+        let mut roof = Roof::default();
+        roof.id = ArchId(100);
+        roof.level = 0;
+        let mut plane = RoofPlane::default();
+        plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.slope = 0.5;
+        plane.thickness = 0.2;
+        plane.eave_z = 2.4;
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
+        roof.planes.push(plane);
+        model.roofs.push(roof);
+
+        let scene = Scene3d::build(&model);
+
+        // Probe well above the roof
+        let hit = scene.probe(Vec3::new(5.0, 2.5, 10.0));
+        assert!(hit.is_none(), "probe above roof should hit nothing");
+    }
+
+    #[test]
+    fn probe_below_roof_hits_wall_not_roof() {
+        use cadcraft_doc::arch::{Roof, RoofPlane};
+
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.walls.push(Wall {
+            id: ArchId(0),
+            base_level: 0,
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.4,
+            ..Default::default()
+        });
+
+        let mut roof = Roof::default();
+        roof.id = ArchId(100);
+        roof.level = 0;
+        let mut plane = RoofPlane::default();
+        plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.slope = 0.5;
+        plane.thickness = 0.2;
+        plane.eave_z = 2.4;
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
+        roof.planes.push(plane);
+        model.roofs.push(roof);
+
+        let scene = Scene3d::build(&model);
+
+        // Probe at wall height, below the roof
+        let hit = scene.probe(Vec3::new(5.0, 0.0, 1.0));
+        assert!(hit.is_some(), "probe at wall should hit");
+        assert_eq!(hit.unwrap().part, "wall", "probe at wall should hit wall part");
+    }
+
+    #[test]
+    fn roof_meshes_are_all_probeable() {
+        use cadcraft_doc::arch::{Roof, RoofPlane};
+
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.walls.push(Wall {
+            id: ArchId(0),
+            base_level: 0,
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.4,
+            ..Default::default()
+        });
+
+        let mut roof = Roof::default();
+        roof.id = ArchId(100);
+        roof.level = 0;
+        let mut plane = RoofPlane::default();
+        plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.slope = 0.5;
+        plane.thickness = 0.2;
+        plane.eave_z = 2.4;
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
+        roof.planes.push(plane);
+        model.roofs.push(roof);
+
+        let scene = Scene3d::build(&model);
+
+        // All roof-related meshes should be probeable (have z extent)
+        for m in &scene.meshes {
+            if m.object == ArchId(100) {
+                assert!(crate::probe::is_probeable(m), "roof mesh {} should be probeable", m.material);
+            }
+        }
     }
 }
