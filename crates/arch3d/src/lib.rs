@@ -15,6 +15,7 @@ pub mod mesh;
 pub mod openings;
 pub mod probe;
 pub mod ray;
+pub mod roof;
 pub mod section;
 pub mod walls;
 
@@ -23,6 +24,7 @@ pub use cadcraft_doc::ArchId;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::roof::roof_meshes;
 use crate::walls::{RoofClip, WallProfile, elevation_profile, extrude_wall_profile};
 use cadcraft_arch::join::solve_joins;
 use cadcraft_doc::arch::Opening;
@@ -217,6 +219,16 @@ impl Scene3d {
             }
         }
 
+        for roof in &model.roofs {
+            // Determine eave_z for the roof.
+            // For now, use the level elevation of the roof's level.
+            let level = level_for(model, roof.level);
+            let eave_z = level.elevation + level.ceiling_height;
+
+            let r_meshes = roof_meshes(roof, eave_z);
+            meshes.extend(r_meshes);
+        }
+
         meshes.retain(|m| !m.positions.is_empty());
 
         let bounds = match meshes.first() {
@@ -331,6 +343,19 @@ impl Scene3d {
                             ceilings += 1;
                         }
                     }
+                }
+            }
+        }
+
+        for roof in &model.roofs {
+            if dirty.contains(&roof.id) {
+                let level = level_for(model, roof.level);
+                let eave_z = level.elevation + level.ceiling_height;
+                let r_meshes = roof_meshes(roof, eave_z);
+                meshes.extend(r_meshes);
+            } else {
+                if let Some(om) = prev_by_object.get(&roof.id) {
+                    meshes.extend(om.iter().map(|m| m.clone()));
                 }
             }
         }

@@ -42,7 +42,7 @@ pub fn part_of(mesh: &Mesh) -> &'static str {
     if m.contains("header") {
         return "header";
     }
-    if m.contains("roof") {
+    if m.contains("roof") || m.contains("fascia") || m.contains("soffit") || m.contains("shingle") {
         return "roof";
     }
     if m.contains("ceiling") {
@@ -258,6 +258,18 @@ mod tests {
         // Priority: "glass" wins over "frame" in "glass-frame"
         let mixed = box_mesh(0.0, 0.0, 0.0, 1.0, "glass-frame", ArchId(12));
         assert_eq!(part_of(&mixed), "glass");
+    }
+
+    #[test]
+    fn part_of_maps_fascia_and_soffit_to_roof() {
+        let fascia = box_mesh(0.0, 0.0, 0.0, 1.0, "fascia-board", ArchId(1));
+        assert_eq!(part_of(&fascia), "roof");
+
+        let soffit = box_mesh(0.0, 0.0, 0.0, 1.0, "soffit-panel", ArchId(2));
+        assert_eq!(part_of(&soffit), "roof");
+
+        let shingle = box_mesh(0.0, 0.0, 0.0, 1.0, "shingle-roof", ArchId(3));
+        assert_eq!(part_of(&shingle), "roof");
     }
 
     #[test]
