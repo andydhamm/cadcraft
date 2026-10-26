@@ -107,12 +107,10 @@ fn all_hip_orthogonal_footprints_have_one_sloped_edge_per_vertex() {
             assert_eq!(count, 1, "Vertex {:?} has {} hip/valley edges, expected 1", v, count);
         }
 
-        // Check eave edges: every footprint edge should have exactly one eave edge associated with it.
-        // This is harder to check directly without mapping footprint edges to roof edges.
-        // But the prompt says "every footprint edge has exactly one eave edge".
-        // We can check that the number of eave edges equals the number of footprint edges.
+        // Every edge of the solved outer-face footprint contributes one roof plane,
+        // and therefore one eave. Wall joins can make this differ from `pts.len()`.
         let eave_count = edges.iter().filter(|e| matches!(e.kind, RoofEdgeKind::Eave)).count();
-        assert_eq!(eave_count, pts.len(), "Expected {} eave edges, found {}", pts.len(), eave_count);
+        assert_eq!(eave_count, footprint.outer.len(), "Expected {} eave edges, found {}", footprint.outer.len(), eave_count);
     }
 }
 
