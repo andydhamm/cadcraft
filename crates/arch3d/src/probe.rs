@@ -261,6 +261,18 @@ mod tests {
     }
 
     #[test]
+    fn part_of_maps_fascia_and_soffit_to_roof() {
+        let fascia = box_mesh(0.0, 0.0, 0.0, 1.0, "fascia-board", ArchId(1));
+        assert_eq!(part_of(&fascia), "roof");
+
+        let soffit = box_mesh(0.0, 0.0, 0.0, 1.0, "soffit-panel", ArchId(2));
+        assert_eq!(part_of(&soffit), "roof");
+
+        let shingle = box_mesh(0.0, 0.0, 0.0, 1.0, "shingle-roof", ArchId(3));
+        assert_eq!(part_of(&shingle), "roof");
+    }
+
+    #[test]
     fn probe_mesh_inside_a_closed_box_hits() {
         let mesh = box_mesh(0.0, 0.0, 0.0, 1.0, "wall", ArchId(1));
         // Point strictly inside the box.

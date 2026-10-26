@@ -418,7 +418,7 @@ pub fn soffit_mesh(plane: &RoofPlane, eave_z: f64, id: ArchId) -> Option<Mesh> {
 
 /// Generate all meshes for a roof.
 ///
-/// Includes one mesh per plane, plus fascia and soffit if flagged.
+/// Includes one mesh per plane, plus fascia and soffit.
 pub fn roof_meshes(roof: &Roof, eave_z: f64) -> Vec<Mesh> {
     let mut meshes = Vec::new();
 
@@ -543,8 +543,6 @@ mod tests {
         let mut roof = Roof::default();
         roof.id = ArchId(1);
         roof.planes.push(simple_plane());
-        roof.has_fascia = true;
-        roof.has_soffit = true;
 
         let meshes = roof_meshes(&roof, 2.5);
 
