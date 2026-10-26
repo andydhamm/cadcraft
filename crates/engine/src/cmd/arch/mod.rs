@@ -22,6 +22,7 @@ pub mod inspect;
 pub mod level;
 pub mod opening;
 pub mod roofauto;
+pub mod roofplane;
 pub mod room;
 pub mod roomdetect;
 pub mod sample;
