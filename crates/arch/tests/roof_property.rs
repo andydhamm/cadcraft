@@ -84,15 +84,15 @@ fn all_hip_orthogonal_footprints_have_one_sloped_edge_per_vertex() {
 
         // Initialize counts for outer-footprint vertices (0.1 m wall offset => 0.01 m grid).
         for p in &footprint {
-            let key = (p.x * 100.0).round() as i64, (p.y * 100.0).round() as i64);
+            let key = ((p.x * 100.0).round() as i64, (p.y * 100.0).round() as i64);
             vertex_counts.insert(key, 0);
         }
 
         for edge in &edges {
             if matches!(edge.kind, RoofEdgeKind::Hip | RoofEdgeKind::Valley) {
                 // Add to both endpoints
-                let k1 = (edge.a.x.round() as i64, edge.a.y.round() as i64);
-                let k2 = (edge.b.x.round() as i64, edge.b.y.round() as i64);
+                let k1 = ((edge.a.x * 100.0).round() as i64, (edge.a.y * 100.0).round() as i64);
+                let k2 = ((edge.b.x * 100.0).round() as i64, (edge.b.y * 100.0).round() as i64);
 
                 if let Some(c) = vertex_counts.get_mut(&k1) {
                     *c += 1;
