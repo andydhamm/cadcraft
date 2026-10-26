@@ -406,4 +406,56 @@ mod tests {
         let n = mesh_crossings_upward(o, &positions, &indices, usize::MAX);
         assert_eq!(n, 1, "large coordinates should still cross, got {n}");
     }
+
+    #[test]
+    fn mesh_crossings_upward_degenerate_collinear_triangles() {
+        // Three collinear vertices form a zero-area triangle; the ray should
+        // not count it as a crossing (the normal's z component is zero).
+        let positions = [[0.0, 0.0, 3.0], [1.0, 0.0, 3.0], [2.0, 0.0, 3.0]];
+        let indices = [0u32, 1, 2];
+        let o = Vec3::new(1.0, 0.0, 1.0);
+        let n = mesh_crossings_upward(o, &positions, &indices, usize::MAX);
+        assert_eq!(n, 0, "collinear triangle should give 0 crossings, got {n}");
+    }
+
+    #[test]
+    fn mesh_crossings_upward_coincident_vertices() {
+        // All three vertices at the same point: zero-area triangle, no crossing.
+        let positions = [[1.0, 1.0, 3.0], [1.0, 1.0, 3.0], [1.0, 1.0, 3.0]];
+        let indices = [0u32, 1, 2];
+        let o = Vec3::new(1.0, 1.0, 1.0);
+        let n = mesh_crossings_upward(o, &positions, &indices, usize::MAX);
+        assert_eq!(n, 0, "coincident vertices should give 0 crossings, got {n}");
+    }
+
+    #[test]
+    fn mesh_crossings_upward_cap_one_counts_at_most_one() {
+        // Two triangles above the origin; cap of 1 should yield at most 1.
+        let positions = [[0.0, 0.0, 3.0], [2.0, 0.0, 3.0], [1.0, 2.0, 3.0], [0.0, 0.0, 4.0], [2.0, 0.0, 4.0], [1.0, 2.0, 4.0]];
+        let indices = [0u32, 1, 2, 3, 4, 5];
+        let o = Vec3::new(1.0, 0.5, 1.0);
+        let n = mesh_crossings_upward(o, &positions, &indices, 1);
+        assert_eq!(n, 1, "cap 1 should give at most 1 crossing, got {n}");
+    }
+
+    #[test]
+    fn mesh_crossings_upward_all_triangles_below_origin() {
+        // All triangles below the ray origin; the upward ray never hits them.
+        let positions = [[0.0, 0.0, 1.0], [2.0, 0.0, 1.0], [1.0, 2.0, 1.0]];
+        let indices = [0u32, 1, 2];
+        let o = Vec3::new(1.0, 0.5, 3.0);
+        let n = mesh_crossings_upward(o, &positions, &indices, usize::MAX);
+        assert_eq!(n, 0, "triangles below origin should give 0 crossings, got {n}");
+    }
+
+    #[test]
+    fn mesh_crossings_upward_extra_vertices_ignored() {
+        // Positions array has more vertices than indices reference; the extra
+        // vertices should be silently ignored.
+        let positions = [[0.0, 0.0, 3.0], [2.0, 0.0, 3.0], [1.0, 2.0, 3.0], [99.0, 99.0, 99.0], [98.0, 98.0, 98.0]];
+        let indices = [0u32, 1, 2];
+        let o = Vec3::new(1.0, 0.5, 1.0);
+        let n = mesh_crossings_upward(o, &positions, &indices, usize::MAX);
+        assert_eq!(n, 1, "extra vertices should be ignored, got {n}");
+    }
 }
