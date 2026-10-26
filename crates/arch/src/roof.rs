@@ -371,6 +371,7 @@ pub fn build_roof(model: &ArchModel, level: u32, roof: &Roof) -> Result<Roof, Ro
             base_edge: [edge.a.x, edge.a.y, edge.b.x, edge.b.y],
             thickness: roof.thickness,
             eave_z: eave_z[face.edge],
+            ..Default::default()
         });
     }
 
@@ -393,7 +394,7 @@ pub fn build_roof(model: &ArchModel, level: u32, roof: &Roof) -> Result<Roof, Ro
         manual: roof.manual,
         hand_edited: roof.hand_edited,
         planes,
-        edges: Vec::new(),
+        ..Roof::default()
     })
 }
 
