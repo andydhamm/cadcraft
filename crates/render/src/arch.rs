@@ -865,6 +865,7 @@ mod tests {
     #[test]
     fn room_label_uses_a_room_layer_colour() {
         let mut d = Drawing::new_metric();
+        d.ensure_layer("A-ROOM");
         d.arch.push_room(Room {
             polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
             name: "Living".into(),
