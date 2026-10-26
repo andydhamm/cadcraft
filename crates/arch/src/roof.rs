@@ -445,6 +445,8 @@ pub fn build_roof(model: &ArchModel, level: u32, roof: &Roof) -> Result<Roof, Ro
         return Err(RoofError::TooComplex);
     }
 
+    let edges = crate::roofedge::roof_edges_geom(&geom);
+
     Ok(Roof {
         id: roof.id,
         level,
@@ -457,6 +459,7 @@ pub fn build_roof(model: &ArchModel, level: u32, roof: &Roof) -> Result<Roof, Ro
         manual: roof.manual,
         hand_edited: roof.hand_edited,
         planes,
+        edges,
         ..Roof::default()
     })
 }

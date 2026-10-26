@@ -1,5 +1,5 @@
-use crate::roof::RoofGeom;
-use cadcraft_doc::{RoofEdge, RoofEdgeKind};
+use crate::roof::{RoofError, RoofGeom};
+use cadcraft_doc::{Roof, RoofEdge, RoofEdgeKind};
 use cadcraft_geom::Vec2;
 
 /// Classify skeleton arcs into roof edge kinds and append footprint eaves.
@@ -163,6 +163,14 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: 
     }
 
     RoofEdgeKind::Eave
+}
+
+/// Compute roof edges for a model level and roof configuration.
+///
+/// Builds the roof geometry and classifies its edges. Returns an error if the
+/// geometry cannot be built.
+pub fn roof_edges(model: &cadcraft_doc::ArchModel, level: u32, roof: &Roof) -> Result<Vec<RoofEdge>, RoofError> {
+    crate::roof::roof_geometry(model, level, roof).map(|g| roof_edges_geom(&g))
 }
 
 /// Returns pairs of adjacent face indices and the node indices of the shared arc.
@@ -459,5 +467,54 @@ mod tests {
             assert!((e.za - g.eave_z[i]).abs() < 1e-6, "Eave za mismatch at {}", i);
             assert!((e.zb - g.eave_z[i]).abs() < 1e-6, "Eave zb mismatch at {}", i);
         }
+    }
+
+    #[test]
+    fn roof_edges_wrapper_matches_geom() {
+        let mut m = ArchModel::default();
+        house_10_8(&mut m);
+        let roof = test_roof();
+        let edges_wrapper = roof_edges(&m, 0, &roof).unwrap();
+        let g = geom(&m);
+        let edges_geom = roof_edges_geom(&g);
+        assert_eq!(edges_wrapper.len(), edges_geom.len());
+        for (w, g) in edges_wrapper.iter().zip(edges_geom.iter()) {
+            assert_eq!(w.kind, g.kind);
+            assert!((w.a - g.a).len() < 1e-9);
+            assert!((w.b - g.b).len() < 1e-9);
+            assert!((w.za - g.za).abs() < 1e-9);
+            assert!((w.zb - g.zb).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn build_roof_fills_edges() {
+        let mut m = ArchModel::default();
+        house_10_8(&mut m);
+        let roof = crate::roof::build_roof(&m, 0, &test_roof()).unwrap();
+
+        let ridges: Vec<_> = roof.edges.iter().filter(|e| e.kind == RoofEdgeKind::Ridge).collect();
+        assert_eq!(ridges.len(), 1, "Expected exactly one ridge in built roof edges");
+
+        let ridge = &ridges[0];
+        let p1 = Vec2::new(4.0, 4.0);
+        let p2 = Vec2::new(6.0, 4.0);
+
+        let match1 = (ridge.a - p1).len() < 1e-6 && (ridge.b - p2).len() < 1e-6;
+        let match2 = (ridge.a - p2).len() < 1e-6 && (ridge.b - p1).len() < 1e-6;
+        assert!(match1 || match2, "Ridge endpoints mismatch: {:?} {:?}", ridge.a, ridge.b);
+
+        assert!((ridge.za - 4.45).abs() < 1e-6);
+        assert!((ridge.zb - 4.45).abs() < 1e-6);
+
+        let hips: Vec<_> = roof.edges.iter().filter(|e| e.kind == RoofEdgeKind::Hip).collect();
+        assert_eq!(hips.len(), 4, "Expected exactly four hips in built roof edges");
+    }
+
+    #[test]
+    fn roof_edges_errors_on_no_walls() {
+        let m = ArchModel::default();
+        let res = roof_edges(&m, 0, &test_roof());
+        assert!(matches!(res, Err(RoofError::NoWalls)));
     }
 }
