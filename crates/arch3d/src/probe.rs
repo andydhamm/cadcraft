@@ -7,13 +7,13 @@
 
 use crate::Scene3d;
 use crate::mesh::Mesh;
-use crate::ray::{box_tris, crossings_upward};
+use crate::ray::mesh_crossings_upward;
 use cadcraft_doc::ArchId;
 use cadcraft_geom::Vec3;
 
 /// Maximum number of triangles to scan for a single probe.
 ///
-/// Probes scan the first N triangles and use their parity; this caps
+/// Probes scan the first N triangles of the mesh and use their parity; this caps
 /// the work for pathological meshes while keeping the common case
 /// (small architectural meshes) exact.
 pub(crate) const MAX_PROBE_TRIANGLES: usize = 1_000_000;
@@ -95,10 +95,7 @@ pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
     if p.x < b.min[0] || p.x > b.max[0] || p.y < b.min[1] || p.y > b.max[1] || p.z < b.min[2] || p.z > b.max[2] {
         return false;
     }
-    let b = mesh.bounds();
-    let tris = box_tris(Vec3::new(b.min[0], b.min[1], b.min[2]), Vec3::new(b.max[0], b.max[1], b.max[2]));
-    let scan_count = tris.len().min(MAX_PROBE_TRIANGLES);
-    crossings_upward(p, &tris[..scan_count]) % 2 == 1
+    mesh_crossings_upward(p, &mesh.positions, &mesh.indices, MAX_PROBE_TRIANGLES) % 2 == 1
 }
 
 /// A human-readable label for a mesh, based on its material and owning object.
@@ -304,6 +301,39 @@ mod tests {
     use crate::Scene3d;
     use cadcraft_doc::{ArchModel, Level, Room, Wall};
     use cadcraft_geom::Vec2;
+
+    #[test]
+    fn probe_mesh_is_not_its_bounding_box() {
+        let mut m = Mesh::new("floor", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.5, 1.5), Vec2::new(2.5, 1.5), Vec2::new(2.5, 2.5), Vec2::new(1.5, 2.5)];
+        m.push_prism_with_holes(&outer, &[hole], -0.3, 0.0);
+
+        // Inside the hole (but inside AABB)
+        assert!(!probe_mesh(&m, Vec3::new(2.0, 2.0, -0.15)), "point in hole should not be inside");
+        // Inside solid part
+        assert!(probe_mesh(&m, Vec3::new(0.5, 0.5, -0.15)), "point in solid should be inside");
+    }
+
+    #[test]
+    fn probe_mesh_ignores_a_point_above_a_thin_slab() {
+        let mut m = Mesh::new("floor", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        m.push_prism(&outer, 0.0, 0.02);
+
+        // Above the slab
+        assert!(!probe_mesh(&m, Vec3::new(2.0, 2.0, 0.03)), "point above slab should not be inside");
+    }
+
+    #[test]
+    fn probe_mesh_counts_a_point_in_solid_as_inside() {
+        let mut m = Mesh::new("floor", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        m.push_prism(&outer, 0.0, 0.02);
+
+        // Inside the slab
+        assert!(probe_mesh(&m, Vec3::new(2.0, 2.0, 0.01)), "point inside slab should be inside");
+    }
 
     /// Build the phase-1 house model and its 3D scene.
     ///
