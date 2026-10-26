@@ -354,4 +354,56 @@ mod tests {
         let n = mesh_crossings_upward(o, &m.positions, &indices, usize::MAX);
         assert_eq!(n, 1, "trailing index should be ignored, got {n}");
     }
+
+    #[test]
+    fn mesh_crossings_upward_empty_mesh() {
+        let o = Vec3::new(0.0, 0.0, 0.0);
+        let n = mesh_crossings_upward(o, &[], &[], usize::MAX);
+        assert_eq!(n, 0, "empty mesh should give 0 crossings");
+    }
+
+    #[test]
+    fn mesh_crossings_upward_skips_out_of_range_index() {
+        let positions = [[0.0, 0.0, 3.0], [2.0, 0.0, 3.0], [1.0, 2.0, 3.0]];
+        // Triangle 0: indices 0,1,2 (valid). Triangle 1: indices 0,1,99 (99 out of range).
+        let indices = [0u32, 1, 2, 0, 1, 99];
+        let o = Vec3::new(1.0, 0.5, 1.0);
+        let n = mesh_crossings_upward(o, &positions, &indices, usize::MAX);
+        assert_eq!(n, 1, "out-of-range index should be skipped, got {n}");
+    }
+
+    #[test]
+    fn mesh_crossings_upward_ignores_nan_vertex() {
+        let positions = [[f32::NAN, 0.0, 3.0], [2.0, 0.0, 3.0], [1.0, 2.0, 3.0]];
+        let indices = [0u32, 1, 2];
+        let o = Vec3::new(1.0, 0.5, 1.0);
+        let n = mesh_crossings_upward(o, &positions, &indices, usize::MAX);
+        assert_eq!(n, 0, "NaN vertex should contribute 0 crossings, got {n}");
+    }
+
+    #[test]
+    fn mesh_crossings_upward_cap_equal_to_triangle_count() {
+        use crate::mesh::Mesh;
+        use cadcraft_doc::ArchId;
+        use cadcraft_geom::Vec2;
+
+        let mut m = Mesh::new("floor", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.5, 1.5), Vec2::new(2.5, 1.5), Vec2::new(2.5, 2.5), Vec2::new(1.5, 2.5)];
+        m.push_prism_with_holes(&outer, &[hole], -0.3, 0.0);
+
+        let tri_count = m.indices.len() / 3;
+        let o = Vec3::new(0.5, 0.5, -0.15);
+        let n = mesh_crossings_upward(o, &m.positions, &m.indices, tri_count);
+        assert_eq!(n, 1, "cap equal to triangle count should still count the crossing, got {n}");
+    }
+
+    #[test]
+    fn mesh_crossings_upward_large_coordinates() {
+        let positions = [[0.0, 0.0, 1e6], [2.0, 0.0, 1e6], [1.0, 2.0, 1e6]];
+        let indices = [0u32, 1, 2];
+        let o = Vec3::new(1.0, 0.5, 1e6 - 1.0);
+        let n = mesh_crossings_upward(o, &positions, &indices, usize::MAX);
+        assert_eq!(n, 1, "large coordinates should still cross, got {n}");
+    }
 }
