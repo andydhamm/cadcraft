@@ -330,4 +330,107 @@ mod tests {
         assert!(p1.is_object() && p1["part"] == "floor", "south-room probe should hit a floor: {p1:?}");
         assert_ne!(p0["id"], p1["id"], "the loop interior and the south room must own different floor slabs: {probe:?}");
     }
+
+    /// The slab hole is the loop wall's outer footprint (2.45..3.55 x 0.95..2.05).
+    /// Probe points just outside the loop wall's outer faces must hit the south
+    /// room's floor slab, not the inner room's.
+    #[test]
+    fn probe_at_hole_boundary_returns_floor() {
+        let mut s = Session::new();
+        s.execute(
+            "wall",
+            &json!({"points": [[0.0,0.0],[10.0,0.0],[10.0,8.0],[0.0,8.0],[0.0,0.0]], "thickness": 0.2, "height": 2.7, "exterior": true}),
+        )
+        .unwrap();
+        s.execute("wall", &json!({"points": [[0.0,3.0],[10.0,3.0]], "thickness": 0.1})).unwrap();
+        s.execute("wall", &json!({"points": [[6.0,3.0],[6.0,8.0]], "thickness": 0.1})).unwrap();
+        s.execute("wall", &json!({"points": [[2.5,1.0],[3.5,1.0],[3.5,2.0],[2.5,2.0],[2.5,1.0]], "thickness": 0.1})).unwrap();
+        s.execute("roomdetect", &json!({})).unwrap();
+
+        // Reference: open south room floor slab id.
+        let ref_r = s.execute("build3d", &json!({"probe": [[1.0,1.0,-0.15]]})).unwrap();
+        let ref_probe = ref_r["probe"].as_array().expect("probe array");
+        let south_id = &ref_probe[0]["id"];
+
+        // Points just outside the loop wall's outer faces (0.05 m clearance).
+        let r = s.execute("build3d", &json!({"probe": [[2.40,1.5,-0.15],[3.60,1.5,-0.15],[3.0,0.90,-0.15],[3.0,2.10,-0.15]]})).unwrap();
+        let probe = r["probe"].as_array().expect("probe array");
+        assert_eq!(probe.len(), 4);
+        for (i, p) in probe.iter().enumerate() {
+            assert!(p.is_object() && p["part"] == "floor", "boundary probe {i} should hit a floor: {p:?}");
+            assert_eq!(p["id"], south_id, "boundary probe {i} must hit the south room slab: {p:?} vs {south_id:?}");
+        }
+    }
+
+    /// A probe inside a wall must return the wall, not the floor slab beneath.
+    #[test]
+    fn probe_inside_wall_returns_wall_not_floor() {
+        let mut s = Session::new();
+        s.execute(
+            "wall",
+            &json!({"points": [[0.0,0.0],[10.0,0.0],[10.0,8.0],[0.0,8.0],[0.0,0.0]], "thickness": 0.2, "height": 2.7, "exterior": true}),
+        )
+        .unwrap();
+        s.execute("roomdetect", &json!({})).unwrap();
+
+        // Mid-height probe inside the left exterior wall (x=0.1, wall spans 0..0.2).
+        let r = s.execute("build3d", &json!({"probe": [[0.1,4.0,1.0]]})).unwrap();
+        let probe = r["probe"].as_array().expect("probe array");
+        assert_eq!(probe.len(), 1);
+        let p = &probe[0];
+        assert!(p.is_object() && p["part"] == "wall", "probe inside wall should hit a wall: {p:?}");
+
+        // Probe at floor level inside the same wall should still hit the wall.
+        let r2 = s.execute("build3d", &json!({"probe": [[0.1,4.0,-0.15]]})).unwrap();
+        let probe2 = r2["probe"].as_array().expect("probe array");
+        let p2 = &probe2[0];
+        assert!(p2.is_object() && p2["part"] == "wall", "floor-level probe inside wall should hit a wall: {p2:?}");
+    }
+
+    /// A probe outside the house footprint must return null (no hit).
+    #[test]
+    fn probe_outside_house_returns_null() {
+        let mut s = Session::new();
+        s.execute(
+            "wall",
+            &json!({"points": [[0.0,0.0],[10.0,0.0],[10.0,8.0],[0.0,8.0],[0.0,0.0]], "thickness": 0.2, "height": 2.7, "exterior": true}),
+        )
+        .unwrap();
+        s.execute("roomdetect", &json!({})).unwrap();
+
+        let r = s.execute("build3d", &json!({"probe": [[15.0,4.0,0.0],[-5.0,4.0,0.0],[5.0,12.0,0.0]]})).unwrap();
+        let probe = r["probe"].as_array().expect("probe array");
+        assert_eq!(probe.len(), 3);
+        for (i, p) in probe.iter().enumerate() {
+            assert!(p.is_null(), "outside probe {i} should be null: {p:?}");
+        }
+    }
+
+    /// Two separate loops in the south room must each become their own room with
+    /// their own floor slab, all distinct from the surrounding south room slab.
+    #[test]
+    fn two_loops_produce_three_distinct_floor_slabs() {
+        let mut s = Session::new();
+        s.execute(
+            "wall",
+            &json!({"points": [[0.0,0.0],[10.0,0.0],[10.0,8.0],[0.0,8.0],[0.0,0.0]], "thickness": 0.2, "height": 2.7, "exterior": true}),
+        )
+        .unwrap();
+        s.execute("wall", &json!({"points": [[0.0,3.0],[10.0,3.0]], "thickness": 0.1})).unwrap();
+        // Two 1x1 loops in the south room.
+        s.execute("wall", &json!({"points": [[1.5,0.5],[2.5,0.5],[2.5,1.5],[1.5,1.5],[1.5,0.5]], "thickness": 0.1})).unwrap();
+        s.execute("wall", &json!({"points": [[7.5,0.5],[8.5,0.5],[8.5,1.5],[7.5,1.5],[7.5,0.5]], "thickness": 0.1})).unwrap();
+        s.execute("roomdetect", &json!({})).unwrap();
+
+        // Probe: inside loop 1, inside loop 2, open south room.
+        let r = s.execute("build3d", &json!({"probe": [[2.0,1.0,-0.15],[8.0,1.0,-0.15],[5.0,1.0,-0.15]]})).unwrap();
+        let probe = r["probe"].as_array().expect("probe array");
+        assert_eq!(probe.len(), 3);
+        for p in probe.iter() {
+            assert!(p.is_object() && p["part"] == "floor", "probe should hit a floor: {p:?}");
+        }
+        assert_ne!(probe[0]["id"], probe[1]["id"], "the two loops must own different slabs: {probe:?}");
+        assert_ne!(probe[0]["id"], probe[2]["id"], "loop 1 and south room must differ: {probe:?}");
+        assert_ne!(probe[1]["id"], probe[2]["id"], "loop 2 and south room must differ: {probe:?}");
+    }
 }
