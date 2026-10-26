@@ -517,4 +517,74 @@ mod tests {
         let res = roof_edges(&m, 0, &test_roof());
         assert!(matches!(res, Err(RoofError::NoWalls)));
     }
+
+    #[test]
+    fn roof_edges_with_overhang() {
+        let mut m = ArchModel::default();
+        house_10_8(&mut m);
+        let roof = Roof { overhang: 0.5, thickness: 0.0, ..Roof::default() };
+        let edges = roof_edges(&m, 0, &roof).unwrap();
+        let eaves: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Eave).collect();
+        assert_eq!(eaves.len(), 4, "Expected 4 eave edges with overhang");
+        // Eave edges should span the overhang footprint: -0.6 to 10.6 in x, -0.6 to 8.6 in y
+        let min_x = eaves.iter().map(|e| e.a.x.min(e.b.x)).fold(f64::INFINITY, f64::min);
+        let max_x = eaves.iter().map(|e| e.a.x.max(e.b.x)).fold(f64::NEG_INFINITY, f64::max);
+        let min_y = eaves.iter().map(|e| e.a.y.min(e.b.y)).fold(f64::INFINITY, f64::min);
+        let max_y = eaves.iter().map(|e| e.a.y.max(e.b.y)).fold(f64::NEG_INFINITY, f64::max);
+        assert!((min_x - (-0.6)).abs() < 1e-6, "min_x {} != -0.6", min_x);
+        assert!((max_x - 10.6).abs() < 1e-6, "max_x {} != 10.6", max_x);
+        assert!((min_y - (-0.6)).abs() < 1e-6, "min_y {} != -0.6", min_y);
+        assert!((max_y - 8.6).abs() < 1e-6, "max_y {} != 8.6", max_y);
+    }
+
+    #[test]
+    fn roof_edges_errors_on_nan_pitch() {
+        let mut m = ArchModel::default();
+        house_10_8(&mut m);
+        let roof = Roof { pitch_rise: f64::NAN, pitch_run: 12.0, overhang: 0.0, thickness: 0.0, ..Roof::default() };
+        let result = roof_edges(&m, 0, &roof);
+        assert!(matches!(result, Err(RoofError::Degenerate)), "Expected Degenerate error for NaN pitch");
+    }
+
+    #[test]
+    fn roof_edge_heights_are_consistent() {
+        let mut m = ArchModel::default();
+        house_10_8(&mut m);
+        let edges = roof_edges(&m, 0, &test_roof()).unwrap();
+        for edge in &edges {
+            // All edge heights should be >= eave height (2.4)
+            assert!(edge.za >= 2.4 - 1e-9, "Edge za {} < eave height 2.4", edge.za);
+            assert!(edge.zb >= 2.4 - 1e-9, "Edge zb {} < eave height 2.4", edge.zb);
+            // Edge heights should be finite
+            assert!(edge.za.is_finite(), "Edge za is not finite");
+            assert!(edge.zb.is_finite(), "Edge zb is not finite");
+        }
+    }
+
+    #[test]
+    fn single_gable_end_gives_three_planes_and_edges() {
+        let mut m = ArchModel::default();
+        house_10_8(&mut m);
+        // Only the right wall (x=10, wall 1) is a gable end.
+        if let Some(w) = m.walls.get_mut(1) {
+            w.roof_directive = RoofDirective::Gable;
+        }
+        let roof = crate::roof::build_roof(&m, 0, &test_roof()).unwrap();
+        assert_eq!(roof.planes.len(), 3, "one gable end should give 3 planes");
+        let edges = roof_edges(&m, 0, &test_roof()).unwrap();
+        let gable_ends: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::GableEnd).collect();
+        assert!(!gable_ends.is_empty(), "Expected at least one gable end edge");
+    }
+
+    #[test]
+    fn interior_edge_pairs_consistent_with_roof_edges() {
+        let mut m = ArchModel::default();
+        house_10_8(&mut m);
+        let g = geom(&m);
+        let pairs = interior_edge_pairs(&g);
+        let edges = roof_edges_geom(&g);
+        // Interior edges (non-eave) should match the number of interior edge pairs
+        let non_eave: Vec<_> = edges.iter().filter(|e| e.kind != RoofEdgeKind::Eave).collect();
+        assert_eq!(pairs.len(), non_eave.len(), "Interior edge pairs should match non-eave edges");
+    }
 }
