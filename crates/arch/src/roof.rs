@@ -358,6 +358,11 @@ pub fn roof_geometry(model: &ArchModel, level: u32, roof: &Roof) -> Result<RoofG
 
     let slopes = wall_slopes(model, level, &fp, roof);
 
+    // If every edge is a gable end (infinite slope) there are no roof planes.
+    if slopes.iter().all(|s| s.is_infinite()) {
+        return Err(RoofError::Degenerate);
+    }
+
     // roof_skeleton divides by slope to get weight; a 0.0 slope gives infinite weight
     // which the skeleton cannot handle. Use a tiny slope instead, then restore 0.0.
     let skel_slopes: Vec<f64> = slopes.iter().map(|s| if *s == 0.0 { 1e-6 } else { *s }).collect();
@@ -377,7 +382,7 @@ pub fn roof_geometry(model: &ArchModel, level: u32, roof: &Roof) -> Result<RoofG
         }
     }
 
-    let elevation = model.level(level).map(|l| l.elevation).unwrap_or(0.0);
+    let elevation = model.levels.iter().find(|l| l.index == level).map(|l| l.elevation).unwrap_or(0.0);
     let eave_z = fp.edges.iter().map(|e| elevation + model.wall(e.wall).map(|w| w.height).unwrap_or(2.7)).collect();
 
     Ok(RoofGeom { skel, fp, slopes, eave_z })
@@ -429,6 +434,10 @@ pub fn build_roof(model: &ArchModel, level: u32, roof: &Roof) -> Result<Roof, Ro
         let projected_area = crate::poly::ring_area(&ring).abs();
         if projected_area < 1e-9 {
             // A gable end (weight 0) sweeps a zero-area face; it is not a roof plane.
+            continue;
+        }
+        if slopes[face.edge].is_infinite() {
+            // A gable end (infinite slope) is a vertical face; it is not a roof plane.
             continue;
         }
 
@@ -1022,5 +1031,67 @@ mod tests {
         roof.planes.push(RoofPlane { projected_area: f64::NAN, ..RoofPlane::default() });
         roof.planes.push(RoofPlane { projected_area: 20.0, ..RoofPlane::default() });
         assert_eq!(projected_area_sum(&roof), 30.0, "projected_area_sum should ignore non-finite values");
+    }
+
+    #[test]
+    fn footprint_with_three_walls_is_a_triangle() {
+        let mut model = ArchModel::default();
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(5.0, 8.66), 0.2));
+        model.push_wall(Wall::new(Vec2::new(5.0, 8.66), Vec2::new(0.0, 0.0), 0.2));
+        let fp = outer_footprint(&model, 0).unwrap();
+        assert_eq!(fp.outer.len(), 3, "triangle house should have 3 footprint edges");
+        assert_eq!(fp.edges.len(), 3);
+    }
+
+    #[test]
+    fn roof_with_level_elevation_includes_it_in_eave_z() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        // Update the existing level 0's elevation rather than pushing a duplicate.
+        if let Some(l) = model.levels.iter_mut().find(|l| l.index == 0) {
+            l.elevation = 2.7;
+        }
+        let roof = build_roof(&model, 0, &test_roof()).unwrap();
+        for plane in &roof.planes {
+            assert!((plane.eave_z - 5.1).abs() < 1e-9, "eave_z {} != 5.1 (2.7 + 2.4)", plane.eave_z);
+        }
+    }
+
+    #[test]
+    fn roof_with_zero_wall_height_uses_level_elevation() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        for w in model.walls.iter_mut() {
+            w.height = 0.0;
+        }
+        let roof = build_roof(&model, 0, &test_roof()).unwrap();
+        for plane in &roof.planes {
+            assert!((plane.eave_z - 0.0).abs() < 1e-9, "eave_z {} != 0.0 for zero-height walls", plane.eave_z);
+        }
+    }
+
+    #[test]
+    fn footprint_with_exactly_256_edges_is_accepted() {
+        let mut model = ArchModel::default();
+        for i in 0..256 {
+            let a = (i as f64) * (std::f64::consts::PI * 2.0 / 256.0);
+            let b = ((i + 1) as f64) * (std::f64::consts::PI * 2.0 / 256.0);
+            model.push_wall(Wall::new(Vec2::new(10.0 * a.cos(), 10.0 * a.sin()), Vec2::new(10.0 * b.cos(), 10.0 * b.sin()), 0.2));
+        }
+        let fp = outer_footprint(&model, 0);
+        assert!(fp.is_some(), "footprint with exactly 256 edges should be accepted");
+        assert_eq!(fp.unwrap().edges.len(), 256);
+    }
+
+    #[test]
+    fn roof_with_all_gable_ends_has_no_planes() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        for w in model.walls.iter_mut() {
+            w.roof_directive = RoofDirective::Gable;
+        }
+        let result = build_roof(&model, 0, &test_roof());
+        assert!(matches!(result, Err(RoofError::Degenerate)), "all gable ends should produce no planes (degenerate)");
     }
 }
