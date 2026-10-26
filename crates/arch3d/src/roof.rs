@@ -8,7 +8,7 @@
 use crate::mesh::Mesh;
 use cadcraft_doc::ArchId;
 use cadcraft_doc::arch::{Roof, RoofPlane};
-use cadcraft_geom::Vec2;
+use cadcraft_geom::{Vec2, Vec3};
 
 /// Generate a mesh for a single roof plane.
 ///
@@ -170,7 +170,8 @@ pub fn roof_plane_mesh(plane: &RoofPlane, eave_z: f64, material: &str, id: ArchI
     // Winding: CCW when viewed from above.
     let base = n_verts as u32;
     for i in 1..n_verts - 1 {
-        indices.extend_from_slice(&[base, (base + i) as u32, (base + i + 1) as u32]);
+        let i_u32 = i as u32;
+        indices.extend_from_slice(&[base, base + i_u32, base + i_u32 + 1]);
     }
 
     mesh.positions = positions;
@@ -426,16 +427,12 @@ pub fn roof_meshes(roof: &Roof, eave_z: f64) -> Vec<Mesh> {
             meshes.push(m);
         }
 
-        if roof.has_fascia {
-            if let Some(m) = fascia_mesh(plane, eave_z, 0.2, roof.id) {
-                meshes.push(m);
-            }
+        if let Some(m) = fascia_mesh(plane, eave_z, 0.2, roof.id) {
+            meshes.push(m);
         }
 
-        if roof.has_soffit {
-            if let Some(m) = soffit_mesh(plane, eave_z, roof.id) {
-                meshes.push(m);
-            }
+        if let Some(m) = soffit_mesh(plane, eave_z, roof.id) {
+            meshes.push(m);
         }
     }
 
