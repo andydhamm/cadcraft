@@ -661,6 +661,138 @@ mod tests {
     }
 
     #[test]
+    fn room_proxy_skips_degenerate_polygons() {
+        let mut m = ArchModel::default();
+        // 0 points
+        m.push_room(Room { polygon: Vec::new(), name: "empty".into(), ..Room::default() });
+        // 1 point
+        m.push_room(Room { polygon: vec![Vec2::new(0.0, 0.0)], name: "one".into(), ..Room::default() });
+        // 2 points
+        m.push_room(Room { polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)], name: "two".into(), ..Room::default() });
+        // 3 points but one is NaN
+        m.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(f64::NAN, 0.0)],
+            name: "nan".into(),
+            ..Room::default()
+        });
+        // 3 points but one is infinity
+        m.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(f64::INFINITY, 0.0)],
+            name: "inf".into(),
+            ..Room::default()
+        });
+        // Valid triangle
+        m.push_room(Room { polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(0.0, 1.0)], name: "valid".into(), ..Room::default() });
+
+        let polys = proxy_room_polylines(&m);
+        assert_eq!(polys.len(), 1, "only the valid room should produce a proxy");
+        // Check it's the valid one (has the right label)
+        let label = cadcraft_doc::arch::room_label(m.rooms[5].id);
+        assert!(polys[0].iter().any(|t| t.code == 1000 && t.str() == label), "wrong room proxy produced");
+    }
+
+    #[test]
+    fn room_proxy_handles_multiple_rooms() {
+        let mut m = ArchModel::default();
+        m.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Living".into(),
+            ..Room::default()
+        });
+        m.push_room(Room {
+            polygon: vec![Vec2::new(5.0, 0.0), Vec2::new(9.0, 0.0), Vec2::new(9.0, 3.0), Vec2::new(5.0, 3.0)],
+            name: "Kitchen".into(),
+            ..Room::default()
+        });
+        m.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 4.0), Vec2::new(4.0, 4.0), Vec2::new(4.0, 8.0), Vec2::new(0.0, 8.0)],
+            name: "Bedroom".into(),
+            ..Room::default()
+        });
+
+        let polys = proxy_room_polylines(&m);
+        assert_eq!(polys.len(), 3, "all three rooms should produce proxies");
+
+        // Each proxy should have its own room label (the tag after ARCH_ROOM_MARKER)
+        let labels: Vec<String> = polys
+            .iter()
+            .map(|tags| {
+                tags.iter()
+                    .position(|t| t.code == 1000 && t.str() == ARCH_ROOM_MARKER)
+                    .and_then(|i| tags.get(i + 1))
+                    .filter(|t| t.code == 1000)
+                    .map(|t| t.str())
+                    .unwrap_or_default()
+            })
+            .collect();
+        assert_eq!(labels.len(), 3);
+        assert!(labels[0] != labels[1] && labels[1] != labels[2] && labels[0] != labels[2], "labels should be unique");
+    }
+
+    #[test]
+    fn room_proxy_handles_huge_coordinates() {
+        let mut m = ArchModel::default();
+        m.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(1e15, 0.0), Vec2::new(1e15, 1e15), Vec2::new(0.0, 1e15)],
+            name: "Huge".into(),
+            ..Room::default()
+        });
+
+        let polys = proxy_room_polylines(&m);
+        assert_eq!(polys.len(), 1, "huge room should produce a proxy");
+        let tags = &polys[0];
+        // Check that coordinates are written as finite values
+        let xs: Vec<f64> = tags.iter().filter(|t| t.code == 10).map(|t| t.f64()).collect();
+        let ys: Vec<f64> = tags.iter().filter(|t| t.code == 20).map(|t| t.f64()).collect();
+        assert_eq!(xs.len(), 4);
+        assert_eq!(ys.len(), 4);
+        assert!(xs.iter().all(|v| v.is_finite()));
+        assert!(ys.iter().all(|v| v.is_finite()));
+        assert!(xs.contains(&1e15));
+        assert!(ys.contains(&1e15));
+    }
+
+    #[test]
+    fn room_proxy_multiple_rooms_round_trip() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-ROOM");
+        d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Living".into(),
+            ..Room::default()
+        });
+        d.arch.push_room(Room {
+            polygon: vec![Vec2::new(5.0, 0.0), Vec2::new(9.0, 0.0), Vec2::new(9.0, 3.0), Vec2::new(5.0, 3.0)],
+            name: "Kitchen".into(),
+            ..Room::default()
+        });
+        d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 4.0), Vec2::new(4.0, 4.0), Vec2::new(4.0, 8.0), Vec2::new(0.0, 8.0)],
+            name: "Bedroom".into(),
+            ..Room::default()
+        });
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.rooms.len(), 3, "all three rooms should survive round trip");
+        let names: Vec<&str> = back.arch.rooms.iter().map(|r| r.name.as_str()).collect();
+        assert!(names.contains(&"Living"));
+        assert!(names.contains(&"Kitchen"));
+        assert!(names.contains(&"Bedroom"));
+
+        // No room proxy polylines should survive the read
+        let count_proxy = |d: &Drawing| {
+            d.model
+                .iter()
+                .filter(|e| matches!(&e.kind, EntityKind::LwPolyline(_)))
+                .filter(|e| e.common.xdata.iter().any(|t| t.code == 1000 && t.value.trim() == ARCH_ROOM_MARKER))
+                .count()
+        };
+        assert_eq!(count_proxy(&back), 0, "room proxy polylines should be dropped on read");
+    }
+
+    #[test]
     fn room_proxy_polylines_are_written_on_save() {
         let d = drawing_with_room();
         let label = d.arch.rooms.first().map(|r| cadcraft_doc::arch::room_label(r.id)).unwrap_or_default();
