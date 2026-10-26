@@ -1001,7 +1001,7 @@ mod tests {
     #[test]
     fn prism_with_holes_zero_height() {
         let outer = square_ring();
-        let hole = vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(1.0, 2.0)];
+        let hole = vec![Vec2::new(3.5, 3.5), Vec2::new(4.5, 3.5), Vec2::new(4.5, 4.5), Vec2::new(3.5, 4.5)];
         let mut mesh = Mesh::new("wall", ArchId(1));
         mesh.push_prism_with_holes(&outer, &[hole], 0.0, 0.0);
         assert!(mesh.triangle_count() > 0, "zero-height prism must produce geometry");
@@ -1012,13 +1012,13 @@ mod tests {
     #[test]
     fn prism_with_holes_inverted_height() {
         let outer = square_ring();
-        let hole = vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(1.0, 2.0)];
+        let hole = vec![Vec2::new(3.5, 3.5), Vec2::new(4.5, 3.5), Vec2::new(4.5, 4.5), Vec2::new(3.5, 4.5)];
         let mut mesh = Mesh::new("wall", ArchId(1));
         mesh.push_prism_with_holes(&outer, &[hole], 2.5, 0.0);
         assert!(mesh.triangle_count() > 0, "inverted prism must produce geometry");
         assert!(mesh.is_manifold(), "inverted prism must be a closed manifold");
         let area = top_cap_area(&mesh);
-        assert!((area - 15.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 15.0");
+        assert!((area - 3.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 3.0");
     }
 
     /// A hole touching the outer boundary (sharing a vertex) is handled.
