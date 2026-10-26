@@ -106,9 +106,9 @@ fn create_roof_plane(
     }
 
     let base_edge = [base.0.x, base.0.y, base.1.x, base.1.y];
-    let plane = RoofPlane { ring, slope, projected_area, base_edge, thickness, eave_wall: 0, overhang: 0.0, eave_z: 0.0 };
+    let plane = RoofPlane { ring, slope, projected_area, base_edge, thickness, eave_wall: None, overhang: 0.0, eave_z: 0.0 };
 
-    let edge = RoofEdge { kind: RoofEdgeKind::Eave, za: 0.0, zb: 0.0 };
+    let edge = RoofEdge { kind: RoofEdgeKind::Eave, a: base.0, b: base.1, za: 0.0, zb: 0.0 };
 
     let mut doc = s.doc_mut()?;
     let arch = &mut doc.arch;
@@ -225,13 +225,14 @@ fn edit_roof_plane(
     }
 
     roof.hand_edited = true;
+    let projected_area = plane.projected_area;
     doc.touch_arch();
 
     let handle = format!("r{}", r_idx);
     Ok(serde_json::json!({
         "handles": [handle],
         "plane": p_idx,
-        "projectedArea": plane.projected_area
+        "projectedArea": projected_area
     }))
 }
 
