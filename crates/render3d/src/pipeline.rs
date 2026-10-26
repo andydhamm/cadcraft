@@ -35,7 +35,7 @@ pub fn uniform_stride(device: &wgpu::Device) -> u64 {
 /// Linear albedo for an arch3d material name. Unknown names are a neutral grey, so a new
 /// material still renders lit; names are matched by prefix (`wall-exterior` is a wall).
 pub fn material_albedo(material: &str) -> [f32; 3] {
-    const TABLE: [(&str, [f32; 3]); 9] = [
+    const TABLE: [(&str, [f32; 3]); 11] = [
         ("wall", [0.80, 0.78, 0.74]),
         ("floor", [0.55, 0.42, 0.30]),
         ("ceiling", [0.92, 0.92, 0.90]),
@@ -45,6 +45,9 @@ pub fn material_albedo(material: &str) -> [f32; 3] {
         ("door", [0.50, 0.35, 0.22]),
         ("leaf", [0.50, 0.35, 0.22]),
         ("roof", [0.35, 0.30, 0.28]),
+        // Matte trim tones for the roof edge parts (phase 4).
+        ("fascia", [0.50, 0.42, 0.34]),
+        ("soffit", [0.80, 0.80, 0.76]),
     ];
     let m = material.to_ascii_lowercase();
     TABLE.iter().find(|(name, _)| m.starts_with(name)).map_or([0.75, 0.75, 0.75], |(_, c)| *c)
@@ -332,5 +335,18 @@ mod tests {
     fn lit_pipeline_compiles_with_depth_state() {
         let Some((device, _queue)) = crate::gputest::shared_device() else { return };
         let _pipeline = create_pipeline(&device, 1);
+    }
+
+    #[test]
+    fn material_albedo_covers_roof_parts() {
+        // Phase-4 roof meshes are named `roof`, `fascia`, and `soffit`; each must map
+        // to a finite, distinct matte albedo rather than the neutral-grey fallback.
+        assert_eq!(material_albedo("roof"), [0.35, 0.30, 0.28]);
+        assert_eq!(material_albedo("fascia"), [0.50, 0.42, 0.34]);
+        assert_eq!(material_albedo("soffit"), [0.80, 0.80, 0.76]);
+        // Matching is case-insensitive and prefix-based (`fascia-north`).
+        assert_eq!(material_albedo("Roof"), [0.35, 0.30, 0.28]);
+        assert_eq!(material_albedo("Fascia-North"), [0.50, 0.42, 0.34]);
+        assert_eq!(material_albedo("Soffit"), [0.80, 0.80, 0.76]);
     }
 }
