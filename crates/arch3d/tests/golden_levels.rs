@@ -5,6 +5,7 @@
 //! points.
 
 use cadcraft_arch::area::refresh_areas;
+use cadcraft_arch::join::solve_joins;
 use cadcraft_arch::room::detect_rooms;
 use cadcraft_arch3d::Mesh;
 use cadcraft_arch3d::build;
@@ -52,6 +53,7 @@ fn house_with_loop() -> (ArchModel, cadcraft_arch3d::Scene3d) {
         model.push_wall(Wall { start: start.clone(), end: end.clone(), thickness: 0.1, height: 2.7, base_level: 0, ..Wall::default() });
     }
 
+    solve_joins(&mut model);
     let rooms = detect_rooms(&model);
     for r in rooms {
         model.push_room(r);
