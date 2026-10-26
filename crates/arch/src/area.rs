@@ -539,4 +539,53 @@ mod tests {
             assert!((r.standard_area - expected_standard).abs() < 1e-6);
         }
     }
+
+    #[test]
+    fn interior_area_handles_nan_coordinates() {
+        let room = Room {
+            polygon: vec![pt(0.0, 0.0), pt(f64::NAN, 1.0), pt(2.0, 2.0)],
+            holes: vec![],
+            room_type: RoomType::Living,
+            level: 0,
+            ..Default::default()
+        };
+        let area = interior_area(&room);
+        assert!(area.is_finite());
+    }
+
+    #[test]
+    fn living_area_empty_model() {
+        let model = ArchModel::default();
+        assert!((living_area(&model) - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn standard_area_zero_thickness_wall() {
+        let mut model = ArchModel::default();
+        let mut w = Wall::new(pt(0.0, 0.0), pt(10.0, 0.0), 0.0);
+        w.base_level = 0;
+        w.exterior = true;
+        model.push_wall(w);
+
+        let room = south_room();
+        let area = standard_area(&model, &room);
+        assert!(area.is_finite());
+        assert!(area >= 0.0);
+    }
+
+    #[test]
+    fn perimeter_empty_room() {
+        let model = ArchModel::default();
+        let room = Room { polygon: vec![], holes: vec![], room_type: RoomType::Living, level: 0, ..Default::default() };
+        let p = perimeter(&model, &room, Perimeter::Interior);
+        assert!(p.is_finite());
+        assert_eq!(p, 0.0);
+    }
+
+    #[test]
+    fn refresh_areas_empty_model() {
+        let mut model = ArchModel::default();
+        refresh_areas(&mut model);
+        assert!(model.rooms.is_empty());
+    }
 }
