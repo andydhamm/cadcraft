@@ -917,4 +917,128 @@ mod tests {
         ref_mesh.push_prism(&outer, 0.0, 2.5);
         assert_eq!(top_cap_area(&mesh), top_cap_area(&ref_mesh), "outside hole must produce same cap area as push_prism");
     }
+
+    /// NaN in any outer vertex produces no geometry.
+    #[test]
+    fn prism_with_holes_nan_vertex_produces_no_geometry() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(f64::NAN, 4.0), Vec2::new(0.0, 4.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[], 0.0, 2.5);
+        assert!(mesh.positions.is_empty(), "NaN vertex must yield no positions");
+        assert!(mesh.indices.is_empty(), "NaN vertex must yield no indices");
+    }
+
+    /// Inf in any outer vertex produces no geometry.
+    #[test]
+    fn prism_with_holes_inf_vertex_produces_no_geometry() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(f64::INFINITY, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[], 0.0, 2.5);
+        assert!(mesh.positions.is_empty(), "Inf vertex must yield no positions");
+        assert!(mesh.indices.is_empty(), "Inf vertex must yield no indices");
+    }
+
+    /// Collinear points in the outer ring are handled correctly.
+    #[test]
+    fn prism_with_holes_collinear_outer_points() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(2.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[], 0.0, 2.5);
+        assert!(mesh.triangle_count() > 0, "collinear points must still produce geometry");
+        let area = top_cap_area(&mesh);
+        assert!((area - 16.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 16.0");
+    }
+
+    /// A triangular hole works correctly.
+    #[test]
+    fn prism_with_holes_triangle_hole() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.0, 1.0), Vec2::new(3.0, 1.0), Vec2::new(2.0, 3.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        let area = top_cap_area(&mesh);
+        assert!((area - 14.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 14.0");
+        assert!(mesh.is_manifold(), "prism with triangle hole must be a closed manifold");
+    }
+
+    /// A concave outer ring with a hole works correctly.
+    #[test]
+    fn prism_with_holes_concave_outer() {
+        let outer = concave_ring();
+        let hole = vec![Vec2::new(0.5, 0.5), Vec2::new(1.5, 0.5), Vec2::new(1.0, 1.5)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        assert!(mesh.triangle_count() > 0, "concave outer with hole must produce geometry");
+        assert!(mesh.is_manifold(), "concave outer with hole must be a closed manifold");
+    }
+
+    /// A zero-height prism (z0 == z1) still produces a valid manifold.
+    #[test]
+    fn prism_with_holes_zero_height() {
+        let outer = square_ring();
+        let hole = vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(1.0, 2.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 0.0);
+        assert!(mesh.triangle_count() > 0, "zero-height prism must produce geometry");
+        assert!(mesh.is_manifold(), "zero-height prism must be a closed manifold");
+    }
+
+    /// An inverted prism (z0 > z1) still works.
+    #[test]
+    fn prism_with_holes_inverted_height() {
+        let outer = square_ring();
+        let hole = vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(1.0, 2.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 2.5, 0.0);
+        assert!(mesh.triangle_count() > 0, "inverted prism must produce geometry");
+        assert!(mesh.is_manifold(), "inverted prism must be a closed manifold");
+        let area = top_cap_area(&mesh);
+        assert!((area - 15.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 15.0");
+    }
+
+    /// A hole touching the outer boundary (sharing a vertex) is handled.
+    #[test]
+    fn prism_with_holes_hole_touching_outer() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(0.0, 4.0), Vec2::new(1.0, 4.0), Vec2::new(1.0, 3.0), Vec2::new(0.0, 3.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        assert!(mesh.triangle_count() > 0, "touching hole must produce geometry");
+        let area = top_cap_area(&mesh);
+        assert!((area - 15.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 15.0");
+    }
+
+    /// Many small holes are handled correctly.
+    #[test]
+    fn prism_with_holes_many_holes() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        let mut holes = Vec::new();
+        for i in 0..3 {
+            for j in 0..3 {
+                let x = 1.0 + i as f64 * 3.0;
+                let y = 1.0 + j as f64 * 3.0;
+                holes.push(vec![Vec2::new(x, y), Vec2::new(x + 1.0, y), Vec2::new(x + 1.0, y + 1.0), Vec2::new(x, y + 1.0)]);
+            }
+        }
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &holes, 0.0, 2.5);
+        assert!(mesh.triangle_count() > 0, "many holes must produce geometry");
+        let area = top_cap_area(&mesh);
+        assert!((area - 91.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 91.0");
+        assert!(mesh.is_manifold(), "many holes must be a closed manifold");
+    }
+
+    /// Huge coordinate values are handled without overflow.
+    #[test]
+    fn prism_with_holes_huge_coordinates() {
+        let s = 1e6;
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(s, 0.0), Vec2::new(s, s), Vec2::new(0.0, s)];
+        let hole = vec![Vec2::new(s * 0.4, s * 0.4), Vec2::new(s * 0.6, s * 0.4), Vec2::new(s * 0.6, s * 0.6), Vec2::new(s * 0.4, s * 0.6)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, s * 0.01);
+        assert!(mesh.triangle_count() > 0, "huge coordinates must produce geometry");
+        let area = top_cap_area(&mesh);
+        let expected = 0.96 * s * s;
+        assert!((area - expected).abs() < 1e-6 * expected, "cap area {area} not within 1e-6 of {expected}");
+    }
 }
