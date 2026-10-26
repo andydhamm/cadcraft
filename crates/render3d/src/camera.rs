@@ -386,4 +386,46 @@ mod tests {
         }
         out
     }
+
+    #[test]
+    fn view_proj_target_centre_at_various_angles() {
+        let angles = [(0.0, 0.0), (45.0, 30.0), (90.0, -45.0), (180.0, 60.0), (-90.0, -89.0)];
+        for (az, el) in angles {
+            let cam = Camera::Orbit(Orbit::at_origin(az, el, 10.0, 45.0));
+            let vp = view_proj(&cam, 1.0);
+            let clip = clip(&vp, [0.0, 0.0, 0.0]);
+            let x = clip[0] / clip[3];
+            let y = clip[1] / clip[3];
+            assert!(x.is_finite() && y.is_finite(), "az={} el={} non-finite clip", az, el);
+            assert!(x.abs() < 1e-4, "az={} el={} clip.x/clip.w = {}", az, el, x);
+            assert!(y.abs() < 1e-4, "az={} el={} clip.y/clip.w = {}", az, el, y);
+        }
+    }
+
+    #[test]
+    fn view_proj_finite_for_degenerate_aspect() {
+        let cam = Camera::Orbit(Orbit::at_origin(0.0, 0.0, 10.0, 45.0));
+        for aspect in [0.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0] {
+            let vp = view_proj(&cam, aspect);
+            for col in &vp {
+                for &v in col {
+                    assert!(v.is_finite(), "aspect={} produced non-finite {}", aspect, v);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn view_proj_all_entries_finite_for_extreme_camera() {
+        let cam = Camera::Orbit(Orbit::at_origin(359.9, 89.0, 1_000_000.0, 179.0));
+        let vp = view_proj(&cam, 3.0);
+        for col in &vp {
+            for &v in col {
+                assert!(v.is_finite(), "non-finite entry {} for extreme camera", v);
+            }
+        }
+        let clip = clip(&vp, [0.0, 0.0, 0.0]);
+        assert!((clip[0] / clip[3]).abs() < 1e-3, "centre x off");
+        assert!((clip[1] / clip[3]).abs() < 1e-3, "centre y off");
+    }
 }
