@@ -584,6 +584,8 @@ pub struct RoofPlane {
     pub base_edge: [f64; 4],
     /// Vertical thickness of the roof material at this plane.
     pub thickness: f64,
+    /// Height of the roof underside at the base edge (eave height).
+    pub eave_z: f64,
 }
 
 /// A classified edge of a roof (eave, ridge, hip, valley, gable end).
@@ -1706,6 +1708,7 @@ mod tests {
             eave_wall: None,
             base_edge: [0.0, 0.0, 0.0, 0.0],
             thickness: 0.25,
+            eave_z: 0.0,
         });
         r.planes.push(RoofPlane {
             ring: Vec::new(),
@@ -1714,6 +1717,7 @@ mod tests {
             eave_wall: None,
             base_edge: [0.0, 0.0, 0.0, 0.0],
             thickness: 0.25,
+            eave_z: 0.0,
         });
         assert!((r.projected_area() - 17.8).abs() < 1e-9);
     }
@@ -1739,8 +1743,24 @@ mod tests {
     #[test]
     fn roof_projected_area_ignores_non_finite() {
         let mut r = Roof::default();
-        r.planes.push(RoofPlane { ring: Vec::new(), slope: 0.5, projected_area: 10.0, eave_wall: None, base_edge: [0.0; 4], thickness: 0.25 });
-        r.planes.push(RoofPlane { ring: Vec::new(), slope: 0.5, projected_area: f64::NAN, eave_wall: None, base_edge: [0.0; 4], thickness: 0.25 });
+        r.planes.push(RoofPlane {
+            ring: Vec::new(),
+            slope: 0.5,
+            projected_area: 10.0,
+            eave_wall: None,
+            base_edge: [0.0; 4],
+            thickness: 0.25,
+            eave_z: 0.0,
+        });
+        r.planes.push(RoofPlane {
+            ring: Vec::new(),
+            slope: 0.5,
+            projected_area: f64::NAN,
+            eave_wall: None,
+            base_edge: [0.0; 4],
+            thickness: 0.25,
+            eave_z: 0.0,
+        });
         r.planes.push(RoofPlane {
             ring: Vec::new(),
             slope: 0.5,
@@ -1748,6 +1768,7 @@ mod tests {
             eave_wall: None,
             base_edge: [0.0; 4],
             thickness: 0.25,
+            eave_z: 0.0,
         });
         assert!((r.projected_area() - 10.0).abs() < 1e-12);
     }
@@ -1800,6 +1821,7 @@ mod tests {
             eave_wall: Some(ArchId(2)),
             base_edge: [0.0, 0.0, 10.0, 0.0],
             thickness: 0.25,
+            eave_z: 0.0,
         });
         r.edges.push(RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(4.0, 4.0), b: Vec2::new(6.0, 4.0), za: 4.45, zb: 4.45 });
         let json = serde_json::to_string(&r).unwrap();
