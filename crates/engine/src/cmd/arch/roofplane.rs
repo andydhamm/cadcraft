@@ -260,11 +260,26 @@ pub fn run_roofplane(s: &mut Session, p: &Value) -> Result<Value> {
     let base_0 = crate::cmd::point_value(&base_arr[0]).ok_or_else(|| bad("roofplane", "invalid base point 0"))?;
     let base_1 = crate::cmd::point_value(&base_arr[1]).ok_or_else(|| bad("roofplane", "invalid base point 1"))?;
 
-    let pitch_rise = f64_or(p, "pitchRise", 6.0);
-    let pitch_run = f64_or(p, "pitchRun", 12.0);
-    let thickness = f64_or(p, "thickness", 0.1);
-    let fascia = f64_or(p, "fascia", 0.1);
-    let soffit = f64_or(p, "soffit", 0.1);
+    let pitch_rise = match p.get("pitchRise") {
+        None => 6.0,
+        Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("roofplane", "`pitchRise` must be a finite number"))?,
+    };
+    let pitch_run = match p.get("pitchRun") {
+        None => 12.0,
+        Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("roofplane", "`pitchRun` must be a finite number"))?,
+    };
+    let thickness = match p.get("thickness") {
+        None => 0.1,
+        Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("roofplane", "`thickness` must be a finite number"))?,
+    };
+    let fascia = match p.get("fascia") {
+        None => 0.1,
+        Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("roofplane", "`fascia` must be a finite number"))?,
+    };
+    let soffit = match p.get("soffit") {
+        None => 0.1,
+        Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("roofplane", "`soffit` must be a finite number"))?,
+    };
     let level = p.get("level").and_then(Value::as_u64).map(|v| v as usize);
 
     create_roof_plane(s, points, (base_0, base_1), pitch_rise, pitch_run, thickness, fascia, soffit, level)
@@ -411,5 +426,119 @@ mod tests {
         s.undo().unwrap();
         let doc = s.doc().unwrap();
         assert!(doc.arch.roofs.is_empty());
+    }
+
+    #[test]
+    fn roofplane_rejects_nan_pitch() {
+        let mut s = Session::new();
+        let mut params = serde_json::Map::new();
+        params.insert("points".to_string(), json!([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]));
+        params.insert("base".to_string(), json!([[0.0, 0.0], [10.0, 0.0]]));
+        params.insert("pitchRise".to_string(), serde_json::Value::from(f64::NAN));
+        params.insert("pitchRun".to_string(), json!(12.0));
+        let params = serde_json::Value::Object(params);
+        let res = run_roofplane(&mut s, &params);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("finite"));
+    }
+
+    #[test]
+    fn roofplane_rejects_zero_pitch_run() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 0.0
+        });
+        let res = run_roofplane(&mut s, &params);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("positive"));
+    }
+
+    #[test]
+    fn roofplane_edit_refuses_noop() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0
+        });
+        run_roofplane(&mut s, &params).unwrap();
+
+        let edit_params = json!({
+            "edit": "r0p0",
+            "pitchRise": 6.0,
+            "pitchRun": 12.0
+        });
+        let res = run_roofplane(&mut s, &edit_params);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("no changes"));
+    }
+
+    #[test]
+    fn roofplane_accepts_three_points() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0
+        });
+        let res = run_roofplane(&mut s, &params).unwrap();
+        assert_eq!(res["handles"][0], "r0");
+        assert!((res["projectedArea"].as_f64().unwrap() - 50.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn roofplane_base_on_last_edge() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 10.0], [0.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0
+        });
+        let res = run_roofplane(&mut s, &params).unwrap();
+        assert_eq!(res["handles"][0], "r0");
+    }
+
+    #[test]
+    fn roofplane_edit_pitch_updates_slope() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0
+        });
+        run_roofplane(&mut s, &params).unwrap();
+
+        let edit_params = json!({
+            "edit": "r0p0",
+            "pitchRise": 12.0,
+            "pitchRun": 12.0
+        });
+        run_roofplane(&mut s, &edit_params).unwrap();
+
+        let doc = s.doc().unwrap();
+        let roof = &doc.arch.roofs[0];
+        assert!((roof.planes[0].slope - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn roofplane_rejects_negative_thickness() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0,
+            "thickness": -0.1
+        });
+        let res = run_roofplane(&mut s, &params);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("non-negative"));
     }
 }
