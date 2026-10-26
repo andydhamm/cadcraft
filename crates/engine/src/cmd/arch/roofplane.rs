@@ -105,9 +105,10 @@ fn create_roof_plane(
         ring.reverse();
     }
 
-    let plane = RoofPlane { ring, slope, projected_area, base_edge: base, thickness, fascia, soffit };
+    let base_edge = [base.0.x, base.0.y, base.1.x, base.1.y];
+    let plane = RoofPlane { ring, slope, projected_area, base_edge, thickness, eave_wall: 0, overhang: 0.0, eave_z: 0.0 };
 
-    let edge = RoofEdge { kind: RoofEdgeKind::Eave, z0: 0.0, z1: 0.0 };
+    let edge = RoofEdge { kind: RoofEdgeKind::Eave, za: 0.0, zb: 0.0 };
 
     let mut doc = s.doc_mut()?;
     let arch = &mut doc.arch;
@@ -115,14 +116,14 @@ fn create_roof_plane(
     arch.next_roof_id += 1;
 
     let roof = Roof {
-        id,
-        level: level.unwrap_or(0),
+        id: cadcraft_doc::ArchId(id),
+        level: level.unwrap_or(0) as u32,
         pitch_rise,
         pitch_run,
         overhang: 0.0,
         thickness,
-        fascia,
-        soffit,
+        fascia: fascia > 0.0,
+        soffit: soffit > 0.0,
         manual: true,
         hand_edited: true,
         planes: vec![plane],
@@ -202,9 +203,9 @@ fn edit_roof_plane(
         if v < 0.0 || !v.is_finite() {
             return Err(bad("roofplane", "fascia must be non-negative and finite"));
         }
-        if plane.fascia != v {
-            plane.fascia = v;
-            roof.fascia = v;
+        let has_fascia = v > 0.0;
+        if roof.fascia != has_fascia {
+            roof.fascia = has_fascia;
             changed = true;
         }
     }
@@ -212,9 +213,9 @@ fn edit_roof_plane(
         if v < 0.0 || !v.is_finite() {
             return Err(bad("roofplane", "soffit must be non-negative and finite"));
         }
-        if plane.soffit != v {
-            plane.soffit = v;
-            roof.soffit = v;
+        let has_soffit = v > 0.0;
+        if roof.soffit != has_soffit {
+            roof.soffit = has_soffit;
             changed = true;
         }
     }
