@@ -50,40 +50,49 @@ struct Payload {
 
 /// JSON chunks (≤ 250 characters) for the architectural XRECORD.
 ///
-/// Returns `None` when the model has no walls (nothing to write); otherwise the escaped,
-/// chunked payload, exactly like [`dxf_ext::constraint_chunks`](crate::dxf_ext).
+/// Returns `None` when the model has no walls, openings, rooms or roofs (nothing to write);
+/// otherwise the escaped, chunked payload, exactly like [`dxf_ext::constraint_chunks`](crate::dxf_ext).
 pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
-    if m.walls.is_empty() && m.openings.is_empty() && m.rooms.is_empty() {
+    if m.walls.is_empty() && m.openings.is_empty() && m.rooms.is_empty() && m.roofs.is_empty() {
         return None;
     }
-    let json = serde_json::to_string(&Payload { version: 3, model: m.clone() }).ok()?;
+    let json = serde_json::to_string(&Payload { version: 4, model: m.clone() }).ok()?;
     Some(crate::dxf_ext::json_chunks(&json))
 }
 
 /// Parse an architectural XRECORD payload; `None` when it is not a payload we understand.
 ///
-/// Accepts schema version 1 (no openings: v1 → empty openings) and version 2 (openings
-/// present). Both are bounded — the wall count against [`MAX_WALLS`] and the opening count
-/// against [`MAX_OPENINGS`] — so hostile payloads can not overflow allocations.
+/// Accepts schema versions 1 through 4:
+/// - v1: no openings (cleared).
+/// - v2: openings present.
+/// - v3: rooms/levels present, no roofs (cleared).
+/// - v4: roofs present.
+///
+/// All versions are bounded — the wall count against [`MAX_WALLS`], the opening count
+/// against [`MAX_OPENINGS`], and the roof count against [`MAX_ROOFS`] — so hostile payloads
+/// can not overflow allocations.
 pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     if text.len() > MAX_ARCH_PAYLOAD {
         return None;
     }
     let p: Payload = serde_json::from_str(text).ok()?;
-    if p.version != 1 && p.version != 2 && p.version != 3 {
+    if !(1..=4).contains(&p.version) {
         return None;
     }
     if p.model.walls.len() > cadcraft_doc::MAX_WALLS {
         return None;
     }
-    let model = if p.version == 1 {
-        let mut m = p.model;
-        m.openings.clear();
-        m
-    } else {
-        p.model
-    };
+    let mut model = p.model;
+    if p.version <= 2 {
+        model.openings.clear();
+    }
+    if p.version <= 3 {
+        model.roofs.clear();
+    }
     if model.openings.len() > cadcraft_doc::arch::MAX_OPENINGS {
+        return None;
+    }
+    if model.roofs.len() > cadcraft_doc::arch::MAX_ROOFS {
         return None;
     }
     Some(model)
@@ -258,7 +267,7 @@ pub(crate) fn proxy_room_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
 mod tests {
     use super::*;
     use crate::{read_dxf, write_dxf};
-    use cadcraft_doc::arch::{Opening, OpeningKind, Room};
+    use cadcraft_doc::arch::{Opening, OpeningKind, Roof, RoofEdge, RoofEdgeKind, RoofPlane, Room};
     use cadcraft_doc::{ArchModel, Drawing, EntityKind, Wall};
     use cadcraft_geom::Vec2;
 
@@ -288,8 +297,8 @@ mod tests {
 
     #[test]
     fn parse_arch_rejects_unknown_versions() {
-        // Versions 1, 2, and 3 are understood; 0 and 4+ are unknown.
-        assert!(parse_arch(r#"{"version": 4, "model": { "walls": [] }}"#).is_none());
+        // Versions 1..4 are understood; 0 and 5+ are unknown.
+        assert!(parse_arch(r#"{"version": 5, "model": { "walls": [] }}"#).is_none());
         assert!(parse_arch(r#"{"version": 0, "model": { "walls": [] }}"#).is_none());
     }
 
@@ -845,5 +854,70 @@ mod tests {
         assert!(second.layer(ARCH_ROOM_LAYER).is_some(), "A-ROOM layer lost on round trip");
         assert_eq!(first_text.matches(ARCH_ROOM_MARKER).count(), 1);
         assert_eq!(second_text.matches(ARCH_ROOM_MARKER).count(), 1, "room proxies duplicated on re-save");
+    }
+
+    #[test]
+    fn arch_record_version_is_four() {
+        let chunks = arch_chunks(&one_wall_model()).unwrap();
+        let obj: serde_json::Value = serde_json::from_str(&chunks.join("")).unwrap();
+        assert_eq!(obj["version"].as_u64(), Some(4), "written payload version");
+    }
+
+    #[test]
+    fn v3_payload_still_parses() {
+        let mut m = one_wall_model();
+        m.push_roof(Roof { level: 0, pitch_rise: 6.0, pitch_run: 12.0, ..Roof::default() });
+        let json = serde_json::json!({ "version": 3, "model": m }).to_string();
+        let text = crate::dxf_ext::json_chunks(&json).join("");
+        let parsed = parse_arch(&text).expect("a version-3 payload must still parse");
+        assert_eq!(parsed.walls.len(), 1);
+        assert!(parsed.roofs.is_empty(), "a v3 file predates roofs");
+        assert!(parse_arch(r#"{"version": 5, "model": {"walls": []}}"#).is_none());
+    }
+
+    #[test]
+    fn roof_round_trips_exactly() {
+        let mut d = Drawing::new_metric();
+        let wid = d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        let rid = d.arch.push_roof(Roof {
+            level: 0,
+            pitch_rise: 6.0,
+            pitch_run: 12.0,
+            overhang: 0.5,
+            thickness: 0.25,
+            fascia: true,
+            soffit: true,
+            manual: false,
+            hand_edited: true,
+            planes: vec![RoofPlane {
+                ring: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0)],
+                slope: 0.5,
+                projected_area: 40.0,
+                eave_wall: Some(wid),
+                base_edge: [0.0, 0.0, 10.0, 0.0],
+                thickness: 0.25,
+                overhang: 0.5,
+                eave_z: 2.4,
+                ..Default::default()
+            }],
+            edges: vec![RoofEdge {
+                kind: RoofEdgeKind::Ridge,
+                a: Vec2::new(4.0, 4.0),
+                b: Vec2::new(6.0, 4.0),
+                za: 4.45,
+                zb: 4.45,
+                ..Default::default()
+            }],
+            ..Roof::default()
+        });
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.roofs.len(), 1);
+        assert_eq!(back.arch.roofs[0].id, rid);
+        assert_eq!(back.arch.roofs, d.arch.roofs);
+        assert_eq!(back.arch.next_roof_id, d.arch.next_roof_id);
+        assert_eq!(back.arch.walls, d.arch.walls);
     }
 }
