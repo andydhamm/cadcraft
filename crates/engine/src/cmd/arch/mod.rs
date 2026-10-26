@@ -14,6 +14,9 @@ pub const DEFAULT_EXT_THICKNESS: f64 = 0.2;
 /// Default interior wall thickness (m).
 pub const DEFAULT_INT_THICKNESS: f64 = 0.1;
 
+/// Default wall height when the model has no level (the derived floor-to-floor of the default level).
+pub const DEFAULT_WALL_HEIGHT: f64 = 2.7;
+
 pub mod build3d;
 pub mod inspect;
 pub mod level;

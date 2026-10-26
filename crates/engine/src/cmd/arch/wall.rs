@@ -303,11 +303,11 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     // Level: from param, or the first level in the model when absent
     let level = level_name.as_deref().and_then(|name| d.arch.levels.iter().find(|l| l.name == name)).or_else(|| d.arch.levels.first());
 
-    // Height: explicit or the level's ceiling height
+    // Height: explicit or the level's derived floor-to-floor (ceiling + structure)
     let height = size_param("wall", p, "height", false)?;
     let height = match height {
         Some(h) => h,
-        None => level.map(|l| l.ceiling_height).unwrap_or(super::DEFAULT_EXT_THICKNESS * 5.0),
+        None => level.map(|l| l.floor_to_floor()).unwrap_or(super::DEFAULT_WALL_HEIGHT),
     };
 
     // Apply closed flag
@@ -532,7 +532,20 @@ mod tests {
         });
         let _ = s.execute("wall", &p).unwrap();
         let d = s.doc().unwrap();
-        assert!((d.arch.walls[0].height - 2.4).abs() < 1e-9);
+        // ground: ceiling 2.4 + structure 0.3 = 2.7
+        assert!((d.arch.walls[0].height - 2.7).abs() < 1e-9);
+    }
+
+    #[test]
+    fn wall_height_defaults_to_derived_floor_to_floor() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        // Default level 0 (ceiling 2.4 + structure 0.3) gives derived floor-to-floor 2.7
+        assert!((d.arch.walls[0].height - 2.7).abs() < 1e-9);
     }
 
     #[test]
@@ -544,7 +557,8 @@ mod tests {
         });
         let _ = s.execute("wall", &p).unwrap();
         let d = s.doc().unwrap();
-        assert!((d.arch.walls[0].height - 2.4).abs() < 1e-9);
+        // ground: ceiling 2.4 + structure 0.3 = 2.7
+        assert!((d.arch.walls[0].height - 2.7).abs() < 1e-9);
     }
 
     #[test]
@@ -559,8 +573,8 @@ mod tests {
         });
         let _ = s.execute("wall", &p).unwrap();
         let d = s.doc().unwrap();
-        // ceiling_height = 2.1
-        assert!((d.arch.walls[0].height - 2.1).abs() < 1e-9);
+        // ceiling 2.1 + structure 0.4 = 2.5
+        assert!((d.arch.walls[0].height - 2.5).abs() < 1e-9);
     }
 
     #[test]
@@ -636,6 +650,35 @@ mod tests {
         assert!(d.arch.walls[0].divider);
         assert!(!d.arch.walls[0].exterior);
         assert_eq!(d.arch.walls[0].thickness, 0.0);
+    }
+
+    #[test]
+    fn wall_height_uses_level_ceiling_plus_structure() {
+        let mut s = Session::new();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "l2".to_string(), ceiling_height: 3.0, structure: 0.4, ..Default::default() });
+        d.touch_arch();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "l2",
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        // ceiling 3.0 + structure 0.4 = 3.4
+        assert!((d.arch.walls[0].height - 3.4).abs() < 1e-9);
+    }
+
+    #[test]
+    fn wall_explicit_height_still_wins() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "height": 1.5,
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        // explicit 1.5 beats derived floor-to-floor 2.7
+        assert!((d.arch.walls[0].height - 1.5).abs() < 1e-9);
     }
 
     #[test]
