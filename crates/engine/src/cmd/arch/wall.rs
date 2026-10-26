@@ -304,11 +304,15 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let level = level_name.as_deref().and_then(|name| d.arch.levels.iter().find(|l| l.name == name)).or_else(|| d.arch.levels.first());
 
     // Height: explicit or the level's derived floor-to-floor (ceiling + structure)
-    let height = size_param("wall", p, "height", false)?;
-    let height = match height {
-        Some(h) => h,
-        None => level.map(|l| l.floor_to_floor()).unwrap_or(super::DEFAULT_WALL_HEIGHT),
+    let has_height = p.as_object().is_some_and(|o| o.contains_key("height"));
+    let height = if has_height {
+        size_param("wall", p, "height", false)?.unwrap_or(f64::NAN)
+    } else {
+        level.map(|l| l.ceiling_height + l.structure).unwrap_or(super::DEFAULT_WALL_HEIGHT)
     };
+    if !height.is_finite() || height <= 0.0 {
+        return Err(bad("wall", "`height` must be a positive finite number"));
+    }
 
     // Apply closed flag
     let pts = if closed && pts.len() > 2 {
@@ -776,5 +780,131 @@ mod tests {
         assert_eq!(d.arch.walls.len(), 3);
         assert_eq!(d.arch.walls[2].start, Vec2::new(4.0, 3.0));
         assert_eq!(d.arch.walls[2].end, Vec2::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn wall_height_nan_rejected() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "height": serde_json::Value::Null,
+        });
+        // Null height is not NaN but tests the None path; test explicit NaN via a large non-finite
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "height": f64::NAN,
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
+    }
+
+    #[test]
+    fn wall_height_zero_rejected() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "height": 0.0,
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
+    }
+
+    #[test]
+    fn wall_height_huge_value_works() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "height": 1e12,
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!((d.arch.walls[0].height - 1e12).abs() < 1e-3);
+    }
+
+    #[test]
+    fn wall_level_zero_structure() {
+        let mut s = Session::new();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "flat".to_string(), ceiling_height: 3.0, structure: 0.0, ..Default::default() });
+        d.touch_arch();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "flat",
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        // ceiling 3.0 + structure 0.0 = 3.0
+        assert!((d.arch.walls[0].height - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn wall_level_zero_ceiling() {
+        let mut s = Session::new();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "slab".to_string(), ceiling_height: 0.0, structure: 0.5, ..Default::default() });
+        d.touch_arch();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "slab",
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        // ceiling 0.0 + structure 0.5 = 0.5
+        assert!((d.arch.walls[0].height - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn wall_no_level_uses_default_wall_height() {
+        let mut s = Session::new();
+        // No level added; wall should fall back to DEFAULT_WALL_HEIGHT (2.7)
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!((d.arch.walls[0].height - super::super::DEFAULT_WALL_HEIGHT).abs() < 1e-9);
+    }
+
+    #[test]
+    fn wall_height_infinity_rejected() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "height": f64::INFINITY,
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
+    }
+
+    #[test]
+    fn wall_unknown_level_uses_first_level() {
+        let mut s = Session::new();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "only".to_string(), ceiling_height: 2.8, structure: 0.3, ..Default::default() });
+        d.touch_arch();
+        // Level name "missing" does not exist; falls back to the first level
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "missing",
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        // First level is the default (ceiling 2.4 + structure 0.3 = 2.7), not "only"
+        assert!((d.arch.walls[0].height - 2.7).abs() < 1e-9);
+    }
+
+    #[test]
+    fn wall_multiple_levels_selects_correct_one() {
+        let mut s = Session::new();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "ground".to_string(), ceiling_height: 2.4, structure: 0.3, ..Default::default() });
+        d.arch.levels.push(Level { name: "upper".to_string(), ceiling_height: 2.2, structure: 0.4, ..Default::default() });
+        d.touch_arch();
+        // Select the second level explicitly
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "upper",
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        // upper: ceiling 2.2 + structure 0.4 = 2.6
+        assert!((d.arch.walls[0].height - 2.6).abs() < 1e-9);
     }
 }
