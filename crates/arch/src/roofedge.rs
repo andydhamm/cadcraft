@@ -47,7 +47,7 @@ pub fn roof_edges_geom(g: &RoofGeom) -> Vec<RoofEdge> {
         let mut ez = f64::INFINITY;
         let mut has_valid_eave = false;
         for &f_idx in &adjacent {
-            if let Some(&edge_idx) = g.skel.faces.get(f_idx).map(|f| f.edge) {
+            if let Some(edge_idx) = g.skel.faces.get(f_idx).map(|f| f.edge) {
                 if let Some(&z) = g.eave_z.get(edge_idx) {
                     if z < ez {
                         ez = z;
@@ -104,8 +104,8 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: 
 
     // b. Ridge if exactly two adjacent faces, parallel base edges, equal slopes
     if adjacent.len() == 2 {
-        let f0 = g.skel.faces[adjacent[0]];
-        let f1 = g.skel.faces[adjacent[1]];
+        let f0 = &g.skel.faces[adjacent[0]];
+        let f1 = &g.skel.faces[adjacent[1]];
 
         if let (Some(&s0), Some(&s1)) = (g.slopes.get(f0.edge), g.slopes.get(f1.edge)) {
             if (s0 - s1).abs() < 1e-9 {
@@ -152,8 +152,8 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: 
 
     // d. Hip if two adjacent faces with finite different slopes, else Eave
     if adjacent.len() == 2 {
-        let f0 = g.skel.faces[adjacent[0]];
-        let f1 = g.skel.faces[adjacent[1]];
+        let f0 = &g.skel.faces[adjacent[0]];
+        let f1 = &g.skel.faces[adjacent[1]];
 
         if let (Some(&s0), Some(&s1)) = (g.slopes.get(f0.edge), g.slopes.get(f1.edge)) {
             if s0.is_finite() && s1.is_finite() && (s0 - s1).abs() > 1e-9 {
