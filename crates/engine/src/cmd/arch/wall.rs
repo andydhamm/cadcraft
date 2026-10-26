@@ -276,9 +276,11 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
             None => 0.0,
         }
     } else {
+        let has_thickness = p.as_object().is_some_and(|o| o.contains_key("thickness"));
         let explicit = size_param("wall", p, "thickness", false)?;
         match explicit {
             Some(t) => t,
+            None if has_thickness => return Err(bad("wall", "`thickness` must be a positive finite number")),
             None => {
                 if exterior {
                     super::DEFAULT_EXT_THICKNESS
