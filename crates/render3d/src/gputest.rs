@@ -74,4 +74,25 @@ mod tests {
         assert!(val.is_none());
         assert!(start.elapsed() >= Duration::from_millis(15));
     }
+
+    #[test]
+    fn poll_bounded_resolves_after_polls() {
+        let fut = async { 99u32 };
+        let val = poll_bounded(fut, Duration::from_secs(1));
+        assert_eq!(val, Some(99));
+    }
+
+    #[test]
+    fn poll_bounded_zero_budget() {
+        let start = Instant::now();
+        let val = poll_bounded(futures::future::pending::<u32>(), Duration::from_secs(0));
+        assert!(val.is_none());
+        assert!(start.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn shared_device_consistent_multiple_calls() {
+        let results: Vec<bool> = (0..5).map(|_| shared_device().is_some()).collect();
+        assert!(results.iter().all(|&r| r == results[0]));
+    }
 }
