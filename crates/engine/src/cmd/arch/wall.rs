@@ -907,4 +907,68 @@ mod tests {
         // upper: ceiling 2.2 + structure 0.4 = 2.6
         assert!((d.arch.walls[0].height - 2.6).abs() < 1e-9);
     }
+
+    #[test]
+    fn wall_thickness_at_exterior_default_is_exterior() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "thickness": super::super::DEFAULT_EXT_THICKNESS,
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!(d.arch.walls[0].exterior);
+        assert_eq!(d.arch.walls[0].wall_type, "exterior".to_string());
+    }
+
+    #[test]
+    fn wall_thickness_just_below_exterior_default_is_interior() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "thickness": super::super::DEFAULT_EXT_THICKNESS - 0.001,
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!(!d.arch.walls[0].exterior);
+        assert_eq!(d.arch.walls[0].wall_type, "interior".to_string());
+    }
+
+    #[test]
+    fn wall_divider_forces_interior_even_with_explicit_exterior() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "divider": true,
+            "exterior": true,
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!(d.arch.walls[0].divider);
+        assert!(!d.arch.walls[0].exterior);
+        assert_eq!(d.arch.walls[0].wall_type, "interior".to_string());
+    }
+
+    #[test]
+    fn wall_level_zero_ceiling_and_structure_rejected() {
+        let mut s = Session::new();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "zero".to_string(), ceiling_height: 0.0, structure: 0.0, ..Default::default() });
+        d.touch_arch();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "zero",
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
+    }
+
+    #[test]
+    fn wall_thickness_nan_rejected() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "thickness": f64::NAN,
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
+    }
 }
