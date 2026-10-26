@@ -1236,7 +1236,7 @@ mod tests {
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
-        plane.eave_wall = ArchId(0);
+        plane.eave_wall = Some(ArchId(0));
         roof.planes.push(plane);
         model.roofs.push(roof);
 
@@ -1267,7 +1267,7 @@ mod tests {
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
-        plane.eave_wall = ArchId(0);
+        plane.eave_wall = Some(ArchId(0));
         roof.planes.push(plane);
         model.roofs.push(roof);
 
@@ -1302,7 +1302,7 @@ mod tests {
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
-        plane.eave_wall = ArchId(0);
+        plane.eave_wall = Some(ArchId(0));
         roof.planes.push(plane);
         model.roofs.push(roof);
 
@@ -1360,7 +1360,7 @@ mod tests {
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
-        plane.eave_wall = ArchId(0);
+        plane.eave_wall = Some(ArchId(0));
         roof.planes.push(plane);
         model.roofs.push(roof);
 
