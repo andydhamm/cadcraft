@@ -1385,4 +1385,85 @@ mod tests {
         let args: Vec<String> = ["--metric", "--cmd", "drawing.inspect", "--cmd", "drawing.inspect {}"].iter().map(|a| a.to_string()).collect();
         assert_eq!(run(&args), Ok(()));
     }
+
+    #[test]
+    fn render_no_adapter_exit_constant() {
+        assert_eq!(RENDER_NO_ADAPTER_EXIT, 3);
+    }
+
+    #[test]
+    fn format_projected_edge_cases() {
+        // All zeros
+        assert_eq!(format_projected([0.0; 4]), "PROJECTED 0.000000,0.000000,0.000000,0.000000");
+        // Negative values
+        assert_eq!(format_projected([-1.5, -2.5, -3.5, -4.5]), "PROJECTED -1.500000,-2.500000,-3.500000,-4.500000");
+        // Large values
+        assert_eq!(format_projected([1e6, 2e6, 3e6, 4e6]), "PROJECTED 1000000.000000,2000000.000000,3000000.000000,4000000.000000");
+        // Values that round up
+        assert_eq!(format_projected([1.0000005, 2.0000005, 3.0000005, 4.0000005]), "PROJECTED 1.000001,2.000001,3.000001,4.000001");
+        // Values that round down
+        assert_eq!(format_projected([1.0000004, 2.0000004, 3.0000004, 4.0000004]), "PROJECTED 1.000000,2.000000,3.000000,4.000000");
+    }
+
+    #[test]
+    fn parse_size_valid() {
+        assert_eq!(parse_size("2400x1600"), Ok((2400, 1600)));
+        assert_eq!(parse_size("100x100"), Ok((100, 100)));
+        assert_eq!(parse_size("1x1"), Ok((1, 1)));
+        assert_eq!(parse_size("1920x1080"), Ok((1920, 1080)));
+        // With spaces and uppercase X
+        assert_eq!(parse_size(" 100 x 200 "), Ok((100, 200)));
+        assert_eq!(parse_size("100X200"), Ok((100, 200)));
+        // u32 max
+        assert_eq!(parse_size("4294967295x4294967295"), Ok((4294967295, 4294967295)));
+    }
+
+    #[test]
+    fn parse_size_invalid() {
+        assert!(parse_size("").is_err());
+        assert!(parse_size("100").is_err());
+        assert!(parse_size("100x").is_err());
+        assert!(parse_size("x100").is_err());
+        assert!(parse_size("0x100").is_err());
+        assert!(parse_size("100x0").is_err());
+        assert!(parse_size("abcxdef").is_err());
+        assert!(parse_size("100x200x300").is_err());
+        assert!(parse_size("100 x 200 x 300").is_err());
+        // u32 max + 1
+        assert!(parse_size("4294967296x100").is_err());
+        // Negative
+        assert!(parse_size("-1x100").is_err());
+        // Decimal
+        assert!(parse_size("100.5x100").is_err());
+    }
+
+    #[test]
+    fn parse_camera_valid() {
+        let bounds = cadcraft_arch3d::mesh::Bounds3::new([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let base = cadcraft_render3d::camera::Orbit::fit(&bounds);
+        // Just "orbit"
+        assert!(parse_camera("orbit", base).is_ok());
+        // All fields
+        let cam = parse_camera("orbit,azimuth=1.5,elevation=0.5,distance=10,fov=45", base).unwrap();
+        // Empty tokens after commas are skipped
+        assert!(parse_camera("orbit,,azimuth=1.5,,", base).is_ok());
+        // Whitespace around fields
+        assert!(parse_camera("orbit , azimuth = 1.5 , elevation = 0.5", base).is_ok());
+    }
+
+    #[test]
+    fn parse_camera_invalid() {
+        let bounds = cadcraft_arch3d::mesh::Bounds3::new([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let base = cadcraft_render3d::camera::Orbit::fit(&bounds);
+        assert!(parse_camera("", base).is_err());
+        assert!(parse_camera("perspective", base).is_err());
+        assert!(parse_camera("orbit,azimuth", base).is_err());
+        assert!(parse_camera("orbit,azimuth=abc", base).is_err());
+        assert!(parse_camera("orbit,azimuth=NaN", base).is_err());
+        assert!(parse_camera("orbit,distance=0", base).is_err());
+        assert!(parse_camera("orbit,distance=-1", base).is_err());
+        assert!(parse_camera("orbit,fov=0", base).is_err());
+        assert!(parse_camera("orbit,fov=-1", base).is_err());
+        assert!(parse_camera("orbit,unknown=1", base).is_err());
+    }
 }
