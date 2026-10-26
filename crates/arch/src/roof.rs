@@ -821,4 +821,138 @@ mod tests {
         model.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 20.0), 0.2));
         assert!(matches!(build_roof(&model, 0, &test_roof()), Err(_)));
     }
+
+    #[test]
+    fn outset_footprint_rejects_nan_overhang() {
+        let mut model = ArchModel::default();
+        rectangular_house(&mut model);
+        let fp = outer_footprint(&model, 0).unwrap();
+        assert!(matches!(outset_footprint(&fp, f64::NAN), Err(RoofError::Degenerate)));
+    }
+
+    #[test]
+    fn outset_footprint_rejects_negative_overhang() {
+        let mut model = ArchModel::default();
+        rectangular_house(&mut model);
+        let fp = outer_footprint(&model, 0).unwrap();
+        assert!(matches!(outset_footprint(&fp, -0.1), Err(RoofError::Degenerate)));
+    }
+
+    #[test]
+    fn overhang_with_gable_ends_keeps_infinite_slope() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        if let Some(w) = model.walls.iter_mut().find(|w| w.id == ArchId(1)) {
+            w.roof_directive = RoofDirective::Gable;
+        }
+        if let Some(w) = model.walls.iter_mut().find(|w| w.id == ArchId(3)) {
+            w.roof_directive = RoofDirective::Gable;
+        }
+        let roof = build_roof(&model, 0, &Roof { overhang: 0.5, thickness: 0.0, ..Roof::default() }).unwrap();
+        assert_eq!(roof.planes.len(), 2, "two gable ends with overhang should give 2 planes");
+        for plane in &roof.planes {
+            assert!(plane.slope.is_finite(), "gable end planes should have finite slope");
+        }
+    }
+
+    #[test]
+    fn overhang_with_per_wall_pitch() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        if let Some(w) = model.walls.iter_mut().find(|w| w.id == ArchId(0)) {
+            w.roof_pitch = Some(4.0);
+        }
+        let roof = build_roof(&model, 0, &Roof { overhang: 0.5, thickness: 0.0, pitch_rise: 6.0, pitch_run: 12.0, ..Roof::default() }).unwrap();
+        let south_plane = roof.planes.iter().find(|p| p.eave_wall == Some(ArchId(0))).unwrap();
+        assert!((south_plane.slope - 4.0 / 12.0).abs() < 1e-12, "south wall plane slope {} != 4/12", south_plane.slope);
+        for plane in &roof.planes {
+            if plane.eave_wall != Some(ArchId(0)) {
+                assert!((plane.slope - 6.0 / 12.0).abs() < 1e-12, "non-south plane slope {} != 6/12", plane.slope);
+            }
+        }
+    }
+
+    #[test]
+    fn overhang_gable_roof_plane_count_unchanged() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        if let Some(w) = model.walls.iter_mut().find(|w| w.id == ArchId(1)) {
+            w.roof_directive = RoofDirective::Gable;
+        }
+        if let Some(w) = model.walls.iter_mut().find(|w| w.id == ArchId(3)) {
+            w.roof_directive = RoofDirective::Gable;
+        }
+        let no_oh = build_roof(&model, 0, &Roof { overhang: 0.0, thickness: 0.0, ..Roof::default() }).unwrap();
+        let oh = build_roof(&model, 0, &Roof { overhang: 0.5, thickness: 0.0, ..Roof::default() }).unwrap();
+        assert_eq!(no_oh.planes.len(), oh.planes.len(), "overhang must not change the plane count for a gable roof");
+        assert_eq!(oh.planes.len(), 2, "gable roof should have 2 planes");
+    }
+
+    #[test]
+    fn overhang_eave_z_uses_wall_height() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        if let Some(w) = model.walls.iter_mut().find(|w| w.id == ArchId(0)) {
+            w.height = 3.0;
+        }
+        let roof = build_roof(&model, 0, &Roof { overhang: 0.5, thickness: 0.0, ..Roof::default() }).unwrap();
+        let south_plane = roof.planes.iter().find(|p| p.eave_wall == Some(ArchId(0))).unwrap();
+        assert!((south_plane.eave_z - 3.0).abs() < 1e-9, "eave_z {} != 3.0 for wall 0", south_plane.eave_z);
+        for plane in &roof.planes {
+            if plane.eave_wall != Some(ArchId(0)) {
+                assert!((plane.eave_z - 2.4).abs() < 1e-9, "eave_z {} != 2.4 for wall {:?}", plane.eave_z, plane.eave_wall);
+            }
+        }
+    }
+
+    #[test]
+    fn huge_overhang_still_builds() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        let roof = build_roof(&model, 0, &Roof { overhang: 10.0, thickness: 0.0, ..Roof::default() }).unwrap();
+        assert_eq!(roof.planes.len(), 4, "a huge overhang should still give 4 planes");
+        let sum = projected_area_sum(&roof);
+        assert!((sum - 851.64).abs() < 1e-6, "huge overhang projected area sum {} != 851.64", sum);
+    }
+
+    #[test]
+    fn overhang_with_no_level_defined() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        let roof = build_roof(&model, 0, &Roof { overhang: 0.5, thickness: 0.0, ..Roof::default() }).unwrap();
+        for plane in &roof.planes {
+            assert!((plane.eave_z - 2.4).abs() < 1e-9, "eave_z {} != 2.4 when no level defined", plane.eave_z);
+        }
+    }
+
+    #[test]
+    fn overhang_on_l_shaped_footprint() {
+        let mut model = ArchModel::default();
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 8.0), Vec2::new(6.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(6.0, 8.0), Vec2::new(6.0, 12.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(6.0, 12.0), Vec2::new(0.0, 12.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(0.0, 12.0), Vec2::new(0.0, 0.0), 0.2));
+        for w in model.walls.iter_mut() {
+            w.height = 2.4;
+        }
+        let roof = build_roof(&model, 0, &Roof { overhang: 0.5, thickness: 0.0, ..Roof::default() }).unwrap();
+        assert!(!roof.planes.is_empty(), "L-shaped roof should have at least one plane");
+        assert!(projected_area_sum(&roof) > 0.0, "L-shaped roof should have positive projected area");
+    }
+
+    #[test]
+    fn outset_footprint_merges_collinear_edges() {
+        let mut model = ArchModel::default();
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(5.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2));
+        let fp = outer_footprint(&model, 0).unwrap();
+        assert_eq!(fp.edges.len(), 4, "the two bottom runs must merge");
+        let outset = outset_footprint(&fp, 0.5).unwrap();
+        assert_eq!(outset.edges.len(), 4, "the outset must keep 4 edges");
+    }
 }
