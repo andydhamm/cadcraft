@@ -572,6 +572,88 @@ mod tests {
     }
 
     #[test]
+    fn pane3d_house_scene_has_multiple_mesh_types() {
+        let arch = house();
+        let mut pane = Pane3d::new();
+        assert!(pane.sync(1, Some(&arch)));
+        let scene = pane.scene().expect("scene");
+        assert!(!scene.meshes.is_empty(), "house scene should have meshes");
+
+        let mut materials = std::collections::HashSet::new();
+        for mesh in &scene.meshes {
+            materials.insert(mesh.material.clone());
+        }
+        assert!(materials.contains("wall"), "house scene should have wall meshes");
+    }
+
+    #[test]
+    fn pane3d_house_scene_bounds_include_full_height() {
+        let arch = house();
+        let mut pane = Pane3d::new();
+        assert!(pane.sync(1, Some(&arch)));
+        let scene = pane.scene().expect("scene");
+        assert!(scene.bounds.max[2] >= 2.0, "scene bounds should include wall height");
+        assert!(scene.bounds.min[2] <= 0.1, "scene bounds should include ground level");
+    }
+
+    #[test]
+    fn pane3d_camera_frames_house_scene() {
+        let arch = house();
+        let mut pane = Pane3d::new();
+        assert!(pane.sync(1, Some(&arch)));
+
+        let cam = pane.camera();
+        let cadcraft_render3d::Camera::Orbit(o) = cam;
+
+        assert!(o.distance >= cadcraft_render3d::camera::MIN_DISTANCE);
+        // House is 10x8m; camera should target near its center (5, 4)
+        assert!((o.target.x - 5.0).abs() < 1.0, "camera should target near house center x");
+        assert!((o.target.y - 4.0).abs() < 1.0, "camera should target near house center y");
+    }
+
+    #[test]
+    fn pane3d_orbit_and_zoom_with_house_scene() {
+        let arch = house();
+        let mut pane = Pane3d::new();
+        assert!(pane.sync(1, Some(&arch)));
+
+        let initial_azimuth = pane.orbit.azimuth;
+        let initial_distance = pane.orbit.distance;
+
+        orbit_by_drag(&mut pane, 100.0, 0.0, 0.01);
+        assert_ne!(pane.orbit.azimuth, initial_azimuth, "orbit should change azimuth");
+
+        zoom_by_wheel(&mut pane, 1.0);
+        assert_ne!(pane.orbit.distance, initial_distance, "zoom should change distance");
+        assert!(pane.orbit.distance < initial_distance, "positive zoom delta should zoom in");
+    }
+
+    #[test]
+    fn pane3d_empty_model_has_no_content() {
+        let arch = cadcraft_doc::ArchModel::default();
+        let mut pane = Pane3d::new();
+        assert!(pane.sync(1, Some(&arch)));
+        assert!(!pane.has_content, "empty model should have no content");
+        assert!(pane.scene().expect("scene").meshes.is_empty(), "empty model should have no meshes");
+    }
+
+    #[test]
+    fn pane3d_single_wall_scene_has_content() {
+        let mut arch = cadcraft_doc::ArchModel::default();
+        arch.push_wall(cadcraft_doc::Wall {
+            start: cadcraft_geom::Vec2::new(0.0, 0.0),
+            end: cadcraft_geom::Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            height: 2.7,
+            ..Default::default()
+        });
+        let mut pane = Pane3d::new();
+        assert!(pane.sync(1, Some(&arch)));
+        assert!(pane.has_content, "single wall should have content");
+        assert!(!pane.scene().expect("scene").meshes.is_empty(), "single wall should have meshes");
+    }
+
+    #[test]
     fn the_paint_callback_draws_the_scene_into_the_window_and_redraws_only_on_change() {
         let Some((device, queue)) = test_device() else { return };
         let (w, h) = (64u32, 48u32);
