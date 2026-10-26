@@ -722,4 +722,182 @@ mod tests {
         assert_eq!(label[0].as_f64().expect("x"), 0.0);
         assert_eq!(label[1].as_f64().expect("y"), 0.0);
     }
+
+    /// Two rooms get distinct 8-digit lowercase hex handles.
+    #[test]
+    fn inspect_reports_multiple_room_handles_uniquely() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "Room A".into(),
+                    room_type: RoomType::Living,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+                    ceiling_height: Some(2.4),
+                    interior_area: 12.0,
+                    standard_area: 12.48,
+                    ..Room::default()
+                });
+                d.arch.push_room(Room {
+                    name: "Room B".into(),
+                    room_type: RoomType::Bedroom,
+                    level: 0,
+                    polygon: vec![Vec2::new(5.0, 0.0), Vec2::new(9.0, 0.0), Vec2::new(9.0, 3.0), Vec2::new(5.0, 3.0)],
+                    ceiling_height: Some(2.4),
+                    interior_area: 12.0,
+                    standard_area: 12.48,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        assert_eq!(rooms.len(), 2, "expected two rooms");
+        let h0 = rooms[0]["handle"].as_str().expect("handle 0 missing");
+        let h1 = rooms[1]["handle"].as_str().expect("handle 1 missing");
+        assert_eq!(h0.len(), 8, "handle 0 must be 8 chars: {h0}");
+        assert_eq!(h1.len(), 8, "handle 1 must be 8 chars: {h1}");
+        assert_ne!(h0, h1, "handles must be distinct");
+        assert!(h0.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle 0 must be lowercase hex: {h0}");
+        assert!(h1.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle 1 must be lowercase hex: {h1}");
+    }
+
+    /// A room with holes still gets a label point inside its outer ring.
+    #[test]
+    fn inspect_room_label_with_holes() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "Hall".into(),
+                    room_type: RoomType::Living,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(6.0, 0.0), Vec2::new(6.0, 4.0), Vec2::new(0.0, 4.0)],
+                    holes: vec![vec![Vec2::new(2.0, 1.0), Vec2::new(4.0, 1.0), Vec2::new(4.0, 3.0), Vec2::new(2.0, 3.0)]],
+                    ceiling_height: Some(2.4),
+                    interior_area: 16.0,
+                    standard_area: 16.48,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        assert_eq!(rooms.len(), 1, "expected one room");
+        let r = &rooms[0];
+        assert_eq!(r["holes"].as_i64().unwrap(), 1, "expected one hole");
+        let label = r["label"].as_array().expect("label must be an array");
+        assert_eq!(label.len(), 2, "label must be [x, y]");
+        let x = label[0].as_f64().expect("label x must be a number");
+        let y = label[1].as_f64().expect("label y must be a number");
+        assert!(x.is_finite() && y.is_finite(), "label must be finite: ({x}, {y})");
+        assert!(x >= 0.0 && x <= 6.0, "label x {x} outside outer ring");
+        assert!(y >= 0.0 && y <= 4.0, "label y {y} outside outer ring");
+    }
+
+    /// A room with collinear (degenerate) vertices still gets a finite label.
+    #[test]
+    fn inspect_room_label_with_collinear_points() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "Flat".into(),
+                    room_type: RoomType::Other,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(2.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 2.0), Vec2::new(0.0, 2.0)],
+                    ceiling_height: None,
+                    interior_area: 8.0,
+                    standard_area: 8.0,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        assert_eq!(rooms.len(), 1, "expected one room");
+        let r = &rooms[0];
+        let label = r["label"].as_array().expect("label must be an array");
+        let x = label[0].as_f64().expect("label x must be a number");
+        let y = label[1].as_f64().expect("label y must be a number");
+        assert!(x.is_finite() && y.is_finite(), "label must be finite for collinear points: ({x}, {y})");
+    }
+
+    /// A room with very large coordinates still gets a finite label.
+    #[test]
+    fn inspect_room_label_with_huge_coordinates() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "Big".into(),
+                    room_type: RoomType::Other,
+                    level: 0,
+                    polygon: vec![Vec2::new(1e9, 1e9), Vec2::new(2e9, 1e9), Vec2::new(2e9, 2e9), Vec2::new(1e9, 2e9)],
+                    ceiling_height: None,
+                    interior_area: 1e18,
+                    standard_area: 1e18,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        assert_eq!(rooms.len(), 1, "expected one room");
+        let r = &rooms[0];
+        let label = r["label"].as_array().expect("label must be an array");
+        let x = label[0].as_f64().expect("label x must be a number");
+        let y = label[1].as_f64().expect("label y must be a number");
+        assert!(x.is_finite() && y.is_finite(), "label must be finite for huge coords: ({x}, {y})");
+        assert!(x >= 1e9 && x <= 2e9, "label x {x} outside range");
+        assert!(y >= 1e9 && y <= 2e9, "label y {y} outside range");
+    }
+
+    /// A second room (id 1) gets the correct incremented handle.
+    #[test]
+    fn inspect_room_handle_for_nonzero_id() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "First".into(),
+                    room_type: RoomType::Living,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+                    ceiling_height: Some(2.4),
+                    interior_area: 12.0,
+                    standard_area: 12.48,
+                    ..Room::default()
+                });
+                d.arch.push_room(Room {
+                    name: "Second".into(),
+                    room_type: RoomType::Bedroom,
+                    level: 0,
+                    polygon: vec![Vec2::new(5.0, 0.0), Vec2::new(9.0, 0.0), Vec2::new(9.0, 3.0), Vec2::new(5.0, 3.0)],
+                    ceiling_height: Some(2.4),
+                    interior_area: 12.0,
+                    standard_area: 12.48,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        assert_eq!(rooms.len(), 2, "expected two rooms");
+        let h0 = rooms[0]["handle"].as_str().expect("handle 0 missing");
+        let h1 = rooms[1]["handle"].as_str().expect("handle 1 missing");
+        assert_eq!(h0, "a0010000", "room 0 handle must be a0010000, got {h0}");
+        assert_eq!(h1, "a0010001", "room 1 handle must be a0010001, got {h1}");
+    }
 }
