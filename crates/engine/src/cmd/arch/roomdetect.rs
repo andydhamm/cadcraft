@@ -381,7 +381,7 @@ mod tests {
         assert!(p.is_object() && p["part"] == "wall", "probe inside wall should hit a wall: {p:?}");
 
         // Probe at floor level inside the same wall should still hit the wall.
-        let r2 = s.execute("build3d", &json!({"probe": [[0.1,4.0,-0.15]]})).unwrap();
+        let r2 = s.execute("build3d", &json!({"probe": [[0.1,4.0,0.1]]})).unwrap();
         let probe2 = r2["probe"].as_array().expect("probe array");
         let p2 = &probe2[0];
         assert!(p2.is_object() && p2["part"] == "wall", "floor-level probe inside wall should hit a wall: {p2:?}");
