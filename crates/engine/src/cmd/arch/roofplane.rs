@@ -260,11 +260,11 @@ pub fn run_roofplane(s: &mut Session, p: &Value) -> Result<Value> {
     let base_0 = crate::cmd::point_value(&base_arr[0]).ok_or_else(|| bad("roofplane", "invalid base point 0"))?;
     let base_1 = crate::cmd::point_value(&base_arr[1]).ok_or_else(|| bad("roofplane", "invalid base point 1"))?;
 
-    let pitch_rise = f64_or(p, "pitchRise", 6.0);
-    let pitch_run = f64_or(p, "pitchRun", 12.0);
-    let thickness = f64_or(p, "thickness", 0.1);
-    let fascia = f64_or(p, "fascia", 0.1);
-    let soffit = f64_or(p, "soffit", 0.1);
+    let pitch_rise = p.get("pitchRise").and_then(Value::as_f64).unwrap_or(6.0);
+    let pitch_run = p.get("pitchRun").and_then(Value::as_f64).unwrap_or(12.0);
+    let thickness = p.get("thickness").and_then(Value::as_f64).unwrap_or(0.1);
+    let fascia = p.get("fascia").and_then(Value::as_f64).unwrap_or(0.1);
+    let soffit = p.get("soffit").and_then(Value::as_f64).unwrap_or(0.1);
     let level = p.get("level").and_then(Value::as_u64).map(|v| v as usize);
 
     create_roof_plane(s, points, (base_0, base_1), pitch_rise, pitch_run, thickness, fascia, soffit, level)
