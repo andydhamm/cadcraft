@@ -900,6 +900,12 @@ mod tests {
     }
 
     #[test]
+    fn mesh_new_sets_level_elevation_to_nan() {
+        let m = Mesh::new("wall", ArchId(1));
+        assert!(m.level_elevation.is_nan(), "Mesh::new must set level_elevation to f64::NAN");
+    }
+
+    #[test]
     fn prism_with_hole_outside_the_outer_is_ignored() {
         let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
         let hole = vec![Vec2::new(20.0, 20.0), Vec2::new(21.0, 20.0), Vec2::new(21.0, 21.0), Vec2::new(20.0, 21.0)];
