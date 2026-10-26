@@ -428,6 +428,7 @@ pub fn build_roof(model: &ArchModel, level: u32, roof: &Roof) -> Result<Roof, Ro
             eave_wall: Some(edge.wall),
             base_edge: [edge.a.x, edge.a.y, edge.b.x, edge.b.y],
             thickness: roof.thickness,
+            overhang: roof.overhang.max(0.0),
             eave_z: eave_z[face.edge],
             ..Default::default()
         });
@@ -457,8 +458,10 @@ pub fn build_roof(model: &ArchModel, level: u32, roof: &Roof) -> Result<Roof, Ro
 }
 
 /// The apex elevation of a single roof plane: the eave elevation plus the rise to the
-/// farthest point of the plane's ring from its base edge. Returns 0.0 for an empty ring
-/// or a zero-length base edge.
+/// ridge. The ring's base edge is the overhang outline, so the run is reduced by the
+/// overhang before multiplying by the slope (the eave — where `eave_z` applies — lies
+/// `overhang` inside from the outline). Returns 0.0 for an empty ring or a
+/// zero-length base edge.
 pub fn plane_apex_z(plane: &RoofPlane) -> f64 {
     if plane.ring.is_empty() {
         return 0.0;
@@ -470,7 +473,7 @@ pub fn plane_apex_z(plane: &RoofPlane) -> f64 {
         return 0.0;
     }
     let run = plane.ring.iter().map(|p| (ab.cross(*p - a)).abs() / ab.len()).fold(0.0, f64::max);
-    plane.eave_z + run * plane.slope
+    plane.eave_z + (run - plane.overhang) * plane.slope
 }
 
 /// The apex elevation of a whole roof: the maximum over its planes, or 0.0 when it
