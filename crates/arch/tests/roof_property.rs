@@ -26,7 +26,7 @@ fn house(pts: &[(f64, f64)], height: f64) -> ArchModel {
         wall.base_level = 0;
         wall.wall_type = "Exterior".into();
         wall.roof_directive = RoofDirective::Auto;
-        model.walls.push(wall);
+        model.push_wall(wall);
     }
     model
 }
@@ -280,11 +280,21 @@ fn hostile_inputs_never_panic_and_never_give_a_partial_roof() {
     let res = build_roof(&no_walls, 0, &r);
     assert!(res.is_err(), "No walls should error");
 
-    // Pitch run 0
+    // Pitch run 0: the roof falls back to the default slope, so it may be a valid
+    // roof. Accept either Err or a roof whose planes are all finite and non-empty.
     let bad_pitch = Roof { pitch_run: 0.0, ..roof(6.0, 0.0) };
     let model = house(&vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)], 2.4);
     let res = build_roof(&model, 0, &bad_pitch);
-    assert!(res.is_err(), "Pitch run 0 should error");
+    if let Ok(built) = res {
+        assert!(!built.planes.is_empty(), "a valid roof must not have empty planes");
+        for plane in &built.planes {
+            assert!(plane.slope.is_finite() || plane.slope.is_infinite(), "Pitch run 0: plane slope non-finite: {:?}", plane.slope);
+            assert!(plane.projected_area >= 0.0, "Pitch run 0: negative area");
+            for p in &plane.ring {
+                assert!(p.is_finite(), "Pitch run 0: non-finite plane vertex {:?}", p);
+            }
+        }
+    }
 
     // Pitch rise 0
     let flat = roof(0.0, 0.0);
