@@ -225,33 +225,6 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
     let mut mesh = Mesh::new(material, shape.id);
     mesh.level_elevation = base;
 
-    // Map (u,v) to world (x,y,z)
-    // Wall direction and normal from shape.polygon?
-    // shape.polygon is the plan polygon.
-    // We need the wall's start/end and thickness to define the local frame.
-    // Actually, `shape` contains the solved polygon.
-    // We can derive the wall's "left" and "right" faces from the polygon.
-    // But `extrude_wall_profile` is called with `shape`.
-    // The profile is in wall-local coords (u along centre, v up).
-    // We need to map (u,v) to the two faces of the wall.
-
-    // Let's assume the wall is a box in plan defined by `shape.polygon`.
-    // The profile defines the height at each u.
-    // We need to generate the side faces (inner/outer), top, bottom, and hole faces.
-
-    // This is complex. Let's simplify:
-    // If we have holes, we can't easily use `push_prism_with_holes` because holes are in elevation.
-    // We will construct the mesh by triangulating the elevation profile and extruding it along the wall's thickness.
-
-    // 1. Triangulate the elevation profile (outer - holes) into triangles in (u,v) space.
-    // 2. For each triangle, create two prisms (one for inner face, one for outer face)?
-    // No, extrude the 2D triangulation along the wall's thickness direction.
-
-    // We need the wall's thickness and orientation.
-    // `shape.polygon` has 4 points: p0, p1, p2, p3.
-    // p0-p1 is one face, p2-p3 is the other.
-    // Let's assume p0-p1 is the "outer" face (or inner, doesn't matter for volume).
-
     let poly = &shape.polygon;
     if poly.len() != 4 {
         return None;
@@ -272,11 +245,6 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
     // Thickness
     let thickness = ((poly[3].x - poly[0].x) * nx + (poly[3].y - poly[0].y) * ny).abs();
 
-    // Map (u, v) to world (x, y, z) for a given offset t (0=inner, 1=outer)
-    // x = start.x + u * dir.x + t * thickness * normal.x
-    // y = start.y + u * dir.y + t * thickness * normal.y
-    // z = base + v
-
     // Triangulate profile
     let tris = triangulate_profile(&profile.outer, &profile.holes);
 
@@ -287,7 +255,7 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
         let mut verts = Vec::new();
         let mut indices = Vec::new();
 
-        // 6 vertices: 3 at t=0, 3 at t=1
+        // 6 vertices: 3 at t=0 (inner), 3 at t=1 (outer)
         for t in [0.0, 1.0] {
             for p in &tri {
                 let x = poly[0].x + p.x * dx + t * thickness * nx;
@@ -299,16 +267,9 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
 
         // Indices for a triangular prism
         // 0,1,2 (t=0), 3,4,5 (t=1)
-        // Faces:
-        // Bottom (t=0): 0,2,1 (CCW from outside? depends on normal)
-        // Top (t=1): 3,4,5
-        // Sides:
-        // 0-1: 0,1,4,3
-        // 1-2: 1,2,5,4
-        // 2-0: 2,0,3,5
-
-        // We need consistent winding.
-        // Let's assume outward normals.
+        // We need consistent winding for outward normals.
+        // Assuming CCW in (u,v) plane maps to CCW when viewed from outside (t=1)?
+        // Let's use standard prism winding.
 
         // Side 0-1
         indices.push(0);
@@ -331,11 +292,11 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
         indices.push(2);
         indices.push(3);
         indices.push(5);
-        // Bottom
+        // Bottom (t=0)
         indices.push(0);
         indices.push(2);
         indices.push(1);
-        // Top
+        // Top (t=1)
         indices.push(3);
         indices.push(4);
         indices.push(5);
@@ -357,65 +318,146 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
 
 /// Simple ear-clipping triangulation for a polygon with holes.
 fn triangulate_profile(outer: &[Vec2], holes: &[Vec<Vec2>]) -> Vec<[Vec2; 3]> {
-    // Very simple: if no holes, fan triangulation.
-    // If holes, this is complex. For now, if holes exist, we might fail or return empty.
-    // But we need to support holes.
-    // We'll use a simple approach: combine outer and holes into a single polygon with bridges?
-    // Too complex for now.
-    // Let's assume `push_prism_with_holes` can handle elevation holes if we map them?
-    // No.
+    if outer.len() < 3 {
+        return Vec::new();
+    }
 
-    // Fallback: if holes exist, we return empty for now (tests will fail if holes are critical).
-    // But `a_window_cuts_a_hole_in_the_wall` requires holes.
+    // If no holes, simple fan triangulation
+    if holes.is_empty() {
+        let mut tris = Vec::new();
+        for i in 1..outer.len() - 1 {
+            tris.push([outer[0], outer[i], outer[i + 1]]);
+        }
+        return tris;
+    }
 
-    // We need a proper triangulation.
-    // Let's use a simple algorithm:
-    // 1. Triangulate outer polygon (fan).
-    // 2. Subtract holes? No.
+    // If holes exist, we need to merge them into the outer polygon.
+    // We'll use a simple approach: connect each hole to the outer polygon with a bridge.
+    // This creates a single polygon with "slits" that can be fan-triangulated.
 
-    // We'll implement a basic ear clipping for simple polygons with holes by connecting holes to outer.
-    // This is too much code.
+    let mut merged = outer.to_vec();
 
-    // Given the constraints, I will assume the tests might pass with a simplified mesh generation or that `push_prism_with_holes` behaves differently than I think.
-    // But I must make the tests pass.
+    for hole in holes {
+        if hole.len() < 3 {
+            continue;
+        }
 
-    // Let's try to triangulate the outer polygon as a fan, and ignore holes for now, then add hole faces?
-    // No, that creates solid walls.
+        // Find the closest pair of vertices between merged polygon and hole
+        let mut min_dist_sq = f64::MAX;
+        let mut i_idx = 0;
+        let mut j_idx = 0;
 
-    // I will implement a basic triangulation that supports holes by using the `geom` crate if available?
-    // `cadcraft_geom` has `region`.
+        for (i, p1) in merged.iter().enumerate() {
+            for (j, p2) in hole.iter().enumerate() {
+                let dx = p1.x - p2.x;
+                let dy = p1.y - p2.y;
+                let d_sq = dx * dx + dy * dy;
+                if d_sq < min_dist_sq {
+                    min_dist_sq = d_sq;
+                    i_idx = i;
+                    j_idx = j;
+                }
+            }
+        }
 
-    // Let's assume `triangulate_profile` returns empty for now and see if tests fail.
-    // If they fail, I'll need a better triangulation.
+        // Insert hole vertices into merged polygon after i_idx
+        // We insert hole[j_idx], hole[j_idx+1], ..., hole[j_idx-1], hole[j_idx]
+        // And then duplicate hole[j_idx] to create the bridge
 
-    // For now, return empty.
-    if !holes.is_empty() {
-        // Return empty for now to avoid incorrect geometry, but this will fail tests.
-        // However, the previous code returned empty too.
-        // Let's try to implement a simple bridge for rectangular holes in rectangular outer.
-        // This is a hack for the specific test case.
-        if outer.len() == 4 && holes.len() == 1 && holes[0].len() == 4 {
-            let o = &outer;
-            let h = &holes[0];
-            // Outer: (0,0), (L,0), (L,H), (0,H)
-            // Hole: (u0,v0), (u1,v0), (u1,v1), (u0,v1)
-            // Bridge from (0,0) to (u0,v0)
-            // Merged ring: (0,0), (u0,v0), (u1,v0), (u1,v1), (u0,v1), (u0,v0), (0,0), (L,0), (L,H), (0,H)
-            // This is getting messy.
-            // Let's just return empty for now.
-            return Vec::new();
+        let mut new_merged = Vec::new();
+        new_merged.extend_from_slice(&merged[..=i_idx]);
+
+        // Add hole vertices starting from j_idx
+        for k in 0..hole.len() {
+            let idx = (j_idx + k) % hole.len();
+            new_merged.push(hole[idx]);
+        }
+        // Close the hole by repeating the start vertex
+        new_merged.push(hole[j_idx]);
+
+        // Continue with the rest of the merged polygon
+        new_merged.extend_from_slice(&merged[i_idx..]);
+
+        merged = new_merged;
+    }
+
+    // Now triangulate the merged polygon using fan triangulation
+    // Note: Fan triangulation works on convex polygons. For non-convex, it might produce
+    // triangles outside the polygon. A proper ear-clipping algorithm is needed for robustness.
+    // However, for simple rectangular holes in rectangular walls, this might work if we
+    // are careful. But fan triangulation is generally unsafe for non-convex.
+
+    // Let's implement a basic ear clipping for the merged polygon.
+    let mut tris = Vec::new();
+    let mut remaining: Vec<Vec2> = merged;
+
+    // Simple ear clipping
+    while remaining.len() > 3 {
+        let mut ear_found = false;
+        for i in 0..remaining.len() {
+            let prev = (i + remaining.len() - 1) % remaining.len();
+            let next = (i + 1) % remaining.len();
+
+            let a = remaining[prev];
+            let b = remaining[i];
+            let c = remaining[next];
+
+            // Check if ear is convex
+            let cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+            if cross <= 0.0 {
+                continue; // Not convex (assuming CCW)
+            }
+
+            // Check if any other vertex is inside the triangle
+            let mut contains = false;
+            for j in 0..remaining.len() {
+                if j == prev || j == i || j == next {
+                    continue;
+                }
+                let p = remaining[j];
+                if point_in_triangle(p, a, b, c) {
+                    contains = true;
+                    break;
+                }
+            }
+
+            if !contains {
+                tris.push([a, b, c]);
+                remaining.remove(i);
+                ear_found = true;
+                break;
+            }
+        }
+
+        if !ear_found {
+            // Fallback: fan triangulate the rest
+            for i in 1..remaining.len() - 1 {
+                tris.push([remaining[0], remaining[i], remaining[i + 1]]);
+            }
+            break;
         }
     }
 
-    // Fan triangulation for outer
-    let mut tris = Vec::new();
-    if outer.len() < 3 {
-        return tris;
+    if remaining.len() == 3 {
+        tris.push([remaining[0], remaining[1], remaining[2]]);
     }
-    for i in 1..outer.len() - 1 {
-        tris.push([outer[0], outer[i], outer[i + 1]]);
-    }
+
     tris
+}
+
+fn point_in_triangle(p: Vec2, a: Vec2, b: Vec2, c: Vec2) -> bool {
+    let d1 = sign(p, a, b);
+    let d2 = sign(p, b, c);
+    let d3 = sign(p, c, a);
+
+    let has_neg = (d1 < 0.0) || (d2 < 0.0) || (d3 < 0.0);
+    let has_pos = (d1 > 0.0) || (d2 > 0.0) || (d3 > 0.0);
+
+    !(has_neg && has_pos)
+}
+
+fn sign(p1: Vec2, p2: Vec2, p3: Vec2) -> f64 {
+    (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y)
 }
 
 fn point_to_line_dist(p: Vec2, a: Vec2, b: Vec2) -> f64 {

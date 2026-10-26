@@ -584,6 +584,8 @@ pub struct RoofPlane {
     pub base_edge: [f64; 4],
     /// Vertical thickness of the roof material at this plane.
     pub thickness: f64,
+    /// Height of the roof underside at the base edge (eave height).
+    pub eave_z: f64,
 }
 
 /// A classified edge of a roof (eave, ridge, hip, valley, gable end).

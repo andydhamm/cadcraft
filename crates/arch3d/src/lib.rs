@@ -342,14 +342,8 @@ impl Scene3d {
 /// Find a roof clip for a wall.
 fn find_roof_clip(model: &ArchModel, wall: &Wall) -> Option<RoofClip> {
     // Check if any roof plane's base edge lies on the wall's outer face line.
-    // This is a simplified check.
     for roof in &model.roofs {
         for plane in &roof.planes {
-            // Check if plane.base_edge is collinear with wall
-            // We need to check if the base edge line is close to the wall's outer face.
-            // For now, return None as we don't have roof data in tests yet.
-            // But we need to implement it for the tests to pass.
-
             // Calculate wall direction and normal
             let dx = wall.end.x - wall.start.x;
             let dy = wall.end.y - wall.start.y;
