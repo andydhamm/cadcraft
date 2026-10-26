@@ -868,4 +868,150 @@ mod tests {
         assert_eq!(r["id"].as_str().unwrap(), "r0");
         assert_eq!(r["interiorArea"].as_f64().unwrap(), 9.0);
     }
+
+    /// Editing multiple fields at once (name, type, ceiling, floor) applies all
+    /// of them in a single undo step.
+    #[test]
+    fn room_edit_multiple_fields_at_once() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points() })).unwrap();
+        let r = s
+            .execute(
+                "room",
+                &json!({
+                    "id": "r0",
+                    "name": "Master Bedroom",
+                    "type": "bedroom",
+                    "ceiling": 3.2,
+                    "floor": 0.15,
+                }),
+            )
+            .unwrap();
+        let room = &s.doc().unwrap().arch.rooms[0];
+        assert_eq!(room.name, "Master Bedroom");
+        assert_eq!(room.room_type, RoomType::Bedroom);
+        assert_eq!(room.ceiling_height, Some(3.2));
+        assert_eq!(room.floor_height, Some(0.15));
+        assert_eq!(r["name"].as_str().unwrap(), "Master Bedroom");
+        assert_eq!(r["type"].as_str().unwrap(), "bedroom");
+    }
+
+    /// The edit path accepts a plain numeric id (no "r" prefix) and an
+    /// uppercase "R" prefix.
+    #[test]
+    fn room_edit_accepts_numeric_and_uppercase_ids() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points() })).unwrap();
+        // Plain number.
+        let r = s.execute("room", &json!({ "id": 0, "name": "By number" })).unwrap();
+        assert_eq!(r["name"].as_str().unwrap(), "By number");
+        // Uppercase R prefix.
+        let r = s.execute("room", &json!({ "id": "R0", "name": "By uppercase" })).unwrap();
+        assert_eq!(r["name"].as_str().unwrap(), "By uppercase");
+        // String without r prefix.
+        let r = s.execute("room", &json!({ "id": "0", "name": "By string" })).unwrap();
+        assert_eq!(r["name"].as_str().unwrap(), "By string");
+    }
+
+    /// An edit with an id but no other fields is refused as "nothing to change"
+    /// and leaves the model untouched.
+    #[test]
+    fn room_edit_rejects_nothing_to_change() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points() })).unwrap();
+        let r = s.execute("room", &json!({ "id": "r0" }));
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.rooms[0].name, "");
+    }
+
+    /// The edit path validates `floor` the same way as `ceiling`: positive,
+    /// finite, a number.
+    #[test]
+    fn room_edit_rejects_a_bad_floor() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points() })).unwrap();
+        for f in [json!(0.0), json!(-1.0), json!("thick"), json!(true)] {
+            let r = s.execute("room", &json!({ "id": "r0", "floor": f }));
+            assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+            assert_eq!(s.doc().unwrap().arch.rooms[0].floor_height, None);
+        }
+        let r = s.execute("room", &json!({ "id": "r0", "floor": 0.2 })).unwrap();
+        assert_eq!(s.doc().unwrap().arch.rooms[0].floor_height, Some(0.2));
+        assert_eq!(r["interiorArea"].as_f64().unwrap(), 9.0);
+    }
+
+    /// Editing a room's properties does not change its polygon, level, or holes.
+    #[test]
+    fn room_edit_preserves_geometry() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points() })).unwrap();
+        let before_polygon = s.doc().unwrap().arch.rooms[0].polygon.clone();
+        let before_level = s.doc().unwrap().arch.rooms[0].level;
+        let before_holes = s.doc().unwrap().arch.rooms[0].holes.clone();
+        let _ = s
+            .execute(
+                "room",
+                &json!({
+                    "id": "r0",
+                    "name": "Changed",
+                    "type": "kitchen",
+                    "ceiling": 2.8,
+                    "floor": 0.1,
+                }),
+            )
+            .unwrap();
+        let after = &s.doc().unwrap().arch.rooms[0];
+        assert_eq!(after.polygon, before_polygon);
+        assert_eq!(after.level, before_level);
+        assert_eq!(after.holes, before_holes);
+        assert_eq!(after.name, "Changed");
+        assert_eq!(after.room_type, RoomType::Kitchen);
+    }
+
+    /// An empty string is a valid room name on the edit path.
+    #[test]
+    fn room_edit_accepts_empty_name() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points(), "name": "Original" })).unwrap();
+        let r = s.execute("room", &json!({ "id": "r0", "name": "" })).unwrap();
+        assert_eq!(s.doc().unwrap().arch.rooms[0].name, "");
+        assert_eq!(r["name"].as_str().unwrap(), "");
+    }
+
+    /// Non-finite ceiling values (NaN, ±Infinity) are refused on the edit path.
+    #[test]
+    fn room_edit_rejects_non_finite_ceiling() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points() })).unwrap();
+        for c in [json!(f64::NAN), json!(f64::INFINITY), json!(-f64::INFINITY)] {
+            let r = s.execute("room", &json!({ "id": "r0", "ceiling": c }));
+            assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        }
+        assert_eq!(s.doc().unwrap().arch.rooms[0].ceiling_height, None);
+    }
+
+    /// The edit path ignores `level` and `points` (they are create-only fields).
+    #[test]
+    fn room_edit_ignores_level_and_points() {
+        let mut s = new_session();
+        let _ = s.execute("room", &json!({ "points": square_points() })).unwrap();
+        let before_polygon = s.doc().unwrap().arch.rooms[0].polygon.clone();
+        let before_level = s.doc().unwrap().arch.rooms[0].level;
+        let r = s
+            .execute(
+                "room",
+                &json!({
+                    "id": "r0",
+                    "name": "Changed",
+                    "level": "1",
+                    "points": [[0.0, 0.0], [5.0, 0.0], [5.0, 5.0], [0.0, 5.0], [0.0, 0.0]],
+                }),
+            )
+            .unwrap();
+        let after = &s.doc().unwrap().arch.rooms[0];
+        assert_eq!(after.name, "Changed");
+        assert_eq!(after.level, before_level);
+        assert_eq!(after.polygon, before_polygon);
+        assert_eq!(r["name"].as_str().unwrap(), "Changed");
+    }
 }
