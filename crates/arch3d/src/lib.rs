@@ -1396,4 +1396,170 @@ mod tests {
         // To strictly test "rebuilds", we could check if the mesh is present.
         assert!(!partial_roof_meshes.is_empty(), "Roof mesh missing after rebuild");
     }
+
+    #[test]
+    fn empty_roof_with_no_planes_is_not_counted() {
+        use cadcraft_doc::arch::Roof;
+
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.walls.push(Wall {
+            id: ArchId(0),
+            base_level: 0,
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.4,
+            ..Default::default()
+        });
+
+        // Roof with no planes — should produce no meshes and not be counted.
+        let roof = Roof { id: ArchId(100), level: 0, ..Default::default() };
+        model.roofs.push(roof);
+
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.roofs, 0, "empty roof should not be counted");
+        assert!(scene.meshes.iter().all(|m| m.object != ArchId(100)), "no meshes should exist for empty roof");
+    }
+
+    #[test]
+    fn roof_without_eave_wall_reuses_in_incremental_build() {
+        use cadcraft_doc::arch::{Roof, RoofPlane};
+        use std::collections::BTreeSet;
+
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.walls.push(Wall {
+            id: ArchId(0),
+            base_level: 0,
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.4,
+            ..Default::default()
+        });
+
+        let mut roof = Roof::default();
+        roof.id = ArchId(100);
+        roof.level = 0;
+        let mut plane = RoofPlane::default();
+        plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.slope = 0.5;
+        plane.eave_z = 2.4;
+        plane.eave_wall = None; // No eave wall reference
+        roof.planes.push(plane);
+        model.roofs.push(roof);
+
+        let full = Scene3d::build(&model);
+        assert_eq!(full.roofs, 1);
+
+        // Dirty set contains neither the roof nor any eave wall — roof should be reused.
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(0)]);
+        let partial = Scene3d::build_dirty(&model, &dirty, &full);
+        assert_eq!(partial.roofs, 1, "roof should be reused when not dirty");
+
+        // The reused mesh should be identical.
+        let full_roof_meshes: Vec<&Mesh> = full.meshes.iter().filter(|m| m.object == ArchId(100)).collect();
+        let partial_roof_meshes: Vec<&Mesh> = partial.meshes.iter().filter(|m| m.object == ArchId(100)).collect();
+        assert_eq!(full_roof_meshes.len(), partial_roof_meshes.len());
+        for (a, b) in full_roof_meshes.iter().zip(partial_roof_meshes.iter()) {
+            assert_eq!(a.positions, b.positions);
+        }
+    }
+
+    #[test]
+    fn multiple_roofs_on_same_level_are_all_counted() {
+        use cadcraft_doc::arch::{Roof, RoofPlane};
+
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.walls.push(Wall {
+            id: ArchId(0),
+            base_level: 0,
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.4,
+            ..Default::default()
+        });
+
+        // Two separate roofs.
+        let mut roof1 = Roof::default();
+        roof1.id = ArchId(100);
+        roof1.level = 0;
+        let mut plane1 = RoofPlane::default();
+        plane1.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane1.slope = 0.5;
+        plane1.eave_z = 2.4;
+        roof1.planes.push(plane1);
+        model.roofs.push(roof1);
+
+        let mut roof2 = Roof::default();
+        roof2.id = ArchId(101);
+        roof2.level = 0;
+        let mut plane2 = RoofPlane::default();
+        plane2.base_edge = [0.0, 5.0, 10.0, 5.0];
+        plane2.slope = 0.4;
+        plane2.eave_z = 2.4;
+        roof2.planes.push(plane2);
+        model.roofs.push(roof2);
+
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.roofs, 2, "both roofs should be counted");
+    }
+
+    #[test]
+    fn roof_on_level_with_no_walls_uses_level_elevation() {
+        use cadcraft_doc::arch::{Roof, RoofPlane};
+
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 1.5, ceiling_height: 2.4, ..Default::default() });
+        // No walls at all.
+
+        let mut roof = Roof::default();
+        roof.id = ArchId(100);
+        roof.level = 0;
+        let mut plane = RoofPlane::default();
+        plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.slope = 0.5;
+        plane.eave_z = 1.5; // Should be level elevation since no walls
+        roof.planes.push(plane);
+        model.roofs.push(roof);
+
+        let scene = Scene3d::build(&model);
+        // The roof should still be built (eave_z = 1.5 + 0.0 = 1.5).
+        assert_eq!(scene.roofs, 1, "roof should be built even with no walls");
+    }
+
+    #[test]
+    fn zero_slope_roof_produces_meshes() {
+        use cadcraft_doc::arch::{Roof, RoofPlane};
+
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.walls.push(Wall {
+            id: ArchId(0),
+            base_level: 0,
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.4,
+            ..Default::default()
+        });
+
+        let mut roof = Roof::default();
+        roof.id = ArchId(100);
+        roof.level = 0;
+        let mut plane = RoofPlane::default();
+        plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.slope = 0.0; // Flat roof
+        plane.eave_z = 2.4;
+        roof.planes.push(plane);
+        model.roofs.push(roof);
+
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.roofs, 1, "flat roof should be counted");
+        let roof_meshes: Vec<&Mesh> = scene.meshes.iter().filter(|m| m.object == ArchId(100)).collect();
+        assert!(!roof_meshes.is_empty(), "flat roof should produce meshes");
+    }
 }
