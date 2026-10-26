@@ -416,12 +416,12 @@ mod tests {
     #[test]
     fn roofplane_rejects_nan_pitch() {
         let mut s = Session::new();
-        let params = json!({
-            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
-            "base": [[0.0, 0.0], [10.0, 0.0]],
-            "pitchRise": serde_json::Value::from(f64::NAN),
-            "pitchRun": 12.0
-        });
+        let mut params = serde_json::Map::new();
+        params.insert("points".to_string(), json!([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]));
+        params.insert("base".to_string(), json!([[0.0, 0.0], [10.0, 0.0]]));
+        params.insert("pitchRise".to_string(), serde_json::Value::from(f64::NAN));
+        params.insert("pitchRun".to_string(), json!(12.0));
+        let params = serde_json::Value::Object(params);
         let res = run_roofplane(&mut s, &params);
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("finite"));
