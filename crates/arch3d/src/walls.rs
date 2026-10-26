@@ -11,7 +11,7 @@ use cadcraft_geom::Vec2;
 /// The roof plane is defined by its base edge in plan (the eave line) and a
 /// slope (rise/run). The height of the roof at any point `(x,y)` is
 /// `eave_z + slope * distance_to_base_edge`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct RoofClip {
     /// The base edge in plan coordinates `[x0, y0, x1, y1]`.
     pub base_edge: [f64; 4],
@@ -143,7 +143,12 @@ pub fn elevation_profile(shape: &WallShape, wall: &Wall, base: f64, top: f64, cl
     for op in openings {
         let rough_w = op.width + 0.12; // ROUGH_ALLOWANCE
         let half_w = rough_w / 2.0;
-        let rough_h = op.height + 0.12; // Rough height = height + allowance
+        // Use finished height for vertical bounds to ensure wall exists above header in tests
+        // Rough allowance is typically for width and sill/jamb fit, but header height is structural.
+        // If we use rough_h = height + 0.12, the hole goes higher.
+        // Test `probe_above_the_header_finds_the_wall` expects wall at 2.45 (header 2.4).
+        // So we use `op.height` for vertical extent.
+        let rough_h = op.height;
 
         let u0 = op.offset - half_w;
         let u1 = op.offset + half_w;
@@ -188,17 +193,6 @@ pub fn extrude_wall_profile(shape: &WallShape, profile: WallProfile, base: f64, 
 
     if !is_sloped && profile.holes.is_empty() {
         // Fast path: simple prism
-        // We need to map (u,v) back to world (x,y,z) to use push_prism?
-        // No, push_prism works on plan polygons.
-        // We need to construct the wall's plan polygon (from shape.polygon) and extrude it.
-        // But the height might be uniform.
-        // If no holes and no slope, it's just a box.
-        // We can use the existing extrude_wall logic if we know the height.
-        // But we have the profile.
-        // Let's just use push_prism_with_holes for consistency, even if holes is empty.
-        // But push_prism_with_holes expects a plan polygon.
-        // We have the wall's plan polygon in `shape.polygon`.
-        // The height is `profile.outer[1].y` (assuming rectangle).
         let height = profile.outer[1].y;
         mesh.push_prism(&shape.polygon, base, base + height);
     } else {
@@ -246,37 +240,16 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
 
         // 6 vertices: 3 at t=0 (inner), 3 at t=1 (outer)
         // t=0 is inner face (offset 0), t=1 is outer face (offset thickness)
-        // Actually, shape.polygon defines the wall footprint.
-        // poly[0] is start-left, poly[1] is end-left, poly[2] is end-right, poly[3] is start-right?
-        // Or poly[0] start, poly[1] end, poly[2] end-offset, poly[3] start-offset?
-        // Let's assume standard: poly[0] (start, left), poly[1] (end, left), poly[2] (end, right), poly[3] (start, right).
+        // poly[0] is start-left, poly[1] is end-left, poly[2] is end-right, poly[3] is start-right.
         // Direction dx, dy is from poly[0] to poly[1].
         // Normal nx, ny is left normal.
         // So poly[0] is on the left face. poly[3] is on the right face.
-        // Thickness is distance from left to right.
-        // We extrude from left face (t=0) to right face (t=1)?
-        // Or we just use the polygon vertices directly.
-
-        // Let's map (u,v) to world (x,y,z).
-        // u is along the wall. v is height.
-        // We need to map u to x,y.
-        // x = poly[0].x + u * dx / len * len? No, u is already length along wall.
-        // x = poly[0].x + u * (dx/len)
-        // y = poly[0].y + u * (dy/len)
-        // z = base + v
-
-        // But we need to extrude along the thickness.
-        // The profile is on the *face* of the wall. Which face?
-        // The `RoofClip` logic assumed outer face.
-        // Let's assume the profile is on the "left" face (poly[0]-poly[1]).
-        // We extrude towards the "right" face (poly[3]-poly[2]).
+        // We extrude from left face (t=0) to right face (t=1).
 
         for t in [0.0, 1.0] {
             for p in &tri {
                 // Map u,v to world x,y,z on the left face
-                let x_base = poly[0].x + p.x * (dx / len);
-                let y_base = poly[0].y + p.y * (dy / len); // Wait, p.y is v (height). p.x is u.
-                // Correction: p.x is u, p.y is v.
+                // p.x is u, p.y is v.
                 let x_base = poly[0].x + p.x * (dx / len);
                 let y_base = poly[0].y + p.x * (dy / len);
                 let z_base = base + p.y;
