@@ -57,7 +57,6 @@ fn house_with_loop() -> (ArchModel, cadcraft_arch3d::Scene3d) {
         model.push_room(r);
     }
     refresh_areas(&mut model);
-    model.touch_arch();
 
     let scene = build(&model);
     (model, scene)
