@@ -9,7 +9,9 @@ use cadcraft_arch::symbol::opening_symbol;
 use cadcraft_arch::wall::{wall_layer_polygons, wall_polygon};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::Handle;
-use cadcraft_doc::arch::{OpeningKind, RoomType, room_handle, room_label};
+use cadcraft_doc::arch::{
+    OpeningKind, Roof, RoofEdge, RoofEdgeKind, RoofPlane, RoomType, roof_handle, roof_label, room_handle, room_label, wall_label,
+};
 use cadcraft_geom::Vec2;
 use serde_json::json;
 use serde_json::{Map as JsonMap, Value};
@@ -45,6 +47,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     let symbols_flag = p.get("symbols").and_then(Value::as_bool).unwrap_or(false);
     let rooms_flag = p.get("rooms").and_then(Value::as_bool).unwrap_or(false);
     let labels_flag = p.get("labels").and_then(Value::as_bool).unwrap_or(false);
+    let roofs_flag = p.get("roofs").and_then(Value::as_bool).unwrap_or(false);
 
     let shapes = solve_joins(&d.arch);
     let mut solved: std::collections::BTreeMap<ArchId, &Vec<cadcraft_geom::Vec2>> = std::collections::BTreeMap::new();
@@ -195,7 +198,71 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
         out.insert("rooms".to_string(), Value::Array(room_objects));
     }
 
+    // Roof objects. Read-only: no `doc_mut`, no `touch_arch`.
+    let mut roof_objects = Vec::new();
+    if roofs_flag {
+        for r in &d.arch.roofs {
+            let mut obj = JsonMap::new();
+            obj.insert("id".to_string(), json!(roof_label(r.id)));
+            obj.insert("handle".to_string(), json!(roof_handle(r.id).hex().to_lowercase()));
+            obj.insert("level".to_string(), json!(r.level));
+            obj.insert("pitchRise".to_string(), json!(r.pitch_rise));
+            obj.insert("pitchRun".to_string(), json!(r.pitch_run));
+            obj.insert("slope".to_string(), json!(r.slope()));
+            obj.insert("overhang".to_string(), json!(r.overhang));
+            obj.insert("thickness".to_string(), json!(r.thickness));
+            obj.insert("fascia".to_string(), json!(r.fascia));
+            obj.insert("soffit".to_string(), json!(r.soffit));
+            obj.insert("manual".to_string(), json!(r.manual));
+            obj.insert("handEdited".to_string(), json!(r.hand_edited));
+            obj.insert("projectedArea".to_string(), json!(r.projected_area()));
+
+            let mut planes_json = Vec::new();
+            for (idx, plane) in r.planes.iter().enumerate() {
+                let mut p_obj = JsonMap::new();
+                p_obj.insert("index".to_string(), json!(idx));
+                p_obj.insert("ring".to_string(), json_points(&plane.ring));
+                p_obj.insert("slope".to_string(), json!(plane.slope));
+                p_obj.insert("projectedArea".to_string(), json!(plane.projected_area));
+
+                let eave_wall_str = plane.eave_wall.map(|wid| wall_label(wid));
+                p_obj.insert("eaveWall".to_string(), json!(eave_wall_str));
+
+                p_obj.insert("baseEdge".to_string(), json!([plane.base_edge[0].x, plane.base_edge[0].y, plane.base_edge[1].x, plane.base_edge[1].y]));
+
+                planes_json.push(Value::Object(p_obj));
+            }
+            obj.insert("planes".to_string(), Value::Array(planes_json));
+
+            let mut edges_json = Vec::new();
+            for edge in &r.edges {
+                let mut e_obj = JsonMap::new();
+                e_obj.insert("kind".to_string(), json!(roof_edge_kind_key(edge.kind)));
+                e_obj.insert("a".to_string(), json!([edge.a.x, edge.a.y]));
+                e_obj.insert("b".to_string(), json!([edge.b.x, edge.b.y]));
+                e_obj.insert("za".to_string(), json!(edge.za));
+                e_obj.insert("zb".to_string(), json!(edge.zb));
+                edges_json.push(Value::Object(e_obj));
+            }
+            obj.insert("edges".to_string(), Value::Array(edges_json));
+
+            roof_objects.push(Value::Object(obj));
+        }
+        out.insert("roofs".to_string(), Value::Array(roof_objects));
+    }
+
     Ok(Value::Object(out))
+}
+
+/// Camel-case key for a roof edge kind.
+fn roof_edge_kind_key(k: RoofEdgeKind) -> &'static str {
+    match k {
+        RoofEdgeKind::Ridge => "ridge",
+        RoofEdgeKind::Hip => "hip",
+        RoofEdgeKind::Valley => "valley",
+        RoofEdgeKind::Eave => "eave",
+        RoofEdgeKind::GableEnd => "gableEnd",
+    }
 }
 
 /// Camel-case key for a room type (`OpenBelow` -> `openBelow`), used for the
@@ -899,5 +966,148 @@ mod tests {
         let h1 = rooms[1]["handle"].as_str().expect("handle 1 missing");
         assert_eq!(h0, "a0010000", "room 0 handle must be a0010000, got {h0}");
         assert_eq!(h1, "a0010001", "room 1 handle must be a0010001, got {h1}");
+    }
+
+    #[test]
+    fn inspect_roofs_reports_planes_and_edges() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                // Add a simple roof with one plane and one edge
+                let roof = Roof {
+                    id: cadcraft_doc::arch::RoofId(0),
+                    level: 0,
+                    pitch_rise: 6.0,
+                    pitch_run: 12.0,
+                    overhang: 0.5,
+                    thickness: 0.1,
+                    fascia: 0.2,
+                    soffit: 0.1,
+                    manual: false,
+                    hand_edited: false,
+                    planes: vec![RoofPlane {
+                        ring: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+                        slope: 0.5,
+                        projected_area: 80.0,
+                        eave_wall: Some(cadcraft_doc::ArchId(1)),
+                        base_edge: [Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)],
+                    }],
+                    edges: vec![RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(0.0, 4.0), b: Vec2::new(10.0, 4.0), za: 4.0, zb: 4.0 }],
+                };
+                d.arch.roofs.push(roof);
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "roofs": true }));
+        let roofs = v["roofs"].as_array().expect("roofs array missing");
+        assert_eq!(roofs.len(), 1, "expected one roof");
+        let r = &roofs[0];
+        assert_eq!(r["id"].as_str().unwrap(), "r0");
+        assert!(r["handle"].is_string());
+        assert_eq!(r["level"].as_i64().unwrap(), 0);
+        assert_eq!(r["pitchRise"].as_f64().unwrap(), 6.0);
+        assert_eq!(r["pitchRun"].as_f64().unwrap(), 12.0);
+        assert!(r["slope"].is_number());
+        assert_eq!(r["overhang"].as_f64().unwrap(), 0.5);
+        assert_eq!(r["thickness"].as_f64().unwrap(), 0.1);
+        assert_eq!(r["fascia"].as_f64().unwrap(), 0.2);
+        assert_eq!(r["soffit"].as_f64().unwrap(), 0.1);
+        assert_eq!(r["manual"].as_bool().unwrap(), false);
+        assert_eq!(r["handEdited"].as_bool().unwrap(), false);
+        assert!(r["projectedArea"].is_number());
+
+        let planes = r["planes"].as_array().expect("planes array missing");
+        assert_eq!(planes.len(), 1);
+        let p = &planes[0];
+        assert_eq!(p["index"].as_i64().unwrap(), 0);
+        assert!(p["ring"].is_array());
+        assert!(p["slope"].is_number());
+        assert!(p["projectedArea"].is_number());
+        assert_eq!(p["eaveWall"].as_str().unwrap(), "w1");
+        assert!(p["baseEdge"].is_array());
+
+        let edges = r["edges"].as_array().expect("edges array missing");
+        assert_eq!(edges.len(), 1);
+        let e = &edges[0];
+        assert_eq!(e["kind"].as_str().unwrap(), "ridge");
+        assert!(e["a"].is_array());
+        assert!(e["b"].is_array());
+        assert!(e["za"].is_number());
+        assert!(e["zb"].is_number());
+    }
+
+    #[test]
+    fn inspect_roofs_absent_when_not_requested() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                let roof = Roof {
+                    id: cadcraft_doc::arch::RoofId(0),
+                    level: 0,
+                    pitch_rise: 6.0,
+                    pitch_run: 12.0,
+                    overhang: 0.5,
+                    thickness: 0.1,
+                    fascia: 0.2,
+                    soffit: 0.1,
+                    manual: false,
+                    hand_edited: false,
+                    planes: vec![],
+                    edges: vec![],
+                };
+                d.arch.roofs.push(roof);
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({}));
+        assert!(v["roofs"].is_null(), "roofs key should be absent when not requested");
+    }
+
+    #[test]
+    fn inspect_roof_edge_kinds_are_lowercase() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                let roof = Roof {
+                    id: cadcraft_doc::arch::RoofId(0),
+                    level: 0,
+                    pitch_rise: 6.0,
+                    pitch_run: 12.0,
+                    overhang: 0.5,
+                    thickness: 0.1,
+                    fascia: 0.2,
+                    soffit: 0.1,
+                    manual: false,
+                    hand_edited: false,
+                    planes: vec![],
+                    edges: vec![
+                        RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0 },
+                        RoofEdge { kind: RoofEdgeKind::Hip, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0 },
+                        RoofEdge { kind: RoofEdgeKind::Valley, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0 },
+                        RoofEdge { kind: RoofEdgeKind::Eave, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0 },
+                        RoofEdge { kind: RoofEdgeKind::GableEnd, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0 },
+                    ],
+                };
+                d.arch.roofs.push(roof);
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "roofs": true }));
+        let roofs = v["roofs"].as_array().expect("roofs array missing");
+        let edges = roofs[0]["edges"].as_array().expect("edges array missing");
+
+        let kinds: Vec<&str> = edges.iter().map(|e| e["kind"].as_str().unwrap()).collect();
+        assert!(kinds.contains(&"ridge"));
+        assert!(kinds.contains(&"hip"));
+        assert!(kinds.contains(&"valley"));
+        assert!(kinds.contains(&"eave"));
+        assert!(kinds.contains(&"gableEnd"));
+
+        for k in kinds {
+            assert!(k.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "edge kind must be lowercase: {k}");
+        }
     }
 }
