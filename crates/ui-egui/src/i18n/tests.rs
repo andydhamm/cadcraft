@@ -260,6 +260,44 @@ fn translations_cover_commands_menus_tools_and_snap_labels() {
 }
 
 #[test]
+fn uk_roof_translations_exist_and_are_correct() {
+    with_language("uk", || {
+        assert_eq!(t("Roof"), "Дах");
+        assert_eq!(t("Roof Automatic"), "Автоматичний дах");
+        assert_eq!(t("Roof Plane"), "Площина даху");
+        assert_eq!(t("Automatic"), "Автоматичний");
+        assert_eq!(t("Plane"), "Площина");
+    });
+}
+
+#[test]
+fn uk_roof_translations_are_not_english_fallbacks() {
+    with_language("uk", || {
+        // If a translation is missing, t() returns the English source.
+        // Verify these are actually translated (different from source).
+        assert_ne!(t("Roof"), "Roof");
+        assert_ne!(t("Roof Automatic"), "Roof Automatic");
+        assert_ne!(t("Roof Plane"), "Roof Plane");
+        assert_ne!(t("Automatic"), "Automatic");
+        assert_ne!(t("Plane"), "Plane");
+    });
+}
+
+#[test]
+fn uk_roof_translations_use_correct_cyrillic() {
+    with_language("uk", || {
+        // Verify translations contain Cyrillic characters, not Latin.
+        for (source, expected) in [("Roof", "Дах"), ("Roof Automatic", "Автоматичний дах"), ("Roof Plane", "Площина даху")]
+        {
+            let translated = t(source);
+            assert_eq!(translated, expected, "{source}");
+            // All characters should be non-ASCII (Cyrillic) or spaces
+            assert!(translated.chars().all(|c| c == ' ' || !c.is_ascii()), "{source}: {translated}");
+        }
+    });
+}
+
+#[test]
 fn the_wcs_pill_draws_its_arrow_instead_of_a_glyph_a_font_may_lack() {
     // #1541: "WCS ⌄" showed a box where the UI font had no "⌄"; the chevron is now drawn as
     // lines, so no catalog and no language paints the glyph.
