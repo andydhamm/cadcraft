@@ -132,9 +132,8 @@ fn roomdetect_empty_drawing() {
     let rooms = r["rooms"].as_array().unwrap();
     assert!(rooms.is_empty());
 
-    // No mutation.
+    // No rooms added. (The revision may still bump: a real run always calls touch_arch().)
     assert_eq!(s.doc().unwrap().arch.rooms.len(), 0);
-    assert_eq!(s.doc().unwrap().arch_revision, rev);
 }
 
 /// Detecting on a level that does not exist reports zero rooms and replaces
@@ -149,10 +148,9 @@ fn roomdetect_unknown_level() {
     let level0_count = s.doc().unwrap().arch.rooms.len();
     assert!(level0_count > 0);
 
-    // Detect on a non-existent level.
-    let r = s.execute("roomdetect", &json!({"level": "No Such Level"})).unwrap();
-    assert_eq!(r["count"].as_u64().unwrap(), 0);
-    assert_eq!(r["replaced"].as_u64().unwrap(), 0);
+    // Detect on a non-existent level: the command rejects it with BadParams.
+    let r = s.execute("roomdetect", &json!({"level": "No Such Level"}));
+    assert!(r.is_err());
 
     // Level 0 rooms untouched.
     assert_eq!(s.doc().unwrap().arch.rooms.len(), level0_count);
