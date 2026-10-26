@@ -206,3 +206,34 @@ fn south_room_slab_has_the_loop_hole() {
     let inner_cap = cap_area(inner_mesh[0], 0.0);
     assert!((inner_cap - 0.81).abs() < 1e-3, "inner slab top cap area = {}, expected 0.81", inner_cap);
 }
+
+/// The loop hole in the south room's slab must result in two distinct floor slabs
+/// with different owners: the inner room and the surrounding south room.
+#[test]
+fn slab_hole_gives_two_room_slabs() {
+    let (_model, scene) = house_with_loop();
+
+    // Probe inside the loop's hole (3.0, 1.5) at floor level.
+    // This should hit the inner room's own floor slab.
+    let inner = scene.probe(Vec3::new(3.0, 1.5, -0.15));
+    let inner = inner.expect("probe(3.0, 1.5, -0.15) returned None (expected inner room floor)");
+    assert_eq!(inner.part, "floor", "inner probe part = `{}` (expected `floor`)", inner.part);
+    assert!(inner.id.starts_with('r'), "inner probe id `{}` is not a room label", inner.id);
+
+    // Probe in the south room, outside the loop (1.0, 1.0) at floor level.
+    // This should hit the south room's floor slab.
+    let south = scene.probe(Vec3::new(1.0, 1.0, -0.15));
+    let south = south.expect("probe(1.0, 1.0, -0.15) returned None (expected south room floor)");
+    assert_eq!(south.part, "floor", "south probe part = `{}` (expected `floor`)", south.part);
+    assert!(south.id.starts_with('r'), "south probe id `{}` is not a room label", south.id);
+
+    // The inner room and the south room must be different objects.
+    assert_ne!(inner.id, south.id, "the inner and surrounding room slabs must have different owners, both reported {}", inner.id);
+
+    // Probe inside the loop's hole (3.0, 1.5) near the ceiling.
+    // The inner room has a ceiling; the south room's ceiling has a hole here.
+    let ceil = scene.probe(Vec3::new(3.0, 1.5, 2.39));
+    let ceil = ceil.expect("probe(3.0, 1.5, 2.39) returned None (expected inner room ceiling)");
+    assert_eq!(ceil.part, "ceiling", "ceiling probe part = `{}` (expected `ceiling`)", ceil.part);
+    assert_eq!(ceil.id, inner.id, "ceiling probe id `{}` should match inner room id `{}`", ceil.id, inner.id);
+}
