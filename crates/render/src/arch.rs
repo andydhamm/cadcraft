@@ -651,4 +651,112 @@ mod tests {
         assert!(list.prims.iter().all(|p| p.handle != handle), "eave edges were drawn as roof linework");
         assert_eq!(list.prims.iter().filter(|p| p.handle == handle).count(), 0, "no prim may be emitted for eave edges");
     }
+
+    /// Edges with NaN or infinite endpoints are skipped entirely, not drawn as degenerate prims.
+    #[test]
+    fn roof_edges_with_nan_endpoints_are_skipped() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_roof(Roof {
+            edges: vec![
+                RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(0.0, 0.0), b: Vec2::new(10.0, 0.0), ..RoofEdge::default() },
+                RoofEdge { kind: RoofEdgeKind::Hip, a: Vec2::new(f64::NAN, 0.0), b: Vec2::new(10.0, 8.0), ..RoofEdge::default() },
+                RoofEdge { kind: RoofEdgeKind::Valley, a: Vec2::new(10.0, 0.0), b: Vec2::new(f64::INFINITY, 8.0), ..RoofEdge::default() },
+            ],
+            ..Roof::default()
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = roof_handle(rid);
+        let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert_eq!(roof_prims.len(), 1, "only the finite ridge edge should draw, got {}", roof_prims.len());
+    }
+
+    /// Multiple roofs each produce prims tagged with their own distinct proxy handle.
+    #[test]
+    fn multiple_roofs_get_distinct_handles() {
+        let mut d = Drawing::new_metric();
+        let rid0 = d.arch.push_roof(Roof {
+            edges: vec![RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(0.0, 0.0), b: Vec2::new(10.0, 0.0), ..RoofEdge::default() }],
+            ..Roof::default()
+        });
+        let rid1 = d.arch.push_roof(Roof {
+            edges: vec![RoofEdge { kind: RoofEdgeKind::Hip, a: Vec2::new(0.0, 10.0), b: Vec2::new(10.0, 10.0), ..RoofEdge::default() }],
+            ..Roof::default()
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let h0 = roof_handle(rid0);
+        let h1 = roof_handle(rid1);
+        let prims0: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == h0).collect();
+        let prims1: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == h1).collect();
+        assert_eq!(prims0.len(), 1, "roof 0 should have 1 prim");
+        assert_eq!(prims1.len(), 1, "roof 1 should have 1 prim");
+        assert_ne!(h0, h1, "roof handles must be distinct");
+    }
+
+    /// A zero-length roof edge (a == b) is drawn as a 2-point polyline at that location.
+    #[test]
+    fn zero_length_roof_edge_is_drawn() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_roof(Roof {
+            edges: vec![RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(5.0, 5.0), b: Vec2::new(5.0, 5.0), ..RoofEdge::default() }],
+            ..Roof::default()
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = roof_handle(rid);
+        let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert_eq!(roof_prims.len(), 1, "zero-length edge should still draw");
+        let prim = &roof_prims[0];
+        assert_eq!(prim.kind, Kind::Polyline);
+        assert_eq!(prim.len, 2);
+        let pts = list.points(prim);
+        assert_eq!(pts.len(), 2);
+        assert!((pts[0].x - 5.0).abs() < 1e-9 && (pts[0].y - 5.0).abs() < 1e-9);
+        assert!((pts[1].x - 5.0).abs() < 1e-9 && (pts[1].y - 5.0).abs() < 1e-9);
+    }
+
+    /// Multiple collinear roof edges each draw as separate prims (no automatic merging).
+    #[test]
+    fn collinear_roof_edges_each_draw_separately() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_roof(Roof {
+            edges: vec![
+                RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(0.0, 0.0), b: Vec2::new(5.0, 0.0), ..RoofEdge::default() },
+                RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(5.0, 0.0), b: Vec2::new(10.0, 0.0), ..RoofEdge::default() },
+            ],
+            ..Roof::default()
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = roof_handle(rid);
+        let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert_eq!(roof_prims.len(), 2, "two collinear edges should produce two prims");
+    }
+
+    /// Roof edges with very large coordinates render without overflow or precision loss.
+    #[test]
+    fn roof_edges_with_huge_coordinates() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_roof(Roof {
+            edges: vec![RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(1e12, 1e12), b: Vec2::new(2e12, 2e12), ..RoofEdge::default() }],
+            ..Roof::default()
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = roof_handle(rid);
+        let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert_eq!(roof_prims.len(), 1, "huge-coordinate edge should draw");
+        let prim = &roof_prims[0];
+        let pts = list.points(prim);
+        assert!((pts[0].x - 1e12).abs() < 1.0, "x0 precision: {}", pts[0].x);
+        assert!((pts[0].y - 1e12).abs() < 1.0, "y0 precision: {}", pts[0].y);
+        assert!((pts[1].x - 2e12).abs() < 1.0, "x1 precision: {}", pts[1].x);
+        assert!((pts[1].y - 2e12).abs() < 1.0, "y1 precision: {}", pts[1].y);
+    }
 }
