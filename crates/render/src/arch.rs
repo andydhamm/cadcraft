@@ -843,4 +843,65 @@ mod tests {
             assert!((got.x - exp.x).abs() < 1e-9 && (got.y - exp.y).abs() < 1e-9, "vertex mismatch");
         }
     }
+
+    /// A room with an empty name uses the fallback label "r{id}".
+    #[test]
+    fn room_with_empty_name_uses_fallback_label() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "".into(),
+            ..Room::default()
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = room_handle(rid);
+        let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(!label_prims.is_empty(), "no label prims for room with empty name");
+    }
+
+    /// Room label prims use the A-ROOM layer's colour when it exists.
+    #[test]
+    fn room_label_uses_a_room_layer_colour() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Living".into(),
+            ..Room::default()
+        });
+        if let Some(l) = d.layer_mut("A-ROOM") {
+            l.color = Color::True(Rgb::from_u32(0x00ffff));
+        }
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = room_handle(ArchId(0));
+        let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(!label_prims.is_empty(), "no label prims");
+        for p in &label_prims {
+            assert_eq!(p.color, Rgb::from_u32(0x00ffff), "label not on A-ROOM colour");
+            assert!(!p.aci7, "A-ROOM is a true colour, not aci7");
+        }
+    }
+
+    /// When the A-ROOM layer does not exist, room label prims fall back to Color::Index(7) (aci7).
+    #[test]
+    fn room_label_falls_back_to_index_7_when_layer_missing() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Living".into(),
+            ..Room::default()
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = room_handle(ArchId(0));
+        let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(!label_prims.is_empty(), "no label prims");
+        for p in &label_prims {
+            assert!(p.aci7, "label should use aci7 when A-ROOM layer is missing");
+        }
+    }
 }

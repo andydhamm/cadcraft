@@ -1173,4 +1173,34 @@ mod tests {
         let polys = proxy_roof_polylines(&m);
         assert_eq!(polys.len(), cadcraft_doc::arch::MAX_ROOF_EDGES, "edge count should be capped at MAX_ROOF_EDGES");
     }
+
+    /// A room with a Unicode name (Cyrillic + emoji) survives a DXF round trip.
+    #[test]
+    fn room_with_unicode_name_round_trips() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Спальня \u{1F6CF}\u{FE0F}".into(),
+            ..Room::default()
+        });
+        d.ensure_layer("A-ROOM");
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.rooms.len(), 1, "room lost on DXF round trip");
+        let got = &back.arch.rooms[0];
+        assert_eq!(got.id, rid, "room id changed on round trip");
+        assert_eq!(got.name, "Спальня \u{1F6CF}\u{FE0F}", "room name changed on round trip");
+    }
+
+    /// A version-2 payload (which predates rooms) parses with an empty rooms vector.
+    #[test]
+    fn v2_payload_parses_with_empty_rooms() {
+        let mut m = one_wall_model();
+        let json = serde_json::json!({ "version": 2, "model": m }).to_string();
+        let text = crate::dxf_ext::json_chunks(&json).join("");
+        let parsed = parse_arch(&text).expect("a version-2 payload must still parse");
+        assert_eq!(parsed.walls.len(), 1);
+        assert!(parsed.rooms.is_empty(), "a v2 file predates rooms");
+    }
 }
