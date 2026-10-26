@@ -624,3 +624,95 @@ fn roof_edge_types_are_reexported() {
     assert_eq!(back.za, 4.45);
     assert_eq!(back.zb, 4.45);
 }
+
+/// All five RoofEdgeKind variants survive a serde round-trip through the re-exported type.
+#[test]
+fn roof_edge_all_kinds_roundtrip() {
+    let kinds =
+        [crate::RoofEdgeKind::Eave, crate::RoofEdgeKind::Ridge, crate::RoofEdgeKind::Hip, crate::RoofEdgeKind::Valley, crate::RoofEdgeKind::GableEnd];
+    for kind in kinds {
+        let e = crate::RoofEdge {
+            kind,
+            a: cadcraft_geom::Vec2::new(0.0, 0.0),
+            b: cadcraft_geom::Vec2::new(2.0, 3.0),
+            za: 1.5,
+            zb: 2.5,
+            ..Default::default()
+        };
+        let s = serde_json::to_string(&e).unwrap();
+        let back: crate::RoofEdge = serde_json::from_str(&s).unwrap();
+        assert_eq!(back.kind, kind, "kind round-trip failed");
+        assert_eq!(back.a, e.a);
+        assert_eq!(back.b, e.b);
+        assert_eq!(back.za, e.za);
+        assert_eq!(back.zb, e.zb);
+    }
+}
+
+/// A degenerate zero-length roof edge (a == b) serializes and round-trips correctly.
+#[test]
+fn roof_edge_zero_length_roundtrips() {
+    let pt = cadcraft_geom::Vec2::new(5.0, 5.0);
+    let e = crate::RoofEdge { kind: crate::RoofEdgeKind::Ridge, a: pt, b: pt, za: 3.0, zb: 3.0, ..Default::default() };
+    let s = serde_json::to_string(&e).unwrap();
+    let back: crate::RoofEdge = serde_json::from_str(&s).unwrap();
+    assert_eq!(back.a, pt);
+    assert_eq!(back.b, pt);
+    assert_eq!(back.za, 3.0);
+    assert_eq!(back.zb, 3.0);
+}
+
+/// Roof edges with huge coordinate values and NaN heights survive a round-trip.
+#[test]
+fn roof_edge_huge_and_nan_values_roundtrip() {
+    let huge = crate::RoofEdge {
+        kind: crate::RoofEdgeKind::Eave,
+        a: cadcraft_geom::Vec2::new(1e15, -1e15),
+        b: cadcraft_geom::Vec2::new(-1e15, 1e15),
+        za: 1e12,
+        zb: -1e12,
+        ..Default::default()
+    };
+    let s = serde_json::to_string(&huge).unwrap();
+    let back: crate::RoofEdge = serde_json::from_str(&s).unwrap();
+    assert_eq!(back.a, huge.a);
+    assert_eq!(back.b, huge.b);
+    assert_eq!(back.za, huge.za);
+    assert_eq!(back.zb, huge.zb);
+
+    let nan = crate::RoofEdge {
+        kind: crate::RoofEdgeKind::Hip,
+        a: cadcraft_geom::Vec2::new(f64::NAN, 1.0),
+        b: cadcraft_geom::Vec2::new(2.0, f64::NAN),
+        za: f64::NAN,
+        zb: f64::NAN,
+        ..Default::default()
+    };
+    let s = serde_json::to_string(&nan).unwrap();
+    let back: crate::RoofEdge = serde_json::from_str(&s).unwrap();
+    assert!(back.a.x.is_nan());
+    assert!(back.a.y == 1.0);
+    assert!(back.b.x == 2.0);
+    assert!(back.b.y.is_nan());
+    assert!(back.za.is_nan());
+    assert!(back.zb.is_nan());
+}
+
+/// A sloped roof edge (za != zb) preserves its height difference through a round-trip.
+#[test]
+fn roof_edge_sloped_heights_roundtrip() {
+    let e = crate::RoofEdge {
+        kind: crate::RoofEdgeKind::Valley,
+        a: cadcraft_geom::Vec2::new(0.0, 0.0),
+        b: cadcraft_geom::Vec2::new(10.0, 0.0),
+        za: 2.4,
+        zb: 4.45,
+        ..Default::default()
+    };
+    let s = serde_json::to_string(&e).unwrap();
+    let back: crate::RoofEdge = serde_json::from_str(&s).unwrap();
+    assert_eq!(back.za, 2.4);
+    assert_eq!(back.zb, 4.45);
+    // The height difference is preserved exactly.
+    assert_eq!(back.zb - back.za, e.zb - e.za);
+}
