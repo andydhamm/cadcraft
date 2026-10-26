@@ -331,39 +331,6 @@ mod tests {
         assert_ne!(p0["id"], p1["id"], "the loop interior and the south room must own different floor slabs: {probe:?}");
     }
 
-    /// Regression (acceptance check 05 phase-3 block b3): a closed interior loop
-    /// must yield its own room and its own floor slab, distinct from the surrounding
-    /// south room's floor slab.
-    ///
-    /// Setup: 10×8 exterior, a horizontal split at y=3, a vertical split at x=6
-    /// (south room = 0..10 × 0..3), plus a 1×1 closed loop at (2.5..3.5, 1..2).
-    /// After `roomdetect` + `build3d`, two probe points — one inside the loop
-    /// interior, one in the open south room — must each hit a floor slab but must
-    /// hit *different* slabs (different `id` values).
-    #[test]
-    fn loop_room_slabs_have_distinct_owners() {
-        let mut s = Session::new();
-        // Phase-1 house: closed 10x8 exterior (0.2) plus two interior walls (0.1).
-        s.execute(
-            "wall",
-            &json!({"points": [[0.0,0.0],[10.0,0.0],[10.0,8.0],[0.0,8.0],[0.0,0.0]], "thickness": 0.2, "height": 2.7, "exterior": true}),
-        )
-        .unwrap();
-        s.execute("wall", &json!({"points": [[0.0,3.0],[10.0,3.0]], "thickness": 0.1})).unwrap();
-        s.execute("wall", &json!({"points": [[6.0,3.0],[6.0,8.0]], "thickness": 0.1})).unwrap();
-        // A closed 0.1 m loop inside the south room (centre lines 2.5..3.5 x 1.0..2.0).
-        s.execute("wall", &json!({"points": [[2.5,1.0],[3.5,1.0],[3.5,2.0],[2.5,2.0],[2.5,1.0]], "thickness": 0.1})).unwrap();
-        s.execute("roomdetect", &json!({})).unwrap();
-        let r = s.execute("build3d", &json!({"probe": [[3.0,1.5,-0.15],[1.0,1.0,-0.15]]})).unwrap();
-        let probe = r["probe"].as_array().expect("probe array");
-        assert_eq!(probe.len(), 2);
-        let p0 = &probe[0];
-        let p1 = &probe[1];
-        assert!(p0.is_object() && p0["part"] == "floor", "inner-room probe should hit a floor: {p0:?}");
-        assert!(p1.is_object() && p1["part"] == "floor", "south-room probe should hit a floor: {p1:?}");
-        assert_ne!(p0["id"], p1["id"], "the loop interior and the south room must own different floor slabs: {probe:?}");
-    }
-
     /// A probe at the boundary of a hole in a floor slab must return the floor
     /// slab of the room containing the hole, not null or the hole's owner.
     /// This verifies that `probe_mesh` correctly handles points on the edge of
