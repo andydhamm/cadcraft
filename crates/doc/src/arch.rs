@@ -1079,6 +1079,58 @@ impl ArchModel {
             messages.push(format!("duplicate room id {}", id));
         }
 
+        if self.roofs.len() > MAX_ROOFS {
+            messages.push(format!("model has {} roofs, max {MAX_ROOFS}", self.roofs.len()));
+        }
+
+        for r in &self.roofs {
+            let id = format!("{}", r.id);
+
+            if !r.pitch_rise.is_finite() || !r.pitch_run.is_finite() || !r.overhang.is_finite() || !r.thickness.is_finite() {
+                messages.push(format!("{}: non-finite numeric value", id));
+                continue;
+            }
+
+            if r.pitch_run <= 0.0 {
+                messages.push(format!("{}: pitch run {} must be positive", id, r.pitch_run));
+            }
+
+            if r.planes.len() > MAX_ROOF_PLANES {
+                messages.push(format!("{}: {} planes, max {MAX_ROOF_PLANES}", id, r.planes.len()));
+            }
+
+            if r.edges.len() > MAX_ROOF_EDGES {
+                messages.push(format!("{}: {} edges, max {MAX_ROOF_EDGES}", id, r.edges.len()));
+            }
+
+            for (i, p) in r.planes.iter().enumerate() {
+                if !p.slope.is_finite() || !p.projected_area.is_finite() || !p.thickness.is_finite() {
+                    messages.push(format!("{}: plane {} has non-finite value", id, i));
+                }
+            }
+
+            for (i, e) in r.edges.iter().enumerate() {
+                if !e.a.is_finite() || !e.b.is_finite() || !e.za.is_finite() || !e.zb.is_finite() {
+                    messages.push(format!("{}: edge {} has non-finite value", id, i));
+                }
+            }
+        }
+
+        let mut seen_roof = std::collections::HashSet::new();
+        let mut dupe_roofs = Vec::new();
+        for r in &self.roofs {
+            if seen_roof.contains(&r.id) {
+                if !dupe_roofs.contains(&r.id) {
+                    dupe_roofs.push(r.id);
+                }
+            } else {
+                seen_roof.insert(r.id);
+            }
+        }
+        for id in &dupe_roofs {
+            messages.push(format!("duplicate roof id {}", id));
+        }
+
         messages
     }
 }
@@ -1664,5 +1716,100 @@ mod tests {
             thickness: 0.25,
         });
         assert!((r.projected_area() - 17.8).abs() < 1e-9);
+    }
+
+    #[test]
+    fn roof_slope_handles_degenerate_inputs() {
+        let r = Roof { pitch_rise: f64::NAN, pitch_run: 12.0, ..Roof::default() };
+        assert!((r.slope() - 0.5).abs() < 1e-12);
+
+        let r2 = Roof { pitch_rise: 6.0, pitch_run: 0.0, ..Roof::default() };
+        assert!((r2.slope() - 0.5).abs() < 1e-12);
+
+        let r3 = Roof { pitch_rise: 6.0, pitch_run: -12.0, ..Roof::default() };
+        assert!((r3.slope() - 0.5).abs() < 1e-12);
+
+        let r4 = Roof { pitch_rise: f64::INFINITY, pitch_run: 12.0, ..Roof::default() };
+        assert!((r4.slope() - 0.5).abs() < 1e-12);
+
+        let r5 = Roof { pitch_rise: 8.0, pitch_run: 12.0, ..Roof::default() };
+        assert!((r5.slope() - 2.0 / 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn roof_projected_area_ignores_non_finite() {
+        let mut r = Roof::default();
+        r.planes.push(RoofPlane { ring: Vec::new(), slope: 0.5, projected_area: 10.0, eave_wall: None, base_edge: [0.0; 4], thickness: 0.25 });
+        r.planes.push(RoofPlane { ring: Vec::new(), slope: 0.5, projected_area: f64::NAN, eave_wall: None, base_edge: [0.0; 4], thickness: 0.25 });
+        r.planes.push(RoofPlane {
+            ring: Vec::new(),
+            slope: 0.5,
+            projected_area: f64::INFINITY,
+            eave_wall: None,
+            base_edge: [0.0; 4],
+            thickness: 0.25,
+        });
+        assert!((r.projected_area() - 10.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn roof_handle_range_boundaries() {
+        let base = ARCH_HANDLE_BASE + ROOF_HANDLE_OFFSET;
+        assert!(is_roof_handle(Handle(base)));
+        assert!(is_roof_handle(Handle(base + 32767)));
+        assert!(!is_roof_handle(Handle(base + 32768)));
+        assert!(!is_roof_handle(Handle(base - 1)));
+    }
+
+    #[test]
+    fn validate_rejects_too_many_roofs() {
+        let mut m = ArchModel::default();
+        for _ in 0..MAX_ROOFS + 1 {
+            m.push_roof(Roof::default());
+        }
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("max") && m.contains("roofs")));
+    }
+
+    #[test]
+    fn validate_flags_duplicate_roof_ids() {
+        let mut m = ArchModel::default();
+        m.push_roof(Roof::default());
+        m.push_roof(Roof::default());
+        m.roofs[1].id = m.roofs[0].id;
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("duplicate roof id")));
+    }
+
+    #[test]
+    fn validate_rejects_non_finite_roof_fields() {
+        let mut m = ArchModel::default();
+        m.push_roof(Roof { pitch_rise: f64::NAN, ..Roof::default() });
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("non-finite")));
+    }
+
+    #[test]
+    fn roof_json_roundtrips() {
+        let mut r = Roof::default();
+        r.id = ArchId(5);
+        r.planes.push(RoofPlane {
+            ring: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+            slope: 0.5,
+            projected_area: 80.0,
+            eave_wall: Some(ArchId(2)),
+            base_edge: [0.0, 0.0, 10.0, 0.0],
+            thickness: 0.25,
+        });
+        r.edges.push(RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(4.0, 4.0), b: Vec2::new(6.0, 4.0), za: 4.45, zb: 4.45 });
+        let json = serde_json::to_string(&r).unwrap();
+        let back: Roof = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, ArchId(5));
+        assert_eq!(back.planes.len(), 1);
+        assert_eq!(back.planes[0].projected_area, 80.0);
+        assert_eq!(back.planes[0].eave_wall, Some(ArchId(2)));
+        assert_eq!(back.edges.len(), 1);
+        assert_eq!(back.edges[0].kind, RoofEdgeKind::Ridge);
+        assert!((back.edges[0].za - 4.45).abs() < 1e-12);
     }
 }
