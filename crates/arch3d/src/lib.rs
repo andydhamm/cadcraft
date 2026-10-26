@@ -348,9 +348,51 @@ fn find_roof_clip(model: &ArchModel, wall: &Wall) -> Option<RoofClip> {
             // Check if plane.base_edge is collinear with wall
             // We need to check if the base edge line is close to the wall's outer face.
             // For now, return None as we don't have roof data in tests yet.
+            // But we need to implement it for the tests to pass.
+
+            // Calculate wall direction and normal
+            let dx = wall.end.x - wall.start.x;
+            let dy = wall.end.y - wall.start.y;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < 1e-9 {
+                continue;
+            }
+            let dir = Vec2::new(dx / len, dy / len);
+            let normal = Vec2::new(-dir.y, dir.x);
+
+            // Wall outer face is offset by thickness/2 along normal
+            let half_thick = wall.thickness / 2.0;
+            let face_start = Vec2::new(wall.start.x + normal.x * half_thick, wall.start.y + normal.y * half_thick);
+            let face_end = Vec2::new(wall.end.x + normal.x * half_thick, wall.end.y + normal.y * half_thick);
+
+            // Check if plane.base_edge is collinear with face_start-face_end
+            let p0 = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
+            let p1 = Vec2::new(plane.base_edge[2], plane.base_edge[3]);
+
+            // Check distance from p0 and p1 to the line defined by face_start-face_end
+            let dist0 = point_to_line_dist(p0, face_start, face_end);
+            let dist1 = point_to_line_dist(p1, face_start, face_end);
+
+            if dist0 < 1e-6 && dist1 < 1e-6 {
+                return Some(RoofClip { base_edge: plane.base_edge, slope: plane.slope, eave_z: plane.eave_z });
+            }
         }
     }
     None
+}
+
+fn point_to_line_dist(p: Vec2, a: Vec2, b: Vec2) -> f64 {
+    let dx = b.x - a.x;
+    let dy = b.y - a.y;
+    let len_sq = dx * dx + dy * dy;
+    if len_sq < 1e-12 {
+        return ((p.x - a.x) * (p.x - a.x) + (p.y - a.y) * (p.y - a.y)).sqrt();
+    }
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq;
+    let t = t.clamp(0.0, 1.0);
+    let proj_x = a.x + t * dx;
+    let proj_y = a.y + t * dy;
+    ((p.x - proj_x) * (p.x - proj_x) + (p.y - proj_y) * (p.y - proj_y)).sqrt()
 }
 
 /// Build the full 3D scene from an arch model.
