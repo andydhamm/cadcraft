@@ -197,6 +197,56 @@ fn collinear_contiguous(first: &mut FootprintEdge, second: &FootprintEdge) -> bo
     ab.cross(cd).abs() < 1e-9
 }
 
+/// Outset the footprint ring uniformly by `overhang` (outward) and re-attribute each
+/// new edge to the nearest original footprint edge, keeping its wall attribution.
+///
+/// A non-finite or negative `overhang` returns [`RoofError::Degenerate`; a zero
+/// `overhang` returns a clone of the input unchanged. A failed outset, a ring with
+/// fewer than three points, a non-finite point, or a self-crossing ring maps to the
+/// corresponding [`RoofError`] (never a partial footprint).
+pub fn outset_footprint(fp: &Footprint, overhang: f64) -> Result<Footprint, RoofError> {
+    if overhang < 0.0 || !overhang.is_finite() {
+        return Err(RoofError::Degenerate);
+    }
+    if overhang == 0.0 {
+        return Ok(fp.clone());
+    }
+    let region = match cadcraft_geom::outset(&fp.outer, &[], overhang) {
+        Ok(region) => region,
+        Err(_) => return Err(RoofError::Skeleton),
+    };
+    let outer = region.outer;
+    if outer.len() < 3 {
+        return Err(RoofError::Degenerate);
+    }
+    for p in &outer {
+        if !p.is_finite() {
+            return Err(RoofError::Degenerate);
+        }
+    }
+    if !crate::poly::is_simple(&outer) {
+        return Err(RoofError::BadFootprint);
+    }
+    let outer = crate::poly::ensure_ccw(&outer);
+    let n = outer.len();
+    let mut edges: Vec<FootprintEdge> = Vec::with_capacity(n);
+    for i in 0..n {
+        let a = outer[i];
+        let b = outer[(i + 1) % n];
+        let mid = Vec2::new((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
+        let (mut best_j, mut best_d) = (0usize, f64::INFINITY);
+        for (j, fe) in fp.edges.iter().enumerate() {
+            let d = crate::poly::point_segment_dist(mid, fe.a, fe.b);
+            if d < best_d {
+                best_d = d;
+                best_j = j;
+            }
+        }
+        edges.push(FootprintEdge { wall: fp.edges[best_j].wall, a, b });
+    }
+    Ok(Footprint { outer, edges })
+}
+
 /// One slope per `fp.edges`.
 ///
 /// A `RoofDirective::Gable` wall yields a vertical face (`f64::INFINITY`). Otherwise
@@ -280,6 +330,10 @@ pub struct RoofGeom {
 
 /// Build the roof geometry for `level` from `model` and the seed `roof`.
 ///
+/// A positive `roof.overhang` outsets the outer footprint before building the
+/// skeleton, so the planes cover the eave line plus the overhang; each plane is
+/// still attributed to the wall it sits over.
+///
 /// Returns [`RoofError::NoWalls`] when there are no exterior walls on the level,
 /// [`RoofError::BadFootprint`] when the footprint cannot be built,
 /// [`RoofError::Skeleton`] when the skeleton fails its build or invariant checks, and
@@ -293,6 +347,10 @@ pub fn roof_geometry(model: &ArchModel, level: u32, roof: &Roof) -> Result<RoofG
             }
             return Err(RoofError::BadFootprint);
         }
+    };
+    let fp = match outset_footprint(&fp, roof.overhang.max(0.0)) {
+        Ok(fp) => fp,
+        Err(e) => return Err(e),
     };
 
     let slopes = wall_slopes(model, level, &fp, roof);
@@ -675,6 +733,71 @@ mod tests {
         let roof = build_roof(&model, 0, &test_roof()).unwrap();
         let sum = projected_area_sum(&roof);
         assert!((sum - 83.64).abs() < 1e-6, "projected area sum {} != 83.64 (10.2 x 8.2)", sum);
+    }
+
+    #[test]
+    fn overhang_projected_area_is_103_04() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        let roof = build_roof(&model, 0, &Roof { overhang: 0.5, thickness: 0.0, ..Roof::default() }).unwrap();
+        assert!(
+            (projected_area_sum(&roof) - 103.04).abs() < 1e-6,
+            "overhang projected area sum {} != 103.04 (11.2 x 9.2)",
+            projected_area_sum(&roof),
+        );
+    }
+
+    #[test]
+    fn overhang_grows_the_footprint_not_the_apex() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        let no_oh = build_roof(&model, 0, &Roof { overhang: 0.0, thickness: 0.0, ..Roof::default() }).unwrap();
+        let oh = build_roof(&model, 0, &Roof { overhang: 0.5, thickness: 0.0, ..Roof::default() }).unwrap();
+        // Overhang grows the eaves but not the plane count.
+        assert_eq!(no_oh.planes.len(), oh.planes.len(), "overhang must not change the plane count");
+        assert_eq!(no_oh.planes.len(), 4, "hip roof should keep 4 planes with overhang");
+        // The apex lies inside the wall line; the overhang only grows the eaves.
+        assert!((roof_apex_z(&no_oh) - 4.45).abs() < 1e-6, "no-overhang apex {} != 4.45", roof_apex_z(&no_oh));
+        assert!((roof_apex_z(&oh) - 4.45).abs() < 1e-6, "overhang apex {} != 4.45", roof_apex_z(&oh));
+        assert!(
+            projected_area_sum(&oh) > projected_area_sum(&no_oh),
+            "overhang must grow the footprint: {} <= {}",
+            projected_area_sum(&oh),
+            projected_area_sum(&no_oh),
+        );
+    }
+
+    #[test]
+    fn outset_edges_are_attributed_to_the_nearest_wall() {
+        let mut model = ArchModel::default();
+        rectangular_house(&mut model);
+        let fp = outer_footprint(&model, 0).unwrap();
+        let outset = outset_footprint(&fp, 0.5).unwrap();
+        assert_eq!(outset.outer.len(), outset.edges.len(), "each outset edge must be a point pair");
+        assert_eq!(outset.edges.len(), fp.edges.len(), "a rectangular outset must keep one edge per wall");
+        // Every attribute is a real wall on the level.
+        for e in &outset.edges {
+            assert!(model.wall(e.wall).is_some(), "outset edge attributed to an unknown wall {:?}", e.wall);
+        }
+        // The outset ring preserves order; each side is nearest to its own footprint side,
+        // so per-index the attribution equals the footprint's (the "nearest" rule).
+        for (i, e) in outset.edges.iter().enumerate() {
+            assert_eq!(e.wall, fp.edges[i].wall, "outset edge {i} attributed to wall {:?}, expected {:?} (nearest rule)", e.wall, fp.edges[i].wall,);
+        }
+    }
+
+    #[test]
+    fn zero_overhang_is_unchanged() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        let fp = outer_footprint(&model, 0).unwrap();
+        assert_eq!(outset_footprint(&fp, 0.0).unwrap(), fp, "zero overhang must return the footprint unchanged");
+        let no_oh = build_roof(&model, 0, &Roof { overhang: 0.0, thickness: 0.0, ..Roof::default() }).unwrap();
+        assert!(
+            (projected_area_sum(&no_oh) - 83.64).abs() < 1e-6,
+            "zero-overhang projected area sum {} != 83.64 (10.2 x 8.2)",
+            projected_area_sum(&no_oh),
+        );
     }
 
     #[test]
