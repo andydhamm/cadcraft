@@ -188,6 +188,9 @@ pub fn roof_plane_mesh(plane: &RoofPlane, eave_z: f64, material: &str, id: ArchI
 /// The fascia is a vertical band at the eave edge (base edge), with width `plane.thickness`
 /// and depth `depth`.
 pub fn fascia_mesh(plane: &RoofPlane, eave_z: f64, depth: f64, id: ArchId) -> Option<Mesh> {
+    if plane.ring.len() < 3 {
+        return None;
+    }
     if !depth.is_finite() || depth <= 0.0 {
         return None;
     }
@@ -306,6 +309,9 @@ pub fn fascia_mesh(plane: &RoofPlane, eave_z: f64, depth: f64, id: ArchId) -> Op
 /// The soffit is a flat horizontal band from the eave edge back to the wall.
 /// It is 0.02 thick.
 pub fn soffit_mesh(plane: &RoofPlane, eave_z: f64, id: ArchId) -> Option<Mesh> {
+    if plane.ring.len() < 3 {
+        return None;
+    }
     let thickness = 0.02;
 
     let p0 = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
@@ -576,8 +582,8 @@ mod tests {
         let mesh = roof_plane_mesh(&plane, eave_z, "roof", ArchId(1)).unwrap();
 
         // With zero slope, all bottom vertices should be at eave_z.
-        for p in &mesh.positions {
-            // Bottom ring vertices are the first n_verts
+        let n_verts = plane.ring.len();
+        for p in mesh.positions.iter().take(n_verts) {
             if (p[0] - 0.0).abs() < 1e-4 && (p[1] - 0.0).abs() < 1e-4 {
                 assert!((p[2] - eave_z as f32).abs() < 1e-4, "bottom vertex at ({},{}) should be at eave_z", p[0], p[1]);
             }
