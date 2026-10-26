@@ -267,3 +267,59 @@ fn slab_hole_gives_two_room_slabs() {
     // but we check it hits a ceiling.
     assert!(ceil.id.starts_with('r'), "ceiling probe id `{}` is not a room label", ceil.id);
 }
+
+/// The ceiling at the loop location belongs to the inner room, not the south room.
+#[test]
+fn slab_hole_ceiling_belongs_to_inner_room() {
+    let (_model, scene) = house_with_loop();
+
+    // Probe the ceiling inside the loop (inner room's ceiling).
+    let inner_ceil = scene.probe(Vec3::new(3.0, 1.5, 2.39));
+    let inner_ceil = inner_ceil.expect("probe(3.0, 1.5, 2.39) returned None (expected inner room ceiling)");
+    assert_eq!(inner_ceil.part, "ceiling", "inner ceiling probe part = `{}` (expected `ceiling`)", inner_ceil.part);
+    assert!(inner_ceil.id.starts_with('r'), "inner ceiling probe id `{}` is not a room label", inner_ceil.id);
+
+    // Probe the ceiling outside the loop (south room's ceiling).
+    let south_ceil = scene.probe(Vec3::new(1.0, 1.0, 2.39));
+    let south_ceil = south_ceil.expect("probe(1.0, 1.0, 2.39) returned None (expected south room ceiling)");
+    assert_eq!(south_ceil.part, "ceiling", "south ceiling probe part = `{}` (expected `ceiling`)", south_ceil.part);
+    assert!(south_ceil.id.starts_with('r'), "south ceiling probe id `{}` is not a room label", south_ceil.id);
+
+    // The two ceilings must belong to different rooms.
+    assert_ne!(inner_ceil.id, south_ceil.id, "the inner and surrounding room ceilings must have different owners, both reported {}", inner_ceil.id);
+}
+
+/// Probing outside the house in the x-y plane returns None.
+#[test]
+fn probe_outside_house_returns_none() {
+    let (_model, scene) = house_with_loop();
+
+    // Far outside the house in all four corners.
+    assert!(scene.probe(Vec3::new(100.0, 100.0, 0.0)).is_none(), "probe(100, 100, 0) should be None");
+    assert!(scene.probe(Vec3::new(-100.0, -100.0, 0.0)).is_none(), "probe(-100, -100, 0) should be None");
+    assert!(scene.probe(Vec3::new(100.0, -100.0, 0.0)).is_none(), "probe(100, -100, 0) should be None");
+    assert!(scene.probe(Vec3::new(-100.0, 100.0, 0.0)).is_none(), "probe(-100, 100, 0) should be None");
+}
+
+/// Probing far above or below the house returns None.
+#[test]
+fn probe_far_above_and_below_returns_none() {
+    let (_model, scene) = house_with_loop();
+
+    // Far above the house.
+    assert!(scene.probe(Vec3::new(5.0, 4.0, 100.0)).is_none(), "probe(5, 4, 100) should be None");
+    // Far below the house.
+    assert!(scene.probe(Vec3::new(5.0, 4.0, -100.0)).is_none(), "probe(5, 4, -100) should be None");
+}
+
+/// Probing at the exact floor surface (z=0.0) returns a floor hit.
+#[test]
+fn probe_at_floor_surface_returns_floor() {
+    let (_model, scene) = house_with_loop();
+
+    // Probe at the exact top of the floor slab (z=0.0).
+    let hit = scene.probe(Vec3::new(3.0, 1.5, 0.0));
+    let hit = hit.expect("probe(3.0, 1.5, 0.0) returned None (expected floor hit at surface)");
+    assert_eq!(hit.part, "floor", "floor surface probe part = `{}` (expected `floor`)", hit.part);
+    assert!(hit.id.starts_with('r'), "floor surface probe id `{}` is not a room label", hit.id);
+}
