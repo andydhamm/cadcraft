@@ -1,19 +1,16 @@
 //! The `roofauto` command: generate automatic roofs from walls.
 
-use cadcraft_arch::roof::{RoofError, build_roof};
-use cadcraft_doc::arch::{ArchId, Roof};
-use cadcraft_engine::cmd::{bad, f64_or, str_param};
-use cadcraft_engine::{EngineError, Result, Session};
+use crate::cmd::{CommandSpec, bad, f64_or, str_param};
+use crate::{EngineError, Result, Session};
+use cadcraft_arch::roof::{build_roof, top_level};
+use cadcraft_doc::arch::{ArchId, Roof, RoofDirective};
 use serde_json::{Value, json};
 
 /// Command specs for the roofauto module.
-pub fn specs() -> Vec<cadcraft_engine::cmd::CommandSpec> {
-    vec![
-        cadcraft_engine::cmd::CommandSpec::new("roofauto", "Roof Automatic", run_roofauto)
-            .menu(&["Architecture", "Roof", "Automatic"])
-            .alias(&["ra"])
-            .params("{pitchRise?, pitchRun?, overhang?, thickness?, fascia?, soffit?, level?, walls?: [{wall, directive, pitch?, overhang?, eaveHeight?}]}"),
-    ]
+pub fn specs() -> Vec<CommandSpec> {
+    vec![CommandSpec::new("roofauto", "Roof Automatic", run_roofauto).menu(&["Architecture", "Roof", "Automatic"]).alias(&["ra"]).params(
+        "{pitchRise?, pitchRun?, overhang?, thickness?, fascia?, soffit?, level?, walls?: [{wall, directive, pitch?, overhang?, eaveHeight?}]}",
+    )]
 }
 
 /// Run the `roofauto` command from JSON parameters.
@@ -45,6 +42,7 @@ fn run_roofauto(s: &mut Session, p: &Value) -> Result<Value> {
     let level_name = str_param(p, "level").map(|s| s.to_string());
 
     // Parse per-wall directives
+    // (wall_id, directive, pitch, overhang, eave_height)
     let mut directives = Vec::new();
     if let Some(walls_val) = p.get("walls") {
         if let Some(arr) = walls_val.as_array() {
@@ -60,10 +58,10 @@ fn run_roofauto(s: &mut Session, p: &Value) -> Result<Value> {
 
                 let directive_str = w.get("directive").and_then(Value::as_str).unwrap_or("auto");
                 let directive = match directive_str {
-                    "auto" => cadcraft_arch::roof::RoofDirective::Auto,
-                    "hip" => cadcraft_arch::roof::RoofDirective::Hip,
-                    "gable" => cadcraft_arch::roof::RoofDirective::Gable,
-                    "valley" => cadcraft_arch::roof::RoofDirective::Valley,
+                    "auto" => RoofDirective::Auto,
+                    "hip" => RoofDirective::Hip,
+                    "gable" => RoofDirective::Gable,
+                    "valley" => RoofDirective::Valley,
                     _ => return Err(bad(cmd, format!("unknown directive `{directive_str}`"))),
                 };
 
@@ -71,13 +69,7 @@ fn run_roofauto(s: &mut Session, p: &Value) -> Result<Value> {
                 let w_overhang = w.get("overhang").and_then(Value::as_f64).filter(|v| v.is_finite());
                 let w_eave = w.get("eaveHeight").and_then(Value::as_f64).filter(|v| v.is_finite());
 
-                directives.push(cadcraft_arch::roof::WallRoofDirective {
-                    wall: wall_id,
-                    directive,
-                    pitch: w_pitch,
-                    overhang: w_overhang,
-                    eave_height: w_eave,
-                });
+                directives.push((wall_id, directive, w_pitch, w_overhang, w_eave));
             }
         }
     }
@@ -86,24 +78,24 @@ fn run_roofauto(s: &mut Session, p: &Value) -> Result<Value> {
     let target_level = if let Some(name) = level_name {
         s.doc()?.arch.levels.iter().position(|l| l.name == name).map(|i| i as u32).ok_or_else(|| bad(cmd, format!("level `{name}` not found")))?
     } else {
-        cadcraft_arch::roof::top_level(&s.doc()?.arch)?
+        top_level(&s.doc()?.arch)?
     };
 
     // Build roof on a copy of the model to validate
     let mut model = s.doc()?.arch.clone();
 
     // Apply directives to walls in the model copy
-    for dir in &directives {
-        if let Some(wall) = model.walls.iter_mut().find(|w| w.id == dir.wall) {
-            wall.roof_directive = dir.directive;
-            if let Some(p) = dir.pitch {
-                wall.roof_pitch = Some(p);
+    for (wall_id, directive, w_pitch, w_overhang, w_eave) in &directives {
+        if let Some(wall) = model.walls.iter_mut().find(|w| w.id == *wall_id) {
+            wall.roof_directive = *directive;
+            if let Some(p) = w_pitch {
+                wall.roof_pitch = Some(*p);
             }
-            if let Some(o) = dir.overhang {
-                wall.roof_overhang = Some(o);
+            if let Some(o) = w_overhang {
+                wall.roof_overhang = Some(*o);
             }
-            if let Some(e) = dir.eave_height {
-                wall.eave_height = Some(e);
+            if let Some(e) = w_eave {
+                wall.eave_height = Some(*e);
             }
         }
     }
@@ -172,7 +164,6 @@ fn run_roofauto(s: &mut Session, p: &Value) -> Result<Value> {
 mod tests {
     use super::*;
     use cadcraft_doc::arch::Level;
-    use cadcraft_engine::Session;
     use serde_json::json;
 
     fn new_session_with_level() -> Session {
