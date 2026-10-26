@@ -89,4 +89,46 @@ mod tests {
         let ok = Light { dir: [0.0, 0.0, 1.0], ambient: 0.7 };
         assert_eq!(ok.normalized().ambient, 0.7);
     }
+
+    #[test]
+    fn light_new_constructor() {
+        let l = Light::new([1.0, 2.0, 3.0], 0.5);
+        assert_eq!(l.dir, [1.0, 2.0, 3.0]);
+        assert_eq!(l.ambient, 0.5);
+    }
+
+    #[test]
+    fn light_normalized_mixed_finite_nan() {
+        let l = Light { dir: [f32::NAN, 1.0, 0.0], ambient: 0.5 };
+        let n = l.normalized();
+        assert_eq!(n.dir, [0.0, 1.0, 0.0]);
+
+        let l2 = Light { dir: [0.0, f32::INFINITY, 1.0], ambient: 0.5 };
+        let n2 = l2.normalized();
+        let len = (n2.dir[0] * n2.dir[0] + n2.dir[1] * n2.dir[1] + n2.dir[2] * n2.dir[2]).sqrt();
+        assert!((len - 1.0).abs() < 1e-6);
+        assert_eq!(n2.dir[0], 0.0);
+    }
+
+    #[test]
+    fn light_normalized_extreme_values() {
+        let big = Light { dir: [1e30, 0.0, 0.0], ambient: 0.5 };
+        let n = big.normalized();
+        assert!((n.dir[0] - 1.0).abs() < 1e-6);
+        assert_eq!(n.dir[1], 0.0);
+        assert_eq!(n.dir[2], 0.0);
+
+        let small = Light { dir: [1e-30, 0.0, 0.0], ambient: 0.5 };
+        let n2 = small.normalized();
+        assert!((n2.dir[0] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn light_ambient_boundary_values() {
+        let zero = Light { dir: [0.0, 0.0, 1.0], ambient: 0.0 };
+        assert_eq!(zero.normalized().ambient, 0.0);
+
+        let one = Light { dir: [0.0, 0.0, 1.0], ambient: 1.0 };
+        assert_eq!(one.normalized().ambient, 1.0);
+    }
 }
