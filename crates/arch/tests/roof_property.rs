@@ -139,9 +139,10 @@ fn interior_roof_edges_are_shared_by_two_planes() {
         // interior_edge_pairs returns Vec<((usize, usize), (usize, usize))> where the first tuple is (face1, face2)
         // and the second is (node_a, node_b) or similar.
         // We verify that for each pair, the faces are valid indices.
+        let num_faces = geom.skel.faces.len();
         for ((f1, f2), _) in pairs {
-            assert!(f1 < geom.planes.len(), "Face index out of bounds");
-            assert!(f2 < geom.planes.len(), "Face index out of bounds");
+            assert!(f1 < num_faces, "Face index out of bounds");
+            assert!(f2 < num_faces, "Face index out of bounds");
             assert_ne!(f1, f2, "Face pair should be distinct");
         }
     }
@@ -366,10 +367,8 @@ fn random_wall_rings_never_panic() {
                     assert!(p.is_finite(), "Non-finite vertex in plane ring");
                 }
             }
-        }
 
-        // Also call roof_edges to ensure it doesn't panic
-        if let Ok(built) = res {
+            // Also call roof_edges to ensure it doesn't panic
             let _ = roof_edges(&model, 0, &built);
             let geom = roof_geometry(&model, 0, &built);
             if let Ok(g) = geom {
