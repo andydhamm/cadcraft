@@ -350,7 +350,7 @@ mod tests {
         // Reference: open south room floor slab id.
         let ref_r = s.execute("build3d", &json!({"probe": [[1.0,1.0,-0.15]]})).unwrap();
         let ref_probe = ref_r["probe"].as_array().expect("probe array");
-        let south_id = &ref_probe[0]["id"];
+        let south_id = ref_probe[0]["id"].clone();
 
         // Points just outside the loop wall's outer faces (0.05 m clearance).
         let r = s.execute("build3d", &json!({"probe": [[2.40,1.5,-0.15],[3.60,1.5,-0.15],[3.0,0.90,-0.15],[3.0,2.10,-0.15]]})).unwrap();
