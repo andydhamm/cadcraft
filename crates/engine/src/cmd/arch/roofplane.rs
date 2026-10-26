@@ -106,9 +106,9 @@ fn create_roof_plane(
     }
 
     let base_edge = [base.0.x, base.0.y, base.1.x, base.1.y];
-    let plane = RoofPlane { ring, slope, projected_area, base_edge, thickness, eave_wall: None, overhang: 0.0, eave_z: 0.0 };
+    let plane = RoofPlane { ring, slope, projected_area, base_edge, thickness, ..Default::default() };
 
-    let edge = RoofEdge { kind: RoofEdgeKind::Eave, a: base.0, b: base.1, za: 0.0, zb: 0.0 };
+    let edge = RoofEdge { kind: RoofEdgeKind::Eave, a: base.0, b: base.1, ..Default::default() };
 
     let mut doc = s.doc_mut()?;
     let arch = &mut doc.arch;
@@ -120,7 +120,6 @@ fn create_roof_plane(
         level: level.unwrap_or(0) as u32,
         pitch_rise,
         pitch_run,
-        overhang: 0.0,
         thickness,
         fascia: fascia > 0.0,
         soffit: soffit > 0.0,
@@ -128,6 +127,7 @@ fn create_roof_plane(
         hand_edited: true,
         planes: vec![plane],
         edges: vec![edge],
+        ..Default::default()
     };
 
     arch.roofs.push(roof);
