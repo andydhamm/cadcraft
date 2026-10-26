@@ -358,6 +358,11 @@ pub fn roof_geometry(model: &ArchModel, level: u32, roof: &Roof) -> Result<RoofG
 
     let slopes = wall_slopes(model, level, &fp, roof);
 
+    // If every edge is a gable end (infinite slope) there are no roof planes.
+    if slopes.iter().all(|s| s.is_infinite()) {
+        return Err(RoofError::Degenerate);
+    }
+
     // roof_skeleton divides by slope to get weight; a 0.0 slope gives infinite weight
     // which the skeleton cannot handle. Use a tiny slope instead, then restore 0.0.
     let skel_slopes: Vec<f64> = slopes.iter().map(|s| if *s == 0.0 { 1e-6 } else { *s }).collect();
@@ -1043,7 +1048,10 @@ mod tests {
     fn roof_with_level_elevation_includes_it_in_eave_z() {
         let mut model = ArchModel::default();
         house_10_8(&mut model);
-        model.levels.push(Level { index: 0, name: "Ground".into(), elevation: 2.7, ..Level::default() });
+        // Update the existing level 0's elevation rather than pushing a duplicate.
+        if let Some(l) = model.levels.iter_mut().find(|l| l.index == 0) {
+            l.elevation = 2.7;
+        }
         let roof = build_roof(&model, 0, &test_roof()).unwrap();
         for plane in &roof.planes {
             assert!((plane.eave_z - 5.1).abs() < 1e-9, "eave_z {} != 5.1 (2.7 + 2.4)", plane.eave_z);
