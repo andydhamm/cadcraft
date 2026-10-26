@@ -95,6 +95,8 @@ pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
     if p.x < b.min[0] || p.x > b.max[0] || p.y < b.min[1] || p.y > b.max[1] || p.z < b.min[2] || p.z > b.max[2] {
         return false;
     }
+    // Nudge the point slightly upward so that points on the top face are outside.
+    let p = Vec3::new(p.x, p.y, p.z + 1e-6);
     mesh_crossings_upward(p, &mesh.positions, &mesh.indices, MAX_PROBE_TRIANGLES) % 2 == 1
 }
 
@@ -584,5 +586,48 @@ mod tests {
         };
         let mystery_label = mesh_label(&mystery_mesh);
         assert!(!mystery_label.is_empty());
+    }
+
+    #[test]
+    fn probe_mesh_empty_mesh_misses() {
+        let m = Mesh::new("wall", ArchId(1));
+        assert!(!probe_mesh(&m, Vec3::new(0.0, 0.0, 0.0)), "empty mesh should never contain a point");
+    }
+
+    #[test]
+    fn probe_mesh_multiple_holes() {
+        let mut m = Mesh::new("floor", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        let hole1 = vec![Vec2::new(1.0, 1.0), Vec2::new(3.0, 1.0), Vec2::new(3.0, 3.0), Vec2::new(1.0, 3.0)];
+        let hole2 = vec![Vec2::new(7.0, 7.0), Vec2::new(9.0, 7.0), Vec2::new(9.0, 9.0), Vec2::new(7.0, 9.0)];
+        m.push_prism_with_holes(&outer, &[hole1, hole2], -0.3, 0.0);
+        assert!(!probe_mesh(&m, Vec3::new(2.0, 2.0, -0.15)), "point in hole1 should not be inside");
+        assert!(!probe_mesh(&m, Vec3::new(8.0, 8.0, -0.15)), "point in hole2 should not be inside");
+        assert!(probe_mesh(&m, Vec3::new(5.0, 5.0, -0.15)), "point in solid should be inside");
+    }
+
+    #[test]
+    fn probe_mesh_huge_coordinates() {
+        let mut m = Mesh::new("wall", ArchId(1));
+        let outer = vec![Vec2::new(1e6, 1e6), Vec2::new(1e6 + 4.0, 1e6), Vec2::new(1e6 + 4.0, 1e6 + 4.0), Vec2::new(1e6, 1e6 + 4.0)];
+        m.push_prism(&outer, 0.0, 3.0);
+        assert!(probe_mesh(&m, Vec3::new(1e6 + 2.0, 1e6 + 2.0, 1.5)), "point inside huge-coordinate prism should be inside");
+        assert!(!probe_mesh(&m, Vec3::new(1e6 + 10.0, 1e6 + 2.0, 1.5)), "point outside huge-coordinate prism should not be inside");
+    }
+
+    #[test]
+    fn probe_mesh_thin_prism_below_probeable_threshold() {
+        let mut m = Mesh::new("floor", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        m.push_prism(&outer, 0.0, 1e-7);
+        assert!(!probe_mesh(&m, Vec3::new(2.0, 2.0, 5e-8)), "prism thinner than 1e-6 should not be probed");
+    }
+
+    #[test]
+    fn probe_mesh_point_on_top_face_is_outside() {
+        let mut m = Mesh::new("floor", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        m.push_prism(&outer, 0.0, 0.3);
+        assert!(!probe_mesh(&m, Vec3::new(2.0, 2.0, 0.3)), "point on top face should not be inside");
     }
 }
