@@ -256,4 +256,78 @@ mod tests {
             assert!(standard > 0.0, "dry-run standardArea should be > 0, got {}", standard);
         }
     }
+
+    /// Temporary diagnostic: prints rooms + holes + floor-mesh vertex counts.
+    #[test]
+    fn diag_loop_rooms_and_holes() {
+        let mut s = Session::new();
+        s.execute(
+            "wall",
+            &json!({"points": [[0.0,0.0],[10.0,0.0],[10.0,8.0],[0.0,8.0],[0.0,0.0]], "thickness": 0.2, "height": 2.7, "exterior": true}),
+        )
+        .unwrap();
+        s.execute("wall", &json!({"points": [[0.0,3.0],[10.0,3.0]], "thickness": 0.1})).unwrap();
+        s.execute("wall", &json!({"points": [[6.0,3.0],[6.0,8.0]], "thickness": 0.1})).unwrap();
+        s.execute("wall", &json!({"points": [[2.5,1.0],[3.5,1.0],[3.5,2.0],[2.5,2.0],[2.5,1.0]], "thickness": 0.1})).unwrap();
+        s.execute("roomdetect", &json!({})).unwrap();
+        let d = s.doc().unwrap();
+        eprintln!("rooms after roomdetect: {}", d.arch.rooms.len());
+        for r in &d.arch.rooms {
+            eprintln!("  room {:?} area={:.3} holes={} poly_verts={}", r.id, r.interior_area, r.holes.len(), r.polygon.len());
+            eprintln!("    polygon: {:?}", r.polygon.iter().map(|p| (format!("{:.3}", p.x), format!("{:.3}", p.y))).collect::<Vec<_>>());
+            for (i, h) in r.holes.iter().enumerate() {
+                eprintln!("    hole[{}]: {:?}", i, h.iter().map(|p| (format!("{:.3}", p.x), format!("{:.3}", p.y))).collect::<Vec<_>>());
+            }
+        }
+        // Build 3D and inspect floor mesh for room 0
+        let scene = cadcraft_arch3d::build(&d.arch);
+        for mesh in &scene.meshes {
+            if mesh.material == "floor" {
+                let in_loop = cadcraft_arch3d::probe::probe_mesh(mesh, cadcraft_geom::Vec3::new(3.0, 1.5, -0.15));
+                let in_south = cadcraft_arch3d::probe::probe_mesh(mesh, cadcraft_geom::Vec3::new(1.0, 1.0, -0.15));
+                eprintln!(
+                    "  floor mesh obj={:?} verts={} tris={} probe(3,1.5)={} probe(1,1)={}",
+                    mesh.object,
+                    mesh.positions.len(),
+                    mesh.indices.len() / 3,
+                    in_loop,
+                    in_south
+                );
+            }
+        }
+        // Not an assert — just diagnostics. Always "pass".
+    }
+
+    /// Regression (acceptance check 05 phase-3 block b3): a closed interior loop
+    /// must yield its own room and its own floor slab, distinct from the surrounding
+    /// south room's floor slab.
+    ///
+    /// Setup: 10×8 exterior, a horizontal split at y=3, a vertical split at x=6
+    /// (south room = 0..10 × 0..3), plus a 1×1 closed loop at (2.5..3.5, 1..2).
+    /// After `roomdetect` + `build3d`, two probe points — one inside the loop
+    /// interior, one in the open south room — must each hit a floor slab but must
+    /// hit *different* slabs (different `id` values).
+    #[test]
+    fn loop_room_slabs_have_distinct_owners() {
+        let mut s = Session::new();
+        // Phase-1 house: closed 10x8 exterior (0.2) plus two interior walls (0.1).
+        s.execute(
+            "wall",
+            &json!({"points": [[0.0,0.0],[10.0,0.0],[10.0,8.0],[0.0,8.0],[0.0,0.0]], "thickness": 0.2, "height": 2.7, "exterior": true}),
+        )
+        .unwrap();
+        s.execute("wall", &json!({"points": [[0.0,3.0],[10.0,3.0]], "thickness": 0.1})).unwrap();
+        s.execute("wall", &json!({"points": [[6.0,3.0],[6.0,8.0]], "thickness": 0.1})).unwrap();
+        // A closed 0.1 m loop inside the south room (centre lines 2.5..3.5 x 1.0..2.0).
+        s.execute("wall", &json!({"points": [[2.5,1.0],[3.5,1.0],[3.5,2.0],[2.5,2.0],[2.5,1.0]], "thickness": 0.1})).unwrap();
+        s.execute("roomdetect", &json!({})).unwrap();
+        let r = s.execute("build3d", &json!({"probe": [[3.0,1.5,-0.15],[1.0,1.0,-0.15]]})).unwrap();
+        let probe = r["probe"].as_array().expect("probe array");
+        assert_eq!(probe.len(), 2);
+        let p0 = &probe[0];
+        let p1 = &probe[1];
+        assert!(p0.is_object() && p0["part"] == "floor", "inner-room probe should hit a floor: {p0:?}");
+        assert!(p1.is_object() && p1["part"] == "floor", "south-room probe should hit a floor: {p1:?}");
+        assert_ne!(p0["id"], p1["id"], "the loop interior and the south room must own different floor slabs: {probe:?}");
+    }
 }
