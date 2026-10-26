@@ -767,6 +767,58 @@ mod tests {
         assert!(!point_in_ring_even_odd(Vec2::new(-1.0, 2.0), &ring));
     }
 
+    /// Zero-length segments never properly cross anything.
+    #[test]
+    fn segs_properly_intersect_zero_length_segments() {
+        // Zero-length segment at (0,0) vs (0,0)-(1,1)
+        assert!(!segs_properly_intersect(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0)));
+        // Zero-length segment at (0.5, 0.5) vs (0,0)-(1,1)
+        assert!(!segs_properly_intersect(Vec2::new(0.5, 0.5), Vec2::new(0.5, 0.5), Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0)));
+        // Both zero-length at the same point
+        assert!(!segs_properly_intersect(Vec2::new(1.0, 1.0), Vec2::new(1.0, 1.0), Vec2::new(1.0, 1.0), Vec2::new(1.0, 1.0)));
+    }
+
+    /// Non-finite endpoints (NaN, Inf) always return false.
+    #[test]
+    fn segs_properly_intersect_non_finite_endpoints() {
+        assert!(!segs_properly_intersect(Vec2::new(f64::NAN, 0.0), Vec2::new(1.0, 1.0), Vec2::new(0.0, 1.0), Vec2::new(1.0, 0.0)));
+        assert!(!segs_properly_intersect(Vec2::new(0.0, 0.0), Vec2::new(f64::INFINITY, 1.0), Vec2::new(0.0, 1.0), Vec2::new(1.0, 0.0)));
+        assert!(!segs_properly_intersect(Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0), Vec2::new(f64::NAN, 1.0), Vec2::new(1.0, 0.0)));
+        assert!(!segs_properly_intersect(Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0), Vec2::new(0.0, 1.0), Vec2::new(1.0, f64::INFINITY)));
+    }
+
+    /// Rings with fewer than 3 vertices always return false.
+    #[test]
+    fn point_in_ring_even_odd_empty_and_small_rings() {
+        let empty: Vec<Vec2> = Vec::new();
+        assert!(!point_in_ring_even_odd(Vec2::new(1.0, 1.0), &empty));
+        let one = vec![Vec2::new(0.0, 0.0)];
+        assert!(!point_in_ring_even_odd(Vec2::new(1.0, 1.0), &one));
+        let two = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 4.0)];
+        assert!(!point_in_ring_even_odd(Vec2::new(2.0, 2.0), &two));
+    }
+
+    /// Even-odd works correctly for a concave (L-shaped) polygon.
+    #[test]
+    fn point_in_ring_even_odd_concave_polygon() {
+        // L-shaped polygon: (0,0)-(4,0)-(4,2)-(2,2)-(2,4)-(0,4)
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 2.0), Vec2::new(2.0, 2.0), Vec2::new(2.0, 4.0), Vec2::new(0.0, 4.0)];
+        assert!(point_in_ring_even_odd(Vec2::new(1.0, 1.0), &ring)); // bottom-left
+        assert!(point_in_ring_even_odd(Vec2::new(3.0, 1.0), &ring)); // bottom-right
+        assert!(point_in_ring_even_odd(Vec2::new(1.0, 3.0), &ring)); // top-left
+        assert!(!point_in_ring_even_odd(Vec2::new(3.0, 3.0), &ring)); // top-right (cut out)
+        assert!(!point_in_ring_even_odd(Vec2::new(5.0, 5.0), &ring)); // outside
+    }
+
+    /// Huge coordinates are handled without overflow.
+    #[test]
+    fn point_in_ring_even_odd_huge_coordinates() {
+        let s = 1e12;
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(s, 0.0), Vec2::new(s, s), Vec2::new(0.0, s)];
+        assert!(point_in_ring_even_odd(Vec2::new(s * 0.5, s * 0.5), &ring));
+        assert!(!point_in_ring_even_odd(Vec2::new(s * 2.0, s * 0.5), &ring));
+    }
+
     /// `triangulate_simple` on simple rings matches `triangulate` in triangle count
     /// and every returned index triple is in range with distinct entries.
     #[test]
