@@ -208,6 +208,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(txt2mtxt::specs());
         v.extend(constraints::specs());
         v.extend(arch::specs());
+        v.extend(arch::roofauto::specs());
         v.extend(lisp::specs());
         v
     })
