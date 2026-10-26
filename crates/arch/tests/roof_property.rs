@@ -1,6 +1,6 @@
-use cadcraft_arch::roof::{RoofError, build_roof, outer_footprint, plane_apex_z, projected_area_sum, roof_apex_z, roof_geometry};
+use cadcraft_arch::roof::{build_roof, projected_area_sum, roof_apex_z, roof_geometry};
 use cadcraft_arch::roofedge::{interior_edge_pairs, roof_edges};
-use cadcraft_doc::{ArchModel, Level, Roof, RoofDirective, RoofEdgeKind, Wall, WallType};
+use cadcraft_doc::{ArchModel, Level, Roof, RoofDirective, RoofEdgeKind, Wall};
 use cadcraft_geom::Vec2;
 
 /// Helper to create a closed ring of exterior walls on level 0.
@@ -24,7 +24,7 @@ fn house(pts: &[(f64, f64)], height: f64) -> ArchModel {
         let mut wall = Wall::new(a, b, 0.2);
         wall.height = height;
         wall.base_level = 0;
-        wall.wall_type = WallType::Exterior;
+        wall.wall_type = "Exterior".into();
         wall.roof_directive = RoofDirective::Auto;
         model.walls.push(wall);
     }
