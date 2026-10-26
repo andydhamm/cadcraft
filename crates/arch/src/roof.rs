@@ -339,6 +339,9 @@ pub struct RoofGeom {
 /// [`RoofError::Skeleton`] when the skeleton fails its build or invariant checks, and
 /// [`RoofError::Degenerate`] when a node is non-finite.
 pub fn roof_geometry(model: &ArchModel, level: u32, roof: &Roof) -> Result<RoofGeom, RoofError> {
+    if !roof.pitch_rise.is_finite() || !roof.pitch_run.is_finite() || !roof.overhang.is_finite() || !roof.thickness.is_finite() {
+        return Err(RoofError::Degenerate);
+    }
     let fp = match outer_footprint(model, level) {
         Some(fp) => fp,
         None => {
