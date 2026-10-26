@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
 
 use cadcraft_color::{Color, Rgb};
-use cadcraft_doc::{ArchId, Drawing, Handle, Wall};
 use cadcraft_doc::arch::RoofEdgeKind;
+use cadcraft_doc::{ArchId, Drawing, Handle, Wall};
 use cadcraft_fonts::{TextFont, TextParams, place};
 use cadcraft_geom::Vec2;
 
 use crate::{DPrim, DisplayList, Kind, Options};
 
-pub use cadcraft_doc::{is_arch_handle, opening_handle, room_handle, roof_handle};
+pub use cadcraft_doc::arch::roof_handle;
+pub use cadcraft_doc::{is_arch_handle, opening_handle, room_handle};
 
 /// Stable proxy handle for an architectural object: arch objects have no entity handle, so
 /// selection and picking map back to the `ArchId` through this reserved range.
@@ -261,7 +262,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
 mod tests {
     use super::*;
     use cadcraft_color::Rgb;
-    use cadcraft_doc::arch::{Opening, OpeningKind, Room, Roof, RoofEdge, RoofEdgeKind};
+    use cadcraft_doc::arch::{Opening, OpeningKind, Roof, RoofEdge, RoofEdgeKind, Room};
     use cadcraft_doc::{Drawing, Layer};
 
     fn wall(start: Vec2, end: Vec2, thickness: f64) -> Wall {
@@ -586,7 +587,7 @@ mod tests {
                 RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(0.0, 0.0), b: Vec2::new(10.0, 0.0), ..RoofEdge::default() },
                 RoofEdge { kind: RoofEdgeKind::Hip, a: Vec2::new(10.0, 0.0), b: Vec2::new(10.0, 8.0), ..RoofEdge::default() },
             ],
-            ..Roof::default(),
+            ..Roof::default()
         });
         if let Some(l) = d.layer_mut("A-ROOF") {
             l.color = Color::True(Rgb::from_u32(0xff00ff));
@@ -616,7 +617,7 @@ mod tests {
                 RoofEdge { kind: RoofEdgeKind::GableEnd, a: Vec2::new(0.0, 8.0), b: Vec2::new(4.0, 8.0), ..RoofEdge::default() },
                 RoofEdge { kind: RoofEdgeKind::Eave, a: Vec2::new(0.0, 0.0), b: Vec2::new(0.0, 8.0), ..RoofEdge::default() },
             ],
-            ..Roof::default(),
+            ..Roof::default()
         });
         d.touch_arch();
         let list = build_arch(&d, &Options::default());
@@ -641,17 +642,13 @@ mod tests {
                 RoofEdge { kind: RoofEdgeKind::Eave, a: Vec2::new(0.0, 0.0), b: Vec2::new(10.0, 0.0), ..RoofEdge::default() },
                 RoofEdge { kind: RoofEdgeKind::Eave, a: Vec2::new(10.0, 0.0), b: Vec2::new(10.0, 8.0), ..RoofEdge::default() },
             ],
-            ..Roof::default(),
+            ..Roof::default()
         });
         d.touch_arch();
         let list = build_arch(&d, &Options::default());
 
         let handle = roof_handle(rid);
         assert!(list.prims.iter().all(|p| p.handle != handle), "eave edges were drawn as roof linework");
-        assert_eq!(
-            list.prims.iter().filter(|p| p.handle == handle).count(),
-            0,
-            "no prim may be emitted for eave edges"
-        );
+        assert_eq!(list.prims.iter().filter(|p| p.handle == handle).count(), 0, "no prim may be emitted for eave edges");
     }
 }
