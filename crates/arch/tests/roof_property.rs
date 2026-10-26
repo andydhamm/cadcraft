@@ -1,4 +1,4 @@
-use cadcraft_arch::roof::{build_roof, projected_area_sum, roof_apex_z, roof_geometry};
+use cadcraft_arch::roof::{build_roof, outer_footprint, projected_area_sum, roof_apex_z, roof_geometry};
 use cadcraft_arch::roofedge::{interior_edge_pairs, roof_edges};
 use cadcraft_doc::{ArchModel, Level, Roof, RoofDirective, RoofEdgeKind, Wall};
 use cadcraft_geom::Vec2;
@@ -70,20 +70,21 @@ fn all_hip_orthogonal_footprints_have_one_sloped_edge_per_vertex() {
         }
         let roof_obj = built.unwrap();
 
+        // The outer-face footprint (offset by half the wall thickness) is the ring the
+        // roof is built on; the centre line alone can have fewer/more vertices than
+        // the solved outer face.
+        let footprint = outer_footprint(&model, 0).expect("outer footprint for valid walls");
+
         // Get edges
         let edges = roof_edges(&model, 0, &roof_obj).unwrap();
 
-        // Count sloped edges (Hip/Valley) per vertex
-        // We need to map footprint vertices to edges.
-        // roof_edges returns edges with endpoints.
-
-        // For orthogonal convex/concave shapes, every vertex should have exactly one hip or valley.
-        // Let's collect all unique vertices from the footprint.
+        // Count sloped edges (Hip/Valley) per outer-footprint vertex.
+        // Invariant: one sloped edge per footprint vertex (convex hip, reflex valley).
         let mut vertex_counts: std::collections::HashMap<(i64, i64), usize> = std::collections::HashMap::new();
 
-        // Initialize counts for footprint vertices
-        for p in &pts {
-            let key = (p.0.round() as i64, p.1.round() as i64);
+        // Initialize counts for outer-footprint vertices (0.1 m wall offset => 0.01 m grid).
+        for p in &footprint {
+            let key = (p.x * 100.0).round() as i64, (p.y * 100.0).round() as i64);
             vertex_counts.insert(key, 0);
         }
 
@@ -178,12 +179,13 @@ fn projected_areas_sum_to_the_footprint() {
     let l_shape = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (6.0, 8.0), (6.0, 12.0), (0.0, 12.0)];
     let t_shape = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (7.0, 8.0), (7.0, 12.0), (3.0, 12.0), (3.0, 8.0), (0.0, 8.0)];
 
-    // Rectangle overhang 0
+    // Rectangle overhang 0: expected outer-face area (10.2 x 8.2 = 83.64)
     let model = house(&rect, 2.4);
     let r = roof(6.0, 0.0);
     let built = build_roof(&model, 0, &r).unwrap();
     let area = projected_area_sum(&built);
-    let expected = shoelace(&rect.iter().map(|p| Vec2::new(p.0, p.1)).collect::<Vec<_>>());
+    let fp = outer_footprint(&model, 0).expect("outer footprint should exist");
+    let expected = shoelace(&fp.iter().map(|p| p.clone()).collect::<Vec<_>>());
     assert!((area - expected).abs() < 1e-6, "Rect overhang 0: {} != {}", area, expected);
 
     // Rectangle overhang 0.5
@@ -193,18 +195,20 @@ fn projected_areas_sum_to_the_footprint() {
     // Expected: 11.2 * 9.2 = 103.04
     assert!((area_over - 103.04).abs() < 1e-2, "Rect overhang 0.5: {} != 103.04", area_over);
 
-    // L-shape overhang 0
+    // L-shape overhang 0: compare against outer-footprint area
     let model_l = house(&l_shape, 2.4);
     let built_l = build_roof(&model_l, 0, &r).unwrap();
     let area_l = projected_area_sum(&built_l);
-    let expected_l = shoelace(&l_shape.iter().map(|p| Vec2::new(p.0, p.1)).collect::<Vec<_>>());
+    let fp_l = outer_footprint(&model_l, 0).expect("outer footprint should exist");
+    let expected_l = shoelace(&fp_l.iter().map(|p| p.clone()).collect::<Vec<_>>());
     assert!((area_l - expected_l).abs() < 1e-6, "L overhang 0: {} != {}", area_l, expected_l);
 
-    // T-shape overhang 0
+    // T-shape overhang 0: compare against outer-footprint area
     let model_t = house(&t_shape, 2.4);
     let built_t = build_roof(&model_t, 0, &r).unwrap();
     let area_t = projected_area_sum(&built_t);
-    let expected_t = shoelace(&t_shape.iter().map(|p| Vec2::new(p.0, p.1)).collect::<Vec<_>>());
+    let fp_t = outer_footprint(&model_t, 0).expect("outer footprint should exist");
+    let expected_t = shoelace(&fp_t.iter().map(|p| p.clone()).collect::<Vec<_>>());
     assert!((area_t - expected_t).abs() < 1e-6, "T overhang 0: {} != {}", area_t, expected_t);
 }
 
@@ -217,7 +221,7 @@ fn ridge_height_tracks_pitch_on_every_footprint() {
     let r6 = roof(6.0, 0.0);
     let built6 = build_roof(&model, 0, &r6).unwrap();
     let apex6 = roof_apex_z(&built6);
-    // Expected: 2.4 + 4.0 * (6/12) = 4.45
+    // Expected: 2.4 + 4.1 * (6/12) = 4.45 (outer-face half-depth 8.2/2 = 4.1)
     assert!((apex6 - 4.45).abs() < 1e-6, "Apex 6/12: {} != 4.45", apex6);
 
     // 4/12
