@@ -141,10 +141,8 @@ pub fn elevation_profile(shape: &WallShape, wall: &Wall, base: f64, top: f64, cl
     // Build holes from openings
     let mut holes = Vec::new();
     for op in openings {
-        let rough_w = op.width + 2.0 * 0.06; // ROUGH_ALLOWANCE / 2? No, rough_width = width + allowance
-        // In phase 2, ROUGH_ALLOWANCE was 0.12. Rough width = width + 0.12.
-        // So half-width = width/2 + 0.06.
-        let half_w = op.width / 2.0 + 0.06;
+        let rough_w = op.width + 0.12; // ROUGH_ALLOWANCE
+        let half_w = rough_w / 2.0;
         let rough_h = op.height + 0.12; // Rough height = height + allowance
 
         let u0 = op.offset - half_w;
@@ -203,17 +201,8 @@ pub fn extrude_wall_profile(shape: &WallShape, profile: WallProfile, base: f64, 
         // The height is `profile.outer[1].y` (assuming rectangle).
         let height = profile.outer[1].y;
         mesh.push_prism(&shape.polygon, base, base + height);
-    } else if !is_sloped {
-        // Vertical sides, holes present
-        // Use push_prism_with_holes which handles holes in the plan polygon.
-        // Wait, the holes are in the ELEVATION (u,v).
-        // push_prism_with_holes expects holes in the PLAN (x,y).
-        // This is the core defect. We cannot use push_prism_with_holes directly on the plan polygon
-        // with elevation holes.
-        // We must use the manual extrusion for holes.
-        return extrude_profile_manual(shape, profile, base, material);
     } else {
-        // Sloped top
+        // Manual extrusion for holes or slopes
         return extrude_profile_manual(shape, profile, base, material);
     }
 
@@ -256,11 +245,47 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
         let mut indices = Vec::new();
 
         // 6 vertices: 3 at t=0 (inner), 3 at t=1 (outer)
+        // t=0 is inner face (offset 0), t=1 is outer face (offset thickness)
+        // Actually, shape.polygon defines the wall footprint.
+        // poly[0] is start-left, poly[1] is end-left, poly[2] is end-right, poly[3] is start-right?
+        // Or poly[0] start, poly[1] end, poly[2] end-offset, poly[3] start-offset?
+        // Let's assume standard: poly[0] (start, left), poly[1] (end, left), poly[2] (end, right), poly[3] (start, right).
+        // Direction dx, dy is from poly[0] to poly[1].
+        // Normal nx, ny is left normal.
+        // So poly[0] is on the left face. poly[3] is on the right face.
+        // Thickness is distance from left to right.
+        // We extrude from left face (t=0) to right face (t=1)?
+        // Or we just use the polygon vertices directly.
+
+        // Let's map (u,v) to world (x,y,z).
+        // u is along the wall. v is height.
+        // We need to map u to x,y.
+        // x = poly[0].x + u * dx / len * len? No, u is already length along wall.
+        // x = poly[0].x + u * (dx/len)
+        // y = poly[0].y + u * (dy/len)
+        // z = base + v
+
+        // But we need to extrude along the thickness.
+        // The profile is on the *face* of the wall. Which face?
+        // The `RoofClip` logic assumed outer face.
+        // Let's assume the profile is on the "left" face (poly[0]-poly[1]).
+        // We extrude towards the "right" face (poly[3]-poly[2]).
+
         for t in [0.0, 1.0] {
             for p in &tri {
-                let x = poly[0].x + p.x * dx + t * thickness * nx;
-                let y = poly[0].y + p.y * dy + t * thickness * ny;
-                let z = base + p.y; // v is height
+                // Map u,v to world x,y,z on the left face
+                let x_base = poly[0].x + p.x * (dx / len);
+                let y_base = poly[0].y + p.y * (dy / len); // Wait, p.y is v (height). p.x is u.
+                // Correction: p.x is u, p.y is v.
+                let x_base = poly[0].x + p.x * (dx / len);
+                let y_base = poly[0].y + p.x * (dy / len);
+                let z_base = base + p.y;
+
+                // Offset along normal for thickness
+                let x = x_base + t * thickness * nx;
+                let y = y_base + t * thickness * ny;
+                let z = z_base;
+
                 verts.push([x as f32, y as f32, z as f32]);
             }
         }
