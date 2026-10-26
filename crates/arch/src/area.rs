@@ -588,4 +588,91 @@ mod tests {
         refresh_areas(&mut model);
         assert!(model.rooms.is_empty());
     }
+
+    #[test]
+    fn edge_standard_offset_no_matching_walls() {
+        let model = ArchModel::default();
+        let offset = edge_standard_offset(&model, 0, pt(0.0, 0.0), pt(1.0, 0.0), Vec2::new(0.0, -1.0));
+        assert_eq!(offset, 0.0);
+    }
+
+    #[test]
+    fn edge_standard_offset_exterior_wall_is_full_thickness() {
+        let mut model = ArchModel::default();
+        push_exterior(&mut model, pt(0.0, 0.0), pt(10.0, 0.0));
+        // Edge on the interior face of the south wall (y=0.1), outward normal is down (0,-1)
+        let offset = edge_standard_offset(&model, 0, pt(1.0, 0.1), pt(2.0, 0.1), Vec2::new(0.0, -1.0));
+        // The outer face is at y=-0.1, so the offset should be 0.2 (full thickness)
+        assert!((offset - 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn edge_standard_offset_interior_wall_is_half_thickness() {
+        let mut model = ArchModel::default();
+        push_interior(&mut model, pt(0.0, 3.0), pt(10.0, 3.0), 0.1);
+        // Edge on the bottom face of the divider (y=3.05), outward normal is down (0,-1)
+        // (this is the south edge of the north-west room)
+        let offset = edge_standard_offset(&model, 0, pt(1.0, 3.05), pt(2.0, 3.05), Vec2::new(0.0, -1.0));
+        // The center line is at y=3.0, so the offset should be 0.05 (half thickness)
+        assert!((offset - 0.05).abs() < 1e-9);
+    }
+
+    #[test]
+    fn perimeter_exterior_is_outer_ring_only() {
+        let mut model = ArchModel::default();
+        push_exterior(&mut model, pt(0.0, 0.0), pt(10.0, 0.0));
+        push_exterior(&mut model, pt(10.0, 0.0), pt(10.0, 8.0));
+        push_exterior(&mut model, pt(10.0, 8.0), pt(0.0, 8.0));
+        push_exterior(&mut model, pt(0.0, 8.0), pt(0.0, 0.0));
+        push_interior(&mut model, pt(0.0, 3.0), pt(10.0, 3.0), 0.1);
+
+        let r = south_room();
+        let exterior = perimeter(&model, &r, Perimeter::Exterior);
+        // The standard outer ring is 10.2 x 3.1, so perimeter is 2*(10.2+3.1) = 26.6
+        assert!((exterior - 26.6).abs() < 1e-6);
+    }
+
+    #[test]
+    fn standard_area_no_walls_falls_back_to_interior() {
+        let model = ArchModel::default();
+        let room = south_room();
+        let interior = interior_area(&room);
+        let standard = standard_area(&model, &room);
+        assert!((standard - interior).abs() < 1e-9);
+    }
+
+    #[test]
+    fn edge_standard_offset_nan_outward_normal() {
+        let mut model = ArchModel::default();
+        push_exterior(&mut model, pt(0.0, 0.0), pt(10.0, 0.0));
+        let offset = edge_standard_offset(&model, 0, pt(1.0, 0.1), pt(2.0, 0.1), Vec2::new(f64::NAN, 0.0));
+        assert_eq!(offset, 0.0);
+    }
+
+    #[test]
+    fn perimeter_standard_with_holes_includes_hole_perimeters() {
+        let mut model = ArchModel::default();
+        push_exterior(&mut model, pt(0.0, 0.0), pt(10.0, 0.0));
+        push_exterior(&mut model, pt(10.0, 0.0), pt(10.0, 8.0));
+        push_exterior(&mut model, pt(10.0, 8.0), pt(0.0, 8.0));
+        push_exterior(&mut model, pt(0.0, 8.0), pt(0.0, 0.0));
+        push_interior(&mut model, pt(0.0, 3.0), pt(10.0, 3.0), 0.1);
+
+        let mut room = south_room();
+        room.holes.push(vec![pt(2.45, 0.95), pt(3.55, 0.95), pt(3.55, 2.05), pt(2.45, 2.05)]);
+        let standard = perimeter(&model, &room, Perimeter::Standard);
+        let exterior = perimeter(&model, &room, Perimeter::Exterior);
+        // Standard should be larger than exterior because it includes hole perimeters
+        assert!(standard > exterior);
+    }
+
+    #[test]
+    fn effective_ceiling_nan_returns_none() {
+        let room = Room { ceiling_height: Some(f64::NAN), polygon: vec![], room_type: RoomType::Living, level: 0, ..Default::default() };
+        assert!(effective_ceiling(&room, None).is_none());
+
+        let level = Level { ceiling_height: f64::NAN, ..Default::default() };
+        let room2 = Room { ceiling_height: None, polygon: vec![], room_type: RoomType::Living, level: 0, ..Default::default() };
+        assert!(effective_ceiling(&room2, Some(&level)).is_none());
+    }
 }
