@@ -670,4 +670,50 @@ mod tests {
     fn segs_cross_endpoint_touch() {
         assert!(segs_cross(Vec2::ZERO, Vec2::new(2.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0)));
     }
+
+    #[test]
+    fn ring_area_with_infinity_returns_zero() {
+        let pts = vec![Vec2::ZERO, Vec2::X, Vec2::new(f64::INFINITY, 0.0)];
+        assert!(close(ring_area(&pts), 0.0));
+    }
+
+    #[test]
+    fn ring_perimeter_with_non_finite_returns_zero() {
+        let pts = vec![Vec2::ZERO, Vec2::X, Vec2::new(f64::NAN, 0.0)];
+        assert!(close(ring_perimeter(&pts), 0.0));
+        let pts_inf = vec![Vec2::ZERO, Vec2::X, Vec2::new(f64::INFINITY, 0.0)];
+        assert!(close(ring_perimeter(&pts_inf), 0.0));
+    }
+
+    #[test]
+    fn region_area_clamps_to_zero_when_holes_exceed_outer() {
+        let outer = sq(&[(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)]);
+        let holes = vec![sq(&[(0.0, 0.0), (3.0, 0.0), (3.0, 3.0), (0.0, 3.0)])];
+        assert!(close(region_area(&outer, &holes), 0.0));
+    }
+
+    #[test]
+    fn region_perimeter_sums_multiple_holes() {
+        let outer = sq(&[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]);
+        let holes = vec![sq(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]), sq(&[(8.0, 8.0), (9.0, 8.0), (9.0, 9.0), (8.0, 9.0)])];
+        // outer 40 + hole1 4 + hole2 4 = 48
+        assert!(close(region_perimeter(&outer, &holes), 48.0));
+    }
+
+    #[test]
+    fn point_segment_dist_rejects_infinity() {
+        let a = Vec2::ZERO;
+        let b = Vec2::X;
+        assert!(point_segment_dist(Vec2::new(f64::INFINITY, 0.0), a, b) >= f64::MAX);
+        assert!(point_segment_dist(Vec2::new(0.5, 0.0), Vec2::new(f64::INFINITY, 0.0), b) >= f64::MAX);
+        assert!(point_segment_dist(Vec2::new(0.5, 0.0), a, Vec2::new(f64::INFINITY, 0.0)) >= f64::MAX);
+    }
+
+    #[test]
+    fn ensure_ccw_two_point_input_returns_as_is() {
+        let two = vec![Vec2::ZERO, Vec2::X];
+        let out = ensure_ccw(&two);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out, two);
+    }
 }
