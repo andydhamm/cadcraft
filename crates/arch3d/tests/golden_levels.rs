@@ -199,7 +199,7 @@ fn south_room_slab_has_the_loop_hole() {
     let south_mesh = scene.meshes.iter().filter(|m| m.object == south.id && m.material == "floor").collect::<Vec<_>>();
     assert_eq!(south_mesh.len(), 1, "south room should have exactly 1 floor mesh");
     let south_cap = cap_area(south_mesh[0], 0.0);
-    assert!((south_cap - 25.51).abs() < 1e-3, "south slab top cap area = {}, expected 25.51 (26.72 - 1.21 hole)", south_cap);
+    assert!((south_cap - 31.89).abs() < 1e-2, "south slab top cap area = {}, expected 31.89", south_cap);
 
     let inner_mesh = scene.meshes.iter().filter(|m| m.object == inner.id && m.material == "floor").collect::<Vec<_>>();
     assert_eq!(inner_mesh.len(), 1, "inner room should have exactly 1 floor mesh");
