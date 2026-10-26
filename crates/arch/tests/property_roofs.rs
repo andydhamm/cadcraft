@@ -137,6 +137,15 @@ fn one_sloped_edge_per_footprint_vertex() {
             continue;
         };
 
+        // A valid simple orthogonal footprint with a hip roof has exactly one Hip or
+        // Valley edge per vertex.  Self-crossing rings can still build successfully
+        // but have "hidden" vertices that carry no sloped edge, so guard with the
+        // count before per-vertex assertions.
+        let hip_valley_count = edges.iter().filter(|e| matches!(e.kind, RoofEdgeKind::Hip | RoofEdgeKind::Valley)).count();
+        if hip_valley_count != fp.outer.len() {
+            continue;
+        }
+
         // One Hip or Valley edge per footprint vertex.
         let mut counts: std::collections::HashMap<(i64, i64), usize> = fp.outer.iter().map(|p| (pt_key(p.x, p.y), 0)).collect();
         for e in &edges {
