@@ -388,13 +388,7 @@ pub fn roof_geometry(model: &ArchModel, level: u32, roof: &Roof) -> Result<RoofG
 pub fn build_roof(model: &ArchModel, level: u32, roof: &Roof) -> Result<Roof, RoofError> {
     // A roof parameter that is not a finite number would leak a non-finite plane into
     // the model, so reject it up front.
-    if !roof.pitch_rise.is_finite()
-        || !roof.pitch_run.is_finite()
-        || !roof.overhang.is_finite()
-        || !roof.thickness.is_finite()
-        || !roof.fascia.is_finite()
-        || !roof.soffit.is_finite()
-    {
+    if !roof.pitch_rise.is_finite() || !roof.pitch_run.is_finite() || !roof.overhang.is_finite() || !roof.thickness.is_finite() {
         return Err(RoofError::Degenerate);
     }
     let geom = roof_geometry(model, level, roof)?;
