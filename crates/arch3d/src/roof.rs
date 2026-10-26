@@ -590,7 +590,7 @@ mod tests {
         }
 
         // Top ring should be at eave_z + thickness (since normal is straight up for zero slope)
-        for p in &mesh.positions {
+        for p in mesh.positions.iter().skip(n_verts) {
             if (p[0] - 0.0).abs() < 1e-4 && (p[1] - 5.0).abs() < 1e-4 {
                 // This is a top vertex at (0, 5)
                 let expected_top = eave_z + plane.thickness;
@@ -781,5 +781,43 @@ mod tests {
         // Top cap: 3 triangles (fan)
         // Total: 16 triangles
         assert_eq!(mesh.triangle_count(), 16, "expected 16 triangles for 5-vertex ring");
+    }
+
+    #[test]
+    fn roof_plane_nan_in_base_edge_returns_none() {
+        let mut plane = simple_plane();
+        plane.base_edge = [f64::NAN, 0.0, 10.0, 0.0];
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1));
+        assert!(mesh.is_none(), "NaN in base_edge should return None");
+    }
+
+    #[test]
+    fn roof_plane_very_small_slope_is_valid() {
+        let mut plane = simple_plane();
+        plane.slope = 0.001;
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        // All positions should be finite
+        for p in &mesh.positions {
+            assert!(p[0].is_finite() && p[1].is_finite() && p[2].is_finite(), "position not finite: {:?}", p);
+        }
+
+        // The roof should still have z extent
+        let b = mesh.bounds();
+        assert!(b.max[2] - b.min[2] > 1e-6, "mesh should have z extent");
+    }
+
+    #[test]
+    fn roof_plane_ring_with_three_vertices() {
+        let mut plane = simple_plane();
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(5.0, 5.0)];
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        // For a 3-vertex ring:
+        // Sides: 3 quads = 6 triangles
+        // Bottom cap: 1 triangle (fan)
+        // Top cap: 1 triangle (fan)
+        // Total: 8 triangles
+        assert_eq!(mesh.triangle_count(), 8, "expected 8 triangles for 3-vertex ring");
     }
 }

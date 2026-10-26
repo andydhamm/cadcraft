@@ -1234,6 +1234,7 @@ mod tests {
         // Add a plane so it generates meshes
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
         plane.eave_wall = Some(ArchId(0));
@@ -1265,6 +1266,7 @@ mod tests {
         roof.level = 0;
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
         plane.eave_wall = Some(ArchId(0));
@@ -1300,6 +1302,7 @@ mod tests {
         roof.level = 0;
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
         plane.eave_wall = Some(ArchId(0));
@@ -1358,6 +1361,7 @@ mod tests {
         roof.level = 0;
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
         plane.eave_wall = Some(ArchId(0));
@@ -1444,6 +1448,7 @@ mod tests {
         roof.level = 0;
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.5;
         plane.eave_z = 2.4;
         plane.eave_wall = None; // No eave wall reference
@@ -1489,6 +1494,7 @@ mod tests {
         roof1.level = 0;
         let mut plane1 = RoofPlane::default();
         plane1.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane1.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane1.slope = 0.5;
         plane1.eave_z = 2.4;
         roof1.planes.push(plane1);
@@ -1499,6 +1505,7 @@ mod tests {
         roof2.level = 0;
         let mut plane2 = RoofPlane::default();
         plane2.base_edge = [0.0, 5.0, 10.0, 5.0];
+        plane2.ring = vec![Vec2::new(0.0, 5.0), Vec2::new(10.0, 5.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
         plane2.slope = 0.4;
         plane2.eave_z = 2.4;
         roof2.planes.push(plane2);
@@ -1521,6 +1528,7 @@ mod tests {
         roof.level = 0;
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.5;
         plane.eave_z = 1.5; // Should be level elevation since no walls
         roof.planes.push(plane);
@@ -1552,6 +1560,7 @@ mod tests {
         roof.level = 0;
         let mut plane = RoofPlane::default();
         plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
         plane.slope = 0.0; // Flat roof
         plane.eave_z = 2.4;
         roof.planes.push(plane);
