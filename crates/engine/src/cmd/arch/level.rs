@@ -172,7 +172,8 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
         }
         l.ceiling_height = c;
     }
-    if let Some(s) = structure {
+    if p.get("structure").is_some() {
+        let s = structure.ok_or_else(|| crate::EngineError::Other("level: structure must be a number".into()))?;
         if !s.is_finite() || s <= 0.0 {
             return Err(crate::EngineError::Other("level: structure must be finite and positive".into()));
         }

@@ -270,9 +270,11 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     // --- Thickness: explicit or default (divider allows 0, else size_param
     // or the exterior/interior default from the preliminary exterior above) ---
     let thickness = if divider {
+        let has_thickness = p.as_object().is_some_and(|o| o.contains_key("thickness"));
         match p.get("thickness").and_then(Value::as_f64) {
             Some(t) if t.is_finite() && t >= 0.0 => t,
             Some(_) => return Err(bad("wall", "divider `thickness` must be finite and non-negative")),
+            None if has_thickness => return Err(bad("wall", "divider `thickness` must be a number")),
             None => 0.0,
         }
     } else {
