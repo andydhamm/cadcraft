@@ -47,6 +47,42 @@ fn approx(a: f64, b: f64, tol: f64) -> bool {
 }
 
 #[test]
+fn empty_model_detects_no_rooms() {
+    let mut model = ArchModel::default();
+    detect_and_areas(&mut model);
+    assert_eq!(model.rooms.len(), 0, "expected 0 rooms for empty model");
+}
+
+#[test]
+fn single_closed_rectangle_detects_one_room() {
+    let mut model = ArchModel::default();
+    // 4 x 3 rectangle with 0.1 m exterior walls
+    model.push_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), 0.1, true));
+    model.push_wall(wall(Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), 0.1, true));
+    model.push_wall(wall(Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0), 0.1, true));
+    model.push_wall(wall(Vec2::new(0.0, 3.0), Vec2::new(0.0, 0.0), 0.1, true));
+    detect_and_areas(&mut model);
+    assert_eq!(model.rooms.len(), 1, "expected 1 room for single rectangle");
+    // Interior area: (4-0.1) * (3-0.1) = 3.9 * 2.9 = 11.31
+    assert!(approx(model.rooms[0].interior_area, 11.31, 1e-3), "interior area {} != expected 11.31", model.rooms[0].interior_area);
+}
+
+#[test]
+fn degenerate_zero_length_wall_handled() {
+    let mut model = ArchModel::default();
+    // A zero-length wall (start == end) should not crash detection
+    model.push_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0), 0.1, false));
+    // Plus a normal closed rectangle
+    model.push_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), 0.1, true));
+    model.push_wall(wall(Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), 0.1, true));
+    model.push_wall(wall(Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0), 0.1, true));
+    model.push_wall(wall(Vec2::new(0.0, 3.0), Vec2::new(0.0, 0.0), 0.1, true));
+    detect_and_areas(&mut model);
+    // Should still detect the one room from the rectangle
+    assert_eq!(model.rooms.len(), 1, "expected 1 room despite zero-length wall");
+}
+
+#[test]
 fn golden_interior_and_standard_areas() {
     // --- Base house: exactly 3 rooms ---
     let mut model = house();

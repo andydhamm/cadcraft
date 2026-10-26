@@ -34,6 +34,10 @@ fn push_wall(model: &mut ArchModel, a: Vec2, b: Vec2, t: f64, exterior: bool) {
     model.push_wall(Wall { start: a, end: b, thickness: t, exterior, divider, ..Default::default() });
 }
 
+fn push_wall_raw(model: &mut ArchModel, w: Wall) {
+    model.push_wall(w);
+}
+
 /// Add a closed axis-aligned rectangle (4 walls).
 fn add_rectangle(model: &mut ArchModel, rng: &mut Lcg) {
     let x0 = rng.rand_f64(-20.0, 15.0);
@@ -65,6 +69,48 @@ fn add_segment(model: &mut ArchModel, rng: &mut Lcg) {
         let y1 = rng.rand_f64(-20.0, 20.0);
         push_wall(model, Vec2::new(x, y0), Vec2::new(x, y1), t, false);
     }
+}
+
+#[test]
+fn nan_wall_endpoints_handled() {
+    let mut model = ArchModel::default();
+    // Wall with NaN endpoint
+    push_wall_raw(
+        &mut model,
+        Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(f64::NAN, 0.0), thickness: 0.1, exterior: true, ..Default::default() },
+    );
+    let rooms = detect_rooms(&model);
+    assert!(rooms.len() <= cadcraft_doc::MAX_ROOMS);
+    let _ = solve_joins(&model);
+}
+
+#[test]
+fn huge_coordinate_values_handled() {
+    let mut model = ArchModel::default();
+    // Wall with huge coordinates
+    push_wall_raw(
+        &mut model,
+        Wall { start: Vec2::new(-1e15, -1e15), end: Vec2::new(1e15, 1e15), thickness: 0.1, exterior: true, ..Default::default() },
+    );
+    let rooms = detect_rooms(&model);
+    assert!(rooms.len() <= cadcraft_doc::MAX_ROOMS);
+    let _ = solve_joins(&model);
+}
+
+#[test]
+fn coincident_wall_endpoints_handled() {
+    let mut model = ArchModel::default();
+    // Multiple walls all sharing the same start point
+    for i in 0..10 {
+        let angle = i as f64 * std::f64::consts::PI / 5.0;
+        push_wall_raw(
+            &mut model,
+            Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(angle.cos(), angle.sin()), thickness: 0.1, exterior: false, ..Default::default() },
+        );
+    }
+    let rooms = detect_rooms(&model);
+    assert!(rooms.len() <= cadcraft_doc::MAX_ROOMS);
+    let _ = solve_joins(&model);
 }
 
 #[test]
