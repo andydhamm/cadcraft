@@ -555,4 +555,169 @@ mod tests {
         assert_eq!(rooms_on(1), 1);
         assert_eq!(rooms_on(2), 2);
     }
+
+    /// The four exterior walls of `{"house":true}` must be at the exact
+    /// positions specified by the phase-1 design: a closed 10×8 rectangle.
+    #[test]
+    fn sample_house_wall_positions() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "house": true })).unwrap();
+        let walls = &s.doc().unwrap().arch.walls;
+        assert_eq!(walls.len(), 4);
+        assert_eq!(walls[0].start, cadcraft_geom::Vec2::new(0.0, 0.0));
+        assert_eq!(walls[0].end, cadcraft_geom::Vec2::new(10.0, 0.0));
+        assert_eq!(walls[1].start, cadcraft_geom::Vec2::new(10.0, 0.0));
+        assert_eq!(walls[1].end, cadcraft_geom::Vec2::new(10.0, 8.0));
+        assert_eq!(walls[2].start, cadcraft_geom::Vec2::new(10.0, 8.0));
+        assert_eq!(walls[2].end, cadcraft_geom::Vec2::new(0.0, 8.0));
+        assert_eq!(walls[3].start, cadcraft_geom::Vec2::new(0.0, 8.0));
+        assert_eq!(walls[3].end, cadcraft_geom::Vec2::new(0.0, 0.0));
+    }
+
+    /// The 14 walls of `{"house2":true}` must be at the exact positions:
+    /// basement (4 exterior + 1 divider), Level 1 (4 exterior),
+    /// Level 2 (4 exterior + 1 divider).
+    #[test]
+    fn sample_house2_wall_positions() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "house2": true })).unwrap();
+        let walls = &s.doc().unwrap().arch.walls;
+        assert_eq!(walls.len(), 14);
+        // Basement exterior walls (level 0).
+        assert_eq!(walls[0].start, cadcraft_geom::Vec2::new(0.0, 0.0));
+        assert_eq!(walls[0].end, cadcraft_geom::Vec2::new(10.0, 0.0));
+        assert_eq!(walls[0].base_level, 0);
+        assert_eq!(walls[1].start, cadcraft_geom::Vec2::new(10.0, 0.0));
+        assert_eq!(walls[1].end, cadcraft_geom::Vec2::new(10.0, 8.0));
+        assert_eq!(walls[1].base_level, 0);
+        assert_eq!(walls[2].start, cadcraft_geom::Vec2::new(10.0, 8.0));
+        assert_eq!(walls[2].end, cadcraft_geom::Vec2::new(0.0, 8.0));
+        assert_eq!(walls[2].base_level, 0);
+        assert_eq!(walls[3].start, cadcraft_geom::Vec2::new(0.0, 8.0));
+        assert_eq!(walls[3].end, cadcraft_geom::Vec2::new(0.0, 0.0));
+        assert_eq!(walls[3].base_level, 0);
+        // Basement divider.
+        assert_eq!(walls[4].start, cadcraft_geom::Vec2::new(5.0, 0.0));
+        assert_eq!(walls[4].end, cadcraft_geom::Vec2::new(5.0, 8.0));
+        assert_eq!(walls[4].base_level, 0);
+        assert!(walls[4].divider);
+        // Level 1 exterior walls.
+        assert_eq!(walls[5].start, cadcraft_geom::Vec2::new(0.0, 0.0));
+        assert_eq!(walls[5].end, cadcraft_geom::Vec2::new(10.0, 0.0));
+        assert_eq!(walls[5].base_level, 1);
+        assert_eq!(walls[8].start, cadcraft_geom::Vec2::new(0.0, 8.0));
+        assert_eq!(walls[8].end, cadcraft_geom::Vec2::new(0.0, 0.0));
+        assert_eq!(walls[8].base_level, 1);
+        // Level 2 exterior walls.
+        assert_eq!(walls[9].start, cadcraft_geom::Vec2::new(0.0, 0.0));
+        assert_eq!(walls[9].end, cadcraft_geom::Vec2::new(10.0, 0.0));
+        assert_eq!(walls[9].base_level, 2);
+        assert_eq!(walls[12].start, cadcraft_geom::Vec2::new(0.0, 8.0));
+        assert_eq!(walls[12].end, cadcraft_geom::Vec2::new(0.0, 0.0));
+        assert_eq!(walls[12].base_level, 2);
+        // Level 2 divider.
+        assert_eq!(walls[13].start, cadcraft_geom::Vec2::new(5.0, 0.0));
+        assert_eq!(walls[13].end, cadcraft_geom::Vec2::new(5.0, 8.0));
+        assert_eq!(walls[13].base_level, 2);
+        assert!(walls[13].divider);
+    }
+
+    /// `{"house":true}` must produce exactly one room with a reasonable
+    /// interior area (the 10×8 rectangle minus wall thickness).
+    #[test]
+    fn sample_house_room_area() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "house": true })).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.rooms.len(), 1);
+        let room = &d.arch.rooms[0];
+        // Interior area should be roughly (10-0.2) × (8-0.2) = 76.44 m²,
+        // but allow for the detection algorithm's calculation method.
+        assert!(room.interior_area > 70.0, "room area too small: {}", room.interior_area);
+        assert!(room.interior_area < 85.0, "room area too large: {}", room.interior_area);
+        // The room must be on Level 1.
+        assert_eq!(room.level, 1);
+    }
+
+    /// `{"house2":true}` must produce 5 rooms with positive areas,
+    /// distributed 2/1/2 across the three levels.
+    #[test]
+    fn sample_house2_room_areas() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "house2": true })).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.rooms.len(), 5);
+        for room in &d.arch.rooms {
+            assert!(room.interior_area > 0.0, "room {:?} has non-positive area", room.id);
+            // Each room is at most half the 10×8 footprint.
+            assert!(room.interior_area < 80.0, "room {:?} area too large: {}", room.id, room.interior_area);
+        }
+        // Basement rooms (level 0) should be smaller than the full footprint
+        // because of the divider.
+        let basement_rooms: Vec<&cadcraft_doc::Room> = d.arch.rooms.iter().filter(|r| r.level == 0).collect();
+        assert_eq!(basement_rooms.len(), 2);
+        for room in &basement_rooms {
+            assert!(room.interior_area < 40.0, "basement room {:?} too large: {}", room.id, room.interior_area);
+        }
+    }
+
+    /// `{"house":true}` must not create any openings.
+    #[test]
+    fn sample_house_no_openings() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "house": true })).unwrap();
+        assert!(s.doc().unwrap().arch.openings.is_empty());
+    }
+
+    /// `{"house2":true}` must not create any openings.
+    #[test]
+    fn sample_house2_no_openings() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "house2": true })).unwrap();
+        assert!(s.doc().unwrap().arch.openings.is_empty());
+    }
+
+    /// Hostile/extra parameters to `{"house":true}` must be ignored; the
+    /// output must be identical to the plain call.
+    #[test]
+    fn sample_house_hostile_input() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "house": true, "walls": 100, "openings": 50, "extra": "garbage" })).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 4);
+        assert_eq!(d.arch.rooms.len(), 1);
+        assert!(d.arch.openings.is_empty());
+        assert_eq!(d.arch.levels.len(), 1);
+    }
+
+    /// Hostile/extra parameters to `{"house2":true}` must be ignored; the
+    /// output must be identical to the plain call.
+    #[test]
+    fn sample_house2_hostile_input() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "house2": true, "walls": 100, "openings": 50, "extra": 3.14 })).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 14);
+        assert_eq!(d.arch.rooms.len(), 5);
+        assert!(d.arch.openings.is_empty());
+        assert_eq!(d.arch.levels.len(), 3);
+    }
+
+    /// `{"house":true}` must bump the arch revision from 0.
+    #[test]
+    fn sample_house_revision_bumped() {
+        let mut s = fresh_session();
+        assert_eq!(s.doc().unwrap().arch_revision, 0);
+        s.execute("arch.sample", &json!({ "house": true })).unwrap();
+        assert!(s.doc().unwrap().arch_revision > 0);
+    }
+
+    /// `{"house2":true}` must bump the arch revision from 0.
+    #[test]
+    fn sample_house2_revision_bumped() {
+        let mut s = fresh_session();
+        assert_eq!(s.doc().unwrap().arch_revision, 0);
+        s.execute("arch.sample", &json!({ "house2": true })).unwrap();
+        assert!(s.doc().unwrap().arch_revision > 0);
+    }
 }
