@@ -551,4 +551,71 @@ mod tests {
         let repeated_dist = [0.1, 0.1, 0.1];
         assert!(offset_polygon(&repeated, &repeated_dist, true).is_none());
     }
+
+    #[test]
+    fn offset_polygon_rejects_nan_points() {
+        let square = unit_square_ccw();
+        let with_nan = vec![Vec2::ZERO, Vec2::X, Vec2::new(1.0, f64::NAN), Vec2::new(0.0, 1.0)];
+        let d = [0.1, 0.1, 0.1, 0.1];
+        assert!(offset_polygon(&with_nan, &d, true).is_none());
+    }
+
+    #[test]
+    fn offset_polygon_rejects_inf_points() {
+        let with_inf = vec![Vec2::ZERO, Vec2::X, Vec2::new(f64::INFINITY, 1.0), Vec2::new(0.0, 1.0)];
+        let d = [0.1, 0.1, 0.1, 0.1];
+        assert!(offset_polygon(&with_inf, &d, true).is_none());
+    }
+
+    #[test]
+    fn offset_polygon_triangle() {
+        let tri = sq(&[(0.0, 0.0), (2.0, 0.0), (0.0, 2.0)]);
+        let d = [1.0, 1.0, 1.0];
+        let out = offset_polygon(&tri, &d, true).unwrap_or_else(|| {
+            assert!(false, "triangle offset failed");
+            vec![]
+        });
+        assert_eq!(out.len(), 3);
+        assert!(ring_area(&out) > ring_area(&tri));
+        assert!(is_simple(&out));
+    }
+
+    #[test]
+    fn offset_polygon_cw_input() {
+        let cw = sq(&[(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0)]);
+        let d = [0.5, 0.5, 0.5, 0.5];
+        let out = offset_polygon(&cw, &d, true).unwrap_or_else(|| {
+            assert!(false, "CW square offset failed");
+            vec![]
+        });
+        assert!(close(ring_area(&out), 4.0));
+        let b = bounds_of(&out);
+        assert!(close(b.0, -0.5) && close(b.1, -0.5) && close(b.2, 1.5) && close(b.3, 1.5));
+    }
+
+    #[test]
+    fn offset_polygon_large_coords() {
+        let big = sq(&[(1e6, 1e6), (1e6 + 1.0, 1e6), (1e6 + 1.0, 1e6 + 1.0), (1e6, 1e6 + 1.0)]);
+        let d = [0.5, 0.5, 0.5, 0.5];
+        let out = offset_polygon(&big, &d, true).unwrap_or_else(|| {
+            assert!(false, "large-coordinate square offset failed");
+            vec![]
+        });
+        assert!(close(ring_area(&out), 4.0));
+        let b = bounds_of(&out);
+        assert!(close(b.0, 1e6 - 0.5) && close(b.1, 1e6 - 0.5));
+        assert!(close(b.2, 1e6 + 1.5) && close(b.3, 1e6 + 1.5));
+    }
+
+    #[test]
+    fn offset_polygon_tiny_distance() {
+        let square = unit_square_ccw();
+        let d = [1e-9, 1e-9, 1e-9, 1e-9];
+        let out = offset_polygon(&square, &d, true).unwrap_or_else(|| {
+            assert!(false, "tiny distance offset failed");
+            vec![]
+        });
+        assert!(is_simple(&out));
+        assert!(ring_area(&out) > 1.0);
+    }
 }
