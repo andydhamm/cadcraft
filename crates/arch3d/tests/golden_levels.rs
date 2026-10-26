@@ -323,3 +323,94 @@ fn probe_at_floor_surface_returns_floor() {
     assert_eq!(hit.part, "floor", "floor surface probe part = `{}` (expected `floor`)", hit.part);
     assert!(hit.id.starts_with('r'), "floor surface probe id `{}` is not a room label", hit.id);
 }
+
+/// Probing at the exact boundary of the loop hole hits the floor (the hole
+/// boundary belongs to the outer slab).
+#[test]
+fn probe_at_hole_boundary_returns_floor() {
+    let (_model, scene) = house_with_loop();
+
+    // Left edge of the loop hole (x = 2.5).
+    let left = scene.probe(Vec3::new(2.5, 1.5, -0.15));
+    let left = left.expect("probe(2.5, 1.5, -0.15) returned None (expected floor at hole boundary)");
+    assert_eq!(left.part, "floor", "left boundary probe part = `{}` (expected `floor`)", left.part);
+
+    // Right edge of the loop hole (x = 3.5).
+    let right = scene.probe(Vec3::new(3.5, 1.5, -0.15));
+    let right = right.expect("probe(3.5, 1.5, -0.15) returned None (expected floor at hole boundary)");
+    assert_eq!(right.part, "floor", "right boundary probe part = `{}` (expected `floor`)", right.part);
+
+    // Top edge of the loop hole (y = 2.0).
+    let top = scene.probe(Vec3::new(3.0, 2.0, -0.15));
+    let top = top.expect("probe(3.0, 2.0, -0.15) returned None (expected floor at hole boundary)");
+    assert_eq!(top.part, "floor", "top boundary probe part = `{}` (expected `floor`)", top.part);
+
+    // Bottom edge of the loop hole (y = 1.0).
+    let bottom = scene.probe(Vec3::new(3.0, 1.0, -0.15));
+    let bottom = bottom.expect("probe(3.0, 1.0, -0.15) returned None (expected floor at hole boundary)");
+    assert_eq!(bottom.part, "floor", "bottom boundary probe part = `{}` (expected `floor`)", bottom.part);
+}
+
+/// Probing just above the floor slab (inside the room) returns None.
+#[test]
+fn probe_just_above_floor_is_empty() {
+    let (_model, scene) = house_with_loop();
+
+    // Just above the floor slab at z = 0.01, inside the inner room.
+    let hit = scene.probe(Vec3::new(3.0, 1.5, 0.01));
+    assert!(hit.is_none(), "probe(3.0, 1.5, 0.01) returned {hit:?} (expected None, inside room above floor)");
+
+    // Just above the floor slab at z = 0.01, inside the south room.
+    let hit2 = scene.probe(Vec3::new(1.0, 1.0, 0.01));
+    assert!(hit2.is_none(), "probe(1.0, 1.0, 0.01) returned {hit2:?} (expected None, inside room above floor)");
+}
+
+/// Probing at the ceiling height returns a ceiling hit (same z as the
+/// existing slab_hole_gives_two_room_slabs test).
+#[test]
+fn probe_at_ceiling_height_returns_ceiling() {
+    let (_model, scene) = house_with_loop();
+
+    // At z = 2.39, inside the inner room.
+    let hit = scene.probe(Vec3::new(3.0, 1.5, 2.39));
+    let hit = hit.expect("probe(3.0, 1.5, 2.39) returned None (expected ceiling)");
+    assert_eq!(hit.part, "ceiling", "ceiling probe part = `{}` (expected `ceiling`)", hit.part);
+
+    // At z = 2.39, inside the south room.
+    let hit2 = scene.probe(Vec3::new(1.0, 1.0, 2.39));
+    let hit2 = hit2.expect("probe(1.0, 1.0, 2.39) returned None (expected ceiling)");
+    assert_eq!(hit2.part, "ceiling", "ceiling probe part = `{}` (expected `ceiling`)", hit2.part);
+}
+
+/// Probing with NaN coordinates returns None and does not panic.
+#[test]
+fn probe_with_nan_returns_none() {
+    let (_model, scene) = house_with_loop();
+
+    assert!(scene.probe(Vec3::new(f64::NAN, 1.5, -0.15)).is_none(), "probe(NaN, 1.5, -0.15) should be None");
+    assert!(scene.probe(Vec3::new(3.0, f64::NAN, -0.15)).is_none(), "probe(3.0, NaN, -0.15) should be None");
+    assert!(scene.probe(Vec3::new(3.0, 1.5, f64::NAN)).is_none(), "probe(3.0, 1.5, NaN) should be None");
+}
+
+/// Rebuilding the scene and probing again gives identical results.
+#[test]
+fn probe_rebuild_consistent() {
+    let (model, scene1) = house_with_loop();
+    let scene2 = build(&model);
+
+    let p1 = scene1.probe(Vec3::new(3.0, 1.5, -0.15));
+    let p2 = scene2.probe(Vec3::new(3.0, 1.5, -0.15));
+    assert_eq!(p1.is_some(), p2.is_some(), "probe consistency: Some/None mismatch at (3.0, 1.5, -0.15)");
+    if let (Some(a), Some(b)) = (p1, p2) {
+        assert_eq!(a.part, b.part, "probe consistency: part mismatch at (3.0, 1.5, -0.15)");
+        assert_eq!(a.id, b.id, "probe consistency: id mismatch at (3.0, 1.5, -0.15)");
+    }
+
+    let p3 = scene1.probe(Vec3::new(1.0, 1.0, -0.15));
+    let p4 = scene2.probe(Vec3::new(1.0, 1.0, -0.15));
+    assert_eq!(p3.is_some(), p4.is_some(), "probe consistency: Some/None mismatch at (1.0, 1.0, -0.15)");
+    if let (Some(a), Some(b)) = (p3, p4) {
+        assert_eq!(a.part, b.part, "probe consistency: part mismatch at (1.0, 1.0, -0.15)");
+        assert_eq!(a.id, b.id, "probe consistency: id mismatch at (1.0, 1.0, -0.15)");
+    }
+}
