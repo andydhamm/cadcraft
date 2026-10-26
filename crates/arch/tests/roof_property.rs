@@ -457,7 +457,7 @@ fn roof_geometry_matches_build_roof() {
 
     // All nodes should be finite
     for node in &geom.skel.nodes {
-        assert!(node.x.is_finite() && node.y.is_finite(), "non-finite skeleton node");
+        assert!(node.pos.x.is_finite() && node.pos.y.is_finite(), "non-finite skeleton node");
         assert!(node.time.is_finite() || node.time.is_infinite(), "non-finite node time");
     }
 }
