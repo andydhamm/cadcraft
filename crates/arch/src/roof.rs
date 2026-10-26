@@ -6,7 +6,7 @@
 //! edge attributed to the first wall. The result is a simple, finite, bounded ring
 //! (≤ 256 edges) used by the roof skeleton (phase 4).
 
-use cadcraft_doc::{ArchId, ArchModel, Roof, RoofDirective, Wall};
+use cadcraft_doc::{ArchId, ArchModel, Roof, RoofDirective, RoofPlane, Wall};
 use cadcraft_geom::Vec2;
 
 /// One edge of the outer-face footprint, attributed to the wall it came from.
@@ -228,6 +228,203 @@ pub fn top_level(model: &ArchModel) -> u32 {
     }
 }
 
+/// Errors from building roof geometry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoofError {
+    /// No exterior, non-divider walls on the level to build a roof from.
+    NoWalls,
+    /// The outer-face footprint could not be built (self-crossing, too many edges, non-simple).
+    BadFootprint,
+    /// The roof skeleton could not be built or failed its invariant checks.
+    Skeleton,
+    /// The resulting roof has more planes than [`cadcraft_doc::MAX_ROOF_PLANES`].
+    TooComplex,
+    /// A degenerate geometry: a non-finite node, or no usable roof planes.
+    Degenerate,
+}
+
+impl std::fmt::Display for RoofError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                RoofError::NoWalls => "no exterior walls on the level to build a roof from",
+                RoofError::BadFootprint => "the outer-face footprint could not be built",
+                RoofError::Skeleton => "the roof skeleton could not be built or failed its checks",
+                RoofError::TooComplex => "the roof has too many planes to be stored",
+                RoofError::Degenerate => "the roof geometry is degenerate",
+            }
+        )
+    }
+}
+
+impl std::error::Error for RoofError {}
+
+/// The geometry of a roof built from the skeleton: the skeleton itself, the footprint it
+/// was built from, the per-edge slopes, and the per-edge eave elevations.
+///
+/// `skel.nodes[i].time` is the rise above the eave (the skeleton is weighted by `1 / slope`),
+/// so a node's elevation is `eave_z + time`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoofGeom {
+    /// The roof skeleton built from the footprint.
+    pub skel: cadcraft_geom::Skeleton,
+    /// The outer-face footprint the skeleton was built from.
+    pub fp: Footprint,
+    /// Per-edge slope (rise/run); `f64::INFINITY` for a gable end (zero-area face).
+    pub slopes: Vec<f64>,
+    /// Per-edge eave elevation: level elevation + owning wall height.
+    pub eave_z: Vec<f64>,
+}
+
+/// Build the roof geometry for `level` from `model` and the seed `roof`.
+///
+/// Returns [`RoofError::NoWalls`] when there are no exterior walls on the level,
+/// [`RoofError::BadFootprint`] when the footprint cannot be built,
+/// [`RoofError::Skeleton`] when the skeleton fails its build or invariant checks, and
+/// [`RoofError::Degenerate`] when a node is non-finite.
+pub fn roof_geometry(model: &ArchModel, level: u32, roof: &Roof) -> Result<RoofGeom, RoofError> {
+    let fp = match outer_footprint(model, level) {
+        Some(fp) => fp,
+        None => {
+            if model.walls.iter().none(|w| w.exterior && w.base_level == level) {
+                return Err(RoofError::NoWalls);
+            }
+            return Err(RoofError::BadFootprint);
+        }
+    };
+
+    let slopes = wall_slopes(model, level, &fp, roof);
+
+    let skel = match cadcraft_geom::roof_skeleton(&fp.outer, &[], &[slopes.clone()]) {
+        Ok(skel) => skel,
+        Err(_) => return Err(RoofError::Skeleton),
+    };
+
+    if !cadcraft_geom::check(&skel, 1e-9).is_empty() {
+        return Err(RoofError::Skeleton);
+    }
+
+    for node in &skel.nodes {
+        if !node.pos.is_finite() || !node.time.is_finite() {
+            return Err(RoofError::Degenerate);
+        }
+    }
+
+    let elevation = model.level(level).map(|l| l.elevation).unwrap_or(0.0);
+    let eave_z = fp.edges.iter().map(|e| elevation + model.wall(e.wall).map(|w| w.height).unwrap_or(2.7)).collect();
+
+    Ok(RoofGeom { skel, fp, slopes, eave_z })
+}
+
+/// Build a complete [`Roof`] for `level` from `model` and the seed `roof`.
+///
+/// Never returns a partial roof: on any failure it returns the corresponding
+/// [`RoofError`] and the caller keeps the previous roof. The plane `edges` are left
+/// empty (a later segment classifies them).
+pub fn build_roof(model: &ArchModel, level: u32, roof: &Roof) -> Result<Roof, RoofError> {
+    let geom = roof_geometry(model, level, roof)?;
+    let skel = &geom.skel;
+    let fp = &geom.fp;
+    let slopes = &geom.slopes;
+    let eave_z = &geom.eave_z;
+
+    let mut planes = Vec::with_capacity(skel.faces.len());
+    for face in &skel.faces {
+        // Only ring 0 exists here (the footprint has no holes).
+        if face.ring != 0 {
+            continue;
+        }
+        // Face `f` uses ring edge `f.edge` of ring `f.ring`; the footprint ring is already
+        // cleaned of straight-through vertices, so this indexes `fp.edges`/`slopes` directly.
+        let ring_points: Vec<Vec2> = face.nodes.iter().map(|&i| skel.nodes[i].pos).collect();
+        for p in &ring_points {
+            if !p.is_finite() {
+                return Err(RoofError::Degenerate);
+            }
+        }
+        // Drop consecutive duplicates and a trailing point equal to the first.
+        let mut ring: Vec<Vec2> = Vec::with_capacity(ring_points.len());
+        for &p in &ring_points {
+            if ring.is_empty() || !ring.last().map_or(true, |q| q.near(&p, 1e-9)) {
+                ring.push(p);
+            }
+        }
+        if ring.len() > 1 && ring.last().map_or(false, |q| q.near(&ring[0], 1e-9)) {
+            ring.pop();
+        }
+        let ring = crate::poly::ensure_ccw(&ring);
+
+        let projected_area = crate::poly::ring_area(&ring).abs();
+        if projected_area < 1e-9 {
+            // A gable end (weight 0) sweeps a zero-area face; it is not a roof plane.
+            continue;
+        }
+
+        let edge = &fp.edges[face.edge];
+        planes.push(RoofPlane {
+            ring,
+            slope: slopes[face.edge],
+            projected_area,
+            eave_wall: Some(edge.wall),
+            base_edge: [edge.a.x, edge.a.y, edge.b.x, edge.b.y],
+            thickness: roof.thickness,
+            eave_z: eave_z[face.edge],
+        });
+    }
+
+    if planes.is_empty() {
+        return Err(RoofError::Degenerate);
+    }
+    if planes.len() > cadcraft_doc::MAX_ROOF_PLANES {
+        return Err(RoofError::TooComplex);
+    }
+
+    Ok(Roof {
+        id: roof.id,
+        level,
+        pitch_rise: roof.pitch_rise,
+        pitch_run: roof.pitch_run,
+        overhang: roof.overhang,
+        thickness: roof.thickness,
+        fascia: roof.fascia,
+        soffit: roof.soffit,
+        manual: roof.manual,
+        hand_edited: roof.hand_edited,
+        planes,
+        edges: Vec::new(),
+    })
+}
+
+/// The apex elevation of a single roof plane: the eave elevation plus the rise to the
+/// farthest point of the plane's ring from its base edge. Returns 0.0 for an empty ring
+/// or a zero-length base edge.
+pub fn plane_apex_z(plane: &RoofPlane) -> f64 {
+    if plane.ring.is_empty() {
+        return 0.0;
+    }
+    let a = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
+    let b = Vec2::new(plane.base_edge[2], plane.base_edge[3]);
+    let ab = b - a;
+    if ab.len() < 1e-12 {
+        return 0.0;
+    }
+    let run = plane.ring.iter().map(|p| (ab.cross(*p - a)).abs() / ab.len()).fold(0.0, f64::max);
+    plane.eave_z + run * plane.slope
+}
+
+/// The apex elevation of a whole roof: the maximum over its planes, or 0.0 when it
+/// has none.
+pub fn roof_apex_z(roof: &Roof) -> f64 {
+    roof.planes.iter().map(plane_apex_z).fold(0.0, f64::max)
+}
+
+/// Sum of the finite projected areas of a roof's planes.
+pub fn projected_area_sum(roof: &Roof) -> f64 {
+    roof.planes.iter().filter(|p| p.projected_area.is_finite()).map(|p| p.projected_area).sum()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,5 +544,154 @@ mod tests {
         // No exterior walls → last level (0).
         let empty = ArchModel::default();
         assert_eq!(top_level(&empty), 0);
+    }
+
+    /// A fixture roof: no overhang, no thickness, default 6/12 pitch.
+    fn test_roof() -> Roof {
+        Roof { overhang: 0.0, thickness: 0.0, ..Roof::default() }
+    }
+
+    /// A 10 × 8 rectangular house, 0.2 m walls, all 2.4 m high, level 0.
+    fn house_10_8(model: &mut ArchModel) {
+        rectangular_house(model);
+        for w in model.walls.iter_mut() {
+            w.height = 2.4;
+        }
+    }
+
+    #[test]
+    fn hip_roof_has_four_planes() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        let roof = build_roof(&model, 0, &test_roof()).unwrap();
+        assert_eq!(roof.planes.len(), 4, "a hip roof over a rectangle should have 4 planes");
+    }
+
+    #[test]
+    fn hip_ridge_is_at_the_expected_height() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        let roof = build_roof(&model, 0, &test_roof()).unwrap();
+        // 2.4 + 4.1 * 0.5 = 4.45
+        assert!((roof_apex_z(&roof) - 4.45).abs() < 1e-6, "roof_apex_z {} != 4.45", roof_apex_z(&roof));
+        // The ridge nodes sit at y ≈ 4.0 and span x from 4.0 to 6.0.
+        let geom = roof_geometry(&model, 0, &test_roof()).unwrap();
+        let ridge_nodes: Vec<&cadcraft_geom::SkeletonNode> = geom.skel.nodes.iter().filter(|n| (n.pos.y - 4.0).abs() < 1e-6).collect();
+        assert!(!ridge_nodes.is_empty(), "no ridge nodes found");
+        let min_x = ridge_nodes.iter().map(|n| n.pos.x).fold(f64::INFINITY, f64::min);
+        let max_x = ridge_nodes.iter().map(|n| n.pos.x).fold(f64::NEG_INFINITY, f64::max);
+        assert!((min_x - 4.0).abs() < 1e-6, "ridge min_x {} != 4.0", min_x);
+        assert!((max_x - 6.0).abs() < 1e-6, "ridge max_x {} != 6.0", max_x);
+    }
+
+    #[test]
+    fn ridge_height_tracks_pitch() {
+        let pitches = [(4.0, 12.0, 3.766667), (6.0, 12.0, 4.45), (12.0, 12.0, 6.5)];
+        for (rise, run, expected) in pitches {
+            let mut model = ArchModel::default();
+            house_10_8(&mut model);
+            let roof = Roof { pitch_rise: rise, pitch_run: run, overhang: 0.0, thickness: 0.0, ..Roof::default() };
+            let built = build_roof(&model, 0, &roof).unwrap();
+            let apex = roof_apex_z(&built);
+            assert!((apex - expected).abs() < 1e-6, "pitch {rise}/{run}: apex {} != {}", apex, expected);
+        }
+    }
+
+    #[test]
+    fn square_gives_a_pyramid() {
+        let mut model = ArchModel::default();
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(0.0, 4.0), Vec2::new(0.0, 0.0), 0.2));
+        for w in model.walls.iter_mut() {
+            w.height = 2.4;
+        }
+        let roof = build_roof(&model, 0, &test_roof()).unwrap();
+        assert_eq!(roof.planes.len(), 4, "a 4x4 square hip roof should have 4 triangular planes");
+        // All four planes meet at the centre (2.0, 2.0).
+        for plane in &roof.planes {
+            assert!(
+                plane.ring.iter().any(|p| (p.x - 2.0).abs() < 1e-6 && (p.y - 2.0).abs() < 1e-6),
+                "a plane ring should meet at the centre: {:?}",
+                plane.ring
+            );
+        }
+    }
+
+    #[test]
+    fn two_gables_give_two_planes() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        // Left wall (x=0, wall 3) and right wall (x=10, wall 1) become gable ends.
+        if let Some(w) = model.walls.iter_mut().find(|w| w.id == ArchId(1)) {
+            w.roof_directive = RoofDirective::Gable;
+        }
+        if let Some(w) = model.walls.iter_mut().find(|w| w.id == ArchId(3)) {
+            w.roof_directive = RoofDirective::Gable;
+        }
+        let roof = build_roof(&model, 0, &test_roof()).unwrap();
+        assert_eq!(roof.planes.len(), 2, "two gable ends should give 2 planes");
+        // The two planes' base edges span x from -0.1 to 10.1.
+        let min_x = roof.planes.iter().flat_map(|p| [p.base_edge[0], p.base_edge[2]]).fold(f64::INFINITY, f64::min);
+        let max_x = roof.planes.iter().flat_map(|p| [p.base_edge[0], p.base_edge[2]]).fold(f64::NEG_INFINITY, f64::max);
+        assert!((min_x - (-0.1)).abs() < 1e-6, "base edge min_x {} != -0.1", min_x);
+        assert!((max_x - 10.1).abs() < 1e-6, "base edge max_x {} != 10.1", max_x);
+    }
+
+    #[test]
+    fn gable_plus_hip_gives_three_planes() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        // Only the right wall (x=10, wall 1) is a gable end.
+        if let Some(w) = model.walls.iter_mut().find(|w| w.id == ArchId(1)) {
+            w.roof_directive = RoofDirective::Gable;
+        }
+        let roof = build_roof(&model, 0, &test_roof()).unwrap();
+        assert_eq!(roof.planes.len(), 3, "one gable end should give 3 planes");
+    }
+
+    #[test]
+    fn every_plane_slope_equals_its_pitch() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        let roof = build_roof(&model, 0, &test_roof()).unwrap();
+        for plane in &roof.planes {
+            let Some(wall) = plane.eave_wall.as_ref().and_then(|id| model.wall(*id)) else {
+                continue;
+            };
+            let pitch = wall.roof_pitch.unwrap_or(roof.pitch_rise);
+            let run = roof.pitch_run;
+            let expected = if pitch.is_finite() && run.is_finite() && run > 0.0 { pitch / run } else { roof.pitch_rise / roof.pitch_run };
+            assert!((plane.slope - expected).abs() < 1e-12, "plane slope {} != pitch {} for wall {:?}", plane.slope, expected, wall.id);
+        }
+    }
+
+    #[test]
+    fn projected_areas_sum_to_the_footprint() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        let roof = build_roof(&model, 0, &test_roof()).unwrap();
+        let sum = projected_area_sum(&roof);
+        assert!((sum - 83.64).abs() < 1e-6, "projected area sum {} != 83.64 (10.2 x 8.2)", sum);
+    }
+
+    #[test]
+    fn bad_footprint_returns_err_not_a_partial_roof() {
+        // No exterior walls on the level → NoWalls, no roof.
+        let mut model = ArchModel::default();
+        let mut w = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+        w.exterior = false;
+        w.divider = true;
+        model.push_wall(w);
+        assert!(matches!(build_roof(&model, 0, &test_roof()), Err(RoofError::NoWalls)));
+
+        // A self-crossing (bowtie) ring → error, no partial roof.
+        let mut model = ArchModel::default();
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(0.0, 10.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 20.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 20.0), 0.2));
+        assert!(matches!(build_roof(&model, 0, &test_roof()), Err(_)));
     }
 }
