@@ -377,7 +377,7 @@ pub fn roof_geometry(model: &ArchModel, level: u32, roof: &Roof) -> Result<RoofG
         }
     }
 
-    let elevation = model.level(level).map(|l| l.elevation).unwrap_or(0.0);
+    let elevation = model.levels.iter().find(|l| l.index == level).map(|l| l.elevation).unwrap_or(0.0);
     let eave_z = fp.edges.iter().map(|e| elevation + model.wall(e.wall).map(|w| w.height).unwrap_or(2.7)).collect();
 
     Ok(RoofGeom { skel, fp, slopes, eave_z })
@@ -429,6 +429,10 @@ pub fn build_roof(model: &ArchModel, level: u32, roof: &Roof) -> Result<Roof, Ro
         let projected_area = crate::poly::ring_area(&ring).abs();
         if projected_area < 1e-9 {
             // A gable end (weight 0) sweeps a zero-area face; it is not a roof plane.
+            continue;
+        }
+        if slopes[face.edge].is_infinite() {
+            // A gable end (infinite slope) is a vertical face; it is not a roof plane.
             continue;
         }
 
