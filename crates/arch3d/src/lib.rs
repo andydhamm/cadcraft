@@ -970,7 +970,7 @@ mod tests {
         // The wall is at y=0. The window is at x=5.
         // The probe should miss the wall.
         let hit = scene.probe(Vec3::new(5.0, 0.0, 1.5));
-        assert!(hit.is_none() || hit.unwrap().id != ArchId(0), "Probe inside window should not hit wall");
+        assert!(hit.is_none() || hit.unwrap().id != "w0", "Probe inside window should not hit wall");
     }
 
     #[test]
@@ -998,7 +998,7 @@ mod tests {
         let scene = Scene3d::build(&model);
         let hit = scene.probe(Vec3::new(5.0, 0.0, 0.5));
         assert!(hit.is_some(), "Probe below sill should hit wall");
-        assert_eq!(hit.unwrap().id, ArchId(0));
+        assert_eq!(hit.unwrap().id, "w0");
     }
 
     #[test]
@@ -1027,7 +1027,7 @@ mod tests {
         // Header is at 0.9 + 1.5 = 2.4. Wall top is 2.5.
         let hit = scene.probe(Vec3::new(5.0, 0.0, 2.45));
         assert!(hit.is_some(), "Probe above header should hit wall");
-        assert_eq!(hit.unwrap().id, ArchId(0));
+        assert_eq!(hit.unwrap().id, "w0");
     }
 
     #[test]
