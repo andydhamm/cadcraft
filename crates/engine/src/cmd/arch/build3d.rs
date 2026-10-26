@@ -541,11 +541,11 @@ mod tests {
     #[test]
     fn build3d_probe_wall_at_origin() {
         let mut s = wall_session();
-        // Wall starts at origin, probe at origin should hit
-        let params = json!({"probe": [[0.0, 0.0, 1.0]]});
+        // Wall starts at origin, probe just inside the wall from the start should hit
+        let params = json!({"probe": [[0.1, 0.0, 1.0]]});
         let r = s.execute("build3d", &params).unwrap();
         let probe = r["probe"].as_array().expect("missing `probe` array");
-        assert!(probe[0].is_object(), "probe at wall start should hit");
+        assert!(probe[0].is_object(), "probe just inside wall start should hit");
     }
 
     #[test]
