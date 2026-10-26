@@ -1,4 +1,3 @@
-
 //! Property tests for random orthogonal roof footprints.
 //!
 //! Exercises the roof skeleton, edge classifier, and area sum over many
@@ -110,7 +109,7 @@ fn random_orthogonal_ring(rng: &mut Lcg) -> Vec<(f64, f64)> {
 
 #[test]
 fn one_sloped_edge_per_footprint_vertex() {
-    let named: [Vec<(f64, f64)>, 3] = [
+    let named: [Vec<(f64, f64)>; 3] = [
         vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)],
         vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (6.0, 8.0), (6.0, 12.0), (0.0, 12.0)],
         vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (7.0, 8.0), (7.0, 12.0), (3.0, 12.0), (3.0, 8.0), (0.0, 8.0)],
@@ -128,13 +127,18 @@ fn one_sloped_edge_per_footprint_vertex() {
     for pts in rings {
         let model = house(&pts, 2.4);
         let r = roof(6.0, 0.0);
-        let Ok(built) = build_roof(&model, 0, &r) else { continue; };
-        let Some(fp) = outer_footprint(&model, 0) else { continue; };
-        let Ok(edges) = roof_edges(&model, 0, &built) else { continue; };
+        let Ok(built) = build_roof(&model, 0, &r) else {
+            continue;
+        };
+        let Some(fp) = outer_footprint(&model, 0) else {
+            continue;
+        };
+        let Ok(edges) = roof_edges(&model, 0, &built) else {
+            continue;
+        };
 
         // One Hip or Valley edge per footprint vertex.
-        let mut counts: std::collections::HashMap<(i64, i64), usize> =
-            fp.outer.iter().map(|p| (pt_key(p.x, p.y), 0)).collect();
+        let mut counts: std::collections::HashMap<(i64, i64), usize> = fp.outer.iter().map(|p| (pt_key(p.x, p.y), 0)).collect();
         for e in &edges {
             if matches!(e.kind, RoofEdgeKind::Hip | RoofEdgeKind::Valley) {
                 for (px, py) in [(e.a.x, e.a.y), (e.b.x, e.b.y)] {
@@ -150,7 +154,8 @@ fn one_sloped_edge_per_footprint_vertex() {
         }
 
         // Every footprint edge must appear exactly once among geometric Eaves.
-        let footprint_edges: std::collections::HashSet<_> = fp.outer
+        let footprint_edges: std::collections::HashSet<_> = fp
+            .outer
             .iter()
             .enumerate()
             .map(|(i, a)| {
@@ -178,9 +183,15 @@ fn random_footprints_never_panic() {
         let pts = random_orthogonal_ring(&mut rng);
         let model = house(&pts, 2.4);
         let r = roof(pitches[i % 3], overhangs[i % 2]);
-        let Ok(built) = build_roof(&model, 0, &r) else { continue; };
-        let Ok(_edges) = roof_edges(&model, 0, &built) else { continue; };
-        let Ok(geom) = roof_geometry(&model, 0, &r) else { continue; };
+        let Ok(built) = build_roof(&model, 0, &r) else {
+            continue;
+        };
+        let Ok(_edges) = roof_edges(&model, 0, &built) else {
+            continue;
+        };
+        let Ok(geom) = roof_geometry(&model, 0, &r) else {
+            continue;
+        };
         let pairs = interior_edge_pairs(&geom);
 
         assert!(!built.planes.is_empty(), "built roof has no planes");
@@ -193,8 +204,8 @@ fn random_footprints_never_panic() {
         }
         let nf = geom.skel.faces.len();
         for ((f1, f2), _) in &pairs {
-            assert!(f1 < nf, "interior pair face index {f1} out of range ({nf} faces)");
-            assert!(f2 < nf, "interior pair face index {f2} out of range ({nf} faces)");
+            assert!(*f1 < nf, "interior pair face index {f1} out of range ({nf} faces)");
+            assert!(*f2 < nf, "interior pair face index {f2} out of range ({nf} faces)");
             assert_ne!(f1, f2, "interior edge shared by the same face ({f1})");
         }
     }
@@ -207,15 +218,14 @@ fn projected_areas_sum_to_the_footprint_over_random_footprints() {
         let pts = random_orthogonal_ring(&mut rng);
         let model = house(&pts, 2.4);
         let r = roof(6.0, 0.0);
-        let Ok(built) = build_roof(&model, 0, &r) else { continue; };
-        let Some(fp) = outer_footprint(&model, 0) else { continue; };
+        let Ok(built) = build_roof(&model, 0, &r) else {
+            continue;
+        };
+        let Some(fp) = outer_footprint(&model, 0) else {
+            continue;
+        };
         let expected = shoelace(&fp.outer);
         let actual = projected_area_sum(&built);
-        assert!(
-            (actual - expected).abs() < 1e-6,
-            "projected area sum {:.6} != footprint area {:.6}",
-            actual,
-            expected,
-        );
+        assert!((actual - expected).abs() < 1e-6, "projected area sum {:.6} != footprint area {:.6}", actual, expected,);
     }
 }
