@@ -433,4 +433,67 @@ mod tests {
         assert_ne!(probe[0]["id"], probe[2]["id"], "loop 1 and south room must differ: {probe:?}");
         assert_ne!(probe[1]["id"], probe[2]["id"], "loop 2 and south room must differ: {probe:?}");
     }
+
+    /// Resolving `level` by integer index must detect rooms only on that level.
+    #[test]
+    fn roomdetect_level_by_index() {
+        let mut s = Session::new();
+        build_test_wall(&mut s);
+        let res = s.execute("roomdetect", &json!({"level": 0}));
+        assert!(res.is_ok(), "roomdetect by level index must succeed: {:?}", res);
+        let val = res.unwrap();
+        assert!(val["count"].as_u64().unwrap() > 0, "must detect at least one room");
+    }
+
+    /// Resolving `level` by a string that parses as an index must work.
+    #[test]
+    fn roomdetect_level_string_index() {
+        let mut s = Session::new();
+        build_test_wall(&mut s);
+        let res = s.execute("roomdetect", &json!({"level": "0"}));
+        assert!(res.is_ok(), "roomdetect by string index must succeed: {:?}", res);
+        let val = res.unwrap();
+        assert!(val["count"].as_u64().unwrap() > 0, "must detect at least one room");
+    }
+
+    /// A negative level index must be rejected with an error.
+    #[test]
+    fn roomdetect_negative_level_errors() {
+        let mut s = Session::new();
+        build_test_wall(&mut s);
+        let rev_before = s.doc().unwrap().arch_revision;
+        let rooms_before = s.doc().unwrap().arch.rooms.len();
+        let res = s.execute("roomdetect", &json!({"level": -1}));
+        assert!(res.is_err(), "negative level index must be an error: {:?}", res);
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), rooms_before, "rooms must be unchanged after Err");
+        assert_eq!(s.doc().unwrap().arch_revision, rev_before, "arch_revision must be unchanged after Err");
+    }
+
+    /// A non-integer level number must be rejected with an error.
+    #[test]
+    fn roomdetect_non_integer_level_errors() {
+        let mut s = Session::new();
+        build_test_wall(&mut s);
+        let rev_before = s.doc().unwrap().arch_revision;
+        let rooms_before = s.doc().unwrap().arch.rooms.len();
+        let res = s.execute("roomdetect", &json!({"level": 1.5}));
+        assert!(res.is_err(), "non-integer level number must be an error: {:?}", res);
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), rooms_before, "rooms must be unchanged after Err");
+        assert_eq!(s.doc().unwrap().arch_revision, rev_before, "arch_revision must be unchanged after Err");
+    }
+
+    /// Dry run with a level filter must not mutate the model and must report rooms.
+    #[test]
+    fn roomdetect_dry_run_with_level() {
+        let mut s = Session::new();
+        build_test_wall(&mut s);
+        let rooms_before = s.doc().unwrap().arch.rooms.len();
+        let rev_before = s.doc().unwrap().arch_revision;
+        let res = s.execute("roomdetect", &json!({"level": 0, "dryRun": true}));
+        assert!(res.is_ok(), "dry-run roomdetect with level must succeed: {:?}", res);
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), rooms_before, "dry run must not add rooms");
+        assert_eq!(s.doc().unwrap().arch_revision, rev_before, "dry run must not bump revision");
+        let val = res.unwrap();
+        assert!(val["count"].as_u64().unwrap() > 0, "must detect at least one room");
+    }
 }
