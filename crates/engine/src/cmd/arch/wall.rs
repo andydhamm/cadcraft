@@ -973,4 +973,75 @@ mod tests {
         });
         assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
     }
+
+    #[test]
+    fn wall_divider_with_explicit_exterior_type() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "divider": true,
+            "type": "exterior",
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!(d.arch.walls[0].divider);
+        assert!(!d.arch.walls[0].exterior);
+        assert_eq!(d.arch.walls[0].wall_type, "exterior".to_string());
+    }
+
+    #[test]
+    fn wall_divider_rejects_negative_thickness() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "divider": true,
+            "thickness": -1.0,
+        });
+        assert!(s.execute("wall", &p).is_err());
+    }
+
+    #[test]
+    fn wall_divider_rejects_nan_thickness() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "divider": true,
+            "thickness": f64::NAN,
+        });
+        assert!(s.execute("wall", &p).is_err());
+    }
+
+    #[test]
+    fn wall_divider_rejects_infinity_thickness() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "divider": true,
+            "thickness": f64::INFINITY,
+        });
+        assert!(s.execute("wall", &p).is_err());
+    }
+
+    #[test]
+    fn wall_with_type_knee_is_interior() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "type": "knee",
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!(!d.arch.walls[0].exterior);
+        assert_eq!(d.arch.walls[0].wall_type, "knee".to_string());
+    }
+
+    #[test]
+    fn wall_with_unknown_type_fails() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "type": "unknown",
+        });
+        assert!(s.execute("wall", &p).is_err());
+    }
 }
