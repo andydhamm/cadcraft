@@ -322,4 +322,160 @@ mod tests {
         s.undo().unwrap();
         assert_eq!(s.doc().unwrap().arch.roofs.len(), before);
     }
+
+    #[test]
+    fn roofauto_accepts_flat_roof() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0], [0.0, 0.0]],
+            "exterior": true,
+        });
+        s.execute("wall", &p).unwrap();
+
+        let p = json!({
+            "pitchRise": 0.0,
+            "pitchRun": 12.0,
+        });
+        let r = s.execute("roofauto", &p).unwrap();
+        assert!(r["rebuilt"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn roofauto_rejects_overhang_above_max() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "overhang": 5.1,
+        });
+        assert!(s.execute("roofauto", &p).is_err());
+    }
+
+    #[test]
+    fn roofauto_rejects_thickness_above_max() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "thickness": 2.1,
+        });
+        assert!(s.execute("roofauto", &p).is_err());
+    }
+
+    #[test]
+    fn roofauto_rejects_unknown_level() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "level": "unknown",
+        });
+        assert!(s.execute("roofauto", &p).is_err());
+    }
+
+    #[test]
+    fn roofauto_with_per_wall_directives() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0], [0.0, 0.0]],
+            "exterior": true,
+        });
+        s.execute("wall", &p).unwrap();
+
+        let wall_id = s.doc().unwrap().arch.walls.first().map(|w| format!("w{}", w.id.0)).unwrap();
+        let p = json!({
+            "walls": [
+                {"wall": wall_id, "directive": "hip"}
+            ]
+        });
+        let r = s.execute("roofauto", &p).unwrap();
+        assert!(r["rebuilt"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn roofauto_rejects_missing_wall_id() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "walls": [{"directive": "hip"}]
+        });
+        assert!(s.execute("roofauto", &p).is_err());
+    }
+
+    #[test]
+    fn roofauto_accepts_fascia_soffit_false() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0], [0.0, 0.0]],
+            "exterior": true,
+        });
+        s.execute("wall", &p).unwrap();
+
+        let p = json!({
+            "fascia": false,
+            "soffit": false,
+        });
+        let r = s.execute("roofauto", &p).unwrap();
+        assert!(r["rebuilt"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn roofauto_with_specific_level() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0], [0.0, 0.0]],
+            "exterior": true,
+            "level": "ground",
+        });
+        s.execute("wall", &p).unwrap();
+
+        let p = json!({
+            "level": "ground",
+        });
+        let r = s.execute("roofauto", &p).unwrap();
+        assert!(r["rebuilt"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn roofauto_returns_correct_format() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0], [0.0, 0.0]],
+            "exterior": true,
+        });
+        s.execute("wall", &p).unwrap();
+
+        let p = json!({});
+        let r = s.execute("roofauto", &p).unwrap();
+        assert!(r["handles"].is_array());
+        assert!(r["handles"].as_array().unwrap().len() == 1);
+        assert!(r["planes"].is_u64());
+        assert!(r["projectedArea"].is_f64());
+        assert!(r["rebuilt"].as_bool().is_some());
+    }
+
+    #[test]
+    fn roofauto_handle_format() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0], [0.0, 0.0]],
+            "exterior": true,
+        });
+        s.execute("wall", &p).unwrap();
+
+        let p = json!({});
+        let r = s.execute("roofauto", &p).unwrap();
+        let handle = r["handles"][0].as_str().unwrap();
+        assert!(handle.starts_with("r"));
+    }
+
+    #[test]
+    fn roofauto_accepts_huge_pitch() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0], [0.0, 0.0]],
+            "exterior": true,
+        });
+        s.execute("wall", &p).unwrap();
+
+        let p = json!({
+            "pitchRise": 1000.0,
+            "pitchRun": 12.0,
+        });
+        let r = s.execute("roofauto", &p).unwrap();
+        assert!(r["rebuilt"].as_bool().unwrap());
+    }
 }
