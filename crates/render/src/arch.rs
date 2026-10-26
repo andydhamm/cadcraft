@@ -759,4 +759,88 @@ mod tests {
         assert!((pts[1].x - 2e12).abs() < 1.0, "x1 precision: {}", pts[1].x);
         assert!((pts[1].y - 2e12).abs() < 1.0, "y1 precision: {}", pts[1].y);
     }
+
+    /// A roof with an empty edges list draws no prims.
+    #[test]
+    fn roof_without_edges_draws_nothing() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_roof(Roof { edges: vec![], ..Roof::default() });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = roof_handle(rid);
+        assert!(list.prims.iter().all(|p| p.handle != handle), "roof with no edges drew prims");
+    }
+
+    /// When the A-ROOF layer does not exist, roof edges fall back to Color::Index(7) (aci7).
+    #[test]
+    fn roof_falls_back_to_index_7_when_layer_missing() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_roof(Roof {
+            edges: vec![RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(0.0, 0.0), b: Vec2::new(10.0, 0.0), ..RoofEdge::default() }],
+            ..Roof::default()
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = roof_handle(rid);
+        let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert_eq!(roof_prims.len(), 1, "expected 1 roof prim");
+        for p in &roof_prims {
+            assert!(p.aci7, "roof prim should use aci7 when A-ROOF layer is missing");
+        }
+    }
+
+    /// Roof handles are stable and unique per roof.
+    #[test]
+    fn roof_handle_is_stable_and_unique() {
+        let h0 = roof_handle(ArchId(0));
+        let h1 = roof_handle(ArchId(1));
+        assert_ne!(h0, h1, "roof handles must be unique");
+        assert_eq!(roof_handle(ArchId(0)), h0, "roof handle must be stable");
+
+        let mut d = Drawing::new_metric();
+        let rid0 = d.arch.push_roof(Roof {
+            edges: vec![RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(0.0, 0.0), b: Vec2::new(10.0, 0.0), ..RoofEdge::default() }],
+            ..Roof::default()
+        });
+        let rid1 = d.arch.push_roof(Roof {
+            edges: vec![RoofEdge { kind: RoofEdgeKind::Hip, a: Vec2::new(0.0, 10.0), b: Vec2::new(10.0, 10.0), ..RoofEdge::default() }],
+            ..Roof::default()
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let prims0: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == roof_handle(rid0)).collect();
+        let prims1: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == roof_handle(rid1)).collect();
+        assert_eq!(prims0.len(), 1, "roof 0 should have 1 prim");
+        assert_eq!(prims1.len(), 1, "roof 1 should have 1 prim");
+    }
+
+    /// Roof edges are drawn in the order they appear in the edges list.
+    #[test]
+    fn roof_edges_drawn_in_order() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_roof(Roof {
+            edges: vec![
+                RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(0.0, 0.0), b: Vec2::new(10.0, 0.0), ..RoofEdge::default() },
+                RoofEdge { kind: RoofEdgeKind::Hip, a: Vec2::new(10.0, 0.0), b: Vec2::new(10.0, 8.0), ..RoofEdge::default() },
+                RoofEdge { kind: RoofEdgeKind::Valley, a: Vec2::new(0.0, 8.0), b: Vec2::new(10.0, 8.0), ..RoofEdge::default() },
+            ],
+            ..Roof::default()
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = roof_handle(rid);
+        let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert_eq!(roof_prims.len(), 3, "expected 3 roof prims");
+
+        let all_verts: Vec<Vec2> = roof_prims.iter().flat_map(|p| list.points(p).iter().copied()).collect();
+        let expected =
+            vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), Vec2::new(10.0, 8.0)];
+        for (got, exp) in all_verts.iter().zip(expected.iter()) {
+            assert!((got.x - exp.x).abs() < 1e-9 && (got.y - exp.y).abs() < 1e-9, "vertex mismatch");
+        }
+    }
 }
