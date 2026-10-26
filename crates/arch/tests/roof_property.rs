@@ -6,6 +6,7 @@ use cadcraft_geom::Vec2;
 /// Helper to create a closed ring of exterior walls on level 0.
 fn house(pts: &[(f64, f64)], height: f64) -> ArchModel {
     let mut model = ArchModel::default();
+    model.levels.push(Level::default());
 
     if pts.len() < 3 {
         return model;
