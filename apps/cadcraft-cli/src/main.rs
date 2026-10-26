@@ -1399,10 +1399,10 @@ mod tests {
         assert_eq!(format_projected([-1.5, -2.5, -3.5, -4.5]), "PROJECTED -1.500000,-2.500000,-3.500000,-4.500000");
         // Large values
         assert_eq!(format_projected([1e6, 2e6, 3e6, 4e6]), "PROJECTED 1000000.000000,2000000.000000,3000000.000000,4000000.000000");
-        // Values that round up
-        assert_eq!(format_projected([1.0000005, 2.0000005, 3.0000005, 4.0000005]), "PROJECTED 1.000001,2.000001,3.000001,4.000001");
+        // Values that round up (use 7 in 7th decimal so f32 imprecision can't flip it)
+        assert_eq!(format_projected([1.0000007, 2.0000007, 3.0000007, 4.0000007]), "PROJECTED 1.000001,2.000001,3.000001,4.000001");
         // Values that round down
-        assert_eq!(format_projected([1.0000004, 2.0000004, 3.0000004, 4.0000004]), "PROJECTED 1.000000,2.000000,3.000000,4.000000");
+        assert_eq!(format_projected([1.0000003, 2.0000003, 3.0000003, 4.0000003]), "PROJECTED 1.000000,2.000000,3.000000,4.000000");
     }
 
     #[test]
