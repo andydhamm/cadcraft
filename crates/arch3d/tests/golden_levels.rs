@@ -4,11 +4,79 @@
 //! correctly identifies the floor slabs of both storeys at the expected
 //! points.
 
+use cadcraft_arch::area::refresh_areas;
 use cadcraft_arch::room::detect_rooms;
+use cadcraft_arch3d::Mesh;
 use cadcraft_arch3d::build;
 use cadcraft_doc::arch::room_label;
 use cadcraft_doc::{ArchModel, Level, Wall};
+use cadcraft_geom::point_in_polygon;
 use cadcraft_geom::{Vec2, Vec3};
+
+/// Build the phase-1 house with a 0.1 m loop wall, detect rooms, and build the 3D scene.
+fn house_with_loop() -> (ArchModel, cadcraft_arch3d::Scene3d) {
+    let mut model = ArchModel::default();
+
+    // Exterior rectangle centre lines.
+    let exterior = [
+        (Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)),
+        (Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0)),
+        (Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)),
+        (Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)),
+    ];
+
+    for (start, end) in exterior.iter() {
+        model.push_wall(Wall {
+            start: start.clone(),
+            end: end.clone(),
+            thickness: 0.2,
+            height: 2.7,
+            base_level: 0,
+            exterior: true,
+            ..Wall::default()
+        });
+    }
+
+    // Interior walls.
+    model.push_wall(Wall { start: Vec2::new(0.0, 3.0), end: Vec2::new(10.0, 3.0), thickness: 0.1, height: 2.7, base_level: 0, ..Wall::default() });
+    model.push_wall(Wall { start: Vec2::new(6.0, 3.0), end: Vec2::new(6.0, 8.0), thickness: 0.1, height: 2.7, base_level: 0, ..Wall::default() });
+
+    // Closed 0.1 m loop wall.
+    let loop_walls = [
+        (Vec2::new(2.5, 1.0), Vec2::new(3.5, 1.0)),
+        (Vec2::new(3.5, 1.0), Vec2::new(3.5, 2.0)),
+        (Vec2::new(3.5, 2.0), Vec2::new(2.5, 2.0)),
+        (Vec2::new(2.5, 2.0), Vec2::new(2.5, 1.0)),
+    ];
+    for (start, end) in loop_walls.iter() {
+        model.push_wall(Wall { start: start.clone(), end: end.clone(), thickness: 0.1, height: 2.7, base_level: 0, ..Wall::default() });
+    }
+
+    let rooms = detect_rooms(&model);
+    for r in rooms {
+        model.push_room(r);
+    }
+    refresh_areas(&mut model);
+
+    let scene = build(&model);
+    (model, scene)
+}
+
+/// Sum the areas of triangles in `mesh` whose three vertices all sit at height `z`.
+fn cap_area(mesh: &Mesh, z: f64) -> f64 {
+    let mut total = 0.0;
+    for chunk in mesh.indices.chunks(3) {
+        let a = mesh.positions[chunk[0] as usize];
+        let b = mesh.positions[chunk[1] as usize];
+        let c = mesh.positions[chunk[2] as usize];
+        if (a.z - z).abs() < 1e-6 && (b.z - z).abs() < 1e-6 && (c.z - z).abs() < 1e-6 {
+            let ab = Vec2::new(b.x - a.x, b.y - a.y);
+            let ac = Vec2::new(c.x - a.x, c.y - a.y);
+            total += (ab.x * ac.y - ab.y * ac.x).abs() * 0.5;
+        }
+    }
+    total
+}
 
 /// Two-storey model:
 /// - Level 1 (index 0, elevation 0.0): 10×8 exterior, 1 room.
@@ -111,4 +179,30 @@ fn two_storey_probes_match_the_brief() {
         }
         None => assert!(false, "probe(2.0, 1.0, -0.15) returned None (expected a Level-1 floor hit)"),
     }
+}
+
+/// The south room's floor slab must have the loop hole cut out of it.
+#[test]
+fn south_room_slab_has_the_loop_hole() {
+    let (model, scene) = house_with_loop();
+
+    // Find the south room (contains point (1.0, 1.0)).
+    let south = model.rooms.iter().find(|r| point_in_polygon(&r.polygon, Vec2::new(1.0, 1.0))).expect("south room not found");
+    assert_eq!(south.holes.len(), 1, "south room should have 1 hole");
+    assert!((south.interior_area - 26.72).abs() < 1e-3, "south interior area = {}, expected 26.72", south.interior_area);
+
+    // Find the inner room (the small room inside the loop, area ≈ 0.81).
+    let inner = model.rooms.iter().find(|r| (r.interior_area - 0.81).abs() < 1e-3).expect("inner room not found");
+    assert!(inner.holes.is_empty(), "inner room should have no holes");
+
+    // Find the floor mesh for each room.
+    let south_mesh = scene.meshes.iter().filter(|m| m.object == south.id && m.material == "floor").collect::<Vec<_>>();
+    assert_eq!(south_mesh.len(), 1, "south room should have exactly 1 floor mesh");
+    let south_cap = cap_area(south_mesh[0], 0.0);
+    assert!((south_cap - 25.51).abs() < 1e-3, "south slab top cap area = {}, expected 25.51 (26.72 - 1.21 hole)", south_cap);
+
+    let inner_mesh = scene.meshes.iter().filter(|m| m.object == inner.id && m.material == "floor").collect::<Vec<_>>();
+    assert_eq!(inner_mesh.len(), 1, "inner room should have exactly 1 floor mesh");
+    let inner_cap = cap_area(inner_mesh[0], 0.0);
+    assert!((inner_cap - 0.81).abs() < 1e-3, "inner slab top cap area = {}, expected 0.81", inner_cap);
 }
