@@ -289,34 +289,23 @@ impl Mesh {
             self.indices.extend([(b_base + m + tri[0]) as u32, (b_base + m + tri[1]) as u32, (b_base + m + tri[2]) as u32]);
         }
 
-        // Detect bridge edges: an edge (ring[i], ring[i+1]) is a bridge if another
-        // edge has the same endpoints (in either orientation). Both occurrences
-        // are skipped in the side loop. Compare by position, not index, because
-        // the bridge vertices appear at different indices in the merged ring.
+        // Detect bridge edges by index: an edge (i, j) with j = (i+1) % m is a
+        // bridge if the undirected edge (min(i,j), max(i,j)) appears more than
+        // once. In the merged ring each edge has a unique starting index, so
+        // no edges are bridges and none are skipped.
+        let mut edge_count: HashMap<(u32, u32), u32> = HashMap::new();
+        for i in 0..m {
+            let j = (i + 1) % m;
+            let key = if i < j { (i, j) } else { (j, i) };
+            *edge_count.entry(key).or_insert(0) += 1;
+        }
         let mut is_bridge = vec![false; m as usize];
         for i in 0..m {
-            if is_bridge[i as usize] {
-                continue;
-            }
             let j = (i + 1) % m;
-            for k in (i + 2)..m {
-                if is_bridge[k as usize] {
-                    continue;
-                }
-                let l = (k + 1) % m;
-                if l == i {
-                    continue;
-                }
-                let pi = &ring[i as usize];
-                let pj = &ring[j as usize];
-                let pk = &ring[k as usize];
-                let pl = &ring[l as usize];
-                let same = ((pi.x - pk.x).abs() < 1e-9 && (pi.y - pk.y).abs() < 1e-9 && (pj.x - pl.x).abs() < 1e-9 && (pj.y - pl.y).abs() < 1e-9)
-                    || ((pi.x - pl.x).abs() < 1e-9 && (pi.y - pl.y).abs() < 1e-9 && (pj.x - pk.x).abs() < 1e-9 && (pj.y - pk.y).abs() < 1e-9);
-                if same {
+            let key = if i < j { (i, j) } else { (j, i) };
+            if let Some(&count) = edge_count.get(&key) {
+                if count >= 2 {
                     is_bridge[i as usize] = true;
-                    is_bridge[k as usize] = true;
-                    break;
                 }
             }
         }
