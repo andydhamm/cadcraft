@@ -3,7 +3,7 @@ set -uo pipefail
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 cargo run -q -p cadcraft-cli -- run --metric \
   --cmd 'wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.4,"exterior":true}' \
-  --cmd 'wall {"points":[[0,3],[10,3]],"thickness":0.1}' \
+  --cmd 'wall {"points":[[0,3],[10,3]],"thickness":0.1,"height":2.4}' \
   --cmd 'door {"wall":"w0","offset":3.0,"width":0.9,"height":2.1,"style":"hinged"}' \
   --cmd 'window {"wall":"w0","offset":7.0,"width":1.2,"height":1.2,"sill":0.9,"style":"casement"}' \
   --cmd 'window {"wall":"w2","offset":4.0,"width":1.2,"height":1.2,"sill":0.9,"style":"slider"}' \

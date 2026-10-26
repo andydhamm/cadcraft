@@ -3,8 +3,8 @@ set -uo pipefail
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 cargo run -q -p cadcraft-cli -- run --metric \
   --cmd 'wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.4,"exterior":true}' \
-  --cmd 'wall {"points":[[0,3],[10,3]],"thickness":0.1}' \
-  --cmd 'wall {"points":[[6,3],[6,8]],"thickness":0.1}' \
+  --cmd 'wall {"points":[[0,3],[10,3]],"thickness":0.1,"height":2.4}' \
+  --cmd 'wall {"points":[[6,3],[6,8]],"thickness":0.1,"height":2.4}' \
   --save "$tmp/house.dxf" >/dev/null 2>&1 || { echo "FAIL: plan build failed"; exit 1; }
 cargo run -q -p cadcraft-cli -- convert "$tmp/house.dxf" "$tmp/house.glb" >/dev/null 2>&1 || { echo "FAIL: convert to .glb failed"; exit 1; }
 test -s "$tmp/house.glb" || { echo "FAIL: empty .glb"; exit 1; }
