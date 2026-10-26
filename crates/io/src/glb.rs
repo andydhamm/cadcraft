@@ -124,7 +124,7 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
             idx
         };
 
-        let name = match m.material {
+        let name = match m.material.as_str() {
             "roof" => {
                 let plane = match roof_planes.entry(m.object.0) {
                     Entry::Occupied(mut e) => {
