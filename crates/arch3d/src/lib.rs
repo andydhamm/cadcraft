@@ -236,8 +236,18 @@ impl Scene3d {
         let shape_by_id: BTreeMap<ArchId, usize> = shapes.iter().enumerate().map(|(i, s)| (s.id, i)).collect();
         let mut meshes: Vec<Mesh> = Vec::with_capacity(model.walls.len());
 
+        // Determine which walls need rebuilding:
+        // 1. Walls explicitly in dirty set.
+        // 2. Walls hosting any opening in the dirty set.
+        let mut walls_to_rebuild: BTreeSet<ArchId> = dirty.clone();
+        for opening in &model.openings {
+            if dirty.contains(&opening.id) {
+                walls_to_rebuild.insert(opening.host);
+            }
+        }
+
         for wall in &model.walls {
-            if !dirty.contains(&wall.id) {
+            if !walls_to_rebuild.contains(&wall.id) {
                 if let Some(mesh) = prev.mesh_for(&wall.id) {
                     meshes.push(mesh.clone());
                     continue;
