@@ -6,7 +6,6 @@ use cadcraft_geom::Vec2;
 /// Helper to create a closed ring of exterior walls on level 0.
 fn house(pts: &[(f64, f64)], height: f64) -> ArchModel {
     let mut model = ArchModel::default();
-    model.levels.push(Level { index: 0, name: "Ground".into(), elevation: 0.0, ceiling_height: height, ..Default::default() });
 
     if pts.len() < 3 {
         return model;
@@ -224,16 +223,16 @@ fn ridge_height_tracks_pitch_on_every_footprint() {
     let r4 = roof(4.0, 0.0);
     let built4 = build_roof(&model, 0, &r4).unwrap();
     let apex4 = roof_apex_z(&built4);
-    // Expected: 2.4 + 4.0 * (4/12) = 3.7333...
-    let expected4 = 2.4 + 4.0 * (4.0 / 12.0);
+    // Expected: 2.4 + 4.1 * (4/12) = 3.7667 (outer-face inset, 0.2 m walls)
+    let expected4 = 2.4 + 4.1 * (4.0 / 12.0);
     assert!((apex4 - expected4).abs() < 1e-6, "Apex 4/12: {} != {}", apex4, expected4);
 
     // 12/12
     let r12 = roof(12.0, 0.0);
     let built12 = build_roof(&model, 0, &r12).unwrap();
     let apex12 = roof_apex_z(&built12);
-    // Expected: 2.4 + 4.0 * 1.0 = 6.4
-    assert!((apex12 - 6.4).abs() < 1e-6, "Apex 12/12: {} != 6.4", apex12);
+    // Expected: 2.4 + 4.1 * 1.0 = 6.5
+    assert!((apex12 - 6.5).abs() < 1e-6, "Apex 12/12: {} != 6.5", apex12);
 }
 
 #[test]
