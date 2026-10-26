@@ -1742,7 +1742,7 @@ fn read_budgeted(bytes: &[u8], mut table_cells_left: usize) -> Result<Drawing> {
         match s.name.as_str() {
             "HEADER" => header(&s.tags, &mut d),
             "TABLES" => tables(&s.tags, &mut d, &mut rx),
-            "BLOCKS" => blocks.extend(read_blocks(&s.tags, &mut d, &mut rx, &mut table_cells_left, &mut skipped)),
+            "BLOCKS" => blocks.extend(read_blocks(&s.tags, &mut d, &mut rx, &mut table_cells_left, &mut skipped, has_arch_record)),
             // A damaged file may split its entities over several ENTITIES sections (#865).
             "ENTITIES" => {
                 let mut n = 0;
@@ -1783,6 +1783,7 @@ fn read_blocks(
     rx: &mut Rx,
     table_cells_left: &mut usize,
     skipped: &mut std::collections::BTreeMap<String, usize>,
+    has_arch_record: bool,
 ) -> Vec<BlockDef> {
     let recs = records(tags);
     for (k, tg) in &recs {
@@ -1807,7 +1808,7 @@ fn read_blocks(
                 j += 1;
             }
             let body = recs.get(i + 1..j).unwrap_or(&[]);
-            let ents = parse_entities(body, d, rx, &mut n, table_cells_left);
+            let ents = parse_entities(body, d, rx, &mut n, table_cells_left, has_arch_record);
             blocks.push((name, base, description, ents, xref));
             i = j + 1;
         } else {
