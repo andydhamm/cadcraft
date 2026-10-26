@@ -304,10 +304,11 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let level = level_name.as_deref().and_then(|name| d.arch.levels.iter().find(|l| l.name == name)).or_else(|| d.arch.levels.first());
 
     // Height: explicit or the level's derived floor-to-floor (ceiling + structure)
-    let height = size_param("wall", p, "height", false)?;
-    let height = match height {
-        Some(h) => h,
-        None => level.map(|l| l.ceiling_height + l.structure).unwrap_or(super::DEFAULT_WALL_HEIGHT),
+    let has_height = p.as_object().is_some_and(|o| o.contains_key("height"));
+    let height = if has_height {
+        size_param("wall", p, "height", false)?.unwrap_or(f64::NAN)
+    } else {
+        level.map(|l| l.ceiling_height + l.structure).unwrap_or(super::DEFAULT_WALL_HEIGHT)
     };
     if !height.is_finite() || height <= 0.0 {
         return Err(bad("wall", "`height` must be a positive finite number"));
