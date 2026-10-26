@@ -494,6 +494,82 @@ mod uk_tests {
             assert_eq!(cols[2], cols[2].trim(), "line {}: trailing whitespace in translation: {:?}", i + 1, cols[2]);
         }
     }
+
+    #[test]
+    fn uk_architecture_menu_path_segments_translated() {
+        // The roomdetect command registers menu path ["Architecture", "Room Detect"].
+        // Both segments must be in the catalog with empty context for the coverage test to pass.
+        with_language("uk", || {
+            assert_eq!(t("Architecture"), "Архітектура");
+            assert_eq!(t("Room Detect"), "Виявити кімнати");
+            assert_eq!(t("Room"), "Кімната");
+            assert_eq!(t("Level"), "Рівень");
+            assert_eq!(t("Wall"), "Стіна");
+            assert_eq!(t("Door"), "Дверь");
+            assert_eq!(t("Window"), "Вікно");
+            assert_eq!(t("Garage Door"), "Гаражна дверь");
+            assert_eq!(t("Move Opening"), "Перемістити отвір");
+            assert_eq!(t("Build 3D"), "Збудити 3D");
+            assert_eq!(t("Arch Inspect"), "Архітектурний огляд");
+            assert_eq!(t("Arch Sample"), "Архітектурний зразок");
+        });
+    }
+
+    #[test]
+    fn uk_architecture_strings_are_not_english_fallbacks() {
+        with_language("uk", || {
+            // If a translation is missing, t() returns the English source.
+            // Verify these Architecture strings are actually translated.
+            for source in [
+                "Architecture",
+                "Room Detect",
+                "Room",
+                "Level",
+                "Wall",
+                "Door",
+                "Window",
+                "Garage Door",
+                "Move Opening",
+                "Build 3D",
+                "Arch Inspect",
+                "Arch Sample",
+                "Automatic",
+                "Plane",
+                "Interior (inner surfaces)",
+                "Standard (centre of walls)",
+                "Living (living areas)",
+                "Area basis",
+                "Ceiling height",
+                "Floor structure thickness",
+            ] {
+                assert_ne!(t(source), source, "Architecture string not translated: {source}");
+            }
+        });
+    }
+
+    #[test]
+    fn uk_architecture_strings_use_cyrillic() {
+        with_language("uk", || {
+            // Verify Architecture translations contain Cyrillic characters, not Latin.
+            for source in [
+                "Architecture",
+                "Room Detect",
+                "Room",
+                "Level",
+                "Wall",
+                "Door",
+                "Window",
+                "Garage Door",
+                "Move Opening",
+                "Build 3D",
+                "Arch Inspect",
+                "Arch Sample",
+            ] {
+                let translated = t(source);
+                assert!(translated.chars().any(|c| !c.is_ascii()), "{source}: translation has no Cyrillic characters: {translated}");
+            }
+        });
+    }
 }
 
 /// `name` lowercased with the Latin accents that occur in language names folded away, so a
