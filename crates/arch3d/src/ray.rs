@@ -137,6 +137,29 @@ pub(crate) fn crossings_upward(o: Vec3, tris: &[[Vec3; 3]]) -> usize {
     tris.iter().filter(|t| crosses_upward(o, t[0], t[1], t[2])).count()
 }
 
+/// Count upward (+Z) crossings of the triangles described by `indices` into `positions`;
+/// at most `cap` triangles are scanned.
+pub(crate) fn mesh_crossings_upward(o: Vec3, positions: &[[f32; 3]], indices: &[u32], cap: usize) -> usize {
+    let mut count = 0;
+    for g in indices.chunks_exact(3) {
+        if count >= cap {
+            break;
+        }
+        let i0 = g[0] as usize;
+        let i1 = g[1] as usize;
+        let i2 = g[2] as usize;
+        if let (Some(p0), Some(p1), Some(p2)) = (positions.get(i0), positions.get(i1), positions.get(i2)) {
+            let a = Vec3::new(p0[0] as f64, p0[1] as f64, p0[2] as f64);
+            let b = Vec3::new(p1[0] as f64, p1[1] as f64, p1[2] as f64);
+            let c = Vec3::new(p2[0] as f64, p2[1] as f64, p2[2] as f64);
+            if crosses_upward(o, a, b, c) {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
 /// Axis-aligned closed box, 12 triangles, consistent outward winding, each
 /// face split by the diagonal from its lowest-x (then lowest-y) corner.
 ///
@@ -263,5 +286,72 @@ mod tests {
         assert!(!crosses_upward(Vec3::new(1.0, 1.0, 1.0), bad, b, c));
         // Degenerate (repeated vertices) → false.
         assert!(!crosses_upward(Vec3::new(1.0, 1.0, 1.0), a, a, b));
+    }
+
+    #[test]
+    fn mesh_crossings_upward_counts_a_prism_from_inside() {
+        use crate::mesh::Mesh;
+        use cadcraft_doc::ArchId;
+        use cadcraft_geom::Vec2;
+
+        let mut m = Mesh::new("floor", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.5, 1.5), Vec2::new(2.5, 1.5), Vec2::new(2.5, 2.5), Vec2::new(1.5, 2.5)];
+        m.push_prism_with_holes(&outer, &[hole], -0.3, 0.0);
+
+        let o = Vec3::new(0.5, 0.5, -0.15);
+        let n = mesh_crossings_upward(o, &m.positions, &m.indices, usize::MAX);
+        assert_eq!(n, 1, "inside prism should give 1 crossing, got {n}");
+    }
+
+    #[test]
+    fn mesh_crossings_upward_is_zero_in_a_prism_hole() {
+        use crate::mesh::Mesh;
+        use cadcraft_doc::ArchId;
+        use cadcraft_geom::Vec2;
+
+        let mut m = Mesh::new("floor", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.5, 1.5), Vec2::new(2.5, 1.5), Vec2::new(2.5, 2.5), Vec2::new(1.5, 2.5)];
+        m.push_prism_with_holes(&outer, &[hole], -0.3, 0.0);
+
+        let o = Vec3::new(2.0, 2.0, -0.15);
+        let n = mesh_crossings_upward(o, &m.positions, &m.indices, usize::MAX);
+        assert_eq!(n, 0, "inside hole should give 0 crossings, got {n}");
+    }
+
+    #[test]
+    fn mesh_crossings_upward_stops_at_the_cap() {
+        use crate::mesh::Mesh;
+        use cadcraft_doc::ArchId;
+        use cadcraft_geom::Vec2;
+
+        let mut m = Mesh::new("floor", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.5, 1.5), Vec2::new(2.5, 1.5), Vec2::new(2.5, 2.5), Vec2::new(1.5, 2.5)];
+        m.push_prism_with_holes(&outer, &[hole], -0.3, 0.0);
+
+        let o = Vec3::new(0.5, 0.5, -0.15);
+        let n = mesh_crossings_upward(o, &m.positions, &m.indices, 0);
+        assert_eq!(n, 0, "cap 0 should give 0 crossings, got {n}");
+    }
+
+    #[test]
+    fn mesh_crossings_upward_ignores_a_trailing_index() {
+        use crate::mesh::Mesh;
+        use cadcraft_doc::ArchId;
+        use cadcraft_geom::Vec2;
+
+        let mut m = Mesh::new("floor", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.5, 1.5), Vec2::new(2.5, 1.5), Vec2::new(2.5, 2.5), Vec2::new(1.5, 2.5)];
+        m.push_prism_with_holes(&outer, &[hole], -0.3, 0.0);
+
+        let mut indices = m.indices.clone();
+        indices.push(0);
+
+        let o = Vec3::new(0.5, 0.5, -0.15);
+        let n = mesh_crossings_upward(o, &m.positions, &indices, usize::MAX);
+        assert_eq!(n, 1, "trailing index should be ignored, got {n}");
     }
 }
