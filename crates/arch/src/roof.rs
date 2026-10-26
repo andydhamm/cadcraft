@@ -288,7 +288,7 @@ pub fn roof_geometry(model: &ArchModel, level: u32, roof: &Roof) -> Result<RoofG
     let fp = match outer_footprint(model, level) {
         Some(fp) => fp,
         None => {
-            if model.walls.iter().none(|w| w.exterior && w.base_level == level) {
+            if !model.walls.iter().any(|w| w.exterior && w.base_level == level) {
                 return Err(RoofError::NoWalls);
             }
             return Err(RoofError::BadFootprint);
@@ -347,11 +347,11 @@ pub fn build_roof(model: &ArchModel, level: u32, roof: &Roof) -> Result<Roof, Ro
         // Drop consecutive duplicates and a trailing point equal to the first.
         let mut ring: Vec<Vec2> = Vec::with_capacity(ring_points.len());
         for &p in &ring_points {
-            if ring.is_empty() || !ring.last().map_or(true, |q| q.near(&p, 1e-9)) {
+            if ring.is_empty() || !ring.last().map_or(true, |q| q.near(p, 1e-9)) {
                 ring.push(p);
             }
         }
-        if ring.len() > 1 && ring.last().map_or(false, |q| q.near(&ring[0], 1e-9)) {
+        if ring.len() > 1 && ring.last().map_or(false, |q| q.near(ring[0], 1e-9)) {
             ring.pop();
         }
         let ring = crate::poly::ensure_ccw(&ring);
