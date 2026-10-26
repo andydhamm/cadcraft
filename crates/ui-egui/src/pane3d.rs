@@ -654,6 +654,87 @@ mod tests {
     }
 
     #[test]
+    fn pane3d_camera_with_no_scene_uses_empty_bounds() {
+        let mut pane = Pane3d::new();
+        // No scene built yet; camera should still be valid
+        let cam = pane.camera();
+        let cadcraft_render3d::Camera::Orbit(o) = cam;
+        assert!(o.distance >= cadcraft_render3d::camera::MIN_DISTANCE);
+        assert!(o.target.is_finite(), "camera target must be finite with no scene");
+    }
+
+    #[test]
+    fn pane3d_orbit_elevation_clamps_to_vertical() {
+        let mut pane = Pane3d::new();
+        // Drag up a lot (positive dy increases elevation)
+        orbit_by_drag(&mut pane, 0.0, 1000.0, 0.01);
+        assert!(pane.orbit.elevation <= std::f64::consts::FRAC_PI_2 + 1e-9, "elevation should clamp at +90 degrees");
+        // Drag down a lot
+        orbit_by_drag(&mut pane, 0.0, -1000.0, 0.01);
+        assert!(pane.orbit.elevation >= -std::f64::consts::FRAC_PI_2 - 1e-9, "elevation should clamp at -90 degrees");
+    }
+
+    #[test]
+    fn pane3d_zoom_clamps_distance() {
+        let mut pane = Pane3d::new();
+        // Zoom in many times
+        for _ in 0..100 {
+            zoom_by_wheel(&mut pane, 1.0);
+        }
+        assert!(pane.orbit.distance >= 0.5 - 1e-9, "distance should clamp at 0.5");
+        // Zoom out many times
+        for _ in 0..100 {
+            zoom_by_wheel(&mut pane, -1.0);
+        }
+        assert!(pane.orbit.distance <= 1000.0 + 1e-9, "distance should clamp at 1000");
+    }
+
+    #[test]
+    fn pane3d_zero_length_wall_builds_scene() {
+        let mut arch = cadcraft_doc::ArchModel::default();
+        arch.push_wall(cadcraft_doc::Wall {
+            start: cadcraft_geom::Vec2::new(5.0, 5.0),
+            end: cadcraft_geom::Vec2::new(5.0, 5.0),
+            thickness: 0.2,
+            height: 2.7,
+            ..Default::default()
+        });
+        let mut pane = Pane3d::new();
+        // A zero-length wall should build without panicking
+        assert!(pane.sync(1, Some(&arch)));
+        assert_eq!(pane.last_revision, 1);
+    }
+
+    #[test]
+    fn pane3d_wall_with_nan_coordinates_does_not_panic() {
+        let mut arch = cadcraft_doc::ArchModel::default();
+        arch.push_wall(cadcraft_doc::Wall {
+            start: cadcraft_geom::Vec2::new(f64::NAN, 0.0),
+            end: cadcraft_geom::Vec2::new(10.0, f64::NAN),
+            thickness: 0.2,
+            height: 2.7,
+            ..Default::default()
+        });
+        let mut pane = Pane3d::new();
+        // Should not panic on NaN coordinates
+        pane.sync(1, Some(&arch));
+        assert_eq!(pane.last_revision, 1);
+    }
+
+    #[test]
+    fn pane3d_sync_doc_clears_with_none_model() {
+        let arch = house();
+        let mut pane = Pane3d::new();
+        assert!(pane.sync_doc(1, 1, Some(&arch)));
+        assert!(pane.has_content);
+        // Clear with None model
+        assert!(pane.sync_doc(1, 2, None));
+        assert!(!pane.has_content, "scene should be cleared");
+        assert!(pane.scene().is_none(), "scene should be None");
+        assert_eq!(pane.last_revision, 2);
+    }
+
+    #[test]
     fn the_paint_callback_draws_the_scene_into_the_window_and_redraws_only_on_change() {
         let Some((device, queue)) = test_device() else { return };
         let (w, h) = (64u32, 48u32);
