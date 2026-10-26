@@ -600,3 +600,27 @@ fn arch_layers_are_in_a_new_drawing_in_order() {
         assert_eq!(d.layers[idx].name, *name, "layer at index {idx}");
     }
 }
+
+/// `RoofEdge` and `RoofEdgeKind` are re-exported at the crate root so downstream
+/// callers can `use cadcraft_doc::RoofEdge` (phase-4 roof-edge export).
+#[test]
+fn roof_edge_types_are_reexported() {
+    let e = crate::RoofEdge {
+        kind: crate::RoofEdgeKind::Ridge,
+        a: cadcraft_geom::Vec2::ZERO,
+        b: cadcraft_geom::Vec2::new(1.0, 0.0),
+        za: 4.45,
+        zb: 4.45,
+        ..Default::default()
+    };
+    assert_eq!(e.kind, crate::RoofEdgeKind::Ridge);
+
+    // Serde round-trip: the re-exported type must serialize/deserialize through `serde_json`.
+    let s = serde_json::to_string(&e).unwrap();
+    let back: crate::RoofEdge = serde_json::from_str(&s).unwrap();
+    assert_eq!(back.kind, crate::RoofEdgeKind::Ridge);
+    assert_eq!(back.a, cadcraft_geom::Vec2::ZERO);
+    assert_eq!(back.b, cadcraft_geom::Vec2::new(1.0, 0.0));
+    assert_eq!(back.za, 4.45);
+    assert_eq!(back.zb, 4.45);
+}
