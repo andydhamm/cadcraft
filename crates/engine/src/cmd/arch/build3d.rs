@@ -361,4 +361,210 @@ mod tests {
         assert!((min_z - 5.4).abs() < 1e-3, "Level-3 wall must start at z=5.4, got {min_z}");
         assert!((max_z - 8.1).abs() < 1e-3, "Level-3 wall top must be 5.4+2.7=8.1, got {max_z}");
     }
+
+    #[test]
+    fn build3d_probe_empty_array() {
+        let mut s = wall_session();
+        let params = json!({"probe": []});
+        let r = s.execute("build3d", &params).unwrap();
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert_eq!(probe.len(), 0, "expected 0 probe results for empty input");
+    }
+
+    #[test]
+    fn build3d_probe_cap_exceeded() {
+        let mut s = wall_session();
+        let mut points = Vec::new();
+        for i in 0..1025 {
+            points.push(json!([i as f64, 0.0, 1.0]));
+        }
+        let params = json!({"probe": points});
+        let r = s.execute("build3d", &params);
+        assert!(r.is_err(), "build3d must reject more than 1024 probe points");
+    }
+
+    #[test]
+    fn build3d_probe_cap_exact() {
+        let mut s = wall_session();
+        let mut points = Vec::new();
+        for i in 0..1024 {
+            points.push(json!([i as f64, 0.0, 1.0]));
+        }
+        let params = json!({"probe": points});
+        let r = s.execute("build3d", &params).unwrap();
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert_eq!(probe.len(), 1024, "expected 1024 probe results for 1024 input points");
+    }
+
+    #[test]
+    fn build3d_probe_wrong_element_count() {
+        let mut s = wall_session();
+        let params = json!({"probe": [[1.0, 2.0]]});
+        let r = s.execute("build3d", &params);
+        assert!(r.is_err(), "build3d must reject a probe point with 2 elements");
+    }
+
+    #[test]
+    fn build3d_probe_extra_element() {
+        let mut s = wall_session();
+        let params = json!({"probe": [[1.0, 2.0, 3.0, 4.0]]});
+        let r = s.execute("build3d", &params);
+        assert!(r.is_err(), "build3d must reject a probe point with 4 elements");
+    }
+
+    #[test]
+    fn build3d_probe_non_array_element() {
+        let mut s = wall_session();
+        let params = json!({"probe": [1]});
+        let r = s.execute("build3d", &params);
+        assert!(r.is_err(), "build3d must reject a non-array probe element");
+    }
+
+    #[test]
+    fn build3d_probe_non_number_element() {
+        let mut s = wall_session();
+        let params = json!({"probe": [["a", "b", "c"]]});
+        let r = s.execute("build3d", &params);
+        assert!(r.is_err(), "build3d must reject a probe point with non-number elements");
+    }
+
+    #[test]
+    fn build3d_probe_null_element() {
+        let mut s = wall_session();
+        let params = json!({"probe": [null]});
+        let r = s.execute("build3d", &params);
+        assert!(r.is_err(), "build3d must reject a null probe element");
+    }
+
+    #[test]
+    fn build3d_probe_huge_values() {
+        let mut s = wall_session();
+        let params = json!({"probe": [[1e300, 1e300, 1e300]]});
+        let r = s.execute("build3d", &params).unwrap();
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert_eq!(probe.len(), 1);
+        assert!(probe[0].is_null(), "probe at huge coordinates should miss");
+    }
+
+    #[test]
+    fn build3d_probe_above_wall() {
+        let mut s = wall_session();
+        // Wall is at z 0..2.7, so z=3.0 is above
+        let params = json!({"probe": [[5.0, 0.0, 3.0]]});
+        let r = s.execute("build3d", &params).unwrap();
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert!(probe[0].is_null(), "probe above wall should miss");
+    }
+
+    #[test]
+    fn build3d_probe_below_wall() {
+        let mut s = wall_session();
+        // Wall is at z 0..2.7, so z=-0.1 is below
+        let params = json!({"probe": [[5.0, 0.0, -0.1]]});
+        let r = s.execute("build3d", &params).unwrap();
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert!(probe[0].is_null(), "probe below wall should miss");
+    }
+
+    #[test]
+    fn build3d_probe_through_opening() {
+        let mut s = wall_with_opening_session();
+        // Door at offset 3.0, width 0.9, so x 3.0..3.9, y 0, z 0..2.0
+        // Probe through the door opening at z=1.0
+        let params = json!({"probe": [[3.5, 0.0, 1.0]]});
+        let r = s.execute("build3d", &params).unwrap();
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert!(probe[0].is_null(), "probe through door opening should miss wall");
+    }
+
+    #[test]
+    fn build3d_probe_multiple_walls() {
+        let mut s = fresh_session();
+        let d = s.doc_mut().unwrap();
+        d.arch.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            height: 2.7,
+            ..Wall::default()
+        });
+        d.arch.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(0.0, 5.0),
+            end: Vec2::new(10.0, 5.0),
+            thickness: 0.2,
+            height: 2.7,
+            ..Wall::default()
+        });
+        d.touch_arch();
+        let params = json!({"probe": [[5.0, 0.0, 1.0], [5.0, 5.0, 1.0], [5.0, 2.5, 1.0]]});
+        let r = s.execute("build3d", &params).unwrap();
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert!(probe[0].is_object(), "probe at first wall should hit");
+        assert!(probe[1].is_object(), "probe at second wall should hit");
+        assert!(probe[2].is_null(), "probe between walls should miss");
+    }
+
+    #[test]
+    fn build3d_probe_order_preserved() {
+        let mut s = wall_session();
+        let params = json!({"probe": [[5.0, 0.0, 1.0], [5.0, 1.0, 1.0], [5.0, 0.0, 1.0]]});
+        let r = s.execute("build3d", &params).unwrap();
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert_eq!(probe.len(), 3);
+        assert!(probe[0].is_object(), "first probe should hit");
+        assert!(probe[1].is_null(), "second probe should miss");
+        assert!(probe[2].is_object(), "third probe should hit");
+    }
+
+    #[test]
+    fn build3d_probe_mixed_hits_and_misses() {
+        let mut s = wall_session();
+        let params = json!({"probe": [
+            [5.0, 0.0, 1.0],   // hit
+            [5.0, 1.0, 1.0],   // miss
+            [5.0, 0.0, 3.0],   // miss (above)
+            [5.0, 0.0, -0.1],  // miss (below)
+            [5.0, 0.0, 0.5],   // hit
+        ]});
+        let r = s.execute("build3d", &params).unwrap();
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert_eq!(probe.len(), 5);
+        assert!(probe[0].is_object(), "probe 0 should hit");
+        assert!(probe[1].is_null(), "probe 1 should miss");
+        assert!(probe[2].is_null(), "probe 2 should miss (above)");
+        assert!(probe[3].is_null(), "probe 3 should miss (below)");
+        assert!(probe[4].is_object(), "probe 4 should hit");
+    }
+
+    #[test]
+    fn build3d_probe_wall_at_origin() {
+        let mut s = wall_session();
+        // Wall starts at origin, probe just inside the wall from the start should hit
+        let params = json!({"probe": [[0.1, 0.0, 1.0]]});
+        let r = s.execute("build3d", &params).unwrap();
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert!(probe[0].is_object(), "probe just inside wall start should hit");
+    }
+
+    #[test]
+    fn build3d_probe_wall_at_end() {
+        let mut s = wall_session();
+        // Wall ends at x=10, probe at end should hit
+        let params = json!({"probe": [[10.0, 0.0, 1.0]]});
+        let r = s.execute("build3d", &params).unwrap();
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert!(probe[0].is_object(), "probe at wall end should hit");
+    }
+
+    #[test]
+    fn build3d_probe_just_outside_wall_end() {
+        let mut s = wall_session();
+        // Wall ends at x=10, probe just past should miss
+        let params = json!({"probe": [[10.5, 0.0, 1.0]]});
+        let r = s.execute("build3d", &params).unwrap();
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert!(probe[0].is_null(), "probe just past wall end should miss");
+    }
 }
