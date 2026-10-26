@@ -292,4 +292,73 @@ mod tests {
         let r = s.execute("build3d", &params);
         assert!(r.is_err(), "build3d must reject a non-finite probe coordinate");
     }
+
+    #[test]
+    fn wall_on_level_two_builds_at_its_elevation() {
+        let mut s = fresh_session();
+        s.execute("level", &json!({"above": "Level 1"})).unwrap(); // creates Level 2 at elevation 2.7, index 1
+        s.execute("wall", &json!({"points": [[0.0,0.0],[10.0,0.0]], "thickness": 0.2, "level": "Level 2"})).unwrap();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        let min_z = r["bounds"]["min"][2].as_f64().expect("min z");
+        let max_z = r["bounds"]["max"][2].as_f64().expect("max z");
+        assert!((min_z - 2.7).abs() < 1e-3, "Level-2 wall must start at its level elevation z=2.7, got {min_z}");
+        assert!((max_z - 5.4).abs() < 1e-3, "Level-2 wall top must be 2.7+2.7=5.4, got {max_z}");
+    }
+
+    #[test]
+    fn wall_to_ceiling_tops_at_ceiling_height() {
+        let mut s = fresh_session();
+        s.execute("wall", &json!({"points": [[0.0,0.0],[10.0,0.0]], "thickness": 0.2, "toCeiling": true})).unwrap();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        let max_z = r["bounds"]["max"][2].as_f64().expect("max z");
+        assert!((max_z - 2.4).abs() < 1e-3, "to_ceiling wall must top at Level 1 ceiling height 2.4, got {max_z}");
+    }
+
+    #[test]
+    fn wall_on_level_one_default_height() {
+        let mut s = fresh_session();
+        s.execute("wall", &json!({"points": [[0.0,0.0],[10.0,0.0]], "thickness": 0.2})).unwrap();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        let min_z = r["bounds"]["min"][2].as_f64().expect("min z");
+        let max_z = r["bounds"]["max"][2].as_f64().expect("max z");
+        assert!((min_z - 0.0).abs() < 1e-3, "Level-1 wall must start at z=0.0, got {min_z}");
+        assert!((max_z - 2.7).abs() < 1e-3, "Level-1 wall default height must be 2.7, got {max_z}");
+    }
+
+    #[test]
+    fn wall_to_ceiling_on_level_two() {
+        let mut s = fresh_session();
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+        s.execute("wall", &json!({"points": [[0.0,0.0],[10.0,0.0]], "thickness": 0.2, "level": "Level 2", "toCeiling": true})).unwrap();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        let min_z = r["bounds"]["min"][2].as_f64().expect("min z");
+        let max_z = r["bounds"]["max"][2].as_f64().expect("max z");
+        assert!((min_z - 2.7).abs() < 1e-3, "Level-2 to-ceiling wall must start at z=2.7, got {min_z}");
+        assert!((max_z - 5.1).abs() < 1e-3, "Level-2 to-ceiling wall must top at 2.7+2.4=5.1, got {max_z}");
+    }
+
+    #[test]
+    fn wall_custom_height_on_level_two() {
+        let mut s = fresh_session();
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+        s.execute("wall", &json!({"points": [[0.0,0.0],[10.0,0.0]], "thickness": 0.2, "level": "Level 2", "height": 3.0})).unwrap();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        let min_z = r["bounds"]["min"][2].as_f64().expect("min z");
+        let max_z = r["bounds"]["max"][2].as_f64().expect("max z");
+        assert!((min_z - 2.7).abs() < 1e-3, "Level-2 wall must start at z=2.7, got {min_z}");
+        assert!((max_z - 5.7).abs() < 1e-3, "Level-2 wall with height 3.0 must top at 2.7+3.0=5.7, got {max_z}");
+    }
+
+    #[test]
+    fn wall_on_level_three_builds_at_its_elevation() {
+        let mut s = fresh_session();
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+        s.execute("level", &json!({"above": "Level 2"})).unwrap();
+        s.execute("wall", &json!({"points": [[0.0,0.0],[10.0,0.0]], "thickness": 0.2, "level": "Level 3"})).unwrap();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        let min_z = r["bounds"]["min"][2].as_f64().expect("min z");
+        let max_z = r["bounds"]["max"][2].as_f64().expect("max z");
+        assert!((min_z - 5.4).abs() < 1e-3, "Level-3 wall must start at z=5.4, got {min_z}");
+        assert!((max_z - 8.1).abs() < 1e-3, "Level-3 wall top must be 5.4+2.7=8.1, got {max_z}");
+    }
 }
