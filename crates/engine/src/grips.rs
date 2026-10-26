@@ -841,4 +841,76 @@ mod arch_grips_tests {
         let result = s.grip_edit(room_handle(ArchId(9999)), 0, Vec2::new(10.0, 10.0), GripMode::Stretch);
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn room_grips_of_on_missing_room_returns_error() {
+        let s = setup_room();
+        // grips_of must error for a missing room (unlike grip_edit which is a silent no-op).
+        assert!(s.grips_of(room_handle(ArchId(9999))).is_err());
+    }
+
+    #[test]
+    fn multiple_rooms_resolve_independently() {
+        let mut s = Session::new();
+        {
+            let d = s.doc_mut().unwrap();
+            d.arch.push_room(cadcraft_arch::Room {
+                polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+                ..Default::default()
+            });
+            d.arch.push_room(cadcraft_arch::Room {
+                polygon: vec![Vec2::new(10.0, 0.0), Vec2::new(14.0, 0.0), Vec2::new(14.0, 3.0), Vec2::new(10.0, 3.0)],
+                ..Default::default()
+            });
+        }
+        assert_eq!(arch_id_from_handle(room_handle(ArchId(0))), Some(ArchTarget::Room(ArchId(0))));
+        assert_eq!(arch_id_from_handle(room_handle(ArchId(1))), Some(ArchTarget::Room(ArchId(1))));
+        let grips0 = s.grips_of(room_handle(ArchId(0))).unwrap();
+        let grips1 = s.grips_of(room_handle(ArchId(1))).unwrap();
+        assert_eq!(grips0.len(), 1);
+        assert_eq!(grips1.len(), 1);
+        // The two label points should be in different rooms (far apart).
+        assert!(grips0[0].dist(grips1[0]) > 1.0);
+    }
+
+    #[test]
+    fn room_grip_edit_with_non_finite_point_is_no_op() {
+        let mut s = setup_room();
+        let h = room_handle(ArchId(0));
+        let nan = Vec2::new(f64::NAN, f64::NAN);
+        let inf = Vec2::new(f64::INFINITY, f64::NEG_INFINITY);
+        // Non-finite points are accepted because the edit is a no-op.
+        assert!(s.grip_edit(h, 0, nan, GripMode::Stretch).is_ok());
+        assert!(s.grip_edit(h, 0, inf, GripMode::Stretch).is_ok());
+        assert!(s.grip_edit(h, 0, nan, GripMode::Move).is_ok());
+        assert!(s.grip_edit(h, 0, inf, GripMode::Rotate).is_ok());
+    }
+
+    #[test]
+    fn grip_stretch_command_on_room_is_no_op() {
+        let mut s = setup_room();
+        let h = room_handle(ArchId(0));
+        // The grip.stretch command path must also be a silent no-op for rooms.
+        let result = s.execute(
+            "grip.stretch",
+            &json!({
+                "handle": h.hex(),
+                "index": 0,
+                "to": [10.0, 10.0],
+            }),
+        );
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_null());
+    }
+
+    #[test]
+    fn room_handle_range_does_not_overlap_wall_range() {
+        // room_handle(0) and arch_handle(0) must be distinct handles.
+        let rh = room_handle(ArchId(0));
+        let wh = arch_handle(ArchId(0));
+        assert_ne!(rh, wh);
+        // And they must resolve to different target types.
+        assert_eq!(arch_id_from_handle(rh), Some(ArchTarget::Room(ArchId(0))));
+        assert_eq!(arch_id_from_handle(wh), Some(ArchTarget::Wall(ArchId(0))));
+    }
 }
