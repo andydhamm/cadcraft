@@ -91,7 +91,7 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
         let new_elev = base.elevation + base.floor_to_floor();
         // A new level takes `Level::default()`'s ceiling height and floor structure.
         let name_str = name.map(|n| n.trim()).filter(|n| !n.is_empty()).map(String::from);
-        let auto_name = auto_level_name(&arch.levels, &base.name, arch.levels.len());
+        let auto_name = auto_level_name(&arch.levels, &base.name, arch.levels.len() + 1);
         let mut new_level = cadcraft_doc::arch::Level {
             index: arch.levels.len() as u32,
             name: name_str.unwrap_or(auto_name),
@@ -165,7 +165,8 @@ pub fn run_level(s: &mut Session, p: &Value) -> Result<Value, crate::EngineError
         return Err(crate::EngineError::Other("level: no level specified".into()));
     };
     let l = arch.levels.get_mut(i).ok_or_else(|| crate::EngineError::Other("level: not found".into()))?;
-    if let Some(c) = ceiling {
+    if p.get("ceiling").is_some() {
+        let c = ceiling.ok_or_else(|| crate::EngineError::Other("level: ceiling must be a number".into()))?;
         if !c.is_finite() || c <= 0.0 {
             return Err(crate::EngineError::Other("level: ceiling must be finite and positive".into()));
         }
