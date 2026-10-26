@@ -289,30 +289,22 @@ impl Mesh {
             self.indices.extend([(b_base + m + tri[0]) as u32, (b_base + m + tri[1]) as u32, (b_base + m + tri[2]) as u32]);
         }
 
-        // Detect bridge edges by position: an edge (ring[i], ring[j]) is a bridge
-        // if another edge (ring[k], ring[l]) has the same endpoints. Both
-        // occurrences are skipped in the side loop.
+        // Detect bridge edges: an edge (ring[i], ring[j]) is a bridge if another
+        // edge has the same endpoints (in either orientation). Both occurrences
+        // are skipped in the side loop.
+        let mut edge_count: HashMap<(u32, u32), u32> = HashMap::new();
+        for i in 0..m {
+            let j = (i + 1) % m;
+            let key = if i < j { (i, j) } else { (j, i) };
+            *edge_count.entry(key).or_insert(0) += 1;
+        }
         let mut is_bridge = vec![false; m as usize];
         for i in 0..m {
-            if is_bridge[i as usize] {
-                continue;
-            }
             let j = (i + 1) % m;
-            for k in (i + 1)..m {
-                if is_bridge[k as usize] {
-                    continue;
-                }
-                let l = (k + 1) % m;
-                if l == i {
-                    continue;
-                }
-                if ring[i as usize].x == ring[k as usize].x
-                    && ring[i as usize].y == ring[k as usize].y
-                    && ring[j as usize].x == ring[l as usize].x
-                    && ring[j as usize].y == ring[l as usize].y
-                {
+            let key = if i < j { (i, j) } else { (j, i) };
+            if let Some(&count) = edge_count.get(&key) {
+                if count >= 2 {
                     is_bridge[i as usize] = true;
-                    is_bridge[k as usize] = true;
                 }
             }
         }
@@ -1065,5 +1057,92 @@ mod tests {
         let area = top_cap_area(&mesh);
         let expected = 0.96 * s * s;
         assert!((area - expected).abs() < 1e-6 * expected, "cap area {area} not within 1e-6 of {expected}");
+    }
+
+    /// A hole with a NaN vertex is filtered out; the result equals push_prism.
+    #[test]
+    fn prism_with_holes_nan_hole_vertex_is_filtered() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(f64::NAN, 2.0), Vec2::new(1.0, 2.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        let area = top_cap_area(&mesh);
+        assert!((area - 16.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 16.0");
+        let mut ref_mesh = Mesh::new("wall", ArchId(1));
+        ref_mesh.push_prism(&outer, 0.0, 2.5);
+        assert_eq!(top_cap_area(&mesh), top_cap_area(&ref_mesh), "NaN hole vertex must produce same cap area as push_prism");
+    }
+
+    /// A hole with an Inf vertex is filtered out; the result equals push_prism.
+    #[test]
+    fn prism_with_holes_inf_hole_vertex_is_filtered() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(f64::INFINITY, 2.0), Vec2::new(1.0, 2.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        let area = top_cap_area(&mesh);
+        assert!((area - 16.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 16.0");
+        let mut ref_mesh = Mesh::new("wall", ArchId(1));
+        ref_mesh.push_prism(&outer, 0.0, 2.5);
+        assert_eq!(top_cap_area(&mesh), top_cap_area(&ref_mesh), "Inf hole vertex must produce same cap area as push_prism");
+    }
+
+    /// A hole sharing an edge with the outer boundary is cut out correctly.
+    #[test]
+    fn prism_with_holes_hole_sharing_edge_with_outer() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(0.0, 4.0), Vec2::new(2.0, 4.0), Vec2::new(2.0, 2.0), Vec2::new(0.0, 2.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        assert!(mesh.triangle_count() > 0, "hole sharing edge must produce geometry");
+        let area = top_cap_area(&mesh);
+        assert!((area - 12.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 12.0");
+        assert!(mesh.is_manifold(), "hole sharing edge must be a closed manifold");
+    }
+
+    /// A hole with collinear points is cut out correctly.
+    #[test]
+    fn prism_with_holes_hole_with_collinear_points() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(3.0, 1.0), Vec2::new(3.0, 2.0), Vec2::new(1.0, 2.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        assert!(mesh.triangle_count() > 0, "hole with collinear points must produce geometry");
+        let area = top_cap_area(&mesh);
+        assert!((area - 14.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 14.0");
+        assert!(mesh.is_manifold(), "hole with collinear points must be a closed manifold");
+    }
+
+    /// A hole with many vertices (regular decagon) is cut out correctly.
+    #[test]
+    fn prism_with_holes_hole_with_many_vertices() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        let mut hole = Vec::new();
+        let cx = 5.0;
+        let cy = 5.0;
+        let r = 2.0;
+        for i in 0..10 {
+            let angle = 2.0 * std::f64::consts::PI * i as f64 / 10.0;
+            hole.push(Vec2::new(cx + r * angle.cos(), cy + r * angle.sin()));
+        }
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        assert!(mesh.triangle_count() > 0, "hole with many vertices must produce geometry");
+        assert!(mesh.is_manifold(), "hole with many vertices must be a closed manifold");
+        let area = top_cap_area(&mesh);
+        assert!(area > 80.0 && area < 95.0, "cap area {area} not in expected range");
+    }
+
+    /// A hole very close to the outer boundary (but not touching) is cut out correctly.
+    #[test]
+    fn prism_with_holes_hole_close_to_outer() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(3.0, 3.0), Vec2::new(3.9, 3.0), Vec2::new(3.9, 3.9), Vec2::new(3.0, 3.9)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        assert!(mesh.triangle_count() > 0, "hole close to outer must produce geometry");
+        let area = top_cap_area(&mesh);
+        assert!((area - 15.19).abs() < 1e-6, "cap area {area} not within 1e-6 of 15.19");
+        assert!(mesh.is_manifold(), "hole close to outer must be a closed manifold");
     }
 }
