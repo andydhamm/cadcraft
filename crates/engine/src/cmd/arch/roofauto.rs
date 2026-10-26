@@ -110,10 +110,7 @@ fn run_roofauto(s: &mut Session, p: &Value) -> Result<Value> {
         thickness,
         fascia,
         soffit,
-        manual: false,
-        hand_edited: false,
-        planes: Vec::new(),
-        edges: Vec::new(),
+        ..Default::default()
     };
 
     let built_roof = match build_roof(&model, target_level, &temp_roof) {
