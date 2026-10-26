@@ -260,11 +260,26 @@ pub fn run_roofplane(s: &mut Session, p: &Value) -> Result<Value> {
     let base_0 = crate::cmd::point_value(&base_arr[0]).ok_or_else(|| bad("roofplane", "invalid base point 0"))?;
     let base_1 = crate::cmd::point_value(&base_arr[1]).ok_or_else(|| bad("roofplane", "invalid base point 1"))?;
 
-    let pitch_rise = p.get("pitchRise").and_then(Value::as_f64).unwrap_or(6.0);
-    let pitch_run = p.get("pitchRun").and_then(Value::as_f64).unwrap_or(12.0);
-    let thickness = p.get("thickness").and_then(Value::as_f64).unwrap_or(0.1);
-    let fascia = p.get("fascia").and_then(Value::as_f64).unwrap_or(0.1);
-    let soffit = p.get("soffit").and_then(Value::as_f64).unwrap_or(0.1);
+    let pitch_rise = match p.get("pitchRise") {
+        None => 6.0,
+        Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("roofplane", "`pitchRise` must be a finite number"))?,
+    };
+    let pitch_run = match p.get("pitchRun") {
+        None => 12.0,
+        Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("roofplane", "`pitchRun` must be a finite number"))?,
+    };
+    let thickness = match p.get("thickness") {
+        None => 0.1,
+        Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("roofplane", "`thickness` must be a finite number"))?,
+    };
+    let fascia = match p.get("fascia") {
+        None => 0.1,
+        Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("roofplane", "`fascia` must be a finite number"))?,
+    };
+    let soffit = match p.get("soffit") {
+        None => 0.1,
+        Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("roofplane", "`soffit` must be a finite number"))?,
+    };
     let level = p.get("level").and_then(Value::as_u64).map(|v| v as usize);
 
     create_roof_plane(s, points, (base_0, base_1), pitch_rise, pitch_run, thickness, fascia, soffit, level)
