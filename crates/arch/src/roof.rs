@@ -955,4 +955,57 @@ mod tests {
         let outset = outset_footprint(&fp, 0.5).unwrap();
         assert_eq!(outset.edges.len(), 4, "the outset must keep 4 edges");
     }
+
+    #[test]
+    fn roof_with_nan_wall_coords_is_degenerate() {
+        let mut model = ArchModel::default();
+        let mut w = Wall::new(Vec2::new(f64::NAN, f64::NAN), Vec2::new(f64::NAN, f64::NAN), 0.2);
+        w.height = 2.4;
+        model.push_wall(w);
+        assert!(build_roof(&model, 0, &test_roof()).is_err(), "a house with only NaN walls should fail to build a roof");
+    }
+
+    #[test]
+    fn roof_with_per_wall_pitch_zero_is_flat() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        if let Some(w) = model.walls.iter_mut().find(|w| w.id == ArchId(0)) {
+            w.roof_pitch = Some(0.0);
+        }
+        let roof = build_roof(&model, 0, &test_roof()).unwrap();
+        let south_plane = roof.planes.iter().find(|p| p.eave_wall == Some(ArchId(0))).unwrap();
+        assert!((south_plane.slope - 0.0).abs() < 1e-12, "south wall plane slope {} != 0.0", south_plane.slope);
+    }
+
+    #[test]
+    fn roof_with_pitch_run_zero_uses_default() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        let roof = Roof { pitch_rise: 6.0, pitch_run: 0.0, overhang: 0.0, thickness: 0.0, ..Roof::default() };
+        let built = build_roof(&model, 0, &roof).unwrap();
+        for plane in &built.planes {
+            assert!((plane.slope - 0.5).abs() < 1e-12, "plane slope {} != 0.5 (default)", plane.slope);
+        }
+    }
+
+    #[test]
+    fn roof_apex_z_with_no_planes_is_zero() {
+        let roof = Roof { planes: Vec::new(), ..Roof::default() };
+        assert_eq!(roof_apex_z(&roof), 0.0, "a roof with no planes should have apex z = 0.0");
+    }
+
+    #[test]
+    fn plane_apex_z_with_empty_ring_is_zero() {
+        let plane = RoofPlane { ring: Vec::new(), ..RoofPlane::default() };
+        assert_eq!(plane_apex_z(&plane), 0.0, "a plane with an empty ring should have apex z = 0.0");
+    }
+
+    #[test]
+    fn projected_area_sum_ignores_non_finite() {
+        let mut roof = Roof::default();
+        roof.planes.push(RoofPlane { projected_area: 10.0, ..RoofPlane::default() });
+        roof.planes.push(RoofPlane { projected_area: f64::NAN, ..RoofPlane::default() });
+        roof.planes.push(RoofPlane { projected_area: 20.0, ..RoofPlane::default() });
+        assert_eq!(projected_area_sum(&roof), 30.0, "projected_area_sum should ignore non-finite values");
+    }
 }
