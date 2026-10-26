@@ -1,198 +1,115 @@
 # arch3d — design log
 
-Branch `arch3d` (fork of `storytold/cadcraft`, v0.10.0). Running design log for "draw a plan, get the house in 3D". Phases land one commit each, each ending at a ⛔ checkpoint.
+Branch `arch3d` (fork of `storytold/cadcraft`, v0.10.0). Running log for "draw a plan, get the house in 3D". One commit per phase, each ending at a ⛔ checkpoint.
 
 ---
 
 ## Phase 0 — survey
 
-### 0.1 The repo at a glance
-
-- Workspace: `crates/*`, `apps/*`, `xtask`. Edition 2024, `rust-version = 1.90`, licence `MIT OR Apache-2.0`.
-- Lints: `unsafe_code = "forbid"`; every production crate root carries `#![deny(clippy::unwrap_used, expect_used, panic, unimplemented, todo, unreachable)]`.
-- Layering enforced by `cargo xtask layers` (`xtask/src/layers.rs::TABLE`): L0 `geom`,`color` (`dxf`,`dwg` standalone) → L1 `doc` → L2 `constraints`,`fonts`,`render` → L3 `io` → L4 `engine` → L5 `ui-egui`,`mcp` → apps (exempt). `UI_CRATES` only from L5 up.
-- `plan/` is gitignored — absent in a fresh clone.
-- Roadmap: pre-alpha, ~38% ready; **"3D modelling and rendering" is 2%, 300–450 h** (`ROADMAP.md`); `docs/gaps.md` **F24** is *AutoCAD* 3D (UCS, orbit, solids, 150 menu items). Our architectural 3D is additive; we keep our own ARCH-* rows and leave F24 alone.
-
-### 0.2 Entities
-
-`doc/src/entity.rs`: `Entity { handle: Handle(u64), common: Common, kind: EntityKind }`. `Common` carries layer/colour/linetype/lineweight/ltscale/transparency/visible/thickness/extrusion/plot style/annotative scales and **`xdata: Vec<RawTag>`** (foreign XDATA is part of the object, so COPY/MIRROR/ARRAY carry it). `EntityKind` is a closed enum plus `Unknown { dxf_type, tags }`.
-
-`doc/src/store.rs`: `EntityStore` is a **copy-on-write chunked store** (1024-`Arc<Entity>` chunks + 64 sharded handle maps) in draw order. Cloning copies pointers; an edit copies one chunk and one shard — whole-drawing undo is cheap.
-
-`Drawing` holds model/paper spaces, tables, layouts and `foreign: ForeignData`.
-
-### 0.3 Commands
-
-Everything user-visible is a `CommandSpec` (`engine/src/cmd/mod.rs`): `{ id (AutoCAD name, lower case), label, menu path, shortcut, aliases, params doc, enabled, run, undoable, interactive: Option<Factory>, transparent }` with `const fn` builders. Each `cmd/*.rs` exposes `pub fn specs()` appended in `command_specs()`.
-
-Two paths, one implementation: **JSON** `Session::execute(id, params)` (control channel, MCP, CLI, scripts; `f64_req`/`size_param`/`point_param`/`targets`/`bad` validate hostile input and never clamp silently) and **interactive** `Session::start` → `Interactive` state machine (`prompt.rs`) fed by `input` / `input_snapped` / `cmdline` (AutoCAD coordinate grammar).
-
-`Session::execute` and every interactive step run under `catch_unwind` (`guard.rs`); an escaped panic restores the drawing and returns `EngineError::Internal`.
-
-### 0.4 Undo
-
-`DocState { doc: Arc<Drawing>, undo/redo: Vec<Snapshot>, … }`; `Snapshot { label, doc, selection }`. Full-drawing snapshot stack, cheap via CoW; `undoctl.rs` implements UNDO marks / BEgin–End / Control.
-
-> **Consequence:** anything that must undo, autosave, audit or round-trip **must live inside `Drawing`**. A side model in `Session`/`DocState` would silently lose undo.
-
-### 0.5 Selection, grips, snaps
-
-- Selection: `DocState.selection` + pickfirst/window/crossing (`select.rs`) + broad-phase index (`spatial.rs`).
-- Grips: `EntityKind::grips()`, `grips.rs::stretch_grip` + `GripMode::{Stretch,Move,Rotate,Scale,Mirror}`; `Session::grip_edit` runs a **`grip.*` command** so drags are undoable and MCP-reachable.
-- Snaps: `snap.rs` — OSMODE bits, `SnapHit`, `snap/{curves,iso,tracking,viewport}.rs` over `Drawing`+`Space` via the `Prim` abstraction.
-
-### 0.6 Rendering — there was no 3D
-
-`render` (L2) is pure 2D: `build(space) -> DisplayList` of polylines, filled triangles, masks and points tagged with the top-level `Handle`; `fill::triangulate_evenodd` handles holes; `raster.rs` is the CPU path. The GPU path (`ui-egui/src/gpu.rs`, L5) draws the display list through an `egui_wgpu::Callback` inside egui's own pass with `Stencil8` masking — **no depth buffer, no camera, no 3D vertex format, no lighting**. The 3D viewport was genuinely new work.
-
-### 0.7 DXF custom data round-trip
-
-`io/src/dxf_ext.rs`: our data travels as a registered app `CADCRAFT` in entity/table XDATA, and as XRECORDs in the named-object dictionary (`CADCRAFT_CONSTRAINTS`, `CADCRAFT_LAYERSTATES`, …). `dxf_region.rs` shows the **proxy-graphic pattern**: ordinary LWPOLYLINEs any reader understands, with `CADCRAFT` XDATA naming them as parts of one semantic object. Unknown entities/objects/keys are preserved verbatim except our own `CADCRAFT*` keys.
-
-### 0.8 MCP
-
-`mcp/src/tools.rs` exposes a **small generic tool set** (`command_line`, `script`, `execute`, `list_commands`, `inspect_drawing`, `query_entities`, `render`, `find_text`, `new_drawing`, `open`, `save`, `cancel`, plus UI-only tools). `execute` forwards to `Session::execute`; args are checked against the tool schema.
-
-> **Adjustment to the brief:** no MCP tool per arch command. `WALL`, `DOOR`, `ROOFAUTO`, … are MCP-reachable the moment they are `CommandSpec`s. Only scene-level operations that cannot be a command get a tool (none added so far).
-
----
+- Workspace `crates/*`, `apps/*`, `xtask`; edition 2024, rust 1.90, MIT OR Apache-2.0. `unsafe_code = forbid`; every crate root denies unwrap/expect/panic/todo.
+- Layers (`xtask/src/layers.rs`): L0 `geom`,`color` (`dxf`,`dwg` standalone) → L1 `doc` → L2 `constraints`,`fonts`,`render` → L3 `io` → L4 `engine` → L5 `ui-egui`,`mcp` → apps.
+- Roadmap: 3D is 2%; `docs/gaps.md` F24 is *AutoCAD* 3D — untouched; our work is additive with its own ARCH-* rows.
+- **Entities:** `Entity{handle,common,kind}`; `Common.xdata` travels with COPY/MIRROR/ARRAY. `EntityStore` is copy-on-write (1024-`Arc` chunks + 64 sharded handle maps) so whole-drawing undo is cheap.
+- **Commands:** everything user-visible is a `CommandSpec` (`engine/src/cmd/mod.rs`); one implementation, two paths — JSON `Session::execute` (MCP/CLI/scripts, hostile input validated, never clamped silently) and interactive `Session::start` → `Interactive`. Both under `catch_unwind` (`guard.rs`).
+- **Undo:** full-`Drawing` snapshot stack, cheap via CoW. *Consequence:* anything that must undo/autosave/audit/round-trip lives inside `Drawing`.
+- **Selection/grips/snaps:** `select.rs`, `spatial.rs`, `grips.rs::stretch_grip` (drags run a `grip.*` command, so undoable and MCP-reachable), `snap.rs` OSMODE bits.
+- **Rendering was 2D only:** `render::build(space) -> DisplayList`; the GPU path draws it through an `egui_wgpu::Callback` with `Stencil8` — no depth buffer, no camera, no lighting. The 3D viewport was new work.
+- **DXF custom data:** `CADCRAFT` app in XDATA + XRECORDs in the named-object dictionary; `dxf_region.rs` shows the proxy-graphic pattern (ordinary polylines + XDATA naming them one object). Foreign data preserved verbatim.
+- **MCP:** a small generic tool set; `execute` forwards to `Session::execute`. *Adjustment:* no MCP tool per arch command — commands are the API.
 
 ## Crate layout (as built)
 
-Precedent copied: **`constraints` (L2) — plain data in `doc`, algorithms in a peer crate.**
+Precedent: **`constraints` (L2) — data in `doc`, algorithms in a peer crate.**
 
-| Crate | Layer | Contents | Depends on |
+| Crate | L | Contents | Deps |
 |---|---|---|---|
-| `crates/doc/src/arch.rs` | L1 | `ArchModel { walls, openings, next_id, levels, types }`, `ArchId(u32)`, `Wall`, `Opening`, `WallType`/`WallLayer`, `RefSide`, `JoinKind`, `Level`; `ARCH_HANDLE_BASE = 0xA000_0000`; caps `MAX_WALLS = 4096`, `MAX_OPENINGS = 8192`, `MIN_WALL_THICKNESS = 1e-4`, `MIN_WALL_LENGTH = 1e-6`. Stored as `Drawing::arch` with `arch_revision` + `touch_arch()`. | `geom`, `color` |
-| `crates/arch` | L2 | 2D behaviour, no rendering: `wall`, `graph`, `join` (`solve_joins`, `JoinOverrides`, `stretch_wall`), **`opening` (placement limits, `place_opening`, `auto_panel`, `clamp_recess`, `project_to_wall`)**, **`symbol` (plan symbols)**. Later: rooms, areas, straight skeleton, stairs, `ARCHDETECT`, catalogues. | `geom`, `color`, `doc` |
-| `crates/arch3d` | L2 | `build`/`build_dirty` → `Scene3d`; `mesh` (ear clipping, `push_prism_with_holes`), `walls`, **`openings` (frame/casing/glass/leaf/sill/header)**. No `render` dependency. | `geom`, `color`, `doc`, `arch` |
-| `crates/render` (extended) | L2 | `arch.rs`: arch plan geometry → `DisplayList`, tagged with the owning `ArchId`'s proxy handle; per-layer bands; **opening holes in the poché**. | `arch` |
-| `crates/io` (extended) | L3 | `dxf_arch.rs` (`CADCRAFT_ARCH` XRECORD v2 + save-time proxy LWPOLYLINEs on `A-WALL`/`A-DOOR`/`A-GLAZ` with `CADCRAFT` XDATA), `glb.rs` (own GLTF 2.0 writer). Later: `obj.rs`, `ifc.rs`. | `arch`, `arch3d`, `dxf` |
-| `crates/render3d` | L5 | `camera` (`Camera`, `Orbit`, `Orbit::fit`), `pipeline` (`GpuMeshes`, `upload`), `offscreen` (`Offscreen`, `headless_png`), `types` (`Mesh`, `Scene3d`, `Vertex`), `Render3dError::{NoAdapter,Wgpu,Buffer}`. Later: PBR, sun+CSM, SSAO, MSAA, display styles, GPU picking, ortho elevation/section cameras, walkthrough. | `geom`, `color`, `arch3d`, `wgpu` |
-| `crates/engine/src/cmd/arch/*` | L4 | `wall`, `wall.stretch`, `inspect`, **`opening` (`door`, `window`, `garagedoor`, `arch.opening.move`)**, `build3d`, `arch.sample`, `view` (`view3d`, `camera`); arch proxy-handle grip routing; **`snap::arch`**. Later: `room`, `roomdetect`, `level`, `roofauto`, `roofplane`, `stair`, `railing`, `deck`, `cabinet`, `archdetect`, `walkthrough`, `elevation`, `section`, `export3d`. | `arch`, `arch3d`, `io` |
-| `crates/ui-egui` | L5 | `pane3d.rs` (dockable pane, orbit, revision-gated rebuild, no-adapter placeholder); `ui.show3d`. Later: arch palettes, detection review, selection sync. | `render3d`, `arch3d` |
-| `apps/cadcraft-cli` | exempt | `convert IN.dxf OUT.glb`, `run … --export`, `render FILE OUT.png --camera SPEC [--size WxH]`. | all |
-
-`xtask/src/layers.rs::TABLE` has `arch` (L2), `arch3d` (L2), `render3d` (L5); `INTRA_LAYER_ORDER` has `[geom,color]`, `[fonts,render]`, `[arch,render]`, `[arch,arch3d]`, `[arch3d,render3d]`, `[render3d,ui-egui]`.
-
----
+| `doc/src/arch.rs` | L1 | `ArchModel{walls,openings,rooms,next_id,next_room_id,levels,types}`, `ArchId`, `Wall`, `Opening`, `Room`, `RoomType`, `Level`, `WallType`; `ARCH_HANDLE_BASE=0xA000_0000`, `ROOM_HANDLE_OFFSET=0x10000`; caps `MAX_WALLS 4096`, `MAX_OPENINGS 8192`, `MAX_ROOMS 1024`, `MIN_ROOM_AREA 0.05`. On `Drawing::arch` with `arch_revision`/`touch_arch()`. | geom,color |
+| `arch` | L2 | `wall`,`graph`,`join`(`solve_joins`,`face_lines`,`stretch_wall`),`opening`,`symbol`,`room`(detection),`poly`(area/perimeter/`offset_polygon` per-edge),`area`(interior/standard/living),`label`(`label_point`). | geom,color,doc |
+| `arch3d` | L2 | `build`/`build_dirty`→`Scene3d`; `mesh`(ear clip, `push_prism_with_holes`), `walls`, `openings`, `floors`, `probe`+`ray`; `edges`/`hlr`/`section` (assisted, phases 6–7). | geom,color,doc,arch |
+| `render` | L2 | `arch.rs`: arch geometry → DisplayList tagged with proxy handles; layer bands; opening holes; room labels on `A-ROOM`. | arch |
+| `io` | L3 | `dxf_arch.rs` (`CADCRAFT_ARCH` XRECORD v2 + save-time proxies on `A-WALL`/`A-DOOR`/`A-GLAZ`/`A-ROOM`), `glb.rs` (own GLTF 2.0). | arch,arch3d,dxf |
+| `render3d` | L5 | `camera`(`Orbit`,`Orbit::fit`,`projected_scene_bounds`), `pipeline`, `light`, `offscreen`(`create`/`with_device`/`encode`/`render`/`read_png`/`headless_instance`), `gputest`, `types`. | geom,color,arch3d,wgpu |
+| `engine/src/cmd/arch/*` | L4 | `wall`,`wall.stretch`,`inspect`,`opening`,`build3d`,`sample`,`view`,**`room`,`roomdetect`,`level`**; grip routing; `snap::arch`. | arch,arch3d,io |
+| `ui-egui` | L5 | `pane3d.rs` (dockable, orbit, revision-gated rebuild, no-adapter placeholder). | render3d,arch3d |
+| `cadcraft-cli` | — | `convert`, `run --export`, `render FILE OUT.png --camera` (prints `PROJECTED`, exit 3 `NO_ADAPTER`). | all |
 
 ## Decisions
 
-1. **The arch model lives in `Drawing`.** Undo is a whole-`Drawing` snapshot; autosave, AUDIT, RECOVER, plotting and DXF save read `Drawing`. Data in `doc` (L1), algorithms in `arch` (L2), like `constraints`.
-2. **One source of truth: the arch object, not its linework.** Plan geometry is generated into the display list at draw time; DXF proxy entities are written **only on save** and not read back when arch data is present. Cost: `snap.rs`/`grips.rs` need arch branches (both now done).
-3. **No 3D CSG.** Walls are cut by 2D boolean on the wall *elevation* (face region minus opening rectangles, ear-clipped with holes in `arch3d::mesh`) then extruded. Faster, robust, no geometry kernel. Exercised in phase 2.
-4. **Pure Rust, no new heavy dependencies.** GLTF/GLB, OBJ and STEP/IFC get our own writers. Anything added must be MIT/Apache-2.0/BSD/Zlib and wasm-compatible; `plan/adr/0001` rejects GPL/LGPL/AGPL and C++ kernels.
-5. **The 3D pane renders offscreen.** egui's pass has no depth buffer we control; rendering into our own colour+depth textures and presenting as an egui image leaves the canvas path untouched and works identically on WebGPU and WebGL2.
+1. **Arch model lives in `Drawing`** (undo is a whole-`Drawing` snapshot). Data in `doc`, algorithms in `arch`.
+2. **One source of truth: the arch object, not its linework.** Plan geometry generated into the display list at draw time; DXF proxies written only on save, not read back when arch data is present.
+3. **No 3D CSG.** Walls cut by 2D boolean on the wall *elevation*, then extruded; slabs/ceilings are the same trick on room polygons.
+4. **Pure Rust, no new heavy deps.** Own GLTF/OBJ/STEP writers; MIT/Apache-2.0/BSD/Zlib, wasm-compatible; no C++ kernels.
+5. **The 3D pane renders offscreen** into its own colour+depth textures and presents as an image — egui's pass has no depth buffer we control; identical on WebGPU and WebGL2.
 6. **MCP stays generic.** Commands are the API.
-7. **Incremental rebuild is first-class**: `Drawing::arch_revision` + a dirty `ArchId` set, benchmarked from phase 1 (300-wall house < 50 ms).
-8. **Never crash, always deterministic.** Iteration caps, `get()` not `[]`, checked arithmetic, no NaN casts, property/fuzz tests asserting no panic and manifold output.
-9. **Additive to AutoCAD parity.** No AutoCAD command changes; arch commands are new ids under the `Architecture` menu section. `docs/gaps.md` has its own ARCH-1…ARCH-13 section; F24 stays as-is.
-10. **Proxy handles, not entities.** Arch objects are not `Entity`s; plan geometry is tagged `Handle(0xA000_0000 + arch_id)` so picking/selection work without polluting the entity store or breaking COPY/MIRROR/ARRAY.
-11. **Rough vs finished are separate fields** (Chief's rule). The 3D rough opening uses `rough`; the 2D symbol and the 3D frame/casing use finished. `ROUGH_ALLOWANCE` is one constant shared by commands, CLI and future detection.
-12. **Placement limits are data in `arch`, not logic in commands.** So `door`/`window`/`garagedoor`, `cadcraft-cli`, MCP and `ARCHDETECT` (phase 8) all enforce the same numbers.
-13. **Shared structs.** A shared arch/3D struct (every `pub` struct with named fields in the modules listed in `xtask/src/literals.rs`, e.g. `Scene3d`, `Mesh`, `Wall`, `Level`, `Room`) is built outside its declaring file only as `Type { required, ..Default::default() }` or with a constructor such as `Mesh::new`, never with a literal that names every field, because that stops compiling when a parallel segment merges a new field into the struct. `cargo xtask literals` (also a `cargo xtask ci` step) fails on any such literal; a shared struct that has neither a `Default` nor a constructor gets one in its declaring file.
+7. **Incremental rebuild first-class:** `arch_revision` + dirty `ArchId` set.
+8. **Never crash, always deterministic:** caps, `get()`, checked arithmetic, property/fuzz tests.
+9. **Additive to AutoCAD parity**; arch commands are new ids under `Architecture`.
+10. **Proxy handles, not entities:** `0xA000_0000 + id`, rooms `+ ROOM_HANDLE_OFFSET`; `grips.rs::arch_id_from_handle` is the single disambiguator.
+11. **Rough vs finished separate** (`ROUGH_ALLOWANCE` one constant).
+12. **Placement limits and area rules are data in `arch`**, not logic in commands, so commands/CLI/MCP/`ARCHDETECT` agree.
+13. **Shared structs** are built outside their declaring file only as `Type{required,..Default::default()}` or via a constructor; `cargo xtask literals` enforces it.
+14. **Derived, never stored,** when a quantity is a sum of others (`Level::floor_to_floor()` = ceiling + structure; the stored field was removed).
+15. **Probing, not counting, proves geometry.** `build3d {"probe":…}` is the acceptance observable; any new 3D feature must add probeable solids, not just triangles.
 
----
+## Phase 1 — walls, joins, poché, first 3D (landed)
 
-## Phase 1 — walls, joins, plan poché, first 3D (landed)
-
-Segments: arch crate, arch3d, glb, render3d, cli, ui pane, tests+bench, docs, doc arch store, render arch hook, wall command + machine, arch inspect, build3d, wall defaults, arch poché, join types, wall graph, join solver (L/T/X), wall stretch, arch ids, arch types, wall fields, validation, layer bands, handles, workspace, stretch command, grip routing, XRECORD r/w, proxy graphics, arch layers, GLB spec layout, crate lints, solved-poché inspect/plan.
-
-**Built.** `ArchModel` on `Drawing::arch` with `arch_revision`/`touch_arch()`; `Wall` with real wall-type build-ups (siding 0.02 / sheathing 0.015 / stud 0.09 / drywall 0.013; interior drywall/stud/drywall) and `Level 1` at 2.4 m. `solve_joins` trims/extends centre-line ends to neighbour face-line intersections (L, T, X, angled, collinear, parallel→square) with per-end `JoinKind` overrides; `stretch_wall` does capped transitive BFS. `render::arch` expands solved rings + per-layer bands into the display list at draw time. `arch3d::build`/`build_dirty` extrude wall elevations, meshes carry `object: ArchId` and world-space box UVs (u=x, v=z). `render3d` renders offscreen and presents as an image; `headless_png` returns `NoAdapter` without a GPU and the CLI maps that to exit 0 (SKIP). `io::glb` writes GLTF 2.0 with node names `wall-w1`. Commands `wall`, `arch.wall.stretch`, `arch.inspect`, `build3d`, `arch.sample`, `view3d`, `camera`; arch proxy handles route into `grips.rs`, so a wall drag runs `arch.wall.stretch` and is undoable/scriptable/MCP-reachable.
-
-**Acceptance (all PASS).** `01_wall_command` · `02_join_solver` · `03_glb_extrusion` · `04_grip_stretch` · `05_plan_and_dxf_roundtrip` · `06_render3d_orbit` · `07_hostile_never_panics` · `08_layers_wasm_no_gpu_leak` · `09_incremental_bench`.
-
-**Tests.** `arch/tests/property_walls.rs` (random graphs: no panic, manifold rings); `arch3d/tests/golden_house.rs` + `fixtures/house_10x8.json` (golden JSON + GLB hash); `arch3d/tests/bench_rebuild.rs` (release-only: 300-wall full rebuild < 50 ms, one-wall `build_dirty` < 5 ms); join unit tests; hostile-input script.
-
-**Phase-1 deferrals.** Main-layer (`WallLayer.is_main`) joins → phase 3+ (Chief joins *through* the structural layer; matters once roofs/floors land). Pony walls (`split_height`, `upper_type`) and `reversed` → later. Arc walls → later (`join_start`/`join_end` already exist, so arc support is additive).
-
----
+`solve_joins` trims/extends centre-line ends to neighbour face-line intersections (L/T/X/angled/collinear, per-end overrides); `stretch_wall` capped transitive BFS; `render::arch` expands solved rings + layer bands; `arch3d::build` extrudes elevations with `object: ArchId` and box UVs; `io::glb` writes GLTF 2.0 (`wall-w1`); wall grips run `arch.wall.stretch`. Checks 01–09 PASS. Deferrals: `is_main` joins, pony walls, `reversed`, arc walls.
 
 ## Phase 2 — openings (landed)
 
-Segments: doc-opening-model, arch-placement, arch-plan-symbol, render-openings, arch3d-components, glb-openings, dxf-openings, cmd-inspect-openings, grip-openings, snap-arch, arch-sample-openings, i18n-uk, golden-openings, p2a-holed-prism, p2b-wall-elevation-cut, p2c-scene-openings, uk-arch-labels, opening-commands, opening-move, opening-machines, doc-opening-ids, arch-fit-and-sill, engine-opening-params, engine-inspect-openings, arch3d-opening-parts, io-opening-roundtrip, engine-arch-handles, arch3d-build-counts, open-style-defaults, fit-slide-first, inspect-kind-labels, openings-envelope, openings-perf, sample-honours-openings.
+`Opening` on `ArchModel.openings` (host, offset, finished + rough dims, recess, style, hinge/swing, frame/casing/sill). `arch::opening` holds Chief's limits as constants (`MIN_HINGED_WIDTH 0.3`, `MIN_GARAGE_WIDTH 1.8`, `MIN_WINDOW_SEGMENT 0.15`, `MIN_SEPARATION 0.05`, `ROUGH_ALLOWANCE 0.12`) with `validate_placement`/`place_opening`/`auto_panel`/`clamp_recess`/`project_to_wall`. Generated plan symbols; poché cut by even-odd holes. `mesh::push_prism_with_holes` triangulates the elevation minus opening rectangles; `openings::opening_meshes` emits frame/casing/glass/leaf/sill/header merged per material (GLB node names, blended glass). `door`/`window`/`garagedoor`/`arch.opening.move`; grips slide openings. Checks 01–09 PASS. Deferrals: bay/box/bow geometry, mullions, jambs/reveals, hardware, display states, schedules, pocket doors, arc-wall openings, exterior/interior classification.
 
-**Model (`doc`, L1).** `Opening` in `ArchModel.openings`, sharing `next_id` with walls — openings undo, autosave, audit and round-trip with the drawing. Host `ArchId`, `offset` from the wall start, finished `width`/`height`/`sill`, separate **rough** dimensions, `recess` into the build-up, `style`, `hinge`/`swing`, frame/casing/sill sizes, `mull_group` reserved. `MAX_OPENINGS = 8192` bounds every loop. Proxy handles `a000…` for picking.
+## Phase 3 — rooms, floors, ceilings, levels (landed)
 
-**Placement (`arch::opening`).** Chief's rules as shared constants: `MIN_HINGED_WIDTH 0.3`, `MIN_GARAGE_WIDTH 1.8`, `MIN_WINDOW_SEGMENT 0.15`, `MIN_BAY_SEGMENT 0.725`, `MIN_SEPARATION 0.05`, `ROUGH_ALLOWANCE 0.12`. `validate_placement` / `place_opening(model, o, fit)` reject or auto-resize; `auto_panel` doubles hinged ≥1.2 m and bifold >0.9 m; `clamp_recess` keeps the unit inside the wall; `project_to_wall` maps a click to an offset; `spans_overlap` enforces separation.
+**Carry-overs closed.** (a) `render3d` draws: colour+depth targets, one directional light + ambient, flat shading from each triangle's own plane (arch3d boxes share corners with averaged normals and inconsistent winding, which speckled faces); meshes re-upload on scene-key change; `render` exits **3** with `NO_ADAPTER` and prints `PROJECTED x0,y0,x1,y1` from `projected_scene_bounds`; check 06 rewritten (flat fill fails, foreground fraction in (0.05,0.85), bbox within 3 px, second camera changes pixels, top-down covers more than oblique). (b) `wall_span(model,wall)->Option<(base,top)>` uses the level elevation and honours `to_ceiling`. (c) `build3d {"probe":[…]}` (≤1024 finite points) → `{id,part,level}` or null, via `arch3d::ray` (Möller–Trumbore specialised to +Z — the first version tested z-ranges, never saw a horizontal face, and reported a point inside a slab as empty); `part_of` maps material names to wall/floor/ceiling/glass/frame/casing/leaf/sill/header/roof.
 
-**Plan symbols (`arch::symbol` + `render::arch`).** Generated, never drawn: door leaf + swing arc, sliding panels, window glass lines, casing. The wall poché is cut by even-odd holes at draw time — no duplicate linework. Proxy polylines on `A-DOOR`/`A-GLAZ` with `CADCRAFT` XDATA are written on save and dropped on read while `CADCRAFT_ARCH` (v2, accepts v1) is present.
+**Levels.** `Level{index,name,elevation,ceiling_height,structure}`; `floor_to_floor()` derived (ceiling + structure), stored field removed (check 09 greps for it and fails if present). Defaults 2.4 + 0.3 = 2.7. `level {above|below|index|name|ceiling|structure}`; basements renumber walls; auto-naming follows the neighbour; wall height defaults to floor-to-floor.
 
-**3D (`arch3d`).** No CSG. `mesh::push_prism_with_holes` triangulates the wall elevation (region minus opening rectangles) and extrudes — decision 3 exercised. `openings::opening_meshes` emits frame, casing, glass, leaf, sill and header prisms, merged per material into one `Mesh` with `object: ArchId`; material names become GLB node names (`door-frame-o0`, `window-glass-o2`); glass uses a `BLEND` material. Components stay inside the host wall band and below the wall height (unit-tested). `Scene3d.openings_built` makes the cut count observable from `build3d`.
+**Rooms.** `Room{id,name,room_type,level,polygon,holes,ceiling_height,floor_height,interior_area,standard_area}` with own `next_room_id` and `room_handle`/`room_label`/`is_room_handle`. `RoomType` (Living, Bedroom, Kitchen, Bath, Closet, Utility, Garage, Porch, Deck, OpenBelow, Other) with `is_interior`/`has_floor`/`has_ceiling`. `detect_rooms`: per level, non-divider walls solved on a temporary model (identical joins to the plan), poché rings closed, `divider` walls contribute centre lines; seeds are edge-midpoint left-normal offsets plus the centroid; faces traced with `geom::region::boundary_at`, normalised CCW, holes from islands, filtered by `MIN_ROOM_AREA` and a thin-strip guard, deduped by rounded (centroid, area), capped by `MAX_ROOMS`. A face inside a face is both a hole and its own room.
 
-**Interaction.** `door` / `window` / `garagedoor` (interactive machine: pick a host wall, then offset or `Width`/`Height`/`Sill`/`Hinge`/`Swing` keywords — one implementation shared with the JSON path, one undo step) and `arch.opening.move`. Opening grips run `arch.opening.move`, so dragging is undoable, scriptable and MCP-reachable. Offsets are measured from the wall start, so stretching the host wall keeps the opening in place. `snap::arch` adds wall faces, wall ends and opening edges — the item carried over from phase 1.
+**Areas (`arch::area`).** `interior_area` = region area; `standard_area` offsets each edge to its wall's reference line (`edge_standard_offset`: outer face for exterior walls, centre line for interior, 0 for dividers) with `poly::offset_polygon(pts, dist, outward)` per-edge distances, holes inward, falling back to interior when degenerate; `perimeter(Interior|Standard|Exterior)`; `living_area` = sum of standard over interior types with effective ceiling ≥ `MIN_LIVING_CEILING` 1.2; `refresh_areas`.
 
-**Acceptance (all PASS).** `01_opening_commands` (6 openings, unique ids, rough > finished, hinge/swing set) · `02_placement_limits` · `03_opening_glb_parts` (node names + blended glass) · `04_drag_along_wall` (2D offset moves, 3D rebuilds, past-the-end refused, undo restores, opening follows a stretched host wall) · `05_plan_symbols` (generated symbols + SVG growth) · `06_dxf_opening_roundtrip` (idempotent) · `07_hostile_openings` · `08_layers_wasm_i18n` · `09_opening_rebuild_bench` (300 walls + 150 openings < 50 ms).
+**3D.** `floors::floor_slab` (top exactly at level elevation, down by structure) and `ceiling_surface` (at ceiling height) — prisms with holes, `Mesh::level_elevation` set, `None` for `!has_floor()`/`!has_ceiling()`; `Scene3d.floors`/`.ceilings` counts, equal in full and incremental builds (regression-tested).
 
-**Phase-2 deferrals from `CHIEF-REFERENCE.md` §2/§3 Phase 2.** Bay/box/bow geometry beyond the plan symbol (defaults recorded: bay 2'-2"/4'-2"/1'-0"/45°, box 4'-2"/1'-6"/90°, bow 5 sections / 3'-9" radius centre / 11.5"); mulled units sharing one casing and label; per-face interior/exterior jamb and casing profiles with `reveal`; hardware hinge counts (interior 2, exterior 3); display states `swing_angle`/`percent_open`/`glass_mode`; window levels + Select-Next-Object; opening schedules; pocket-door pockets cut in the wall; openings on arc walls; automatic exterior/interior door classification (needs rooms → phase 3).
+**Labels/grips/DXF.** `label_point` inside polygon+holes; `render::arch` shapes name+area on `A-ROOM` tagged with the room handle; `dxf_arch` writes save-time `A-ROOM` proxies with `CADCRAFT-ROOM` XDATA, dropped on read while `CADCRAFT_ARCH` is present; room grips resolve to `ArchTarget::Room` and return the label point, drags a silent no-op. `arch.inspect {rooms,labels,levels}` reports id/handle/name/type/level/polygon/holes/areas/livingIncluded/ceiling/label.
 
-**Doc fix before phase 3:** `docs/gaps.md` ARCH-7 must flip from `open — phase 2` to `done — phase 2`.
+**Commands.** `level`, `room` (closed ring ≥4 distinct simple points, or edit by id — name/type/heights only, validated before any write, no-op refused), `roomdetect {level?,dryRun?}` (replace-per-level, dryRun never calls `doc_mut()`, one `touch_arch()` → one undo step, `truncated` reported), `build3d {probe}`, `arch.sample {house2:true}` (basement −2.7, L1 0, L2 2.7, 5 rooms). `uk.tsv` rows in the same segments.
 
----
+**Numbers locked.** Interior 27.93 / 28.3725 / 18.6725; standard 31.62 / 31.11 / 20.91 = 83.64 = 10.2 × 8.2; closed 0.1 m loop → south 26.72 with one hole + a 0.81 m² room, each with its own slab (probes give different ids); Level 2 at 2.7 with `(5,0)–(5,8)` → two rooms of 37.83; probes hit a Level-2 slab at (2,1,2.55), nothing at (2,1,1.0), Level-1 slab at (2,1,-0.15), nothing at (12,1,2.55). Room-type rules: Open Below → no floor, ceiling kept; Deck/Porch → floor, no ceiling.
 
-## Open items / known gaps vs Chief Architect
+**Acceptance (all PASS).** `01_levels_command` · `02_room_detect` · `03_room_areas` · `04_levels_two_storey` · `05_floors_ceilings_3d` · `06_render3d_real` · `07_room_labels_and_roundtrip` · `08_hostile_rooms` · `09_layers_wasm_i18n`. Four checks were broken as written and fixed (02 sorted-vs-unsorted, 03 edited a room never drawn, 05 contradictory ceiling rules, 06 passed on a flat fill). **Lesson: run every check against a stub before locking it.**
 
-Rooms/floors/ceilings/levels (ARCH-8); roofs (ARCH-9); stairs/railings/decks (ARCH-10); PBR, sun and shadows, SSAO, display styles, walkthrough, GPU picking synced with 2D (phase 6); HLR elevations and sections (ARCH-11); `ARCHDETECT` (ARCH-12); OBJ and IFC (ARCH-13); arc walls and openings on them; layered reference-side (main-layer) joins; pony walls and `reversed`; wall-top clipping to rafters; framing and structural members; terrain and site contours; electrical/plumbing/HVAC; layout sheets beyond generated elevation sheets; ray-traced "final views"; dormers; curtain walls; dynamic per-edit roof topology; IFC4 alignment beyond the six entity classes; real-file corpus validation of `ARCHDETECT` precision/recall; opening sub-items listed above.
+**Phase-3 gaps.** Out of scope by the brief: stair wells (5), ceilings under the roof (4), room boxes / Build House, other-floor reference, dynamic defaults, sloped/vaulted ceilings, stem walls, split levels, moldings. Also: `is_main` joins missing (standard area measures to the exterior *outer face*; Chief's alternative basis is the Main Layer — one function to change); rooms not drag-editable; exterior/interior door classification not wired; `crates/arch/src/planarr.rs` is an empty orphan to delete; `docs/gaps.md` ARCH-13 says "phase 9" (exports are 12); `uk.tsv` has "Дверь" for Door.
+
+## Open items vs Chief Architect
+
+Roofs (ARCH-9); stairs/railings/decks and stair wells (ARCH-10); PBR, sun+shadows, SSAO, display styles, walkthrough, GPU picking synced with 2D (6); HLR elevations/sections (ARCH-11); `ARCHDETECT` (ARCH-12); OBJ and IFC (ARCH-13); **walls still not cut by openings in 3D** (4); arc walls and their openings; main-layer joins and the standard-area basis; pony walls, `reversed`; wall-top clipping to rafters; framing; terrain and contours; electrical/plumbing/HVAC; layout sheets; ray-traced final views; dormers; curtain walls; dynamic roof topology; IFC4 beyond six entity classes; `ARCHDETECT` corpus validation; phase-2 opening sub-items; room boxes, reference display, dynamic defaults, split levels, moldings; door classification.
 
 ## Phase plan
 
-0 survey ✅ → 1 walls+joins+basic extruded 3D ✅ → 2 openings ✅ → **3 rooms/floors/levels** → 4 automatic roofs → 5 stairs/railings/decks → 6 the 3D view properly → 7 generated elevations and sections → 8 `ARCHDETECT` on plain DXF → 9 glTF/OBJ/IFC export → 10 polish, materials, benchmarks, `docs/arch3d/USER-GUIDE.md`.
+0 ✅ → 1 ✅ → 2 ✅ → 3 ✅ → **4 roofs** → 5 stairs/railings/decks → 6 the 3D view properly → 7 elevations/sections → 8 `ARCHDETECT` → 9 terrain/site → 10 lighting → 11 ray-traced Finalize → 12 exports → 13 polish.
 
-## Phase 3 plan (next)
+## Phase 4 plan (next)
 
-Rooms, floors, ceilings and levels (ARCH-8). `Room` detection from enclosed wall faces including invisible room-divider walls, with holes (courtyards, stair wells) and a point-in-polygon face assignment; area/perimeter rules from `CHIEF-REFERENCE.md` §3 Phase 3 — **Interior** (inner surfaces, includes bay/box/bow), **Standard** (centre of interior walls, outside surface / Main Layer of exterior walls, excludes bay/box/bow), **Living** (sum of Standard for interior room types, excludes Garage/Deck/Porch/Open Below/Attic and rooms with rough ceiling < 1.2 m). Room labels with areas in the display list; floor and ceiling slabs from room polygons with stair-well holes; `Level` gains elevation, floor-to-floor, ceiling height and floor-structure thickness, plus a basement and a second floor; room-divider walls; `room`/`roomdetect`/`level` commands; main-layer (`is_main`) joins so area bases match Chief; door exterior/interior classification becomes available once rooms exist. `uk.tsv` rows in the same segment.
-
-## Phase 3 plan
-
-Phase 3 (ARCH-8) landed rooms, floors, ceilings and levels. Key decisions to record: (1) `Level::floor_to_floor` is now DERIVED (ceiling + structure) — the stored field is gone, so a level can never disagree with its own build-up; defaults 2.4 + 0.3 = 2.7, matching the default wall height. (2) Rooms are `doc` data on `Drawing::arch` (`ArchModel.rooms`, own `next_room_id`, `ROOM_HANDLE_OFFSET = 0x10000` so room proxy handles sit in their own range) — they undo, autosave and round-trip like walls. (3) Room detection is a planar arrangement over the *solved* poché (phase-1 `solve_joins` output), so joins and room areas share one source of truth; thickness-0 `divider` walls enclose rooms but produce no poché and no 3D. A face inside another face is both a hole and a room of its own. (4) Area rules are data in `arch::area` (interior = inner surfaces; standard = each room edge pushed out by half the thickness of the wall it lies on; living excludes Garage/Porch/Deck/OpenBelow and ceilings under 1.2 m) so commands, CLI, future schedules and `ARCHDETECT` agree. (5) No 3D CSG again: floor slabs and ceilings are prisms from room polygons with holes via `push_prism_with_holes`. (6) `build3d {"probe":[...]}` is the new observable — CPU ray-cast containment returning `{id,part,level}` or null; mesh counts alone never proved a slab or a hole. (7) `render3d` finally draws: depth texture, one directional light + ambient, and `render` prints `PROJECTED x0,y0,x1,y1` so image checks compare the foreground bbox against projected scene bounds instead of a brightness; `render` now exits 3 with `NO_ADAPTER` (was 0), and check 06 was rewritten so a blank/zero-filled image fails. (8) `docs/gaps.md` ARCH-7 → done (phase 2), ARCH-8 → done (phase 3). Remaining gaps for this phase: stair wells (phase 5), ceilings under the roof (phase 4), room boxes / Build House, reference display of other floors, sloped/vaulted ceilings, garage stem walls, split levels, moldings, and main-layer (`is_main`) joins which still affect where the standard-area base sits on layered exterior walls.
+Automatic roofs (ARCH-9), built on the assisted `geom::roof_skeleton(outer,holes,slopes)` / `weighted_skeleton` (each edge sweeps one face; node `time` is roof height; `f64::INFINITY` = a vertical gable face).
+- `ROOFAUTO` over the top level's exterior walls: outer-face footprint, collinear edges merged, ≤256 edges, event/iteration caps, **on failure return an error and build no roof**.
+- Per-wall directives (hip/full gable, pitch, overhang, eave height) as data on `Wall`; rebuilds while walls change until a plane is hand-edited. Plane underside passes through the top outer edge of its eave wall; thickness above that surface; fascia band + flat soffit. `ROOFAUTO` also draws one plane from polygon + base edge + pitch.
+- **Wall-to-roof clipping without CSG:** build the elevation profile first (pentagon for a gable), cut the openings' rough openings into that same profile, triangulate with holes, extrude. Closes the phase-2 defect; un-ignore `hlr_section.rs::a_window_beyond_a_section_shows_through_its_wall`; probe `[4.0,8.0,1.5]` finds no wall in a 0.9 × 1.2 window (sill 0.9) at x = 4 on the north wall, `[4.0,8.0,0.5]` finds it.
+- Numbers (walls 2.4 m, overhang 0): hip 6/12 → four planes, ridge x 4.0…6.0 at y 4.0, z = 2.4 + 4.1 × 0.5 = **4.45**; 4/12 → 3.7667, 12/12 → 6.5. Gables on x=0 and x=10 → two planes, ridge −0.1…10.1 at 4.45, gable walls reach 4.45 at y=4, eave walls stay 2.4. One gable + one hip → three planes, ridge x 4.0…10.1. Overhang 0.5 on a hip → projected areas sum to **11.2 × 9.2 = 103.04 m²**.
+- Invariants: one sloped edge per footprint vertex (hip convex, valley reflex); one plane per footprint edge; slope equals pitch to 1e-9; interior edges shared by exactly two planes; projected areas sum to footprint + overhang band. L footprint `(0,0)(10,0)(10,8)(6,8)(6,12)(0,12)` has one valley, a T two.
+- Carry the hostile-input and layers/wasm/i18n checks; `uk.tsv` rows in the same segment; new shared-struct fields get defaults.
 
 ## Building blocks added outside the swarm (assisted)
 
-- `geom::skeleton` (2026-10-25, assisted draft: written by Claude ahead of phase 4, not by the swarm): `straight_skeleton(outer, holes)` for a polygon with holes, `inset(.., d)` and `outset(.., d)` for mitred offsets, and `check` for its invariants. Each input edge sweeps one face; a node's `time` is its distance to that face's edge, so a hip roof is the skeleton lifted by `time * slope` with one roof plane per face. Use it for phase 4 roofs and for room or area offsets instead of writing new offset code.
-- `geom::roof_skeleton(outer, holes, slopes)` and `weighted_skeleton(.., weights)` (2026-10-25, assisted draft): per-edge roof pitch and gable ends. `slopes[ring][edge]` is rise per run for each input edge (`f64::INFINITY` for a gable, whose face stands vertical); every node's `time` is its roof height, and each face is the roof plane over its edge. Build phase 4 roofs on this rather than lifting the plain skeleton.
-- `render3d` drawing and the 3D pane (2026-10-25, assisted draft, written by Claude after the swarm's offscreen segments made no gate pass in 7–37 rounds each): `Offscreen` owns colour (`Rgba8UnormSrgb`) and depth (`Depth32Float`) targets on its own device (`Offscreen::create`, for the CLI and tests) or the window's (`Offscreen::with_device`, for the pane). `encode`/`render` draw `Scene3d` depth-tested with the directional light plus ambient, one uniform slot per mesh (dynamic offsets), albedo from `material_albedo(mesh.material)`; meshes re-upload only when the scene key changes. Shading is flat, from each triangle's own plane (`cross(dpdy, dpdx)` of the world position, facing the camera): arch3d's boxes share 8 corners with averaged normals, which speckled every face, and its winding is not consistent. `read_rgba`/`read_png` are synchronous and bounded (`READBACK_TIMEOUT`). The CLI's `PROJECTED` comes from `projected_scene_bounds` (mesh vertices), which matches the silhouette where room slabs leave the bounding box's corners empty; check 06 now looks for a flat fill over every pixel and parses `PROJECTED x0,y0,x1,y1`. The pane (`ui-egui/src/pane3d.rs`) renders through an `egui_wgpu` callback: `install` at `set_wgpu`, the scene syncs per document and `arch_revision`, the target is redrawn only when the scene, camera or size changed (`Resources.draws`), then sampled into the pane; drag orbits, the wheel zooms. **Headless instances use `Backends::PRIMARY` (`offscreen::headless_instance`)**: several threads starting the GL/EGL backend at once hung test binaries for 900 s on cgyws2, which is what stalled the offscreen segments; GPU tests share one device (`gputest::shared_device`). wgpu moved from 29 to 30, the version egui-wgpu uses, so the pane can share the window's device.
+- `geom::skeleton` (2026-10-25): `straight_skeleton(outer,holes)`, `inset`/`outset` mitred offsets, `check` invariants. Each input edge sweeps one face; node `time` is distance to that edge.
+- `geom::roof_skeleton(outer,holes,slopes)` and `weighted_skeleton(..,weights)`: per-edge pitch and gable ends (`f64::INFINITY` = vertical face); node `time` is roof height, each face is the plane over its edge. Build phase 4 on this.
+- `render3d` drawing and the 3D pane (2026-10-25): `Offscreen` owns colour+depth on its own device (`create`) or the window's (`with_device`); `encode`/`render` draw depth-tested with one directional light + ambient, one uniform slot per mesh, albedo from `material_albedo`; flat shading from each triangle's own plane (`cross(dpdy,dpdx)`) because arch3d boxes share corners with averaged normals and inconsistent winding; `read_rgba`/`read_png` bounded by `READBACK_TIMEOUT`; `PROJECTED` from `projected_scene_bounds`. The pane syncs per document and `arch_revision`, redraws only when scene/camera/size changed. **Headless uses `Backends::PRIMARY` (`headless_instance`)** — concurrent GL/EGL starts hung test binaries for 900 s on cgyws2; GPU tests share one device (`gputest::shared_device`). wgpu moved 29 → 30 to match egui-wgpu.
 
----
+## Assisted building block (2026-10-25): feature edges, HLR, section cuts (phases 6–7)
 
-## Assisted building block (2026-10-25): feature edges, hidden-line removal and section cuts (phases 6-7)
+Pure CPU, deterministic, in `arch3d`; tests `crates/arch3d/tests/hlr_section.rs`.
+- **`edges`.** `feature_edges(mesh, CREASE_DEG)` / `scene_feature_edges`: weld at 1e-5 m, then edges used by one triangle (`Boundary`), >2 (`NonManifold`), or two faces meeting over 20° (`Crease`); planar triangulation diagonals never appear. With a view direction, `Silhouette` edges are added.
+- **`hlr`.** `OrthoView::new(dir,up)` / `::elevation([x,y])`; `visible_lines(scene,view) -> Vec<Line2>` tagged with `ArchId`. Exact: depth difference is linear along an edge, so the hidden part is one interval; covering is closed (`EPS_SHEET`) so diagonals never leak; a triangle hides only what is over `EPS_DEPTH` (0.1 mm) behind its plane plus its slope across that band. `merge_collinear` joins runs of the same object only.
+- **`section`.** `Plane::new(point,normal)`; `section_cut(scene,plane,view) -> SectionCut{rings,lines}` — crossings computed once per welded edge and chained, so closed solids give CCW closed rings (open surfaces give lines); a corner exactly on the plane counts as in front. `section_view(scene,plane,up)` = cut + `visible_lines` beyond, each object's cut face hiding what lies inside its poché.
 
-Pure CPU, deterministic geometry in `arch3d`, merged ahead of phases 6 and 7 so they build on it instead of writing
-their own. Tests: `crates/arch3d/tests/hlr_section.rs`.
-
-- **`arch3d::edges`.** `feature_edges(mesh, CREASE_DEG)` / `scene_feature_edges`: vertices welded at `WELD` (1e-5 m)
-  first, then every edge used by one triangle (`Boundary`), more than two (`NonManifold`), or two whose faces meet at
-  more than 20° (`Crease`). Diagonals of a planar face never come out. With a view direction the HLR also adds
-  `Silhouette` edges (one face toward the viewer, one away), so a round column has an outline. Phase 6's "shaded with
-  edges" draws these.
-- **`arch3d::hlr`.** `OrthoView::new(dir, up)` / `OrthoView::elevation([x, y])` (looks along `dir`; sheet `u` right,
-  `v` up, depth away); `visible_lines(scene, view) -> Vec<Line2>` (sheet metres, each line tagged with its `ArchId`).
-  Exact: where a triangle covers part of an edge on the sheet, the depth difference is linear along the edge, so the
-  hidden part is one interval; the union of hidden intervals is removed. Covering is closed (a point within `EPS_SHEET`
-  of a triangle's outline is covered), so an edge behind a face never leaks through the face's triangulation
-  diagonals; a triangle hides only what is more than `EPS_DEPTH` (0.1 mm) behind its plane plus its slope across that
-  band, so an edge is never hidden by the faces it lies in and a face seen almost edge-on hides nothing.
-  `merge_collinear` joins one object's overlapping runs; lines of different objects never merge (each keeps its id), so
-  a casing outline flush with a wall face can appear twice, once per object.
-- **`arch3d::section`.** `Plane::new(point, normal)`; `section_cut(scene, plane, view) -> SectionCut { rings, lines }`:
-  crossing points are computed once per welded edge and chained by edge, so a closed solid gives closed rings (counter-
-  clockwise on the sheet, `signed_area()`, fill even-odd) and an open surface (a ceiling) gives lines. A corner exactly
-  on the plane counts as in front, so a face lying in the plane cuts nothing. `section_view(scene, plane, up)` looks
-  along the normal: the cut, plus `visible_lines` of the part beyond the plane, with each object's cut face hiding what
-  lies inside its poché.
-
-**What the HLR exposed in the 3D build (not fixed here):**
-
-- **Walls are not cut by openings.** `Scene3d::build` extrudes each wall's plan shape whole; the opening's parts sit
-  inside a solid wall. From outside, flush casings and frames still draw; from inside (interior elevations, the far side
-  of a section, the 3D view from a room) the wall face hides the whole opening. The brief now puts the fix in phase 4,
-  with the gable walls: openings become holes in the wall's elevation profile. `hlr_section.rs` keeps an ignored test
-  for it.
-- **The header is flush with both wall faces** (0.2 m deep in a 0.2 m wall), so once walls are cut it draws as a
-  rectangle above every opening in elevations and sections. Make it narrower than the wall, or leave it out of the 3D
-  build.
-- **Casings are clamped inside the wall band**, flush with the face, instead of standing proud of it by
-  `casing_depth`.
-- `Opening::new` gives every opening sill 0, windows included (the `window` command defaults it to 0.9), so tests
-  that build windows with `Opening::new` set `sill` themselves.
+**What the HLR exposed (unfixed):** walls are not cut by openings (phase 4 fixes it); the header is flush with both wall faces, so once walls are cut it draws as a rectangle above every opening — narrow it or drop it; casings are clamped inside the wall band instead of standing proud by `casing_depth`; `Opening::new` gives sill 0 to windows (the `window` command defaults 0.9), so tests set `sill` themselves.
