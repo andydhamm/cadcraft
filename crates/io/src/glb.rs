@@ -2,12 +2,15 @@
 //!
 //! Pure Rust, no new dependency: a single binary buffer, one bufferView and one
 //! accessor per attribute (`componentType` 5126/5125, `type` VEC3/VEC2/SCALAR,
-//! `min`/`max` on POSITION), one mesh + node per [`Mesh`] named `wall-<ArchId>`,
+//! `min`/`max` on POSITION), one mesh + node per [`Mesh`] named by material
+//! (`wall-w{n}`, `<material>-o{n}`, or roof: `roof-r{n}p{m}`,
+//! `roof-r{n}-fascia`, `roof-r{n}-soffit`),
 //! one material per distinct `Mesh::material` (flat pbrMetallicRoughness base
 //! colour via [`cadcraft_color`]), and one scene. The GLB header magic is
 //! `0x46546C67`, little-endian, 4-byte aligned.
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 use cadcraft_arch3d::{Mesh, Scene3d};
 use cadcraft_color::{Color, Rgb};
@@ -83,25 +86,33 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
 
     let mut materials: Vec<Value> = Vec::new();
     let mut material_index: HashMap<String, u32> = HashMap::new();
+    /// Plane index seen so far per roof id, so roof planes are named in
+    /// scene order: `roof-r{n}p0`, `roof-r{n}p1`, ...
+    let mut roof_planes: HashMap<u32, u32> = HashMap::new();
 
     let written_meshes: Vec<&Mesh> = scene.meshes.iter().filter(|m| !m.positions.is_empty()).collect();
     for (i, m) in written_meshes.iter().enumerate() {
         let mat_idx = if let Some(idx) = material_index.get(&m.material) {
             *idx
         } else {
+            let is_roof = m.material == "roof";
             let rgb = base_color_for(&m.material);
             let is_glass = m.material.contains("glass");
             let mut mat = json!({
                 "name": m.material,
                 "pbrMetallicRoughness": {
-                    "baseColorFactor": [
-                        rgb.0 as f64 / 255.0,
-                        rgb.1 as f64 / 255.0,
-                        rgb.2 as f64 / 255.0,
-                        if is_glass { 0.35 } else { 1.0 }
-                    ],
+                    "baseColorFactor": if is_roof {
+                        [ROOF_ALBEDO[0], ROOF_ALBEDO[1], ROOF_ALBEDO[2], 1.0]
+                    } else {
+                        [
+                            rgb.0 as f64 / 255.0,
+                            rgb.1 as f64 / 255.0,
+                            rgb.2 as f64 / 255.0,
+                            if is_glass { 0.35 } else { 1.0 }
+                        ]
+                    },
                     "metallicFactor": 0.0,
-                    "roughnessFactor": if is_glass { 0.05 } else { 1.0 },
+                    "roughnessFactor": if is_roof { 0.9 } else if is_glass { 0.05 } else { 1.0 },
                 },
             });
             if is_glass {
@@ -113,7 +124,26 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
             idx
         };
 
-        let name = if m.material == "wall" { format!("wall-{}", m.object) } else { format!("{}-o{}", m.material, m.object.0) };
+        let name = match m.material {
+            "roof" => {
+                let plane = match roof_planes.entry(m.object.0) {
+                    Entry::Occupied(mut e) => {
+                        let i = *e.get();
+                        *e.get_mut() += 1;
+                        i
+                    }
+                    Entry::Vacant(_) => {
+                        roof_planes.insert(m.object.0, 1);
+                        0
+                    }
+                };
+                format!("roof-r{}p{}", m.object.0, plane)
+            }
+            "fascia" => format!("roof-r{}-fascia", m.object.0),
+            "soffit" => format!("roof-r{}-soffit", m.object.0),
+            "wall" => format!("wall-{}", m.object),
+            _ => format!("{}-o{}", m.material, m.object.0),
+        };
 
         // POSITION (VEC3, f32).
         let pos_start = bin.len();
@@ -255,6 +285,9 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
     (json_string(value), bin)
 }
 
+/// Matte reddish roof albedo, as a 0..=1 `f64` triple.
+const ROOF_ALBEDO: [f64; 3] = [151.0 / 255.0, 84.0 / 255.0, 74.0 / 255.0];
+
 /// Resolve a material name to a flat base colour via [`cadcraft_color`].
 fn base_color_for(name: &str) -> Rgb {
     let c = Color::parse(name).unwrap_or(Color::ByLayer);
@@ -320,6 +353,18 @@ mod tests {
                 .collect(),
             ..Default::default()
         }
+    }
+
+    /// A roof scene: two roof planes, a fascia and a soffit, all on roof 0.
+    fn scene_with_roof() -> Scene3d {
+        let mut scene = scene_with(0);
+        scene.meshes.extend(["roof", "roof", "fascia", "soffit"].iter().map(|material| {
+            let mut m = wall_mesh();
+            m.material = material.to_string();
+            m.object = ArchId(0);
+            m
+        }));
+        scene
     }
 
     /// Parse the JSON chunk of a GLB byte slice.
@@ -649,5 +694,51 @@ mod tests {
                 && m["pbrMetallicRoughness"]["baseColorFactor"][3].as_f64().unwrap() < 0.6),
             "window-glass material missing BLEND/alpha"
         );
+    }
+
+    #[test]
+    fn glb_names_roof_nodes() {
+        let bytes = write(&scene_with_roof());
+        let json = glb_json_chunk(&bytes);
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert_eq!(mesh_names, vec!["roof-r0p0", "roof-r0p1", "roof-r0-fascia", "roof-r0-soffit"]);
+        let node_names: Vec<String> = json["nodes"].as_array().unwrap().iter().filter_map(|n| n["name"].as_str()).map(String::from).collect();
+        assert_eq!(node_names, vec!["roof-r0p0", "roof-r0p1", "roof-r0-fascia", "roof-r0-soffit"]);
+    }
+
+    #[test]
+    fn glb_roof_material_is_distinct() {
+        let scene = Scene3d {
+            meshes: vec![wall_mesh(), {
+                let mut m = wall_mesh();
+                m.material = "roof".into();
+                m.object = ArchId(0);
+                m
+            }],
+            ..Default::default()
+        };
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mats = json["materials"].as_array().unwrap();
+        assert_eq!(mats.len(), 2);
+        let roof = mats.iter().find(|m| m["name"] == "roof").unwrap();
+        let pbr = &roof["pbrMetallicRoughness"];
+        let base = &pbr["baseColorFactor"];
+        assert!(base[0].as_f64().unwrap() > 0.5 && base[1].as_f64().unwrap() < 0.5 && base[2].as_f64().unwrap() < 0.5, "roof albedo not reddish");
+        assert_eq!(base[3].as_f64().unwrap(), 1.0);
+        assert_eq!(pbr["metallicFactor"].as_f64().unwrap(), 0.0);
+        assert_eq!(pbr["roughnessFactor"].as_f64().unwrap(), 0.9);
+        // Distinct from the wall entry.
+        let wall = mats.iter().find(|m| m["name"] == "wall").unwrap();
+        assert_eq!(wall["pbrMetallicRoughness"]["roughnessFactor"].as_f64().unwrap(), 1.0);
+        assert_ne!(wall["pbrMetallicRoughness"]["baseColorFactor"].as_array().unwrap(), base.as_array().unwrap());
+    }
+
+    #[test]
+    fn glb_is_deterministic_with_a_roof() {
+        let scene = scene_with_roof();
+        let a = write(&scene);
+        let b = write(&scene);
+        assert_eq!(a, b);
     }
 }
