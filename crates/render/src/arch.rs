@@ -2,12 +2,13 @@ use std::collections::BTreeMap;
 
 use cadcraft_color::{Color, Rgb};
 use cadcraft_doc::{ArchId, Drawing, Handle, Wall};
+use cadcraft_doc::arch::RoofEdgeKind;
 use cadcraft_fonts::{TextFont, TextParams, place};
 use cadcraft_geom::Vec2;
 
 use crate::{DPrim, DisplayList, Kind, Options};
 
-pub use cadcraft_doc::{is_arch_handle, opening_handle, room_handle};
+pub use cadcraft_doc::{is_arch_handle, opening_handle, room_handle, roof_handle};
 
 /// Stable proxy handle for an architectural object: arch objects have no entity handle, so
 /// selection and picking map back to the `ArchId` through this reserved range.
@@ -219,6 +220,40 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
         }
     }
 
+    // Roof plan linework: each roof's non-eave edges (ridges, hips, valleys and gable ends)
+    // as polylines on A-ROOF, tagged with the roof's proxy handle so picking resolves to the
+    // roof. Eave edges are skipped — the poché already shows them along the walls.
+    for roof in &d.arch.roofs {
+        if roof.edges.is_empty() {
+            continue;
+        }
+        let roof_layer = d.layer("A-ROOF").map(|l| l.color).unwrap_or(Color::Index(7));
+        let roof_ink = crate::ink(Color::ByLayer, roof_layer, Color::Index(7));
+        for edge in &roof.edges {
+            if matches!(edge.kind, RoofEdgeKind::Eave) {
+                continue;
+            }
+            if !edge.a.is_finite() || !edge.b.is_finite() {
+                continue;
+            }
+            let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+            list.bounds.add(edge.a);
+            list.bounds.add(edge.b);
+            list.verts.push(edge.a);
+            list.verts.push(edge.b);
+            list.prims.push(DPrim {
+                handle: roof_handle(roof.id),
+                color: roof_ink.rgb,
+                aci7: roof_ink.aci7,
+                lw: 0.0,
+                transparency: 0,
+                kind: Kind::Polyline,
+                start,
+                len: 2,
+            });
+        }
+    }
+
     list
 }
 
@@ -226,7 +261,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
 mod tests {
     use super::*;
     use cadcraft_color::Rgb;
-    use cadcraft_doc::arch::{Opening, OpeningKind, Room};
+    use cadcraft_doc::arch::{Opening, OpeningKind, Room, Roof, RoofEdge, RoofEdgeKind};
     use cadcraft_doc::{Drawing, Layer};
 
     fn wall(start: Vec2, end: Vec2, thickness: f64) -> Wall {
@@ -539,5 +574,84 @@ mod tests {
             assert_eq!(p.kind, Kind::Polyline, "room label prim kind wrong");
             assert!(p.len >= 2, "room label prim has fewer than 2 vertices: {}", p.len);
         }
+    }
+
+    /// A roof's plan edges (ridges/hips/valleys/gable ends) draw as polylines on the
+    /// `A-ROOF` layer, using that layer's colour.
+    #[test]
+    fn roof_edges_draw_on_a_roof_layer() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_roof(Roof {
+            edges: vec![
+                RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(0.0, 0.0), b: Vec2::new(10.0, 0.0), ..RoofEdge::default() },
+                RoofEdge { kind: RoofEdgeKind::Hip, a: Vec2::new(10.0, 0.0), b: Vec2::new(10.0, 8.0), ..RoofEdge::default() },
+            ],
+            ..Roof::default(),
+        });
+        if let Some(l) = d.layer_mut("A-ROOF") {
+            l.color = Color::True(Rgb::from_u32(0xff00ff));
+        }
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = roof_handle(rid);
+        let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert_eq!(roof_prims.len(), 2, "expected 2 roof prims (ridge+hip), got {}", roof_prims.len());
+        for p in &roof_prims {
+            assert_eq!(p.color, Rgb::from_u32(0xff00ff), "roof prim not on the A-ROOF colour");
+            assert!(!p.aci7, "A-ROOF is a true colour, not aci7");
+            assert_eq!(p.kind, Kind::Polyline, "roof edge should be a polyline");
+            assert_eq!(p.len, 2, "roof edge should have 2 vertices");
+        }
+    }
+
+    /// Every roof edge polyline carries the roof's proxy handle so picking/selection resolves to the roof.
+    #[test]
+    fn roof_plan_linework_is_tagged_with_the_roof_handle() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_roof(Roof {
+            edges: vec![
+                RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(0.0, 0.0), b: Vec2::new(4.0, 4.0), ..RoofEdge::default() },
+                RoofEdge { kind: RoofEdgeKind::Valley, a: Vec2::new(4.0, 4.0), b: Vec2::new(4.0, 8.0), ..RoofEdge::default() },
+                RoofEdge { kind: RoofEdgeKind::GableEnd, a: Vec2::new(0.0, 8.0), b: Vec2::new(4.0, 8.0), ..RoofEdge::default() },
+                RoofEdge { kind: RoofEdgeKind::Eave, a: Vec2::new(0.0, 0.0), b: Vec2::new(0.0, 8.0), ..RoofEdge::default() },
+            ],
+            ..Roof::default(),
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = roof_handle(rid);
+        // All three non-eave edges produce prims on the roof handle.
+        let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert_eq!(roof_prims.len(), 3, "expected 3 non-eave roof prims, got {}", roof_prims.len());
+        for p in &roof_prims {
+            assert_eq!(p.handle, handle);
+            assert_eq!(p.kind, Kind::Polyline);
+        }
+    }
+
+    /// `Eave` edges contribute no prims — the poché already shows eaves along the walls, so
+    /// they must not be drawn a second time by the roof linework.
+    #[test]
+    fn eave_edges_are_not_drawn_twice() {
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_roof(Roof {
+            edges: vec![
+                RoofEdge { kind: RoofEdgeKind::Eave, a: Vec2::new(0.0, 0.0), b: Vec2::new(10.0, 0.0), ..RoofEdge::default() },
+                RoofEdge { kind: RoofEdgeKind::Eave, a: Vec2::new(10.0, 0.0), b: Vec2::new(10.0, 8.0), ..RoofEdge::default() },
+            ],
+            ..Roof::default(),
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default());
+
+        let handle = roof_handle(rid);
+        assert!(list.prims.iter().all(|p| p.handle != handle), "eave edges were drawn as roof linework");
+        assert_eq!(
+            list.prims.iter().filter(|p| p.handle == handle).count(),
+            0,
+            "no prim may be emitted for eave edges"
+        );
     }
 }
