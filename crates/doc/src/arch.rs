@@ -1821,6 +1821,7 @@ mod tests {
             eave_wall: Some(ArchId(2)),
             base_edge: [0.0, 0.0, 10.0, 0.0],
             thickness: 0.25,
+            eave_z: 0.0,
         });
         r.edges.push(RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(4.0, 4.0), b: Vec2::new(6.0, 4.0), za: 4.45, zb: 4.45 });
         let json = serde_json::to_string(&r).unwrap();
