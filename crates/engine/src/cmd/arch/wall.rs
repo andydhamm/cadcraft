@@ -777,4 +777,85 @@ mod tests {
         assert_eq!(d.arch.walls[2].start, Vec2::new(4.0, 3.0));
         assert_eq!(d.arch.walls[2].end, Vec2::new(0.0, 0.0));
     }
+
+    #[test]
+    fn wall_height_nan_rejected() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "height": serde_json::Value::Null,
+        });
+        // Null height is not NaN but tests the None path; test explicit NaN via a large non-finite
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "height": f64::NAN,
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
+    }
+
+    #[test]
+    fn wall_height_zero_rejected() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "height": 0.0,
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
+    }
+
+    #[test]
+    fn wall_height_huge_value_works() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "height": 1e12,
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!((d.arch.walls[0].height - 1e12).abs() < 1e-3);
+    }
+
+    #[test]
+    fn wall_level_zero_structure() {
+        let mut s = Session::new();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "flat".to_string(), ceiling_height: 3.0, structure: 0.0, ..Default::default() });
+        d.touch_arch();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "flat",
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        // ceiling 3.0 + structure 0.0 = 3.0
+        assert!((d.arch.walls[0].height - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn wall_level_zero_ceiling() {
+        let mut s = Session::new();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "slab".to_string(), ceiling_height: 0.0, structure: 0.5, ..Default::default() });
+        d.touch_arch();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "slab",
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        // ceiling 0.0 + structure 0.5 = 0.5
+        assert!((d.arch.walls[0].height - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn wall_no_level_uses_default_wall_height() {
+        let mut s = Session::new();
+        // No level added; wall should fall back to DEFAULT_WALL_HEIGHT (2.7)
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!((d.arch.walls[0].height - super::DEFAULT_WALL_HEIGHT).abs() < 1e-9);
+    }
 }
