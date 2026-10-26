@@ -34,7 +34,7 @@ fn is_auto_level_name(name: &str) -> bool {
         return false;
     }
     let rest = &lower["level".len()..].trim();
-    !rest.is_empty() && rest.parse::<i32>().is_ok()
+    !rest.is_empty() && rest.parse::<i64>().is_ok()
 }
 
 /// Derives an auto-generated level name based on a neighbour's name or a fallback index.
@@ -43,13 +43,13 @@ fn is_auto_level_name(name: &str) -> bool {
 /// Otherwise it starts at `Level {fallback}`.
 /// Collisions with existing names in `levels` are resolved by incrementing the number.
 fn auto_level_name(levels: &[cadcraft_doc::arch::Level], neighbour: &str, fallback: usize) -> String {
-    let mut n = if is_auto_level_name(neighbour) {
+    let mut n: i64 = if is_auto_level_name(neighbour) {
         let lower = neighbour.to_ascii_lowercase();
         let lower = lower.trim();
         let rest = &lower["level".len()..].trim();
-        rest.parse::<i32>().unwrap_or(fallback as i32) + 1
+        rest.parse::<i64>().unwrap_or(fallback as i64) + 1
     } else {
-        fallback as i32
+        fallback as i64
     };
 
     let mut name = format!("Level {n}");
@@ -370,5 +370,118 @@ mod tests {
         assert_eq!(arch.levels[0].name, "Level 1");
         assert_eq!(arch.levels[1].name, "Level 2");
         assert_eq!(arch.levels[2].name, "Level 3");
+    }
+
+    #[test]
+    fn level_auto_name_i32_max_neighbour() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 2147483647".into(), ..Default::default() });
+        }
+        s.execute("level", &json!({"above": "Level 2147483647"})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 2);
+        assert_eq!(arch.levels[1].name, "Level 2147483648");
+    }
+
+    #[test]
+    fn level_auto_name_non_auto_neighbour() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Ground".into(), ..Default::default() });
+        }
+        s.execute("level", &json!({"above": "Ground"})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 2);
+        // Neighbour "Ground" is not auto-named, so fallback = levels.len() = 2
+        assert_eq!(arch.levels[1].name, "Level 2");
+    }
+
+    #[test]
+    fn level_auto_name_all_names_collide() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+            doc.arch.levels.push(Level { name: "Level 2".into(), elevation: 2.7, ..Default::default() });
+            doc.arch.levels.push(Level { name: "Level 3".into(), elevation: 5.4, ..Default::default() });
+        }
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 4);
+        assert_eq!(arch.levels[3].name, "Level 4");
+    }
+
+    #[test]
+    fn level_find_by_name_that_looks_like_index() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+            doc.arch.levels.push(Level { name: "Level 2".into(), elevation: 2.7, ..Default::default() });
+        }
+        // "1" as a string: try index 1 first (Level 2), not name "1"
+        s.execute("level", &json!({"above": "1"})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 3);
+        // Above Level 2 (index 1), so new level has elevation 2.7 + 2.7 = 5.4
+        assert!((arch.levels[2].elevation - 5.4).abs() < 1e-9);
+    }
+
+    #[test]
+    fn level_edit_with_both_index_and_name() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+            doc.arch.levels.push(Level { name: "Level 2".into(), elevation: 2.7, ..Default::default() });
+        }
+        // Both index 0 and name "Level 2" — name should win
+        s.execute("level", &json!({"index": 0, "name": "Level 2", "ceiling": 3.0})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        // Level 2 (index 1) should have ceiling 3.0, Level 1 should be unchanged
+        assert!((arch.levels[0].ceiling_height - 2.4).abs() < 1e-9);
+        assert!((arch.levels[1].ceiling_height - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn level_rejects_nan_ceiling() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        let mut map = serde_json::Map::new();
+        map.insert("name".to_string(), Value::from("Level 1"));
+        map.insert("ceiling".to_string(), Value::from(f64::NAN));
+        let result = s.execute("level", &Value::Object(map));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn is_auto_level_name_edge_cases() {
+        assert!(!is_auto_level_name(""));
+        assert!(!is_auto_level_name("Level"));
+        assert!(is_auto_level_name("Level 0"));
+        assert!(is_auto_level_name("Level 1"));
+        assert!(is_auto_level_name("LEVEL 1"));
+        assert!(is_auto_level_name("Level  1"));
+        assert!(is_auto_level_name("Level -1"));
+        assert!(!is_auto_level_name("Level 1.5"));
+        assert!(!is_auto_level_name("Level 1abc"));
+        assert!(!is_auto_level_name("Floor 1"));
     }
 }
