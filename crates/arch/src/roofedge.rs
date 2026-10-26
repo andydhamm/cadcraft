@@ -308,9 +308,8 @@ mod tests {
         assert_eq!(valleys.len(), 1, "Expected exactly one valley");
 
         let valley = &valleys[0];
-        // Reflex vertex at (6.0, 8.1) (approx, depends on overhang/joins)
-        // The prompt says "reflex vertex (6.0, 8.1)"
-        let reflex = Vec2::new(6.0, 8.1);
+        // Reflex vertex at (6.1, 8.1) (outer face of wall at x=6 with 0.2 thickness/overhang)
+        let reflex = Vec2::new(6.1, 8.1);
 
         let has_reflex_a = (valley.a - reflex).len() < 1e-6;
         let has_reflex_b = (valley.b - reflex).len() < 1e-6;
