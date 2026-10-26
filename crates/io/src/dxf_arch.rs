@@ -898,8 +898,16 @@ mod tests {
                 thickness: 0.25,
                 overhang: 0.5,
                 eave_z: 2.4,
+                ..Default::default()
             }],
-            edges: vec![RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(4.0, 4.0), b: Vec2::new(6.0, 4.0), za: 4.45, zb: 4.45 }],
+            edges: vec![RoofEdge {
+                kind: RoofEdgeKind::Ridge,
+                a: Vec2::new(4.0, 4.0),
+                b: Vec2::new(6.0, 4.0),
+                za: 4.45,
+                zb: 4.45,
+                ..Default::default()
+            }],
             ..Roof::default()
         });
 
