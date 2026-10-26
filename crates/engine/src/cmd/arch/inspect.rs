@@ -1004,12 +1004,6 @@ mod tests {
         let mut s = Session::new();
         match s.doc_mut() {
             Ok(d) => {
-                // Add a simple roof with one plane and one edge
-                // Fixing struct fields based on compiler errors:
-                // - id: likely ArchId(0) if RoofId is not found
-                // - fascia/soffit: bool
-                // - base_edge: flat array [f64; 4]
-                // - RoofPlane missing eave_z and thickness
                 let roof = Roof {
                     id: ArchId(0),
                     level: 0,
@@ -1027,10 +1021,17 @@ mod tests {
                         projected_area: 80.0,
                         eave_wall: Some(ArchId(1)),
                         base_edge: [0.0, 0.0, 10.0, 0.0],
-                        eave_z: 2.4,
-                        thickness: 0.1,
+                        ..Default::default()
                     }],
-                    edges: vec![RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(0.0, 4.0), b: Vec2::new(10.0, 4.0), za: 4.0, zb: 4.0 }],
+                    edges: vec![RoofEdge {
+                        kind: RoofEdgeKind::Ridge,
+                        a: Vec2::new(0.0, 4.0),
+                        b: Vec2::new(10.0, 4.0),
+                        za: 4.0,
+                        zb: 4.0,
+                        ..Default::default()
+                    }],
+                    ..Default::default()
                 };
                 d.arch.roofs.push(roof);
                 d.touch_arch();
@@ -1049,8 +1050,8 @@ mod tests {
         assert!(r["slope"].is_number());
         assert_eq!(r["overhang"].as_f64().unwrap(), 0.5);
         assert_eq!(r["thickness"].as_f64().unwrap(), 0.1);
-        assert_eq!(r["fascia"].as_f64().unwrap(), 0.2);
-        assert_eq!(r["soffit"].as_f64().unwrap(), 0.1);
+        assert_eq!(r["fascia"].as_bool().unwrap(), true);
+        assert_eq!(r["soffit"].as_bool().unwrap(), true);
         assert_eq!(r["manual"].as_bool().unwrap(), false);
         assert_eq!(r["handEdited"].as_bool().unwrap(), false);
         assert!(r["projectedArea"].is_number());
@@ -1093,6 +1094,7 @@ mod tests {
                     hand_edited: false,
                     planes: vec![],
                     edges: vec![],
+                    ..Default::default()
                 };
                 d.arch.roofs.push(roof);
                 d.touch_arch();
@@ -1121,12 +1123,13 @@ mod tests {
                     hand_edited: false,
                     planes: vec![],
                     edges: vec![
-                        RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0 },
-                        RoofEdge { kind: RoofEdgeKind::Hip, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0 },
-                        RoofEdge { kind: RoofEdgeKind::Valley, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0 },
-                        RoofEdge { kind: RoofEdgeKind::Eave, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0 },
-                        RoofEdge { kind: RoofEdgeKind::GableEnd, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0 },
+                        RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0, ..Default::default() },
+                        RoofEdge { kind: RoofEdgeKind::Hip, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0, ..Default::default() },
+                        RoofEdge { kind: RoofEdgeKind::Valley, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0, ..Default::default() },
+                        RoofEdge { kind: RoofEdgeKind::Eave, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0, ..Default::default() },
+                        RoofEdge { kind: RoofEdgeKind::GableEnd, a: Vec2::ZERO, b: Vec2::ZERO, za: 0.0, zb: 0.0, ..Default::default() },
                     ],
+                    ..Default::default()
                 };
                 d.arch.roofs.push(roof);
                 d.touch_arch();
@@ -1145,7 +1148,10 @@ mod tests {
         assert!(kinds.contains(&"gableEnd"));
 
         for k in kinds {
-            assert!(k.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "edge kind must be lowercase: {k}");
+            // gableEnd is camelCase, others are lowercase.
+            // The spec says: kind:"ridge"|"hip"|"valley"|"eave"|"gableEnd"
+            // So we just verify they are one of the expected strings.
+            assert!(k == "ridge" || k == "hip" || k == "valley" || k == "eave" || k == "gableEnd", "unexpected edge kind: {k}");
         }
     }
 }
