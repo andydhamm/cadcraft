@@ -418,6 +418,7 @@ mod tests {
         let p = json!({
             "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0], [0.0, 0.0]],
             "exterior": true,
+            "level": "ground",
         });
         s.execute("wall", &p).unwrap();
 
