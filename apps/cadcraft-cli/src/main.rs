@@ -1346,4 +1346,43 @@ mod tests {
             ["--metric", "--cmd", r#"line {"points":[[0,0],[10,0]]}"#, "--cmd", "no.such.command {}"].iter().map(|a| a.to_string()).collect();
         assert_eq!(run(&bad_args), Err(RUN_LAST_STEP_FAILED.to_string()));
     }
+
+    #[test]
+    fn cmd_error_leaves_last_handle_untouched() {
+        let mut s = sample_session();
+        let r = s.execute("line", &json!({"points": [[0, 0], [10, 0]]})).unwrap();
+        let h = returned_handle(&s, &r).expect("line returns a handle");
+        let mut last_handle = Some(h);
+        let drawing = active_drawing(&s);
+        let result = cmd_step(&mut s, "no.such.command {}", drawing, &mut last_handle);
+        assert!(result.is_err());
+        assert_eq!(last_handle, Some(h), "failing cmd_step must not clear last_handle");
+    }
+
+    #[test]
+    fn script_step_is_still_fatal() {
+        let args: Vec<String> = ["--metric", "--script", "NO.SUCH.COMMAND\n", "--cmd", "drawing.inspect {}"].iter().map(|a| a.to_string()).collect();
+        assert!(run(&args).is_err());
+    }
+
+    #[test]
+    fn script_step_clears_cmd_error() {
+        let args: Vec<String> = ["--metric", "--cmd", "no.such.command {}", "--script", "LINE 0,0 10,10\n\n"].iter().map(|a| a.to_string()).collect();
+        assert_eq!(run(&args), Ok(()));
+    }
+
+    #[test]
+    fn multiple_cmd_errors_all_reported() {
+        let args: Vec<String> = ["--metric", "--cmd", "no.such.command {}", "--cmd", "another.missing {}", "--cmd", "drawing.inspect {}"]
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+        assert_eq!(run(&args), Ok(()));
+    }
+
+    #[test]
+    fn cmd_with_no_json_object() {
+        let args: Vec<String> = ["--metric", "--cmd", "drawing.inspect", "--cmd", "drawing.inspect {}"].iter().map(|a| a.to_string()).collect();
+        assert_eq!(run(&args), Ok(()));
+    }
 }
