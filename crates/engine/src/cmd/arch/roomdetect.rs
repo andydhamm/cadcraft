@@ -350,35 +350,12 @@ mod tests {
         s.execute("wall", &json!({"points": [[2.5,1.0],[3.5,1.0],[3.5,2.0],[2.5,2.0],[2.5,1.0]], "thickness": 0.1})).unwrap();
         s.execute("roomdetect", &json!({})).unwrap();
 
-        // Probe at (2.5, 1.5, -0.15).
-        // The loop is at x: 2.5..3.5, y: 1.0..2.0.
-        // The wall thickness is 0.1.
-        // The loop's inner boundary (hole in south room) is at x=2.5+0.05=2.55?
-        // Actually, `wall` command creates walls centered on the points.
-        // So the loop walls are centered at x=2.5, 3.5, y=1.0, 2.0.
-        // The hole in the south room is the interior of the loop walls.
-        // The south room's floor has a hole.
-        // We want to probe just outside the hole, on the south room's floor.
-        // Or just inside the hole?
-        // The test name says "at hole boundary returns floor".
-        // If we probe inside the hole, it should hit the loop room's floor.
-        // If we probe outside the hole, it should hit the south room's floor.
-        // Let's probe at (2.4, 1.5, -0.15) which is outside the loop (x < 2.5).
-        // Wait, the loop wall is centered at 2.5. Inner face is at 2.5 + 0.05 = 2.55.
-        // So x=2.4 is definitely in the south room floor.
-        // Let's try probing at (2.5, 1.5, -0.15). This is on the centerline of the wall.
-        // The floor slab for the south room stops at the inner face of the loop wall (2.55).
-        // The floor slab for the loop room starts at the inner face of the loop wall (2.55).
-        // So (2.5, 1.5) is inside the wall thickness, not in either room's floor?
-        // Actually, `build3d` probes the mesh.
-        // Let's just verify that probing a point clearly in the south room near the hole works.
-        // And probing a point clearly in the loop room works.
-        // The previous test `loop_room_slabs_have_distinct_owners` did this.
-        // This test might be checking that a point *on* the boundary (within epsilon) returns *something*.
-
-        // Let's assume the test meant "probe near the hole boundary returns the correct floor".
-        // I will replicate the setup and probe a point in the south room near the hole.
-
+        // Probe near the hole boundary.
+        // The loop walls are centered at x=2.5, 3.5, y=1.0, 2.0 with thickness 0.1.
+        // The inner face of the loop wall (hole boundary for south room) is at x=2.55.
+        // The inner face of the loop wall (boundary for loop room) is at x=2.55.
+        // We probe at (2.4, 1.5) which is in the south room, near the hole.
+        // And (3.0, 1.5) which is inside the loop room.
         let r = s.execute("build3d", &json!({"probe": [[2.4, 1.5, -0.15], [3.0, 1.5, -0.15]]})).unwrap();
         let probe = r["probe"].as_array().expect("probe array");
         assert_eq!(probe.len(), 2);
@@ -389,5 +366,38 @@ mod tests {
         assert!(p0.is_object() && p0["part"] == "floor", "probe near hole boundary (south room) should hit a floor: {p0:?}");
         // p1 is in loop room (inside loop)
         assert!(p1.is_object() && p1["part"] == "floor", "probe inside loop should hit a floor: {p1:?}");
+    }
+
+    /// Regression (acceptance check 05 phase-3 block b3): a closed interior loop
+    /// must yield its own room and its own floor slab, distinct from the surrounding
+    /// south room's floor slab.
+    ///
+    /// Setup: 10×8 exterior, a horizontal split at y=3, a vertical split at x=6
+    /// (south room = 0..10 × 0..3), plus a 1×1 closed loop at (2.5..3.5, 1..2).
+    /// After `roomdetect` + `build3d`, two probe points — one inside the loop
+    /// interior, one in the open south room — must each hit a floor slab but must
+    /// hit *different* slabs (different `id` values).
+    #[test]
+    fn loop_room_slabs_have_distinct_owners() {
+        let mut s = Session::new();
+        // Phase-1 house: closed 10x8 exterior (0.2) plus two interior walls (0.1).
+        s.execute(
+            "wall",
+            &json!({"points": [[0.0,0.0],[10.0,0.0],[10.0,8.0],[0.0,8.0],[0.0,0.0]], "thickness": 0.2, "height": 2.7, "exterior": true}),
+        )
+        .unwrap();
+        s.execute("wall", &json!({"points": [[0.0,3.0],[10.0,3.0]], "thickness": 0.1})).unwrap();
+        s.execute("wall", &json!({"points": [[6.0,3.0],[6.0,8.0]], "thickness": 0.1})).unwrap();
+        // A closed 0.1 m loop inside the south room (centre lines 2.5..3.5 x 1.0..2.0).
+        s.execute("wall", &json!({"points": [[2.5,1.0],[3.5,1.0],[3.5,2.0],[2.5,2.0],[2.5,1.0]], "thickness": 0.1})).unwrap();
+        s.execute("roomdetect", &json!({})).unwrap();
+        let r = s.execute("build3d", &json!({"probe": [[3.0,1.5,-0.15],[1.0,1.0,-0.15]]})).unwrap();
+        let probe = r["probe"].as_array().expect("probe array");
+        assert_eq!(probe.len(), 2);
+        let p0 = &probe[0];
+        let p1 = &probe[1];
+        assert!(p0.is_object() && p0["part"] == "floor", "inner-room probe should hit a floor: {p0:?}");
+        assert!(p1.is_object() && p1["part"] == "floor", "south-room probe should hit a floor: {p1:?}");
+        assert_ne!(p0["id"], p1["id"], "the loop interior and the south room must own different floor slabs: {probe:?}");
     }
 }
