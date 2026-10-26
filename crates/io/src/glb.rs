@@ -741,4 +741,112 @@ mod tests {
         let b = write(&scene);
         assert_eq!(a, b);
     }
+
+    #[test]
+    fn glb_names_multiple_roofs_with_interleaved_planes() {
+        let mut scene = scene_with(0);
+        // Roof 0, plane 0
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "roof".into();
+            m.object = ArchId(0);
+            m
+        });
+        // Roof 1, plane 0
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "roof".into();
+            m.object = ArchId(1);
+            m
+        });
+        // Roof 0, plane 1
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "roof".into();
+            m.object = ArchId(0);
+            m
+        });
+        // Roof 1, plane 1
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "roof".into();
+            m.object = ArchId(1);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert_eq!(mesh_names, vec!["roof-r0p0", "roof-r1p0", "roof-r0p1", "roof-r1p1"]);
+    }
+
+    #[test]
+    fn glb_roof_with_nan_positions_is_valid() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "roof".into();
+            m.object = ArchId(0);
+            m.positions[0][0] = f32::NAN;
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        assert_eq!(json["meshes"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn glb_roof_with_huge_positions_is_valid() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "roof".into();
+            m.object = ArchId(0);
+            m.positions[0][0] = 1e10;
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        assert_eq!(json["meshes"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn glb_roof_with_zero_planes_creates_no_meshes() {
+        let scene = scene_with(0);
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert!(mesh_names.is_empty());
+    }
+
+    #[test]
+    fn glb_roof_material_only_created_when_roof_mesh_exists() {
+        let scene = scene_with(0);
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let materials: Vec<String> = json["materials"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert!(!materials.contains(&"roof".to_string()));
+    }
+
+    #[test]
+    fn glb_roof_material_shared_across_roofs() {
+        let mut scene = scene_with(0);
+        // Roof 0
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "roof".into();
+            m.object = ArchId(0);
+            m
+        });
+        // Roof 1
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "roof".into();
+            m.object = ArchId(1);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let materials: Vec<String> = json["materials"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert_eq!(materials, vec!["roof"]);
+    }
 }
