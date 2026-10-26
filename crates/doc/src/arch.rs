@@ -1708,6 +1708,7 @@ mod tests {
             eave_wall: None,
             base_edge: [0.0, 0.0, 0.0, 0.0],
             thickness: 0.25,
+            eave_z: 0.0,
         });
         r.planes.push(RoofPlane {
             ring: Vec::new(),
@@ -1716,6 +1717,7 @@ mod tests {
             eave_wall: None,
             base_edge: [0.0, 0.0, 0.0, 0.0],
             thickness: 0.25,
+            eave_z: 0.0,
         });
         assert!((r.projected_area() - 17.8).abs() < 1e-9);
     }
@@ -1741,8 +1743,24 @@ mod tests {
     #[test]
     fn roof_projected_area_ignores_non_finite() {
         let mut r = Roof::default();
-        r.planes.push(RoofPlane { ring: Vec::new(), slope: 0.5, projected_area: 10.0, eave_wall: None, base_edge: [0.0; 4], thickness: 0.25 });
-        r.planes.push(RoofPlane { ring: Vec::new(), slope: 0.5, projected_area: f64::NAN, eave_wall: None, base_edge: [0.0; 4], thickness: 0.25 });
+        r.planes.push(RoofPlane {
+            ring: Vec::new(),
+            slope: 0.5,
+            projected_area: 10.0,
+            eave_wall: None,
+            base_edge: [0.0; 4],
+            thickness: 0.25,
+            eave_z: 0.0,
+        });
+        r.planes.push(RoofPlane {
+            ring: Vec::new(),
+            slope: 0.5,
+            projected_area: f64::NAN,
+            eave_wall: None,
+            base_edge: [0.0; 4],
+            thickness: 0.25,
+            eave_z: 0.0,
+        });
         r.planes.push(RoofPlane {
             ring: Vec::new(),
             slope: 0.5,
@@ -1750,6 +1768,7 @@ mod tests {
             eave_wall: None,
             base_edge: [0.0; 4],
             thickness: 0.25,
+            eave_z: 0.0,
         });
         assert!((r.projected_area() - 10.0).abs() < 1e-12);
     }
