@@ -618,4 +618,56 @@ mod tests {
         assert!(is_simple(&out));
         assert!(ring_area(&out) > 1.0);
     }
+
+    #[test]
+    fn is_simple_rejects_vertex_on_nonadjacent_edge() {
+        // Vertex (2,0) lies on edge (0,0)-(4,0); edges 0 and 3 are non-adjacent.
+        let pts = sq(&[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (2.0, 0.0), (0.0, 4.0)]);
+        assert!(!is_simple(&pts));
+    }
+
+    #[test]
+    fn is_simple_large_coordinates() {
+        let big = sq(&[(0.0, 0.0), (1e12, 0.0), (1e12, 1e12), (0.0, 1e12)]);
+        assert!(is_simple(&big));
+    }
+
+    #[test]
+    fn is_simple_rejects_coincident_vertices() {
+        // Vertex 1 and vertex 2 are the same point; edges 0 and 2 share (2,0) but are non-adjacent.
+        let pts = sq(&[(0.0, 0.0), (2.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)]);
+        assert!(!is_simple(&pts));
+    }
+
+    #[test]
+    fn is_simple_many_points() {
+        // A regular 20-gon.
+        let mut pts = Vec::with_capacity(20);
+        for i in 0..20 {
+            let angle = 2.0 * std::f64::consts::PI * i as f64 / 20.0;
+            pts.push(Vec2::new(angle.cos(), angle.sin()));
+        }
+        assert!(is_simple(&pts));
+    }
+
+    #[test]
+    fn is_simple_thin_polygon() {
+        let pts = sq(&[(0.0, 0.0), (100.0, 0.0), (100.0, 1e-6), (0.0, 1e-6)]);
+        assert!(is_simple(&pts));
+    }
+
+    #[test]
+    fn segs_cross_proper_crossing() {
+        assert!(segs_cross(Vec2::ZERO, Vec2::new(2.0, 2.0), Vec2::new(0.0, 2.0), Vec2::new(2.0, 0.0)));
+    }
+
+    #[test]
+    fn segs_cross_no_crossing() {
+        assert!(!segs_cross(Vec2::ZERO, Vec2::X, Vec2::new(0.0, 1.0), Vec2::new(1.0, 1.0)));
+    }
+
+    #[test]
+    fn segs_cross_endpoint_touch() {
+        assert!(segs_cross(Vec2::ZERO, Vec2::new(2.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0)));
+    }
 }
