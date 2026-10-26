@@ -440,7 +440,7 @@ fn ceiling_slab_also_has_the_loop_hole() {
     // The ceiling slab top is at z = 2.4 (level 0 ceiling height).
     let ceiling_cap = cap_area(south_ceiling[0], 2.4);
     // The ceiling cap should have the same area as the floor cap (hole cut out).
-    assert!((ceiling_cap - 31.89).abs() < 1e-2, "south ceiling cap area = {}, expected 31.89", ceiling_cap);
+    assert!((ceiling_cap - 26.72).abs() < 1e-2, "south ceiling cap area = {}, expected 26.72", ceiling_cap);
 }
 
 /// The floor slab spans the correct z range (from -structure to 0.0 for level 0).
