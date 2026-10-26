@@ -368,9 +368,11 @@ impl Scene3d {
             let mut needs_rebuild = dirty.contains(&roof.id);
             if !needs_rebuild {
                 for plane in &roof.planes {
-                    if dirty.contains(&plane.eave_wall) {
-                        needs_rebuild = true;
-                        break;
+                    if let Some(eave_wall) = plane.eave_wall {
+                        if dirty.contains(&eave_wall) {
+                            needs_rebuild = true;
+                            break;
+                        }
                     }
                 }
             }
