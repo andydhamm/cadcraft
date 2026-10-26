@@ -198,10 +198,13 @@ impl Scene3d {
 
         meshes.retain(|m| !m.positions.is_empty());
 
-        let bounds = meshes.iter().fold(Bounds3::empty(), |mut b, m| {
-            b.extend(&m.bounds());
-            b
-        });
+        let bounds = match meshes.first() {
+            None => Bounds3::empty(),
+            Some(first) => meshes[1..].iter().fold(first.bounds(), |mut b, m| {
+                b.extend(&m.bounds());
+                b
+            }),
+        };
 
         Scene3d { meshes, bounds, revision: 0, openings_built, floors, ceilings }
     }
@@ -285,10 +288,13 @@ impl Scene3d {
 
         meshes.retain(|m| !m.positions.is_empty());
 
-        let bounds = meshes.iter().fold(Bounds3::empty(), |mut b, m| {
-            b.extend(&m.bounds());
-            b
-        });
+        let bounds = match meshes.first() {
+            None => Bounds3::empty(),
+            Some(first) => meshes[1..].iter().fold(first.bounds(), |mut b, m| {
+                b.extend(&m.bounds());
+                b
+            }),
+        };
 
         Scene3d { meshes, bounds, revision: 0, openings_built, floors, ceilings }
     }
