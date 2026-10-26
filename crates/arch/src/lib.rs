@@ -24,6 +24,7 @@ pub mod label;
 pub mod opening;
 pub mod poly;
 pub mod roof;
+pub mod roofedge;
 pub mod room;
 pub mod symbol;
 pub mod wall;
