@@ -107,10 +107,30 @@ fn all_hip_orthogonal_footprints_have_one_sloped_edge_per_vertex() {
             assert_eq!(count, 1, "Vertex {:?} has {} hip/valley edges, expected 1", v, count);
         }
 
-        // Every edge of the solved outer-face footprint contributes one roof plane,
-        // and therefore one eave. Wall joins can make this differ from `pts.len()`.
-        let eave_count = edges.iter().filter(|e| matches!(e.kind, RoofEdgeKind::Eave)).count();
-        assert_eq!(eave_count, footprint.outer.len(), "Expected {} eave edges, found {}", footprint.outer.len(), eave_count);
+        // Compare geometric eaves rather than raw skeleton arcs: event handling can
+        // leave duplicate or degenerate arcs which are not additional footprint eaves.
+        let edge_key = |ax: f64, ay: f64, bx: f64, by: f64| {
+            let a = ((ax * 100.0).round() as i64, (ay * 100.0).round() as i64);
+            let b = ((bx * 100.0).round() as i64, (by * 100.0).round() as i64);
+            if a <= b { (a, b) } else { (b, a) }
+        };
+        let footprint_edges: std::collections::HashSet<_> = footprint
+            .outer
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+                let b = &footprint.outer[(i + 1) % footprint.outer.len()];
+                edge_key(a.x, a.y, b.x, b.y)
+            })
+            .collect();
+        let eave_edges: std::collections::HashSet<_> = edges
+            .iter()
+            .filter(|e| matches!(e.kind, RoofEdgeKind::Eave))
+            .map(|e| edge_key(e.a.x, e.a.y, e.b.x, e.b.y))
+            .filter(|key| footprint_edges.contains(key))
+            .collect();
+
+        assert_eq!(eave_edges, footprint_edges, "Every footprint edge must have exactly one geometric eave");
     }
 }
 
