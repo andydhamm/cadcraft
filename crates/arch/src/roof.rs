@@ -355,7 +355,11 @@ pub fn roof_geometry(model: &ArchModel, level: u32, roof: &Roof) -> Result<RoofG
 
     let slopes = wall_slopes(model, level, &fp, roof);
 
-    let skel = match cadcraft_geom::roof_skeleton(&fp.outer, &[], &[slopes.clone()]) {
+    // roof_skeleton divides by slope to get weight; a 0.0 slope gives infinite weight
+    // which the skeleton cannot handle. Use a tiny slope instead, then restore 0.0.
+    let skel_slopes: Vec<f64> = slopes.iter().map(|s| if *s == 0.0 { 1e-6 } else { *s }).collect();
+
+    let skel = match cadcraft_geom::roof_skeleton(&fp.outer, &[], &[skel_slopes]) {
         Ok(skel) => skel,
         Err(_) => return Err(RoofError::Skeleton),
     };
