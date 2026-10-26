@@ -652,4 +652,111 @@ mod tests {
             "stored standard_area should match the reported standardArea"
         );
     }
+
+    /// A closed ring with area below MIN_ROOM_AREA (0.05) is refused.
+    #[test]
+    fn room_rejects_tiny_room_below_min_area() {
+        let mut s = new_session();
+        // 0.1 x 0.1 m square = 0.01 m², below MIN_ROOM_AREA of 0.05.
+        let p = json!({
+            "points": [[0.0, 0.0], [0.1, 0.0], [0.1, 0.1], [0.0, 0.1], [0.0, 0.0]],
+        });
+        let r = s.execute("room", &p);
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 0);
+    }
+
+    /// A closed ring with a NaN coordinate is refused.
+    #[test]
+    fn room_rejects_nan_in_closed_ring() {
+        let mut s = new_session();
+        let p = json!({
+            "points": [[f64::NAN, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0], [0.0, 0.0]],
+        });
+        let r = s.execute("room", &p);
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 0);
+    }
+
+    /// A closed ring with an infinity coordinate is refused.
+    #[test]
+    fn room_rejects_infinity_in_closed_ring() {
+        let mut s = new_session();
+        let p = json!({
+            "points": [[f64::INFINITY, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0], [0.0, 0.0]],
+        });
+        let r = s.execute("room", &p);
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 0);
+    }
+
+    /// A bare JSON number for `level` is refused (must be a string).
+    #[test]
+    fn room_rejects_level_as_bare_number() {
+        let mut s = new_session();
+        let p = json!({
+            "points": square_points(),
+            "level": 1,
+        });
+        let r = s.execute("room", &p);
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 0);
+    }
+
+    /// `level: null` is treated as absent and defaults to level 0.
+    #[test]
+    fn room_accepts_level_as_null() {
+        let mut s = new_session();
+        let p = json!({
+            "points": square_points(),
+            "level": null,
+        });
+        let r = s.execute("room", &p).unwrap();
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 1);
+        assert_eq!(r["id"].as_str().unwrap(), "r0");
+        assert_eq!(s.doc().unwrap().arch.rooms[0].level, 0);
+    }
+
+    /// A rectangle with an extra collinear point on one edge is accepted
+    /// (still a simple polygon).
+    #[test]
+    fn room_accepts_collinear_extra_point() {
+        let mut s = new_session();
+        // Rectangle with an extra point at (1.5, 0) on the bottom edge.
+        let p = json!({
+            "points": [[0.0, 0.0], [1.5, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0], [0.0, 0.0]],
+        });
+        let r = s.execute("room", &p).unwrap();
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 1);
+        assert_eq!(r["id"].as_str().unwrap(), "r0");
+        assert_eq!(r["interiorArea"].as_f64().unwrap(), 9.0);
+    }
+
+    /// All points collinear (zero area) is refused.
+    #[test]
+    fn room_rejects_collinear_degenerate_polygon() {
+        let mut s = new_session();
+        // Five points all on the x-axis, closed ring.
+        let p = json!({
+            "points": [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0], [0.0, 0.0]],
+        });
+        let r = s.execute("room", &p);
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 0);
+    }
+
+    /// Consecutive duplicate points in the middle of the ring are handled
+    /// by `distinct_points` and the room is created.
+    #[test]
+    fn room_accepts_consecutive_duplicate_points() {
+        let mut s = new_session();
+        // Duplicate (3.0, 0.0) in the middle.
+        let p = json!({
+            "points": [[0.0, 0.0], [3.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0], [0.0, 0.0]],
+        });
+        let r = s.execute("room", &p).unwrap();
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 1);
+        assert_eq!(r["id"].as_str().unwrap(), "r0");
+        assert_eq!(r["interiorArea"].as_f64().unwrap(), 9.0);
+    }
 }
