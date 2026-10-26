@@ -25,8 +25,18 @@ impl Light {
                 *c = 0.0;
             }
         }
-        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-        let dir = if len.is_finite() && len > 0.0 { [d[0] / len, d[1] / len, d[2] / len] } else { [0.0, 0.0, 1.0] };
+        // Scale by the max component to avoid overflow/underflow on squaring.
+        let max = d.iter().fold(0.0f32, |m, &c| m.max(c.abs()));
+        let dir = if max.is_finite() && max > 0.0 {
+            let scale = 1.0 / max;
+            let x = d[0] * scale;
+            let y = d[1] * scale;
+            let z = d[2] * scale;
+            let len = (x * x + y * y + z * z).sqrt();
+            if len.is_finite() && len > 0.0 { [x / len, y / len, z / len] } else { [0.0, 0.0, 1.0] }
+        } else {
+            [0.0, 0.0, 1.0]
+        };
         let ambient = if self.ambient.is_finite() { self.ambient.clamp(0.0, 1.0) } else { 0.0 };
         Light { dir, ambient }
     }
