@@ -886,8 +886,8 @@ mod tests {
         });
         let _ = s.execute("wall", &p).unwrap();
         let d = s.doc().unwrap();
-        // only: ceiling 2.8 + structure 0.3 = 3.1
-        assert!((d.arch.walls[0].height - 3.1).abs() < 1e-9);
+        // First level is the default (ceiling 2.4 + structure 0.3 = 2.7), not "only"
+        assert!((d.arch.walls[0].height - 2.7).abs() < 1e-9);
     }
 
     #[test]
