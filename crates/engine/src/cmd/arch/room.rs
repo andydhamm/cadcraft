@@ -562,6 +562,115 @@ mod tests {
         assert!((interior - 9.0).abs() < 1e-9);
     }
 
+    /// Two rooms sharing an interior wall each get their standard area measured
+    /// to the wall's centre line, not to each other. Uses the phase-1 house
+    /// geometry with the documented reference values.
+    #[test]
+    fn room_standard_area_with_two_adjacent_rooms() {
+        let mut s = new_session();
+
+        // Phase-1 house walls
+        let ext: f64 = 0.2;
+        for w in [
+            json!({ "points": [[0.0, 0.0], [10.0, 0.0]], "thickness": ext }),
+            json!({ "points": [[10.0, 0.0], [10.0, 8.0]], "thickness": ext }),
+            json!({ "points": [[10.0, 8.0], [0.0, 8.0]], "thickness": ext }),
+            json!({ "points": [[0.0, 8.0], [0.0, 0.0]], "thickness": ext }),
+            json!({ "points": [[0.0, 3.0], [10.0, 3.0]], "thickness": 0.1, "exterior": false }),
+            json!({ "points": [[6.0, 3.0], [6.0, 8.0]], "thickness": 0.1, "exterior": false }),
+        ] {
+            let _ = s.execute("wall", &w).unwrap();
+        }
+
+        // South room: interior 9.8 x 2.85 = 27.93, standard 10.2 x 3.1 = 31.62
+        let south = s
+            .execute(
+                "room",
+                &json!({
+                    "points": [[0.1, 0.1], [9.9, 0.1], [9.9, 2.95], [0.1, 2.95], [0.1, 0.1]],
+                }),
+            )
+            .unwrap();
+        assert!((south["interiorArea"].as_f64().unwrap() - 27.93).abs() < 1e-3);
+        assert!((south["standardArea"].as_f64().unwrap() - 31.62).abs() < 1e-3);
+
+        // North-west room: interior 5.85 x 4.85 = 28.3725, standard 6.1 x 5.1 = 31.11
+        let nw = s
+            .execute(
+                "room",
+                &json!({
+                    "points": [[0.1, 3.05], [5.95, 3.05], [5.95, 7.9], [0.1, 7.9], [0.1, 3.05]],
+                }),
+            )
+            .unwrap();
+        assert!((nw["interiorArea"].as_f64().unwrap() - 28.3725).abs() < 1e-3);
+        assert!((nw["standardArea"].as_f64().unwrap() - 31.11).abs() < 1e-3);
+    }
+
+    /// The standard area is always at least as large as the interior area,
+    /// because it is measured to the walls' reference lines which lie outside
+    /// (or on) the room's inner edges.
+    #[test]
+    fn room_standard_area_is_at_least_interior_area() {
+        let mut s = new_session();
+
+        // A room with walls on all four sides
+        for w in [
+            json!({ "points": [[0.0, 0.0], [5.0, 0.0]], "thickness": 0.2 }),
+            json!({ "points": [[5.0, 0.0], [5.0, 4.0]], "thickness": 0.2 }),
+            json!({ "points": [[5.0, 4.0], [0.0, 4.0]], "thickness": 0.2 }),
+            json!({ "points": [[0.0, 4.0], [0.0, 0.0]], "thickness": 0.2 }),
+        ] {
+            let _ = s.execute("wall", &w).unwrap();
+        }
+
+        let r = s
+            .execute(
+                "room",
+                &json!({
+                    "points": [[0.1, 0.1], [4.9, 0.1], [4.9, 3.9], [0.1, 3.9], [0.1, 0.1]],
+                }),
+            )
+            .unwrap();
+
+        let interior = r["interiorArea"].as_f64().unwrap();
+        let standard = r["standardArea"].as_f64().unwrap();
+        assert!(standard >= interior - 1e-9, "standard {} < interior {}", standard, interior);
+    }
+
+    /// Editing a room's type (which triggers `refresh_areas`) does not change
+    /// its standard area, confirming the create and edit paths agree on the
+    /// computed value.
+    #[test]
+    fn room_standard_area_unchanged_by_type_edit() {
+        let mut s = new_session();
+
+        let _ = s
+            .execute(
+                "room",
+                &json!({
+                    "points": square_points(),
+                    "name": "Test",
+                }),
+            )
+            .unwrap();
+
+        let before = s.doc().unwrap().arch.rooms[0].standard_area;
+
+        let _ = s
+            .execute(
+                "room",
+                &json!({
+                    "id": "r0",
+                    "type": "kitchen",
+                }),
+            )
+            .unwrap();
+
+        let after = s.doc().unwrap().arch.rooms[0].standard_area;
+        assert!((before - after).abs() < 1e-9, "standard area changed from {} to {}", before, after);
+    }
+
     /// A non-closed point list (3 points, last != first) is refused with the
     /// explicit-closure error, and the model is untouched.
     #[test]
