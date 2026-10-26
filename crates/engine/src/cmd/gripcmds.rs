@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use super::curves;
 use super::{CommandSpec, bad, bool_or, point_param, point_req, str_param, targets};
 
-use crate::grips::{GripAction, GripMode, grip_action, mode_matrix, stretch_grip};
+use crate::grips::{ArchTarget, GripAction, GripMode, grip_action, mode_matrix, stretch_grip};
 use crate::{EngineError, Result, Session};
 
 pub fn specs() -> Vec<CommandSpec> {
