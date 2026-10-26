@@ -69,9 +69,9 @@ fn cap_area(mesh: &Mesh, z: f64) -> f64 {
         let a = mesh.positions[chunk[0] as usize];
         let b = mesh.positions[chunk[1] as usize];
         let c = mesh.positions[chunk[2] as usize];
-        if (a.z - z).abs() < 1e-6 && (b.z - z).abs() < 1e-6 && (c.z - z).abs() < 1e-6 {
-            let ab = Vec2::new(b.x - a.x, b.y - a.y);
-            let ac = Vec2::new(c.x - a.x, c.y - a.y);
+        if (a[2] as f64 - z).abs() < 1e-6 && (b[2] as f64 - z).abs() < 1e-6 && (c[2] as f64 - z).abs() < 1e-6 {
+            let ab = Vec2::new(b[0] as f64 - a[0] as f64, b[1] as f64 - a[1] as f64);
+            let ac = Vec2::new(c[0] as f64 - a[0] as f64, c[1] as f64 - a[1] as f64);
             total += (ab.x * ac.y - ab.y * ac.x).abs() * 0.5;
         }
     }
