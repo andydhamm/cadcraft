@@ -443,7 +443,7 @@ mod tests {
         assert!(r["handles"].as_array().unwrap().len() == 1);
         assert!(r["planes"].is_u64());
         assert!(r["projectedArea"].is_f64());
-        assert!(r["rebuilt"].is_bool());
+        assert!(r["rebuilt"].as_bool().is_some());
     }
 
     #[test]
