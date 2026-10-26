@@ -175,6 +175,20 @@ mod tests {
     }
 
     #[test]
+    fn floor_slab_nan_elevation_returns_none() {
+        let level = Level { elevation: f64::NAN, structure: 0.3, ..Default::default() };
+        let room = Room { id: ArchId(1), room_type: RoomType::Living, polygon: sq(), ..Default::default() };
+        assert!(floor_slab(&room, &level, "floor").is_none());
+    }
+
+    #[test]
+    fn ceiling_surface_nan_height_returns_none() {
+        let level = Level { ceiling_height: f64::NAN, ..Default::default() };
+        let room = Room { id: ArchId(1), room_type: RoomType::Living, polygon: sq(), ..Default::default() };
+        assert!(ceiling_surface(&room, &level, "ceiling").is_none());
+    }
+
+    #[test]
     fn zero_structure_gives_no_slab() {
         let level = default_level(0.0, 0.0);
         let room = Room { id: ArchId(1), room_type: RoomType::Living, polygon: sq(), ..Default::default() };

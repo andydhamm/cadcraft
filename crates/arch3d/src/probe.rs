@@ -641,6 +641,23 @@ mod tests {
     }
 
     #[test]
+    fn mesh_level_falls_back_to_bounds_when_nan() {
+        let mut m = Mesh::new("wall", ArchId(1));
+        m.push_prism(&[Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0), Vec2::new(0.0, 1.0)], 2.0, 3.0);
+        // level_elevation is NaN by default from Mesh::new
+        assert!(m.level_elevation.is_nan());
+        assert_eq!(mesh_level(&m), 2.0);
+    }
+
+    #[test]
+    fn ceiling_slab_with_z_extent_is_probeable() {
+        let mut m = Mesh::new("ceiling", ArchId(1));
+        m.push_prism(&[Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)], 2.38, 2.4);
+        assert!(is_probeable(&m), "ceiling slab with z extent >= 1e-6 must be probeable");
+        assert!(probe_mesh(&m, Vec3::new(2.0, 2.0, 2.39)), "point inside ceiling slab must hit");
+    }
+
+    #[test]
     fn probe_mesh_point_on_top_face_is_outside() {
         let mut m = Mesh::new("floor", ArchId(1));
         let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
