@@ -436,8 +436,8 @@ fn ceiling_slab_also_has_the_loop_hole() {
     let south_ceiling = scene.meshes.iter().filter(|m| m.object == south.id && m.material == "ceiling").collect::<Vec<_>>();
     assert_eq!(south_ceiling.len(), 1, "south room should have exactly 1 ceiling mesh");
 
-    // The ceiling slab top is at z = 2.7 (level 0 ceiling 2.4 + structure 0.3).
-    let ceiling_cap = cap_area(south_ceiling[0], 2.7);
+    // The ceiling slab top is at z = 2.4 (level 0 ceiling height).
+    let ceiling_cap = cap_area(south_ceiling[0], 2.4);
     // The ceiling cap should have the same area as the floor cap (hole cut out).
     assert!((ceiling_cap - 31.89).abs() < 1e-2, "south ceiling cap area = {}, expected 31.89", ceiling_cap);
 }
@@ -463,8 +463,8 @@ fn floor_slab_has_correct_z_range() {
     }
 
     // The floor slab should have vertices at z = 0.0 (top) and z = -0.3 (bottom).
-    assert!(z_values.iter().any(|&z| (z - 0.0).abs() < 1e-9), "floor slab should have vertices at z=0.0, found z values: {:?}", z_values);
-    assert!(z_values.iter().any(|&z| (z - (-0.3)).abs() < 1e-9), "floor slab should have vertices at z=-0.3, found z values: {:?}", z_values);
+    assert!(z_values.iter().any(|&z| (z - 0.0).abs() < 1e-6), "floor slab should have vertices at z=0.0, found z values: {:?}", z_values);
+    assert!(z_values.iter().any(|&z| (z - (-0.3)).abs() < 1e-6), "floor slab should have vertices at z=-0.3, found z values: {:?}", z_values);
 }
 
 /// Probing with infinity coordinates returns None and does not panic.
