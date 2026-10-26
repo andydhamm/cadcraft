@@ -414,3 +414,75 @@ fn probe_rebuild_consistent() {
         assert_eq!(a.id, b.id, "probe consistency: id mismatch at (1.0, 1.0, -0.15)");
     }
 }
+
+/// An empty model builds a scene with no meshes, and probing anywhere returns None.
+#[test]
+fn empty_model_has_no_meshes() {
+    let model = ArchModel::default();
+    let scene = build(&model);
+    assert_eq!(scene.meshes.len(), 0, "empty model should produce no meshes");
+    assert!(scene.probe(Vec3::new(0.0, 0.0, 0.0)).is_none(), "probe on empty scene should be None");
+}
+
+/// The ceiling slab of the south room must also have the loop hole cut out.
+#[test]
+fn ceiling_slab_also_has_the_loop_hole() {
+    let (model, scene) = house_with_loop();
+
+    // Find the south room (contains point (1.0, 1.0)).
+    let south = model.rooms.iter().find(|r| point_in_polygon(&r.polygon, Vec2::new(1.0, 1.0))).expect("south room not found");
+
+    // Find the ceiling mesh for the south room.
+    let south_ceiling = scene.meshes.iter().filter(|m| m.object == south.id && m.material == "ceiling").collect::<Vec<_>>();
+    assert_eq!(south_ceiling.len(), 1, "south room should have exactly 1 ceiling mesh");
+
+    // The ceiling slab top is at z = 2.4 (level 0 ceiling height).
+    let ceiling_cap = cap_area(south_ceiling[0], 2.4);
+    // The ceiling cap should have the same area as the floor cap (hole cut out).
+    assert!((ceiling_cap - 31.89).abs() < 1e-2, "south ceiling cap area = {}, expected 31.89", ceiling_cap);
+}
+
+/// The floor slab spans the correct z range (from -structure to 0.0 for level 0).
+#[test]
+fn floor_slab_has_correct_z_range() {
+    let (model, scene) = house_with_loop();
+
+    // Find the south room.
+    let south = model.rooms.iter().find(|r| point_in_polygon(&r.polygon, Vec2::new(1.0, 1.0))).expect("south room not found");
+
+    // Find the floor mesh.
+    let floor_mesh = scene.meshes.iter().find(|m| m.object == south.id && m.material == "floor").expect("south floor mesh not found");
+
+    // Collect all unique z values from the floor mesh vertices.
+    let mut z_values: Vec<f64> = Vec::new();
+    for pos in &floor_mesh.positions {
+        let z = pos[2] as f64;
+        if !z_values.iter().any(|&v| (v - z).abs() < 1e-9) {
+            z_values.push(z);
+        }
+    }
+
+    // The floor slab should have vertices at z = 0.0 (top) and z = -0.3 (bottom).
+    assert!(z_values.iter().any(|&z| (z - 0.0).abs() < 1e-6), "floor slab should have vertices at z=0.0, found z values: {:?}", z_values);
+    assert!(z_values.iter().any(|&z| (z - (-0.3)).abs() < 1e-6), "floor slab should have vertices at z=-0.3, found z values: {:?}", z_values);
+}
+
+/// Probing with infinity coordinates returns None and does not panic.
+#[test]
+fn probe_with_inf_returns_none() {
+    let (_model, scene) = house_with_loop();
+
+    assert!(scene.probe(Vec3::new(f64::INFINITY, 1.5, -0.15)).is_none(), "probe(Inf, 1.5, -0.15) should be None");
+    assert!(scene.probe(Vec3::new(3.0, f64::INFINITY, -0.15)).is_none(), "probe(3.0, Inf, -0.15) should be None");
+    assert!(scene.probe(Vec3::new(3.0, 1.5, f64::INFINITY)).is_none(), "probe(3.0, 1.5, Inf) should be None");
+    assert!(scene.probe(Vec3::new(-f64::INFINITY, -f64::INFINITY, -f64::INFINITY)).is_none(), "probe(-Inf, -Inf, -Inf) should be None");
+}
+
+/// The number of wall meshes equals the number of walls in the model.
+#[test]
+fn wall_mesh_count_matches_wall_count() {
+    let (model, scene) = house_with_loop();
+
+    let wall_mesh_count = scene.meshes.iter().filter(|m| m.material == "wall").count();
+    assert_eq!(wall_mesh_count, model.walls.len(), "wall mesh count ({}) should equal wall count ({})", wall_mesh_count, model.walls.len());
+}
