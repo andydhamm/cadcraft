@@ -395,6 +395,107 @@ macro_rules! tf {
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod uk_tests {
+    use super::*;
+
+    fn uk_source() -> &'static str {
+        include_str!("uk.tsv")
+    }
+
+    #[test]
+    fn uk_translations_are_non_empty() {
+        let source = uk_source();
+        for (i, line) in source.lines().enumerate() {
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let cols: Vec<&str> = line.split('\t').collect();
+            assert_eq!(cols.len(), 3, "line {} has {} columns, expected 3", i + 1, cols.len());
+            assert!(!cols[2].is_empty(), "line {} has empty translation for key: {:?}", i + 1, cols[1]);
+        }
+    }
+
+    #[test]
+    fn uk_catalog_has_no_duplicate_keys() {
+        let source = uk_source();
+        let mut seen = std::collections::HashSet::new();
+        for (i, line) in source.lines().enumerate() {
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let cols: Vec<&str> = line.split('\t').collect();
+            if cols.len() != 3 {
+                continue;
+            }
+            let key = (cols[0], cols[1]);
+            assert!(seen.insert(key), "line {}: duplicate key ({:?}, {:?})", i + 1, cols[0], cols[1]);
+        }
+    }
+
+    #[test]
+    fn uk_phase3_strings_present() {
+        let source = uk_source();
+        let required = [
+            "cmd.room",
+            "cmd.roomdetect",
+            "cmd.level",
+            "Room",
+            "Room Detect",
+            "Level",
+            "Architecture>Room",
+            "Architecture>Room Detect",
+            "Architecture>Level",
+            "Interior (inner surfaces)",
+            "Standard (centre of walls)",
+            "Living (living areas)",
+            "Area basis",
+            "Enter elevation:",
+            "Enter ceiling height:",
+            "Enter floor structure thickness:",
+            "Ceiling height",
+            "Floor structure thickness",
+            "Select walls for room detection",
+            "Room detection complete: {n} rooms",
+        ];
+        for key in required {
+            assert!(source.contains(key), "missing Ukrainian translation for: {}", key);
+        }
+    }
+
+    #[test]
+    fn uk_placeholders_preserved() {
+        let source = uk_source();
+        for (i, line) in source.lines().enumerate() {
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let cols: Vec<&str> = line.split('\t').collect();
+            if cols.len() != 3 {
+                continue;
+            }
+            if cols[1].contains("{n}") {
+                assert!(cols[2].contains("{n}"), "line {}: source has {{n}} but translation doesn't: {} -> {}", i + 1, cols[1], cols[2]);
+            }
+        }
+    }
+
+    #[test]
+    fn uk_translations_no_trailing_whitespace() {
+        let source = uk_source();
+        for (i, line) in source.lines().enumerate() {
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let cols: Vec<&str> = line.split('\t').collect();
+            if cols.len() != 3 {
+                continue;
+            }
+            assert_eq!(cols[2], cols[2].trim(), "line {}: trailing whitespace in translation: {:?}", i + 1, cols[2]);
+        }
+    }
+}
+
 /// `name` lowercased with the Latin accents that occur in language names folded away, so a
 /// byte-wise sort reads alphabetically. Other scripts are left as they are.
 fn name_sort_key(name: &str) -> String {

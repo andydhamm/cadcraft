@@ -29,7 +29,7 @@
 	Unresolved	Не розв'язано
 	  Cancel  	Скасувати
 	  OK  	Гаразд
-	 or [	 або [
+	 or [	або [
 	% of all commits	% усіх комітів
 	* Wildcard Match	* За шаблоном
 	*VARIES*	*РІЗНІ*
@@ -1401,6 +1401,12 @@
 	Floor structure thickness	Товщина конструкції підлоги
 	Select walls for room detection	Виберіть стіни для виявлення кімнат
 	Room detection complete: {n} rooms	Виявлено кімнат: {n}
+	cmd.room	Кімната
+	cmd.roomdetect	Виявити кімнати
+	cmd.level	Рівень
+	Architecture>Room	Архітектура>Кімната
+	Architecture>Room Detect	Архітектура>Виявити кімнати
+	Architecture>Level	Архітектура>Рівень
 	Check for Updates…	Перевірити оновлення…
 	CADCraft is up to date.	Встановлено найновішу версію CADCraft.
 	Could not check for updates.	Не вдалося перевірити оновлення.
