@@ -311,7 +311,8 @@ impl Mesh {
                 let pj = &ring[j as usize];
                 let pk = &ring[k as usize];
                 let pl = &ring[l as usize];
-                let same = (pi.x - pk.x).abs() < 1e-9 && (pi.y - pk.y).abs() < 1e-9 && (pj.x - pl.x).abs() < 1e-9 && (pj.y - pl.y).abs() < 1e-9;
+                let same = ((pi.x - pk.x).abs() < 1e-9 && (pi.y - pk.y).abs() < 1e-9 && (pj.x - pl.x).abs() < 1e-9 && (pj.y - pl.y).abs() < 1e-9)
+                    || ((pi.x - pl.x).abs() < 1e-9 && (pi.y - pl.y).abs() < 1e-9 && (pj.x - pk.x).abs() < 1e-9 && (pj.y - pk.y).abs() < 1e-9);
                 if same {
                     is_bridge[i as usize] = true;
                     is_bridge[k as usize] = true;
@@ -393,7 +394,7 @@ fn find_bridge_pair(ring: &[Vec2], hole: &[Vec2]) -> Option<(u32, u32)> {
                 continue;
             }
             let mid = Vec2::new((pr.x + hq.x) / 2.0, (pr.y + hq.y) / 2.0);
-            if !point_in_ring_even_odd(mid, ring) {
+            if dist > 1e-18 && !point_in_ring_even_odd(mid, ring) {
                 continue;
             }
             if dist < best.0 {
