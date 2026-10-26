@@ -157,7 +157,6 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
             let label_pt = label_point(&r.polygon, &r.holes).unwrap_or_else(|| centroid_points(&r.polygon));
             obj.insert("label".to_string(), json!([label_pt.x, label_pt.y]));
             if labels_flag {
-                let label_pt = centroid_points(&r.polygon);
                 obj.insert("labelPoint".to_string(), json!([label_pt.x, label_pt.y]));
                 obj.insert("labelText".to_string(), json!(format!("{}\n{:.2} m2", r.name, r.interior_area)));
             }
@@ -1355,6 +1354,160 @@ mod tests {
             Err(_) => return,
         };
         assert_eq!(before, after, "arch.inspect must not bump arch_revision");
+    }
+
+    /// A room with ceiling_height None reports ceiling as JSON null.
+    #[test]
+    fn inspect_room_ceiling_null_when_unset() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "Open".into(),
+                    room_type: RoomType::OpenBelow,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+                    ceiling_height: None,
+                    interior_area: 12.0,
+                    standard_area: 12.0,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        let r = &rooms[0];
+        assert!(r["ceiling"].is_null(), "ceiling should be null when ceiling_height is None");
+    }
+
+    /// A non-living room type (Garage) reports livingIncluded as false.
+    #[test]
+    fn inspect_room_living_included_false_for_garage() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "Garage".into(),
+                    room_type: RoomType::Garage,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(6.0, 0.0), Vec2::new(6.0, 4.0), Vec2::new(0.0, 4.0)],
+                    ceiling_height: Some(2.4),
+                    interior_area: 24.0,
+                    standard_area: 24.0,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        let r = &rooms[0];
+        assert_eq!(r["type"].as_str().unwrap(), "garage");
+        assert_eq!(r["livingIncluded"].as_bool().unwrap(), false, "garage should not be included in living area");
+    }
+
+    /// RoomType::OpenBelow serializes as camelCase "openBelow".
+    #[test]
+    fn inspect_room_type_open_below_is_camel_case() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "Void".into(),
+                    room_type: RoomType::OpenBelow,
+                    level: 1,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(3.0, 0.0), Vec2::new(3.0, 3.0), Vec2::new(0.0, 3.0)],
+                    ceiling_height: Some(2.4),
+                    interior_area: 9.0,
+                    standard_area: 9.0,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        let r = &rooms[0];
+        assert_eq!(r["type"].as_str().unwrap(), "openBelow", "OpenBelow should serialize as openBelow");
+    }
+
+    /// A room with multiple holes reports the correct hole count.
+    #[test]
+    fn inspect_room_multiple_holes_count() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "Complex".into(),
+                    room_type: RoomType::Living,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+                    holes: vec![
+                        vec![Vec2::new(1.0, 1.0), Vec2::new(3.0, 1.0), Vec2::new(3.0, 3.0), Vec2::new(1.0, 3.0)],
+                        vec![Vec2::new(6.0, 4.0), Vec2::new(8.0, 4.0), Vec2::new(8.0, 6.0), Vec2::new(6.0, 6.0)],
+                    ],
+                    ceiling_height: Some(2.4),
+                    interior_area: 76.0,
+                    standard_area: 76.0,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        let r = &rooms[0];
+        assert_eq!(r["holes"].as_i64().unwrap(), 2, "expected 2 holes");
+    }
+
+    /// When labels are requested, labelPoint must match label (same algorithm).
+    #[test]
+    fn inspect_room_label_point_matches_label() {
+        let mut s = session_with_one_room();
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true, "labels": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        let r = &rooms[0];
+        let label = r["label"].as_array().expect("label must be an array");
+        let label_point = r["labelPoint"].as_array().expect("labelPoint must be an array");
+        assert_eq!(label.len(), 2);
+        assert_eq!(label_point.len(), 2);
+        let lx = label[0].as_f64().expect("label x");
+        let ly = label[1].as_f64().expect("label y");
+        let lpx = label_point[0].as_f64().expect("labelPoint x");
+        let lpy = label_point[1].as_f64().expect("labelPoint y");
+        assert!((lx - lpx).abs() < 1e-9, "label and labelPoint x should match: {} vs {}", lx, lpx);
+        assert!((ly - lpy).abs() < 1e-9, "label and labelPoint y should match: {} vs {}", ly, lpy);
+    }
+
+    /// labelText formats the area to two decimal places for fractional values.
+    #[test]
+    fn inspect_room_label_text_with_fractional_area() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "Study".into(),
+                    room_type: RoomType::Living,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(3.5, 0.0), Vec2::new(3.5, 2.5), Vec2::new(0.0, 2.5)],
+                    ceiling_height: Some(2.4),
+                    interior_area: 8.75,
+                    standard_area: 9.0,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true, "labels": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        let r = &rooms[0];
+        assert_eq!(r["labelText"].as_str().unwrap(), "Study\n8.75 m2");
     }
 
     /// The roof slope is pitch_rise divided by pitch_run.
