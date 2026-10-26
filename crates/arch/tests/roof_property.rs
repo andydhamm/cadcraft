@@ -83,7 +83,7 @@ fn all_hip_orthogonal_footprints_have_one_sloped_edge_per_vertex() {
         let mut vertex_counts: std::collections::HashMap<(i64, i64), usize> = std::collections::HashMap::new();
 
         // Initialize counts for outer-footprint vertices (0.1 m wall offset => 0.01 m grid).
-        for p in &footprint {
+        for p in &footprint.outer {
             let key = ((p.x * 100.0).round() as i64, (p.y * 100.0).round() as i64);
             vertex_counts.insert(key, 0);
         }
@@ -185,7 +185,7 @@ fn projected_areas_sum_to_the_footprint() {
     let built = build_roof(&model, 0, &r).unwrap();
     let area = projected_area_sum(&built);
     let fp = outer_footprint(&model, 0).expect("outer footprint should exist");
-    let expected = shoelace(&fp.iter().map(|p| p.clone()).collect::<Vec<_>>());
+    let expected = shoelace(&fp.outer);
     assert!((area - expected).abs() < 1e-6, "Rect overhang 0: {} != {}", area, expected);
 
     // Rectangle overhang 0.5
@@ -200,7 +200,7 @@ fn projected_areas_sum_to_the_footprint() {
     let built_l = build_roof(&model_l, 0, &r).unwrap();
     let area_l = projected_area_sum(&built_l);
     let fp_l = outer_footprint(&model_l, 0).expect("outer footprint should exist");
-    let expected_l = shoelace(&fp_l.iter().map(|p| p.clone()).collect::<Vec<_>>());
+    let expected_l = shoelace(&fp_l.outer);
     assert!((area_l - expected_l).abs() < 1e-6, "L overhang 0: {} != {}", area_l, expected_l);
 
     // T-shape overhang 0: compare against outer-footprint area
@@ -208,7 +208,7 @@ fn projected_areas_sum_to_the_footprint() {
     let built_t = build_roof(&model_t, 0, &r).unwrap();
     let area_t = projected_area_sum(&built_t);
     let fp_t = outer_footprint(&model_t, 0).expect("outer footprint should exist");
-    let expected_t = shoelace(&fp_t.iter().map(|p| p.clone()).collect::<Vec<_>>());
+    let expected_t = shoelace(&fp_t.outer);
     assert!((area_t - expected_t).abs() < 1e-6, "T overhang 0: {} != {}", area_t, expected_t);
 }
 
