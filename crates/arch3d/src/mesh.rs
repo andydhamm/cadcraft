@@ -289,22 +289,41 @@ impl Mesh {
             self.indices.extend([(b_base + m + tri[0]) as u32, (b_base + m + tri[1]) as u32, (b_base + m + tri[2]) as u32]);
         }
 
-        // Detect bridge edges: any undirected merged edge appearing twice is the
-        // outer-hole bridge and both occurrences are skipped.
-        let mut edge_count: HashMap<(u32, u32), u32> = HashMap::new();
+        // Detect bridge edges by position: an edge (ring[i], ring[j]) is a bridge
+        // if another edge (ring[k], ring[l]) has the same endpoints. Both
+        // occurrences are skipped in the side loop.
+        let mut is_bridge = vec![false; m as usize];
         for i in 0..m {
+            if is_bridge[i as usize] {
+                continue;
+            }
             let j = (i + 1) % m;
-            let key = (i.min(j), i.max(j));
-            *edge_count.entry(key).or_insert(0) += 1;
+            for k in (i + 1)..m {
+                if is_bridge[k as usize] {
+                    continue;
+                }
+                let l = (k + 1) % m;
+                if l == i {
+                    continue;
+                }
+                if ring[i as usize].x == ring[k as usize].x
+                    && ring[i as usize].y == ring[k as usize].y
+                    && ring[j as usize].x == ring[l as usize].x
+                    && ring[j as usize].y == ring[l as usize].y
+                {
+                    is_bridge[i as usize] = true;
+                    is_bridge[k as usize] = true;
+                }
+            }
         }
 
         // Side faces, skipping bridge edges; vertices are shared with the caps
         // so the mesh is a closed 2-manifold.
         for i in 0..m {
-            let j = (i + 1) % m;
-            if *edge_count.get(&(i.min(j), i.max(j))).unwrap_or(&0) >= 2 {
+            if is_bridge[i as usize] {
                 continue;
             }
+            let j = (i + 1) % m;
             // Triangle: bottom_i, bottom_j, top_j
             self.indices.extend([b_base + i, b_base + j, b_base + m + j]);
             // Triangle: bottom_i, top_j, top_i
