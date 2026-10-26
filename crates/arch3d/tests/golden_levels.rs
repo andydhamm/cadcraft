@@ -454,7 +454,7 @@ fn floor_slab_has_correct_z_range() {
     let floor_mesh = scene.meshes.iter().find(|m| m.object == south.id && m.material == "floor").expect("south floor mesh not found");
 
     // Collect all unique z values from the floor mesh vertices.
-    let mut z_values = Vec::new();
+    let mut z_values: Vec<f64> = Vec::new();
     for pos in &floor_mesh.positions {
         let z = pos[2] as f64;
         if !z_values.iter().any(|&v| (v - z).abs() < 1e-9) {
