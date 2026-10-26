@@ -1192,4 +1192,159 @@ mod tests {
         assert!((area - 31.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 31.0");
         assert!(mesh.is_manifold(), "multiple holes must be a closed manifold");
     }
+
+    /// An empty ring (0 vertices) produces no triangles.
+    #[test]
+    fn triangulate_simple_empty_ring() {
+        let ring: Vec<Vec2> = Vec::new();
+        let tri = triangulate_simple(&ring);
+        assert!(tri.is_empty(), "empty ring must produce no triangles");
+    }
+
+    /// A two-vertex ring (degenerate) produces no triangles.
+    #[test]
+    fn triangulate_simple_two_vertices() {
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
+        let tri = triangulate_simple(&ring);
+        assert!(tri.is_empty(), "two-vertex ring must produce no triangles");
+    }
+
+    /// A ring with a NaN vertex produces no triangles.
+    #[test]
+    fn triangulate_simple_nan_vertex() {
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(f64::NAN, 4.0), Vec2::new(0.0, 4.0)];
+        let tri = triangulate_simple(&ring);
+        assert!(tri.is_empty(), "NaN vertex must produce no triangles");
+    }
+
+    /// A ring with an Inf vertex produces no triangles.
+    #[test]
+    fn triangulate_simple_inf_vertex() {
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(f64::INFINITY, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let tri = triangulate_simple(&ring);
+        assert!(tri.is_empty(), "Inf vertex must produce no triangles");
+    }
+
+    /// All vertices at the same position (degenerate polygon) still produces
+    /// a triangulation (triangles with zero area) without crashing.
+    #[test]
+    fn triangulate_simple_all_same_position() {
+        let ring = vec![Vec2::new(1.0, 2.0), Vec2::new(1.0, 2.0), Vec2::new(1.0, 2.0)];
+        let tri = triangulate_simple(&ring);
+        assert!(tri.len() >= 1, "degenerate triangle must produce at least one triangle");
+        // All triangles should reference valid indices.
+        for t in &tri {
+            assert!(t[0] < 3 && t[1] < 3 && t[2] < 3);
+        }
+    }
+
+    /// All vertices collinear (degenerate polygon with zero area) produces
+    /// a triangulation without crashing.
+    #[test]
+    fn triangulate_simple_all_collinear() {
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(2.0, 0.0), Vec2::new(3.0, 0.0)];
+        let tri = triangulate_simple(&ring);
+        // A 4-vertex polygon should produce 2 triangles (n-2), even if degenerate.
+        assert!(tri.len() >= 1, "collinear polygon must produce at least one triangle");
+        for t in &tri {
+            assert!(t[0] < 4 && t[1] < 4 && t[2] < 4);
+        }
+    }
+
+    /// Huge coordinates are handled without overflow or loss of precision.
+    #[test]
+    fn triangulate_simple_huge_coordinates() {
+        let s = 1e6;
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(s, 0.0), Vec2::new(s, s), Vec2::new(0.0, s)];
+        let tri = triangulate_simple(&ring);
+        assert_eq!(tri.len(), 2, "huge square must triangulate to 2 triangles");
+        // Check total area.
+        let mut total_area = 0.0;
+        for t in &tri {
+            let ax = ring[t[0] as usize].x;
+            let ay = ring[t[0] as usize].y;
+            let bx = ring[t[1] as usize].x;
+            let by = ring[t[1] as usize].y;
+            let cx = ring[t[2] as usize].x;
+            let cy = ring[t[2] as usize].y;
+            let signed = (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by)) / 2.0;
+            total_area += signed.abs();
+        }
+        assert!((total_area - s * s).abs() < 1e-6 * s * s, "area {total_area} not within 1e-6 of {s}^2");
+    }
+
+    /// A triangle with one duplicate vertex (4 vertices, 3 distinct positions)
+    /// triangulates correctly with the correct area.
+    #[test]
+    fn triangulate_simple_triangle_with_duplicate_vertex() {
+        // Triangle (0,0),(4,0),(2,3) with the first vertex repeated at the end.
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(2.0, 3.0), Vec2::new(0.0, 0.0)];
+        let tri = triangulate_simple(&ring);
+        assert!(tri.len() >= 1, "triangle with duplicate must produce at least one triangle");
+        let mut total_area = 0.0;
+        for t in &tri {
+            let ax = ring[t[0] as usize].x;
+            let ay = ring[t[0] as usize].y;
+            let bx = ring[t[1] as usize].x;
+            let by = ring[t[1] as usize].y;
+            let cx = ring[t[2] as usize].x;
+            let cy = ring[t[2] as usize].y;
+            let signed = (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by)) / 2.0;
+            total_area += signed.abs();
+        }
+        // Triangle area = 0.5 * base * height = 0.5 * 4 * 3 = 6.
+        assert!((total_area - 6.0).abs() < 1e-6, "area {total_area} not within 1e-6 of 6.0");
+    }
+
+    /// A very thin (sliver) polygon triangulates correctly.
+    #[test]
+    fn triangulate_simple_sliver_polygon() {
+        // A very thin rectangle: (0,0), (10,0), (10,1e-6), (0,1e-6).
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 1e-6), Vec2::new(0.0, 1e-6)];
+        let tri = triangulate_simple(&ring);
+        assert_eq!(tri.len(), 2, "sliver must triangulate to 2 triangles");
+        let mut total_area = 0.0;
+        for t in &tri {
+            let ax = ring[t[0] as usize].x;
+            let ay = ring[t[0] as usize].y;
+            let bx = ring[t[1] as usize].x;
+            let by = ring[t[1] as usize].y;
+            let cx = ring[t[2] as usize].x;
+            let cy = ring[t[2] as usize].y;
+            let signed = (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by)) / 2.0;
+            total_area += signed.abs();
+        }
+        assert!((total_area - 1e-5).abs() < 1e-12, "sliver area {total_area} not within 1e-12 of 1e-5");
+    }
+
+    /// A ring with many duplicate positions (each vertex repeated) triangulates
+    /// correctly with the correct area.
+    #[test]
+    fn triangulate_simple_many_duplicate_positions() {
+        // Square with each vertex repeated: (0,0),(0,0),(4,0),(4,0),(4,4),(4,4),(0,4),(0,4)
+        let ring = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(4.0, 0.0),
+            Vec2::new(4.0, 0.0),
+            Vec2::new(4.0, 4.0),
+            Vec2::new(4.0, 4.0),
+            Vec2::new(0.0, 4.0),
+            Vec2::new(0.0, 4.0),
+        ];
+        let tri = triangulate_simple(&ring);
+        assert!(tri.len() >= 2, "square with duplicates must produce at least 2 triangles");
+        let mut total_area = 0.0;
+        for t in &tri {
+            let ax = ring[t[0] as usize].x;
+            let ay = ring[t[0] as usize].y;
+            let bx = ring[t[1] as usize].x;
+            let by = ring[t[1] as usize].y;
+            let cx = ring[t[2] as usize].x;
+            let cy = ring[t[2] as usize].y;
+            let signed = (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by)) / 2.0;
+            total_area += signed.abs();
+        }
+        assert!((total_area - 16.0).abs() < 1e-6, "area {total_area} not within 1e-6 of 16.0");
+    }
 }
