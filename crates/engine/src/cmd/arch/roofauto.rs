@@ -78,7 +78,7 @@ fn run_roofauto(s: &mut Session, p: &Value) -> Result<Value> {
     let target_level = if let Some(name) = level_name {
         s.doc()?.arch.levels.iter().position(|l| l.name == name).map(|i| i as u32).ok_or_else(|| bad(cmd, format!("level `{name}` not found")))?
     } else {
-        top_level(&s.doc()?.arch)?
+        top_level(&s.doc()?.arch)
     };
 
     // Build roof on a copy of the model to validate
@@ -139,7 +139,7 @@ fn run_roofauto(s: &mut Session, p: &Value) -> Result<Value> {
         // Push new
         let new_id = doc.arch.next_roof_id;
         let mut new_roof = built_roof;
-        new_roof.id = new_id;
+        new_roof.id = ArchId(new_id);
         doc.arch.roofs.push(new_roof);
         doc.arch.next_roof_id = doc.arch.next_roof_id.saturating_add(1);
         rebuilt = true;
