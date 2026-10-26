@@ -375,6 +375,32 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let joins = 0usize;
     // TODO(p1-join-solver): let joins = cadcraft_arch::join::solve_joins(&mut d.arch);
 
+    // Rebuild roofs if any level has a non-hand-edited roof
+    for level in d.arch.levels.iter() {
+        if let Some(roof) = d.arch.roofs.iter().find(|r| r.level == level.index) {
+            if !roof.hand_edited {
+                // Rebuild roof with stored parameters
+                // We need to clone the model to apply directives if they are stored on walls
+                // But build_roof takes the model.
+                // We assume the walls already have the directives applied from previous steps or defaults.
+                if let Ok(new_roof) = cadcraft_arch::roof::build_roof(
+                    &d.arch,
+                    level.index,
+                    roof.pitch_rise,
+                    roof.pitch_run,
+                    roof.overhang,
+                    roof.thickness,
+                    roof.fascia,
+                    roof.soffit,
+                ) {
+                    if let Some(r) = d.arch.roofs.iter_mut().find(|r| r.level == level.index) {
+                        *r = new_roof;
+                    }
+                }
+            }
+        }
+    }
+
     Ok(json!({ "walls": walls_json, "joins": joins }))
 }
 
