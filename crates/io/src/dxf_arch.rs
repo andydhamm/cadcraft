@@ -34,6 +34,13 @@ pub(crate) const ARCH_ROOM_LAYER: &str = "A-ROOM";
 /// reader drops it while the arch record is present (the room's model data is the source of truth).
 pub(crate) const ARCH_ROOM_MARKER: &str = "CADCRAFT-ROOM";
 
+/// Layer of save-time roof-edge proxy polylines.
+pub(crate) const ARCH_ROOF_LAYER: &str = "A-ROOF";
+
+/// `CADCRAFT` xdata marker identifying a save-time roof-edge proxy polyline, so the
+/// reader drops it while the arch record is present (the roof's model data is the source of truth).
+pub(crate) const ARCH_ROOF_MARKER: &str = "CADCRAFT-ROOF";
+
 /// Rejects payloads larger than this before they are even parsed.
 const MAX_ARCH_PAYLOAD: usize = 8 << 20;
 
@@ -236,6 +243,11 @@ pub(crate) fn is_room_proxy(tags: &[Tag]) -> bool {
     crate::dxf_ext::xdata(tags, crate::dxf_ext::APP).iter().any(|t| t.code == 1000 && t.str().trim() == ARCH_ROOM_MARKER)
 }
 
+/// True when an entity's `CADCRAFT` xdata marks it as a save-time roof proxy polyline.
+pub(crate) fn is_roof_proxy(tags: &[Tag]) -> bool {
+    crate::dxf_ext::xdata(tags, crate::dxf_ext::APP).iter().any(|t| t.code == 1000 && t.str().trim() == ARCH_ROOF_MARKER)
+}
+
 /// The DXF groups (after the common entity groups) of one closed LWPOLYLINE per valid room
 /// boundary. Rooms with fewer than three vertices or any non-finite point are skipped; output is
 /// capped at [`cadcraft_doc::arch::MAX_ROOMS`] polylines.
@@ -263,6 +275,45 @@ pub(crate) fn proxy_room_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
         .collect()
 }
 
+/// The DXF groups (after the common entity groups) of one open LWPOLYLINE per non-eave roof edge
+/// (ridge, hip, valley, gable end). Eave edges and edges with non-finite endpoints are skipped.
+/// Output is capped at [`cadcraft_doc::arch::MAX_ROOFS`] roofs and [`cadcraft_doc::arch::MAX_ROOF_EDGES`]
+/// edges per roof.
+pub(crate) fn proxy_roof_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
+    if m.roofs.is_empty() {
+        return Vec::new();
+    }
+    m.roofs
+        .iter()
+        .take(cadcraft_doc::arch::MAX_ROOFS)
+        .flat_map(|roof| {
+            roof.edges
+                .iter()
+                .take(cadcraft_doc::arch::MAX_ROOF_EDGES)
+                .filter_map(|e| {
+                    if e.kind == cadcraft_doc::arch::RoofEdgeKind::Eave {
+                        return None;
+                    }
+                    if !e.a.is_finite() || !e.b.is_finite() {
+                        return None;
+                    }
+                    let mut t = Vec::new();
+                    t.push(Tag::i(90, 2));
+                    t.push(Tag::i(70, 0)); // open
+                    t.push(Tag::f(10, e.a.x));
+                    t.push(Tag::f(20, e.a.y));
+                    t.push(Tag::f(10, e.b.x));
+                    t.push(Tag::f(20, e.b.y));
+                    t.push(Tag::s(1001, crate::dxf_ext::APP));
+                    t.push(Tag::s(1000, ARCH_ROOF_MARKER));
+                    t.push(Tag::s(1000, &cadcraft_doc::arch::roof_label(roof.id)));
+                    Some(t)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,6 +321,23 @@ mod tests {
     use cadcraft_doc::arch::{Opening, OpeningKind, Roof, RoofEdge, RoofEdgeKind, RoofPlane, Room};
     use cadcraft_doc::{ArchModel, Drawing, EntityKind, Wall};
     use cadcraft_geom::Vec2;
+
+    /// A drawing with one wall and one roof (ridge + eave edges).
+    fn drawing_with_roof() -> Drawing {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer(ARCH_ROOF_LAYER);
+        d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        d.arch.push_roof(Roof { level: 0, pitch_rise: 6.0, pitch_run: 12.0, ..Roof::default() });
+        // Add edges manually since push_roof might not populate them fully in this test context
+        // or we want specific test edges.
+        if let Some(roof) = d.arch.roofs.first_mut() {
+            roof.edges = vec![
+                RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(4.0, 4.0), b: Vec2::new(6.0, 4.0), za: 4.45, zb: 4.45, ..Default::default() },
+                RoofEdge { kind: RoofEdgeKind::Eave, a: Vec2::new(0.0, 0.0), b: Vec2::new(10.0, 0.0), za: 2.4, zb: 2.4, ..Default::default() },
+            ];
+        }
+        d
+    }
 
     /// A model with exactly one wall.
     fn one_wall_model() -> ArchModel {
@@ -919,5 +987,55 @@ mod tests {
         assert_eq!(back.arch.roofs, d.arch.roofs);
         assert_eq!(back.arch.next_roof_id, d.arch.next_roof_id);
         assert_eq!(back.arch.walls, d.arch.walls);
+    }
+
+    #[test]
+    fn roof_proxy_linework_is_written_on_save() {
+        let d = drawing_with_roof();
+        let label = cadcraft_doc::arch::roof_label(d.arch.roofs[0].id);
+        let polys = proxy_roof_polylines(&d.arch);
+
+        // Only the ridge edge (non-eave) should be written
+        assert_eq!(polys.len(), 1, "expected one roof proxy ring (ridge only)");
+
+        let tags = &polys[0];
+        assert!(tags.iter().any(|t| t.code == 90 && t.i64() == 2), "vertex count should be 2");
+        assert!(tags.iter().any(|t| t.code == 70 && t.i64() == 0), "flag should be 0 (open)");
+        assert_eq!(tags.iter().filter(|t| t.code == 10).count(), 2, "expected two x coords");
+        assert_eq!(tags.iter().filter(|t| t.code == 20).count(), 2, "expected two y coords");
+        assert!(tags.iter().any(|t| t.code == 1000 && t.str() == ARCH_ROOF_MARKER), "missing roof marker");
+        assert!(tags.iter().any(|t| t.code == 1000 && t.str() == label.as_str()), "missing roof label");
+
+        let text = write_dxf(&d);
+        assert!(text.contains(ARCH_ROOF_MARKER), "no roof proxy marker in DXF");
+        assert!(text.contains(label.as_str()), "no roof label in DXF");
+        assert!(text.contains(ARCH_ROOF_LAYER), "no A-ROOF layer in DXF");
+    }
+
+    #[test]
+    fn roof_proxies_are_dropped_when_arch_is_present() {
+        let d = drawing_with_roof();
+        let text = write_dxf(&d);
+        assert!(text.contains(ARCH_KEY), "no architectural record in the DXF");
+        assert!(text.contains(ARCH_ROOF_MARKER), "no roof proxy written");
+
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        // The roof survives via the XRECORD
+        assert_eq!(back.arch.roofs.len(), 1, "roof lost on the arch XRECORD round trip");
+
+        // No proxy linework should survive
+        let count_proxy = |d: &Drawing| {
+            d.model
+                .iter()
+                .filter(|e| matches!(&e.kind, EntityKind::LwPolyline(_)))
+                .filter(|e| e.common.xdata.iter().any(|t| t.code == 1000 && t.value.trim() == ARCH_ROOF_MARKER))
+                .count()
+        };
+        assert_eq!(count_proxy(&back), 0, "roof proxy polyline survived the read");
+
+        // Check that no LWPOLYLINE at all survived (wall/opening/room/roof proxies all dropped)
+        let polylines = back.model.iter().filter(|e| matches!(&e.kind, EntityKind::LwPolyline(_))).count();
+        assert_eq!(polylines, 0, "proxy linework survived the read");
     }
 }
