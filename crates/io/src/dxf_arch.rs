@@ -713,10 +713,17 @@ mod tests {
         let polys = proxy_room_polylines(&m);
         assert_eq!(polys.len(), 3, "all three rooms should produce proxies");
 
-        // Each proxy should have its own room label
+        // Each proxy should have its own room label (the tag after ARCH_ROOM_MARKER)
         let labels: Vec<String> = polys
             .iter()
-            .map(|tags| tags.iter().find(|t| t.code == 1000 && t.str().starts_with("room-")).map(|t| t.str()).unwrap_or_default())
+            .map(|tags| {
+                tags.iter()
+                    .position(|t| t.code == 1000 && t.str() == ARCH_ROOM_MARKER)
+                    .and_then(|i| tags.get(i + 1))
+                    .filter(|t| t.code == 1000)
+                    .map(|t| t.str())
+                    .unwrap_or_default()
+            })
             .collect();
         assert_eq!(labels.len(), 3);
         assert!(labels[0] != labels[1] && labels[1] != labels[2] && labels[0] != labels[2], "labels should be unique");
