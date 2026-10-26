@@ -647,7 +647,7 @@ fn point_in_triangle(p: &Vec2, a: &Vec2, b: &Vec2, c: &Vec2) -> bool {
     if denom.abs() < 1e-15 {
         return false;
     }
-    let u = (ac_x * ap_y - ac_y * ap_x) / denom;
+    let u = (ap_x * ac_y - ap_y * ac_x) / denom;
     let v = (ab_x * ap_y - ab_y * ap_x) / denom;
     u >= -1e-9 && v >= -1e-9 && u + v <= 1.0 + 1e-9
 }

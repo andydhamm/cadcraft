@@ -304,6 +304,23 @@ mod tests {
     use cadcraft_doc::{ArchModel, Level, Room, Wall};
     use cadcraft_geom::Vec2;
 
+    /// South-room geometry from `loop_room_slabs_have_distinct_owners`: a wide
+    /// shallow polygon with the loop hole near the bottom-left corner.
+    #[test]
+    fn probe_mesh_south_room_excludes_hole_near_corner() {
+        let mut m = Mesh::new("floor", ArchId(1));
+        // Exact south-room polygon from the diagnostic:
+        let outer = vec![Vec2::new(9.9, 0.1), Vec2::new(9.9, 2.95), Vec2::new(0.1, 2.95), Vec2::new(0.1, 0.1)];
+        // Exact hole polygon from the diagnostic (CCW as stored in the room):
+        let hole = vec![Vec2::new(3.55, 0.95), Vec2::new(3.55, 2.05), Vec2::new(2.45, 2.05), Vec2::new(2.45, 0.95)];
+        m.push_prism_with_holes(&outer, &[hole], -0.3, 0.0);
+
+        // Point inside the hole (should be excluded from the solid slab):
+        assert!(!probe_mesh(&m, Vec3::new(3.0, 1.5, -0.15)), "point in hole should not be inside south-room floor slab");
+        // Point in the open south-room area (should be inside):
+        assert!(probe_mesh(&m, Vec3::new(1.0, 1.0, -0.15)), "point in solid should be inside south-room floor slab");
+    }
+
     #[test]
     fn probe_mesh_is_not_its_bounding_box() {
         let mut m = Mesh::new("floor", ArchId(1));

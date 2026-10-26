@@ -201,7 +201,7 @@ fn south_room_slab_has_the_loop_hole() {
     let south_mesh = scene.meshes.iter().filter(|m| m.object == south.id && m.material == "floor").collect::<Vec<_>>();
     assert_eq!(south_mesh.len(), 1, "south room should have exactly 1 floor mesh");
     let south_cap = cap_area(south_mesh[0], 0.0);
-    assert!((south_cap - 31.89).abs() < 1e-2, "south slab top cap area = {}, expected 31.89", south_cap);
+    assert!((south_cap - 26.72).abs() < 1e-2, "south slab top cap area = {}, expected 26.72", south_cap);
 
     let inner_mesh = scene.meshes.iter().filter(|m| m.object == inner.id && m.material == "floor").collect::<Vec<_>>();
     assert_eq!(inner_mesh.len(), 1, "inner room should have exactly 1 floor mesh");
@@ -324,31 +324,24 @@ fn probe_at_floor_surface_returns_floor() {
     assert!(hit.id.starts_with('r'), "floor surface probe id `{}` is not a room label", hit.id);
 }
 
-/// Probing at the exact boundary of the loop hole hits the floor (the hole
-/// boundary belongs to the outer slab).
+/// Probing just outside the loop wall's outer faces must return the floor
+/// slab of the containing room. The slab hole is the loop's outer footprint.
 #[test]
 fn probe_at_hole_boundary_returns_floor() {
     let (_model, scene) = house_with_loop();
 
-    // Left edge of the loop hole (x = 2.5).
-    let left = scene.probe(Vec3::new(2.5, 1.5, -0.15));
-    let left = left.expect("probe(2.5, 1.5, -0.15) returned None (expected floor at hole boundary)");
-    assert_eq!(left.part, "floor", "left boundary probe part = `{}` (expected `floor`)", left.part);
+    // Loop walls centered at x=2.5, 3.5, y=1.0, 2.0 with thickness 0.1.
+    // Outer faces: x=2.45, x=3.55, y=0.95, y=2.05.
+    // Probe at (2.4, 1.5) is outside the left outer face (2.45).
+    // Probe at (3.6, 1.5) is outside the right outer face (3.55).
+    // Both should hit the south room's floor slab.
+    let left = scene.probe(Vec3::new(2.4, 1.5, -0.15));
+    let left = left.expect("probe(2.4, 1.5, -0.15) returned None (expected south floor left of hole)");
+    assert_eq!(left.part, "floor", "left probe part = `{}` (expected `floor`)", left.part);
 
-    // Right edge of the loop hole (x = 3.5).
-    let right = scene.probe(Vec3::new(3.5, 1.5, -0.15));
-    let right = right.expect("probe(3.5, 1.5, -0.15) returned None (expected floor at hole boundary)");
-    assert_eq!(right.part, "floor", "right boundary probe part = `{}` (expected `floor`)", right.part);
-
-    // Top edge of the loop hole (y = 2.0).
-    let top = scene.probe(Vec3::new(3.0, 2.0, -0.15));
-    let top = top.expect("probe(3.0, 2.0, -0.15) returned None (expected floor at hole boundary)");
-    assert_eq!(top.part, "floor", "top boundary probe part = `{}` (expected `floor`)", top.part);
-
-    // Bottom edge of the loop hole (y = 1.0).
-    let bottom = scene.probe(Vec3::new(3.0, 1.0, -0.15));
-    let bottom = bottom.expect("probe(3.0, 1.0, -0.15) returned None (expected floor at hole boundary)");
-    assert_eq!(bottom.part, "floor", "bottom boundary probe part = `{}` (expected `floor`)", bottom.part);
+    let right = scene.probe(Vec3::new(3.6, 1.5, -0.15));
+    let right = right.expect("probe(3.6, 1.5, -0.15) returned None (expected south floor right of hole)");
+    assert_eq!(right.part, "floor", "right probe part = `{}` (expected `floor`)", right.part);
 }
 
 /// Probing just above the floor slab (inside the room) returns None.
@@ -439,7 +432,7 @@ fn ceiling_slab_also_has_the_loop_hole() {
     // The ceiling slab top is at z = 2.4 (level 0 ceiling height).
     let ceiling_cap = cap_area(south_ceiling[0], 2.4);
     // The ceiling cap should have the same area as the floor cap (hole cut out).
-    assert!((ceiling_cap - 31.89).abs() < 1e-2, "south ceiling cap area = {}, expected 31.89", ceiling_cap);
+    assert!((ceiling_cap - 26.72).abs() < 1e-2, "south ceiling cap area = {}, expected 26.72", ceiling_cap);
 }
 
 /// The floor slab spans the correct z range (from -structure to 0.0 for level 0).
