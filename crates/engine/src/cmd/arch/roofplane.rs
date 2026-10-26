@@ -1,31 +1,12 @@
 //! The `roofplane` command: create or edit a single manual roof plane.
 
 use cadcraft_arch::poly::is_simple;
-use cadcraft_doc::arch::{ArchId, Roof, RoofEdge, RoofEdgeKind, RoofPlane};
+use cadcraft_doc::arch::{Roof, RoofEdge, RoofEdgeKind, RoofPlane};
 use cadcraft_geom::Vec2;
 use serde_json::Value;
 
-use crate::cmd::arch::roofplane::RoofError;
-use crate::cmd::{bad, bool_or, f64_or, point_param, points_param, Result};
-use crate::{EngineError, Session};
-
-/// Errors specific to roof plane operations.
-#[derive(Debug)]
-pub enum RoofError {
-    /// Invalid parameters.
-    BadParams(String),
-    /// Roof or plane not found.
-    NotFound,
-}
-
-impl From<RoofError> for EngineError {
-    fn from(e: RoofError) -> Self {
-        match e {
-            RoofError::BadParams(s) => EngineError::Other(s),
-            RoofError::NotFound => EngineError::Other("roof plane not found".into()),
-        }
-    }
-}
+use crate::Session;
+use crate::cmd::{Result, bad, f64_or, points_param};
 
 /// Parse a roof plane ID like "r0p1" into (roof_index, plane_index).
 fn parse_roof_plane_id(id: &str) -> Option<(usize, usize)> {
@@ -84,14 +65,12 @@ fn create_roof_plane(
     for i in 0..points.len() {
         let a = points[i];
         let b = points[(i + 1) % points.len()];
-        // Check if base segment lies on segment a-b
-        // We check if both base points are close to the line segment a-b
         let ab = b - a;
         let len_sq = ab.len2();
         if len_sq < 1e-12 {
             continue;
         }
-        
+
         let is_on_segment = |p: Vec2| -> bool {
             let ap = p - a;
             let t = ap.dot(ab) / len_sq;
@@ -112,10 +91,8 @@ fn create_roof_plane(
         return Err(bad("roofplane", "base edge does not lie on a polygon edge"));
     }
 
-    // Calculate slope
     let slope = pitch_rise / pitch_run;
-    
-    // Calculate projected area (shoelace formula)
+
     let mut area = 0.0;
     for i in 0..points.len() {
         let j = (i + 1) % points.len();
@@ -123,36 +100,22 @@ fn create_roof_plane(
     }
     let projected_area = area.abs() / 2.0;
 
-    // Ensure ring is CCW for consistency if needed, but RoofPlane might handle it.
-    // The spec says "ring CCW".
     let mut ring = points.clone();
     if area < 0.0 {
         ring.reverse();
     }
 
-    let plane = RoofPlane {
-        ring: ring.clone(),
-        slope,
-        projected_area,
-        base_edge: base,
-        thickness,
-        fascia,
-        soffit,
-    };
+    let plane = RoofPlane { ring, slope, projected_area, base_edge: base, thickness, fascia, soffit };
 
-    let edge = RoofEdge {
-        kind: RoofEdgeKind::Eave,
-        z0: 0.0, // Base z, usually level elevation, but stored relative or absolute? 
-                 // Design says "edge is classified ... with both z's". 
-                 // For a manual plane, we might not know the absolute z without level info.
-                 // Assuming z0/z1 are relative to level elevation or 0 for manual.
-                 // Let's assume 0 for now as we don't have level elevation here easily without lookup.
-                 // Or better, use 0.0 and let the renderer handle it relative to level.
-        z1: 0.0,
-    };
+    let edge = RoofEdge { kind: RoofEdgeKind::Eave, z0: 0.0, z1: 0.0 };
+
+    let mut doc = s.doc_mut()?;
+    let arch = &mut doc.arch;
+    let id = arch.next_roof_id;
+    arch.next_roof_id += 1;
 
     let roof = Roof {
-        id: 0, // Will be assigned by doc
+        id,
         level: level.unwrap_or(0),
         pitch_rise,
         pitch_run,
@@ -166,14 +129,6 @@ fn create_roof_plane(
         edges: vec![edge],
     };
 
-    let mut doc = s.doc_mut()?;
-    let arch = &mut doc.arch;
-    let id = arch.next_roof_id;
-    arch.next_roof_id += 1;
-    
-    let mut roof = roof;
-    roof.id = id;
-    
     arch.roofs.push(roof);
     doc.touch_arch();
 
@@ -195,17 +150,14 @@ fn edit_roof_plane(
     fascia: Option<f64>,
     soffit: Option<f64>,
 ) -> Result<Value> {
-    let (r_idx, p_idx) = parse_roof_plane_id(id_str)
-        .ok_or_else(|| bad("roofplane", format!("invalid roof plane id: {}", id_str)))?;
+    let (r_idx, p_idx) = parse_roof_plane_id(id_str).ok_or_else(|| bad("roofplane", format!("invalid roof plane id: {}", id_str)))?;
 
     let mut doc = s.doc_mut()?;
     let arch = &mut doc.arch;
-    
-    let roof = arch.roofs.get_mut(r_idx)
-        .ok_or_else(|| bad("roofplane", format!("roof r{} not found", r_idx)))?;
-    
-    let plane = roof.planes.get_mut(p_idx)
-        .ok_or_else(|| bad("roofplane", format!("plane p{} not found", p_idx)))?;
+
+    let roof = arch.roofs.get_mut(r_idx).ok_or_else(|| bad("roofplane", format!("roof r{} not found", r_idx)))?;
+
+    let plane = roof.planes.get_mut(p_idx).ok_or_else(|| bad("roofplane", format!("plane p{} not found", p_idx)))?;
 
     let mut changed = false;
 
@@ -213,29 +165,24 @@ fn edit_roof_plane(
         if !v.is_finite() {
             return Err(bad("roofplane", "pitchRise must be finite"));
         }
-        if v != plane.slope * plane.projected_area { // Slope is rise/run, stored in plane.slope
-             // Wait, plane.slope is rise/run. 
-             // If we change rise, we need to update slope if run is unchanged?
-             // The spec says apply given fields.
-             // If pitchRise is given, we update it.
-             // We need to recalculate slope if pitchRun is also given or if we keep existing run.
-             // Let's update the roof's pitch_rise/run if provided, then recalc plane.slope.
+        if roof.pitch_rise != v {
+            roof.pitch_rise = v;
+            changed = true;
         }
-        roof.pitch_rise = v;
-        changed = true;
     }
     if let Some(v) = pitch_run {
         if v <= 0.0 || !v.is_finite() {
             return Err(bad("roofplane", "pitchRun must be positive and finite"));
         }
-        roof.pitch_run = v;
-        changed = true;
+        if roof.pitch_run != v {
+            roof.pitch_run = v;
+            changed = true;
+        }
     }
-    
-    // Recalculate slope if either changed
+
     if pitch_rise.is_some() || pitch_run.is_some() {
         let new_slope = roof.pitch_rise / roof.pitch_run;
-        if plane.slope != new_slope {
+        if (plane.slope - new_slope).abs() > 1e-9 {
             plane.slope = new_slope;
             changed = true;
         }
@@ -298,23 +245,18 @@ pub fn run_roofplane(s: &mut Session, p: &Value) -> Result<Value> {
         return edit_roof_plane(s, edit_id, pitch_rise, pitch_run, thickness, fascia, soffit);
     }
 
-    let points = points_param(p, "points")
-        .ok_or_else(|| bad("roofplane", "`points` is required"))?;
-    
-    let base_val = p.get("base")
-        .ok_or_else(|| bad("roofplane", "`base` is required"))?;
-    
-    let base_arr = base_val.as_array()
-        .ok_or_else(|| bad("roofplane", "`base` must be an array of two points"))?;
-    
+    let points = points_param(p, "points").ok_or_else(|| bad("roofplane", "`points` is required"))?;
+
+    let base_val = p.get("base").ok_or_else(|| bad("roofplane", "`base` is required"))?;
+
+    let base_arr = base_val.as_array().ok_or_else(|| bad("roofplane", "`base` must be an array of two points"))?;
+
     if base_arr.len() != 2 {
         return Err(bad("roofplane", "`base` must have exactly two points"));
     }
 
-    let base_0 = crate::cmd::point_value(&base_arr[0])
-        .ok_or_else(|| bad("roofplane", "invalid base point 0"))?;
-    let base_1 = crate::cmd::point_value(&base_arr[1])
-        .ok_or_else(|| bad("roofplane", "invalid base point 1"))?;
+    let base_0 = crate::cmd::point_value(&base_arr[0]).ok_or_else(|| bad("roofplane", "invalid base point 0"))?;
+    let base_1 = crate::cmd::point_value(&base_arr[1]).ok_or_else(|| bad("roofplane", "invalid base point 1"))?;
 
     let pitch_rise = f64_or(p, "pitchRise", 6.0);
     let pitch_run = f64_or(p, "pitchRun", 12.0);
@@ -361,7 +303,7 @@ mod tests {
         let mut s = Session::new();
         let params = json!({
             "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
-            "base": [[0.0, 0.0], [5.0, 5.0]], // Diagonal, not on edge
+            "base": [[0.0, 0.0], [5.0, 5.0]],
             "pitchRise": 6.0,
             "pitchRun": 12.0
         });
@@ -374,7 +316,7 @@ mod tests {
     fn roofplane_rejects_a_self_crossing_polygon() {
         let mut s = Session::new();
         let params = json!({
-            "points": [[0.0, 0.0], [10.0, 10.0], [10.0, 0.0], [0.0, 10.0]], // Bowtie
+            "points": [[0.0, 0.0], [10.0, 10.0], [10.0, 0.0], [0.0, 10.0]],
             "base": [[0.0, 0.0], [10.0, 10.0]],
             "pitchRise": 6.0,
             "pitchRun": 12.0
@@ -389,16 +331,10 @@ mod tests {
         let mut s = Session::new();
         let mut pts = Vec::new();
         for i in 0..257 {
-            pts.push(vec![i as f64, 0.0]);
-        }
-        // Need a valid simple polygon. Let's make a circle-ish shape or just a long line? 
-        // A line is not a polygon. Let's make a regular polygon.
-        pts.clear();
-        for i in 0..257 {
             let angle = (i as f64) * std::f64::consts::PI * 2.0 / 257.0;
             pts.push(vec![angle.cos() * 10.0, angle.sin() * 10.0]);
         }
-        
+
         let params = json!({
             "points": pts,
             "base": [pts[0], pts[1]],
@@ -434,15 +370,14 @@ mod tests {
             "pitchRun": 12.0
         });
         run_roofplane(&mut s, &params).unwrap();
-        
+
         let edit_params = json!({
             "edit": "r0p0",
             "pitchRise": 8.0
         });
         let res = run_roofplane(&mut s, &edit_params).unwrap();
         assert_eq!(res["handles"][0], "r0");
-        
-        // Verify hand_edited is true in the doc
+
         let doc = s.doc().unwrap();
         let roof = &doc.arch.roofs[0];
         assert!(roof.hand_edited);
@@ -470,8 +405,7 @@ mod tests {
             "pitchRun": 12.0
         });
         run_roofplane(&mut s, &params).unwrap();
-        
-        // Check that undo works
+
         s.undo().unwrap();
         let doc = s.doc().unwrap();
         assert!(doc.arch.roofs.is_empty());
