@@ -406,7 +406,7 @@ mod tests {
             "pitchRise": 6.0,
             "pitchRun": 12.0
         });
-        run_roofplane(&mut s, &params).unwrap();
+        s.execute("roofplane", &params).unwrap();
 
         s.undo().unwrap();
         let doc = s.doc().unwrap();
