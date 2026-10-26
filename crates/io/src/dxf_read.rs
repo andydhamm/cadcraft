@@ -373,7 +373,7 @@ fn attdef(tags: &[Tag], c: &Common) -> Attrib {
     }
 }
 
-fn entity_with_table_budget(kind: &str, tags: &[Tag], table_cells_left: &mut usize) -> Option<(Common, EntityKind)> {
+fn entity_with_table_budget(kind: &str, tags: &[Tag], table_cells_left: &mut usize, drop_room_proxies: bool) -> Option<(Common, EntityKind)> {
     // The paper-space viewport our writer adds (dxf_write::paper_view) stays implicit.
     if kind == "VIEWPORT" && crate::dxf_ext::is_paper_view(tags) {
         return None;
@@ -386,7 +386,12 @@ fn entity_with_table_budget(kind: &str, tags: &[Tag], table_cells_left: &mut usi
         "CIRCLE" => EntityKind::Circle(Circle { center: ocs(&c, t.p(10)), radius: t.fd(40, 1.0).abs() }),
         "ARC" => EntityKind::Arc(arc(&c, &t)),
         "ELLIPSE" => EntityKind::Ellipse(ellipse(&c, &t)),
-        "LWPOLYLINE" => lwpolyline(tags, &c, &t)?,
+        "LWPOLYLINE" => {
+            if crate::dxf_arch::is_arch_proxy(tags) || (drop_room_proxies && crate::dxf_arch::is_room_proxy(tags)) {
+                return None;
+            }
+            lwpolyline(tags, &c, &t)?
+        }
         "SPLINE" => EntityKind::Spline(spline(&t)),
         "HELIX" => EntityKind::Helix(helix(tags)),
         "RAY" => EntityKind::Ray(RayLine { base: t.p(10), dir: t.p(11) }),
