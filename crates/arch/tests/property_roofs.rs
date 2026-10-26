@@ -248,3 +248,104 @@ fn projected_areas_sum_to_the_footprint_over_random_footprints() {
         assert!((actual - expected).abs() < 1e-6, "projected area sum {:.6} != footprint area {:.6}", actual, expected,);
     }
 }
+
+#[test]
+fn degenerate_rings_do_not_panic() {
+    let r = roof(6.0, 0.0);
+
+    // Empty ring (no walls)
+    let model = house(&[], 2.4);
+    let _ = build_roof(&model, 0, &r);
+
+    // One point
+    let model = house(&[(0.0, 0.0)], 2.4);
+    let _ = build_roof(&model, 0, &r);
+
+    // Two points
+    let model = house(&[(0.0, 0.0), (5.0, 0.0)], 2.4);
+    let _ = build_roof(&model, 0, &r);
+
+    // Three collinear points
+    let model = house(&[(0.0, 0.0), (5.0, 0.0), (10.0, 0.0)], 2.4);
+    let _ = build_roof(&model, 0, &r);
+
+    // Coincident consecutive points
+    let model = house(&[(0.0, 0.0), (5.0, 0.0), (5.0, 0.0), (5.0, 5.0), (0.0, 5.0)], 2.4);
+    let _ = build_roof(&model, 0, &r);
+
+    // Zero-length wall (start == end)
+    let model = house(&[(0.0, 0.0), (0.0, 0.0), (5.0, 0.0), (5.0, 5.0), (0.0, 5.0)], 2.4);
+    let _ = build_roof(&model, 0, &r);
+}
+
+#[test]
+fn huge_coordinates_do_not_panic() {
+    let r = roof(6.0, 0.0);
+
+    // 1 km square
+    let pts = [(0.0, 0.0), (1e6, 0.0), (1e6, 1e6), (0.0, 1e6)];
+    let model = house(&pts, 2.4);
+    let _ = build_roof(&model, 0, &r);
+
+    // 1000 km square
+    let pts = [(0.0, 0.0), (1e9, 0.0), (1e9, 1e9), (0.0, 1e9)];
+    let model = house(&pts, 2.4);
+    let _ = build_roof(&model, 0, &r);
+}
+
+#[test]
+fn nan_and_inf_coordinates_do_not_panic() {
+    let r = roof(6.0, 0.0);
+
+    // NaN in a coordinate
+    let pts = [(0.0, 0.0), (f64::NAN, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+    let _ = build_roof(&model, 0, &r);
+
+    // Infinity in a coordinate
+    let pts = [(0.0, 0.0), (f64::INFINITY, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+    let _ = build_roof(&model, 0, &r);
+
+    // -Infinity in a coordinate
+    let pts = [(0.0, 0.0), (-f64::INFINITY, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+    let _ = build_roof(&model, 0, &r);
+
+    // All points NaN
+    let pts = [(f64::NAN, f64::NAN), (f64::NAN, f64::NAN)];
+    let model = house(&pts, 2.4);
+    let _ = build_roof(&model, 0, &r);
+}
+
+#[test]
+fn projected_areas_sum_with_overhang_is_larger_than_footprint() {
+    let pts = [(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+
+    let r0 = roof(6.0, 0.0);
+    let built0 = build_roof(&model, 0, &r0).expect("no-overhang build failed");
+    let area0 = projected_area_sum(&built0);
+
+    let r1 = roof(6.0, 0.5);
+    let built1 = build_roof(&model, 0, &r1).expect("overhang build failed");
+    let area1 = projected_area_sum(&built1);
+
+    assert!(area1 > area0, "overhang should increase projected area: {} vs {}", area1, area0);
+}
+
+#[test]
+fn different_pitches_produce_different_roof_heights() {
+    let pts = [(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+
+    let r4 = roof(4.0, 0.0);
+    let built4 = build_roof(&model, 0, &r4).expect("pitch 4 build failed");
+    let max_z4 = built4.planes.iter().flat_map(|p| p.ring.iter()).map(|pt| pt.z).fold(f64::MIN, f64::max);
+
+    let r12 = roof(12.0, 0.0);
+    let built12 = build_roof(&model, 0, &r12).expect("pitch 12 build failed");
+    let max_z12 = built12.planes.iter().flat_map(|p| p.ring.iter()).map(|pt| pt.z).fold(f64::MIN, f64::max);
+
+    assert!(max_z12 > max_z4, "higher pitch should be taller: {} vs {}", max_z12, max_z4);
+}
