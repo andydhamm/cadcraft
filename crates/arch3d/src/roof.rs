@@ -188,6 +188,9 @@ pub fn roof_plane_mesh(plane: &RoofPlane, eave_z: f64, material: &str, id: ArchI
 /// The fascia is a vertical band at the eave edge (base edge), with width `plane.thickness`
 /// and depth `depth`.
 pub fn fascia_mesh(plane: &RoofPlane, eave_z: f64, depth: f64, id: ArchId) -> Option<Mesh> {
+    if plane.ring.len() < 3 {
+        return None;
+    }
     if !depth.is_finite() || depth <= 0.0 {
         return None;
     }
@@ -306,6 +309,9 @@ pub fn fascia_mesh(plane: &RoofPlane, eave_z: f64, depth: f64, id: ArchId) -> Op
 /// The soffit is a flat horizontal band from the eave edge back to the wall.
 /// It is 0.02 thick.
 pub fn soffit_mesh(plane: &RoofPlane, eave_z: f64, id: ArchId) -> Option<Mesh> {
+    if plane.ring.len() < 3 {
+        return None;
+    }
     let thickness = 0.02;
 
     let p0 = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
@@ -566,5 +572,252 @@ mod tests {
     fn part_of_maps_fascia_and_soffit_to_roof() {
         // This test is in probe.rs, but we can verify the logic here if we import part_of
         // But part_of is in probe.rs. We'll rely on the probe.rs test.
+    }
+
+    #[test]
+    fn roof_plane_zero_slope_is_flat() {
+        let mut plane = simple_plane();
+        plane.slope = 0.0;
+        let eave_z = 2.5;
+        let mesh = roof_plane_mesh(&plane, eave_z, "roof", ArchId(1)).unwrap();
+
+        // With zero slope, all bottom vertices should be at eave_z.
+        let n_verts = plane.ring.len();
+        for p in mesh.positions.iter().take(n_verts) {
+            if (p[0] - 0.0).abs() < 1e-4 && (p[1] - 0.0).abs() < 1e-4 {
+                assert!((p[2] - eave_z as f32).abs() < 1e-4, "bottom vertex at ({},{}) should be at eave_z", p[0], p[1]);
+            }
+        }
+
+        // Top ring should be at eave_z + thickness (since normal is straight up for zero slope)
+        for p in mesh.positions.iter().skip(n_verts) {
+            if (p[0] - 0.0).abs() < 1e-4 && (p[1] - 5.0).abs() < 1e-4 {
+                // This is a top vertex at (0, 5)
+                let expected_top = eave_z + plane.thickness;
+                assert!((p[2] - expected_top as f32).abs() < 1e-4, "top vertex should be at eave_z + thickness");
+            }
+        }
+    }
+
+    #[test]
+    fn roof_plane_nan_in_ring_returns_none() {
+        let mut plane = simple_plane();
+        plane.ring[0] = Vec2::new(f64::NAN, 0.0);
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1));
+        assert!(mesh.is_none(), "NaN in ring should return None");
+    }
+
+    #[test]
+    fn roof_plane_nan_eave_z_returns_none() {
+        let plane = simple_plane();
+        let mesh = roof_plane_mesh(&plane, f64::NAN, "roof", ArchId(1));
+        assert!(mesh.is_none(), "NaN eave_z should return None");
+    }
+
+    #[test]
+    fn roof_plane_nan_slope_returns_none() {
+        let mut plane = simple_plane();
+        plane.slope = f64::NAN;
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1));
+        assert!(mesh.is_none(), "NaN slope should return None");
+    }
+
+    #[test]
+    fn roof_plane_nan_thickness_returns_none() {
+        let mut plane = simple_plane();
+        plane.thickness = f64::NAN;
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1));
+        assert!(mesh.is_none(), "NaN thickness should return None");
+    }
+
+    #[test]
+    fn roof_plane_zero_length_base_edge_returns_none() {
+        let mut plane = simple_plane();
+        plane.base_edge = [0.0, 0.0, 0.0, 0.0];
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1));
+        assert!(mesh.is_none(), "zero-length base edge should return None");
+    }
+
+    #[test]
+    fn roof_plane_huge_slope_is_finite() {
+        let mut plane = simple_plane();
+        plane.slope = 1000.0;
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        // All positions should be finite
+        for p in &mesh.positions {
+            assert!(p[0].is_finite() && p[1].is_finite() && p[2].is_finite(), "position not finite: {:?}", p);
+        }
+    }
+
+    #[test]
+    fn roof_plane_huge_coordinates_are_finite() {
+        let mut plane = simple_plane();
+        plane.ring = vec![Vec2::new(1e6, 1e6), Vec2::new(1e6 + 10.0, 1e6), Vec2::new(1e6 + 10.0, 1e6 + 5.0), Vec2::new(1e6, 1e6 + 5.0)];
+        plane.base_edge = [1e6, 1e6, 1e6 + 10.0, 1e6];
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        for p in &mesh.positions {
+            assert!(p[0].is_finite() && p[1].is_finite() && p[2].is_finite(), "position not finite: {:?}", p);
+        }
+    }
+
+    #[test]
+    fn roof_plane_level_elevation_is_set() {
+        let plane = simple_plane();
+        let eave_z = 3.5;
+        let mesh = roof_plane_mesh(&plane, eave_z, "roof", ArchId(1)).unwrap();
+        assert_eq!(mesh.level_elevation, eave_z, "level_elevation should be set to eave_z");
+    }
+
+    #[test]
+    fn roof_meshes_multiple_planes() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+        roof.planes.push(simple_plane());
+
+        let mut plane2 = simple_plane();
+        plane2.base_edge = [10.0, 0.0, 20.0, 0.0];
+        plane2.ring = vec![Vec2::new(10.0, 0.0), Vec2::new(20.0, 0.0), Vec2::new(20.0, 5.0), Vec2::new(10.0, 5.0)];
+        roof.planes.push(plane2);
+
+        let meshes = roof_meshes(&roof, 2.5);
+
+        // 2 planes * 3 meshes each (roof, fascia, soffit) = 6 meshes
+        assert_eq!(meshes.len(), 6, "expected 6 meshes for 2 planes, got {}", meshes.len());
+
+        // All meshes should have the roof id
+        for m in &meshes {
+            assert_eq!(m.object, ArchId(1), "all meshes should have the roof id");
+        }
+    }
+
+    #[test]
+    fn roof_meshes_skips_degenerate_planes() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+
+        let mut degenerate = simple_plane();
+        degenerate.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)]; // < 3 vertices
+        roof.planes.push(degenerate);
+
+        roof.planes.push(simple_plane());
+
+        let meshes = roof_meshes(&roof, 2.5);
+
+        // Only the non-degenerate plane should produce meshes (3 meshes)
+        assert_eq!(meshes.len(), 3, "expected 3 meshes (degenerate skipped), got {}", meshes.len());
+    }
+
+    #[test]
+    fn roof_meshes_all_have_roof_id() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(42);
+        roof.planes.push(simple_plane());
+
+        let meshes = roof_meshes(&roof, 2.5);
+        for m in &meshes {
+            assert_eq!(m.object, ArchId(42), "mesh {} should have roof id 42", m.material);
+        }
+    }
+
+    #[test]
+    fn fascia_mesh_zero_depth_returns_none() {
+        let plane = simple_plane();
+        let mesh = fascia_mesh(&plane, 2.5, 0.0, ArchId(1));
+        assert!(mesh.is_none(), "zero depth fascia should return None");
+    }
+
+    #[test]
+    fn fascia_mesh_negative_depth_returns_none() {
+        let plane = simple_plane();
+        let mesh = fascia_mesh(&plane, 2.5, -0.1, ArchId(1));
+        assert!(mesh.is_none(), "negative depth fascia should return None");
+    }
+
+    #[test]
+    fn fascia_mesh_nan_depth_returns_none() {
+        let plane = simple_plane();
+        let mesh = fascia_mesh(&plane, 2.5, f64::NAN, ArchId(1));
+        assert!(mesh.is_none(), "NaN depth fascia should return None");
+    }
+
+    #[test]
+    fn soffit_mesh_is_horizontal() {
+        let plane = simple_plane();
+        let eave_z = 2.5;
+        let mesh = soffit_mesh(&plane, eave_z, ArchId(1)).unwrap();
+
+        // Soffit is horizontal, so top face normals should be (0,0,1) and bottom (0,0,-1)
+        // Check that all top vertices have the same z
+        let top_z = mesh.positions[0][2];
+        for i in 0..4 {
+            assert!((mesh.positions[i][2] - top_z).abs() < 1e-6, "top vertex {} z mismatch", i);
+        }
+    }
+
+    #[test]
+    fn roof_plane_mesh_triangle_count_is_correct() {
+        let plane = simple_plane();
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        // For a 4-vertex ring:
+        // Sides: 4 quads = 8 triangles
+        // Bottom cap: 2 triangles (fan from vertex 0)
+        // Top cap: 2 triangles (fan from vertex 4)
+        // Total: 12 triangles
+        assert_eq!(mesh.triangle_count(), 12, "expected 12 triangles for 4-vertex ring");
+    }
+
+    #[test]
+    fn roof_plane_mesh_pentagon_has_correct_triangle_count() {
+        let mut plane = simple_plane();
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        // For a 5-vertex ring:
+        // Sides: 5 quads = 10 triangles
+        // Bottom cap: 3 triangles (fan)
+        // Top cap: 3 triangles (fan)
+        // Total: 16 triangles
+        assert_eq!(mesh.triangle_count(), 16, "expected 16 triangles for 5-vertex ring");
+    }
+
+    #[test]
+    fn roof_plane_nan_in_base_edge_returns_none() {
+        let mut plane = simple_plane();
+        plane.base_edge = [f64::NAN, 0.0, 10.0, 0.0];
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1));
+        assert!(mesh.is_none(), "NaN in base_edge should return None");
+    }
+
+    #[test]
+    fn roof_plane_very_small_slope_is_valid() {
+        let mut plane = simple_plane();
+        plane.slope = 0.001;
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        // All positions should be finite
+        for p in &mesh.positions {
+            assert!(p[0].is_finite() && p[1].is_finite() && p[2].is_finite(), "position not finite: {:?}", p);
+        }
+
+        // The roof should still have z extent
+        let b = mesh.bounds();
+        assert!(b.max[2] - b.min[2] > 1e-6, "mesh should have z extent");
+    }
+
+    #[test]
+    fn roof_plane_ring_with_three_vertices() {
+        let mut plane = simple_plane();
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(5.0, 5.0)];
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        // For a 3-vertex ring:
+        // Sides: 3 quads = 6 triangles
+        // Bottom cap: 1 triangle (fan)
+        // Top cap: 1 triangle (fan)
+        // Total: 8 triangles
+        assert_eq!(mesh.triangle_count(), 8, "expected 8 triangles for 3-vertex ring");
     }
 }
