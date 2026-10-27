@@ -3,7 +3,10 @@
 use crate::cmd::{CommandSpec, bad, f64_or, str_param};
 use crate::{EngineError, Result, Session};
 use cadcraft_arch::roof::{build_roof, top_level};
-use cadcraft_doc::arch::{ArchId, Roof, RoofDirective};
+use cadcraft_doc::{
+    Drawing,
+    arch::{ArchId, Roof, RoofDirective},
+};
 use serde_json::{Value, json};
 
 /// Command specs for the roofauto module.
@@ -160,10 +163,43 @@ fn run_roofauto(s: &mut Session, p: &Value) -> Result<Value> {
     }))
 }
 
+/// Rebuild every automatic roof from the model's current walls.
+///
+/// A roof is "automatic" when it is neither `manual` nor `hand_edited`. It is
+/// rebuilt from its stored `pitchRise`/`pitchRun`/`overhang`/`thickness` via the
+/// same path `run_roofauto` uses (`build_roof`). A roof whose rebuild fails
+/// (e.g. the walls no longer close a supporting exterior footprint) is dropped
+/// rather than left half-built.
+///
+/// Returns the number of roofs that were rebuilt.
+pub fn refresh_auto_roofs(d: &mut Drawing) -> usize {
+    let mut rebuilt = 0usize;
+    let mut kept: Vec<Roof> = Vec::with_capacity(d.arch.roofs.len());
+
+    for roof in d.arch.roofs.iter() {
+        if roof.manual || roof.hand_edited {
+            // Manual and hand-edited roofs are left untouched.
+            kept.push(roof.clone());
+            continue;
+        }
+        match build_roof(&d.arch, roof.level, roof) {
+            Ok(new_roof) => {
+                kept.push(new_roof);
+                rebuilt = rebuilt.saturating_add(1);
+            }
+            Err(_) => {
+                // Rebuild failed: drop this roof instead of leaving a partial one.
+            }
+        }
+    }
+    d.arch.roofs = kept;
+    rebuilt
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadcraft_doc::arch::Level;
+    use cadcraft_doc::arch::{Level, Roof};
     use serde_json::json;
 
     fn new_session_with_level() -> Session {
@@ -191,6 +227,89 @@ mod tests {
         let r = s.execute("roofauto", &p).unwrap();
         assert!(r["rebuilt"].as_bool().unwrap());
         assert_eq!(r["planes"].as_u64().unwrap(), 4);
+    }
+
+    #[test]
+    fn wall_edit_rebuilds_an_auto_roof() {
+        let mut s = new_session_with_level();
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0]],
+                "exterior": true,
+                "closed": true,
+            }),
+        )
+        .unwrap();
+        s.execute("roofauto", &json!({ "pitchRise": 6.0, "pitchRun": 12.0 })).unwrap();
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 1);
+        assert!(!s.doc().unwrap().arch.roofs[0].hand_edited);
+        assert!(!s.doc().unwrap().arch.roofs[0].manual);
+
+        // An interior wall changes the wall set; the automatic roof must be
+        // regenerated against the new walls.
+        let r = s
+            .execute(
+                "wall",
+                &json!({
+                    "points": [[2.0, 2.0], [8.0, 2.0]],
+                    "type": "interior",
+                }),
+            )
+            .unwrap();
+        assert_eq!(r["roofsRebuilt"].as_u64().unwrap(), 1, "automatic roof not rebuilt");
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 1, "roof should survive the rebuild");
+    }
+
+    #[test]
+    fn hand_edited_roof_survives_a_wall_edit() {
+        let mut s = new_session_with_level();
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0]],
+                "exterior": true,
+                "closed": true,
+            }),
+        )
+        .unwrap();
+        s.execute("roofauto", &json!({ "pitchRise": 6.0, "pitchRun": 12.0 })).unwrap();
+
+        // Mark the roof hand-edited so wall edits must not rebuild or drop it.
+        {
+            let d = s.doc_mut().unwrap();
+            d.arch.roofs[0].hand_edited = true;
+            d.touch_arch();
+        }
+
+        let r = s
+            .execute(
+                "wall",
+                &json!({
+                    "points": [[2.0, 2.0], [8.0, 2.0]],
+                    "type": "interior",
+                }),
+            )
+            .unwrap();
+        assert_eq!(r["roofsRebuilt"].as_u64().unwrap(), 0, "hand-edited roof was rebuilt");
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 1, "hand-edited roof must survive");
+        assert!(s.doc().unwrap().arch.roofs[0].hand_edited, "hand_edited flag lost");
+    }
+
+    #[test]
+    fn failed_rebuild_removes_the_roof() {
+        let mut s = new_session_with_level();
+        // A model with no exterior walls has no supporting footprint, so the
+        // rebuild must fail and drop the roof rather than leave a partial one.
+        {
+            let d = s.doc_mut().unwrap();
+            d.arch.roofs.push(Roof { level: 0, pitch_rise: 6.0, pitch_run: 12.0, ..Roof::default() });
+        }
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 1);
+
+        let rebuilt = refresh_auto_roofs(s.doc_mut().unwrap());
+        assert_eq!(rebuilt, 0, "failed rebuild must not count as rebuilt");
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 0, "failed rebuild must drop the roof");
     }
 
     #[test]

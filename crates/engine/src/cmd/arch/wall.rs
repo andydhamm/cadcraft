@@ -28,6 +28,7 @@ use crate::cmd::{CommandSpec, bad, bool_or, distinct_points, points_param, size_
 use crate::prompt::{Accept, Input, Interactive, Prompt, Step};
 use crate::{EngineError, Result, Session};
 
+use super::roofauto::refresh_auto_roofs;
 use super::{MAX_WALLS, MIN_WALL_LENGTH};
 
 /// Command specs for the wall module.
@@ -412,28 +413,16 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
 
     let new_wall_ids: Vec<_> = new_walls.iter().map(|w| w.id).collect();
     d.arch.walls.extend(new_walls);
+    // Rebuild automatic roofs against the new walls before the arch revision is
+    // bumped so the change is a single undo step.
+    let roofs_rebuilt = refresh_auto_roofs(d);
     d.touch_arch();
 
     // Count joins produced at the newly added wall ends.
     let shapes = solve_joins(&d.arch);
     let joins: usize = shapes.iter().filter(|s| new_wall_ids.contains(&s.id)).map(|s| s.joins.len()).sum();
 
-    // Rebuild roofs if any level has a non-hand-edited roof
-    for level in d.arch.levels.iter() {
-        if let Some(roof) = d.arch.roofs.iter().find(|r| r.level == level.index) {
-            if !roof.hand_edited {
-                // Rebuild roof with stored parameters
-                // build_roof takes (model, level, roof)
-                if let Ok(new_roof) = cadcraft_arch::roof::build_roof(&d.arch, level.index, roof) {
-                    if let Some(r) = d.arch.roofs.iter_mut().find(|r| r.level == level.index) {
-                        *r = new_roof;
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(json!({ "walls": walls_json, "joins": joins }))
+    Ok(json!({ "walls": walls_json, "joins": joins, "roofsRebuilt": roofs_rebuilt }))
 }
 
 #[cfg(test)]
