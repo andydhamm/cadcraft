@@ -671,4 +671,76 @@ mod tests {
         assert!((arch.levels[1].elevation - (-2.7)).abs() < 1e-9);
         assert!((arch.levels[2].elevation - 0.0).abs() < 1e-9);
     }
+
+    #[test]
+    fn level_above_custom_height_level() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            // Level with custom ceiling 3.0 and structure 0.5 -> floor_to_floor = 3.5
+            doc.arch.levels.push(Level { name: "Level 1".into(), ceiling_height: 3.0, structure: 0.5, ..Default::default() });
+        }
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 2);
+        // New level elevation should be 0.0 + 3.5 = 3.5
+        assert!((arch.levels[1].elevation - 3.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn level_below_renumbers_multiple_walls() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+            doc.arch.levels.push(Level { index: 1, name: "Level 2".into(), elevation: 2.7, ..Default::default() });
+            // Wall on level 0
+            doc.arch.walls.push(Wall {
+                start: Vec2::new(0.0, 0.0),
+                end: Vec2::new(10.0, 0.0),
+                base_level: 0,
+                to_ceiling: true,
+                ..Default::default()
+            });
+            // Wall on level 1
+            doc.arch.walls.push(Wall {
+                start: Vec2::new(0.0, 10.0),
+                end: Vec2::new(10.0, 10.0),
+                base_level: 1,
+                to_ceiling: true,
+                ..Default::default()
+            });
+        }
+        s.execute("level", &json!({"below": 0})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        // Both walls should be incremented
+        assert_eq!(arch.walls[0].base_level, 1);
+        assert_eq!(arch.walls[1].base_level, 2);
+    }
+
+    #[test]
+    fn level_above_empty_levels_errors() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+        }
+        let result = s.execute("level", &json!({"above": "Level 1"}));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn level_below_empty_levels_errors() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+        }
+        let result = s.execute("level", &json!({"below": "Level 1"}));
+        assert!(result.is_err());
+    }
 }
