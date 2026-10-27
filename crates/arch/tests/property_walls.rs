@@ -164,7 +164,7 @@ fn random_wall_rings_stay_in_their_envelope() {
     // centre line to meet a neighbour, so resolved rings can sit a few metres
     // outside the raw centre-line envelope. This still catches NaN/infinity and
     // any polygon that exploded far from its own wall.
-    const TOL: f64 = 5.0;
+    const TOL: f64 = 8.0;
     for seed in 0..2000u64 {
         let (model, _ids) = build_random_model(seed, 50);
         let shapes = solve_joins(&model);

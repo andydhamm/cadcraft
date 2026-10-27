@@ -228,7 +228,7 @@ enum Neighbour {
     /// fall back to a square end.
     Parallel { id: ArchId, end: End },
     /// A crossing: two centre lines intersect at an interior point of both.
-    X { id: ArchId, end: End, pt: Vec2 },
+    X,
 }
 
 /// Classify the neighbours at one end of a wall.
@@ -329,7 +329,7 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
         // This end is the nearest to the crossing (End wins the tie when equidistant).
         let this_is_nearest = if end == End::Start { pt.dist(cross_pt) < w.end.dist(cross_pt) } else { pt.dist(cross_pt) <= w.start.dist(cross_pt) };
         if this_is_nearest {
-            neighbours.push(Neighbour::X { id: nw.id, end, pt: cross_pt });
+            neighbours.push(Neighbour::X);
         }
     }
 
@@ -414,18 +414,6 @@ fn plan_end(
         let left = pt + wperp * whalf;
         let right = pt - wperp * whalf;
         return Ok(EndPlan { left, right, join: Some(Join::Butt(end)) });
-    }
-
-    // X: square end at the crossing centre.
-    if let Some(Neighbour::X { pt, .. }) = nbrs.iter().find(|n| matches!(n, Neighbour::X { .. })) {
-        let Some(wdir) = wall_dir(w) else {
-            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
-        };
-        let wperp = Vec2::new(-wdir.y, wdir.x);
-        let whalf = w.thickness / 2.0;
-        let left = *pt + wperp * whalf;
-        let right = *pt - wperp * whalf;
-        return Ok(EndPlan { left, right, join: Some(Join::X(end)) });
     }
 
     // Parallel neighbour: square end at the shared join point.
@@ -552,6 +540,11 @@ fn plan_end(
         };
 
         return Ok(EndPlan { left, right, join: Some(Join::L(end)) });
+    }
+
+    // X: a crossing joins nothing — record it and keep the end's own corners.
+    if nbrs.iter().any(|n| matches!(n, Neighbour::X)) {
+        return Ok(EndPlan { left: raw.0, right: raw.1, join: Some(Join::X(end)) });
     }
 
     Ok(EndPlan { left: raw.0, right: raw.1, join: None })
@@ -1068,19 +1061,88 @@ mod tests {
         assert!(s0.joins.iter().any(|j| matches!(j, Join::X(_))));
         assert!(s1.joins.iter().any(|j| matches!(j, Join::X(_))));
 
-        // Wall 0 (horizontal) end face centred on (5,5): corners (5, 5±0.5).
-        let c0 = s0.polygon.iter().filter(|p| (p.x - 5.0).abs() < 1e-9).cloned().collect::<Vec<_>>();
-        assert_eq!(c0.len(), 2, "wall 0 should have 2 corners at x=5");
-        for p in &c0 {
-            assert!((p.y - 5.5).abs() < 1e-9 || (p.y - 4.5).abs() < 1e-9, "wall 0 corner {:?} not at y=5±0.5", p,);
-        }
+        // An X crossing joins nothing: both walls keep their full length.
+        // Wall 0 spans x 0..10 (the crossing at x=5 must not cut it).
+        let b0 = s0.bounds();
+        assert!((b0.min.x - 0.0).abs() < 1e-9, "wall 0 min.x: {}", b0.min.x);
+        assert!((b0.max.x - 10.0).abs() < 1e-9, "wall 0 max.x: {}", b0.max.x);
 
-        // Wall 1 (vertical) end face centred on (5,5): corners (5±0.5, 5).
-        let c1 = s1.polygon.iter().filter(|p| (p.y - 5.0).abs() < 1e-9).cloned().collect::<Vec<_>>();
-        assert_eq!(c1.len(), 2, "wall 1 should have 2 corners at y=5");
-        for p in &c1 {
-            assert!((p.x - 5.5).abs() < 1e-9 || (p.x - 4.5).abs() < 1e-9, "wall 1 corner {:?} not at x=5±0.5", p,);
-        }
+        // Wall 1 spans y 0..10.
+        let b1 = s1.bounds();
+        assert!((b1.min.y - 0.0).abs() < 1e-9, "wall 1 min.y: {}", b1.min.y);
+        assert!((b1.max.y - 10.0).abs() < 1e-9, "wall 1 max.y: {}", b1.max.y);
+    }
+
+    #[test]
+    fn x_join_records_the_crossing_and_keeps_both_walls_whole() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 5.0), Vec2::new(10.0, 5.0), 1.0);
+        wall(&mut model, 1, Vec2::new(5.0, 0.0), Vec2::new(5.0, 10.0), 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let s0 = &shapes[0];
+        let s1 = &shapes[1];
+
+        // Both walls record an X crossing at the shared end.
+        assert!(s0.joins.iter().any(|j| matches!(j, Join::X(_))));
+        assert!(s1.joins.iter().any(|j| matches!(j, Join::X(_))));
+
+        // Wall 0 keeps its full x extent (0..10); the crossing at x=5 does not
+        // cut it.
+        let b0 = s0.bounds();
+        assert!((b0.min.x - 0.0).abs() < 1e-9, "wall 0 min.x: {}", b0.min.x);
+        assert!((b0.max.x - 10.0).abs() < 1e-9, "wall 0 max.x: {}", b0.max.x);
+
+        // Wall 1 keeps its full y extent (0..10).
+        let b1 = s1.bounds();
+        assert!((b1.min.y - 0.0).abs() < 1e-9, "wall 1 min.y: {}", b1.min.y);
+        assert!((b1.max.y - 10.0).abs() < 1e-9, "wall 1 max.y: {}", b1.max.y);
+    }
+
+    #[test]
+    fn an_off_centre_crossing_does_not_delete_part_of_either_wall() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+        wall(&mut model, 1, Vec2::new(7.0, -3.0), Vec2::new(7.0, 5.0), 0.2);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let a0 = polygon_area(&shapes[0].polygon);
+        let a1 = polygon_area(&shapes[1].polygon);
+
+        // Wall 0 is 10 m long × 0.2 m thick → 2.0 m²; the off-centre crossing
+        // at x=7 must not delete any of it.
+        assert!((a0 - 2.0).abs() < 1e-9, "wall 0 area: {}", a0);
+
+        // Wall 1 is 8 m long × 0.2 m thick → 1.6 m².
+        assert!((a1 - 1.6).abs() < 1e-9, "wall 1 area: {}", a1);
+    }
+
+    #[test]
+    fn a_crossing_wall_does_not_undo_the_corner_mitre() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Closed rectangle 10×8, thickness 0.2.
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2);
+        wall(&mut model, 2, Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), 0.2);
+        wall(&mut model, 3, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2);
+        // Short wall crossing the bottom wall at x=3.
+        wall(&mut model, 4, Vec2::new(3.0, -2.0), Vec2::new(3.0, 2.0), 0.1);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 5);
+
+        let bottom = &shapes[0];
+
+        // The bottom wall's start corner is still mitred (L) — the crossing at
+        // x=3 (interior) must not undo the corner mitre at x=0.
+        assert!(bottom.joins.iter().any(|j| matches!(j, Join::L(End::Start))));
+
+        // The mitre corner at (-0.1, -0.1) is still present.
+        assert!(bottom.polygon.iter().any(|p| (p.x + 0.1).abs() < 1e-9 && (p.y + 0.1).abs() < 1e-9), "bottom wall missing mitre corner (-0.1, -0.1)");
     }
 
     #[test]
