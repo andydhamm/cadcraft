@@ -30,6 +30,10 @@ pub const ENDPOINT_TOL: f64 = 1e-6;
 pub const JOIN_EPS: f64 = 1e-9;
 /// Parallelism test for "corresponding" (collinear) neighbour detection.
 const PARALLEL_EPS: f64 = 1e-9;
+/// Mitre limit, in multiples of the thicker wall's half thickness (SVG's default
+/// miter-limit rule). A corner whose two walls meet at 29 deg or wider still mitres;
+/// anything sharper squares off instead of spiking far down the bisector.
+pub const MITRE_LIMIT: f64 = 4.0;
 /// How far (in world units, scaled by combined wall thickness) a T join's
 /// face-line intersection may be from the join point before we fall back to a
 /// square end.
@@ -603,6 +607,19 @@ fn plan_end(
             (None, Some(b)) => b,
             (None, None) => raw.1,
         };
+
+        // Mitre limit: an acute corner would spike far down the bisector. If either
+        // corner is further than MITRE_LIMIT half-thicknesses of the thicker wall from
+        // the join point, square the end off instead. Both walls of the corner see the
+        // same two shared points, so they make the same choice and stay gap-free.
+        let limit = MITRE_LIMIT * (w.thickness.max(nw.thickness) / 2.0);
+        if left.dist(pt) > limit || right.dist(pt) > limit {
+            let wperp = Vec2::new(-wdir.y, wdir.x);
+            let whalf = w.thickness / 2.0;
+            let left = pt + wperp * whalf;
+            let right = pt - wperp * whalf;
+            return Ok(EndPlan { left, right, join: Some(Join::Square(end)) });
+        }
 
         return Ok(EndPlan { left, right, join: Some(Join::L(end)) });
     }
@@ -1358,6 +1375,47 @@ mod tests {
         for p in &incoming.polygon {
             assert!(p.y >= 0.5 - 1e-9, "vertex {:?} below the host face", p);
         }
+    }
+
+    #[test]
+    fn an_acute_corner_squares_off_instead_of_spiking() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        // Second wall from (10,0) turning back by 10 deg: a very acute corner.
+        let angle = std::f64::consts::PI / 18.0; // 10 degrees
+        let end = Vec2::new(10.0, 0.0) + Vec2::new(-10.0 * angle.cos(), 10.0 * angle.sin());
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), end, 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        // Both shapes carry Join::Square at the corner end (no mitre spike).
+        assert!(shapes[0].joins.iter().any(|j| matches!(j, Join::Square(End::End))));
+        assert!(shapes[1].joins.iter().any(|j| matches!(j, Join::Square(End::Start))));
+
+        // No vertex spikes far from the corner: every vertex within 10.1 of (10,0)
+        // and none has x > 10.5.
+        let corner = Vec2::new(10.0, 0.0);
+        for s in &shapes {
+            for p in &s.polygon {
+                assert!(p.dist(corner) < 10.1, "vertex {:?} too far from the corner", p);
+                assert!(p.x <= 10.5, "vertex {:?} spikes past x=10.5", p);
+            }
+        }
+    }
+
+    #[test]
+    fn a_right_angle_corner_is_within_the_mitre_limit() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        // A right angle is well within the mitre limit: still an L mitre at both ends.
+        assert!(shapes[0].joins.iter().any(|j| matches!(j, Join::L(End::End))));
+        assert!(shapes[1].joins.iter().any(|j| matches!(j, Join::L(End::Start))));
     }
 
     #[test]
