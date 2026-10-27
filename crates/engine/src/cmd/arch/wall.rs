@@ -19,13 +19,15 @@
 //! Returns JSON: `{"walls": [{"id": "w1", "handle": "a0000001"}, ...], "joins": 0}`
 
 use cadcraft_arch::{Level, Wall};
-use cadcraft_doc::Handle;
+use cadcraft_doc::{Handle, Layer, arch::MIN_WALL_THICKNESS};
 use cadcraft_geom::Vec2;
 use serde_json::{Value, json};
 
 use crate::cmd::{CommandSpec, bad, bool_or, distinct_points, points_param, size_param, str_param};
 use crate::prompt::{Accept, Input, Interactive, Prompt, Step};
 use crate::{EngineError, Result, Session};
+
+use super::{MAX_WALLS, MIN_WALL_LENGTH};
 
 /// Command specs for the wall module.
 pub fn specs() -> Vec<CommandSpec> {
@@ -222,18 +224,9 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     if pts.len() < 2 {
         return Err(bad("wall", "`points` [[x,y],...] (2 or more) is required"));
     }
-    if pts.len() > super::MAX_WALLS {
-        return Err(bad("wall", format!("too many points ({} > {})", pts.len(), super::MAX_WALLS)));
-    }
     for i in 0..pts.len() {
         if !pts[i].is_finite() {
             return Err(bad("wall", "non-finite coordinate in `points`"));
-        }
-    }
-    for i in 0..pts.len() - 1 {
-        let d = pts[i + 1] - pts[i];
-        if d.len() < super::MIN_WALL_LENGTH {
-            return Err(bad("wall", "a segment is shorter than the minimum length"));
         }
     }
 
@@ -245,7 +238,8 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let to_ceiling = bool_or(p, "toCeiling", false);
     let has_exterior_param = p.as_object().is_some_and(|o| o.contains_key("exterior"));
 
-    let d = s.doc_mut()?;
+    // Validate on read-only doc first to avoid empty undo steps on failure
+    let d_read = s.doc()?;
 
     // --- Exterior: `type` decides; otherwise explicit `exterior` param,
     // or thickness-based inference (below). `divider` always forces interior.
@@ -281,7 +275,12 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
         let has_thickness = p.as_object().is_some_and(|o| o.contains_key("thickness"));
         let explicit = size_param("wall", p, "thickness", false)?;
         match explicit {
-            Some(t) => t,
+            Some(t) => {
+                if t < MIN_WALL_THICKNESS {
+                    return Err(bad("wall", format!("thickness {t} is below minimum {MIN_WALL_THICKNESS}")));
+                }
+                t
+            }
             None if has_thickness => return Err(bad("wall", "`thickness` must be a positive finite number")),
             None => {
                 if exterior {
@@ -305,14 +304,18 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let wall_type = type_str.clone().unwrap_or_else(|| if exterior { "exterior".to_string() } else { "interior".to_string() });
 
     // Level: from param, or the first level in the model when absent
-    let level = level_name.as_deref().and_then(|name| d.arch.levels.iter().find(|l| l.name == name)).or_else(|| d.arch.levels.first());
+    let level_idx = if let Some(ref name) = level_name {
+        d_read.arch.levels.iter().position(|l| l.name == *name).ok_or_else(|| bad("wall", format!("unknown level `{name}`")))?
+    } else {
+        0
+    };
 
     // Height: explicit or the level's derived floor-to-floor (ceiling + structure)
     let has_height = p.as_object().is_some_and(|o| o.contains_key("height"));
     let height = if has_height {
         size_param("wall", p, "height", false)?.unwrap_or(f64::NAN)
     } else {
-        level.map(|l| l.ceiling_height + l.structure).unwrap_or(super::DEFAULT_WALL_HEIGHT)
+        d_read.arch.levels.get(level_idx).map(|l| l.ceiling_height + l.structure).unwrap_or(super::DEFAULT_WALL_HEIGHT)
     };
     if !height.is_finite() || height <= 0.0 {
         return Err(bad("wall", "`height` must be a positive finite number"));
@@ -333,11 +336,37 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
         pts
     };
 
+    let new_segment_count = pts.len().saturating_sub(1);
+
+    // Check total wall count cap
+    if d_read.arch.walls.len() + new_segment_count > MAX_WALLS {
+        return Err(bad("wall", format!("too many walls in model ({} + {} > {})", d_read.arch.walls.len(), new_segment_count, MAX_WALLS)));
+    }
+
+    // Check segment lengths
+    for i in 0..new_segment_count {
+        let dist = pts[i].dist(pts[i + 1]);
+        if dist < MIN_WALL_LENGTH {
+            return Err(bad("wall", format!("segment {} is too short ({} < {})", i, dist, MIN_WALL_LENGTH)));
+        }
+    }
+
+    // Ensure A-WALL layer exists (check on read-only doc first)
+    let needs_layer = d_read.layer("A-WALL").is_none();
+
+    // --- Now mutate ---
+    let d = s.doc_mut()?;
+
+    // Ensure A-WALL layer exists
+    if needs_layer {
+        d.layers.push(Layer { name: "A-WALL".into(), ..Layer::default() });
+    }
+
     // --- Build wall objects ---
-    let base_level_idx = level.and_then(|l| d.arch.levels.iter().position(|lv| lv.name == l.name)).unwrap_or(0) as u32;
+    let base_level_idx = level_idx as u32;
     let layers = super::wall_layers(exterior);
-    let mut new_walls: Vec<Wall> = Vec::with_capacity(pts.len().saturating_sub(1));
-    for i in 0..pts.len().saturating_sub(1) {
+    let mut new_walls: Vec<Wall> = Vec::with_capacity(new_segment_count);
+    for i in 0..new_segment_count {
         let id = d.arch.next_wall_id();
         d.arch.next_id = d.arch.next_id.saturating_add(1);
         new_walls.push(Wall {
@@ -455,6 +484,91 @@ mod tests {
             "height": -1.0,
         });
         assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
+    }
+
+    #[test]
+    fn wall_command_rejects_an_unknown_level_without_an_undo_step() {
+        let mut s = new_session_with_level();
+        let before_walls = s.doc().unwrap().arch.walls.len();
+        let before_undo = s.state().unwrap().undo.len();
+
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "attic",
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { .. })));
+
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), before_walls);
+        assert_eq!(s.state().unwrap().undo.len(), before_undo);
+
+        // Test unknown type too
+        let p_type = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "type": "bogus",
+        });
+        assert!(matches!(s.execute("wall", &p_type), Err(EngineError::BadParams { .. })));
+        assert_eq!(s.doc().unwrap().arch.walls.len(), before_walls);
+        assert_eq!(s.state().unwrap().undo.len(), before_undo);
+    }
+
+    #[test]
+    fn wall_command_rejects_a_thickness_below_the_model_minimum() {
+        let mut s = new_session_with_level();
+        let before_undo = s.state().unwrap().undo.len();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "thickness": 1e-12,
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { .. })));
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
+        assert_eq!(s.state().unwrap().undo.len(), before_undo);
+    }
+
+    #[test]
+    fn wall_command_caps_the_model_wall_count() {
+        let mut s = new_session_with_level();
+
+        // Create 4000 walls (4001 points)
+        let pts: Vec<Value> = (0..=4000).map(|i| json!([i as f64, 0.0])).collect();
+        let p = json!({ "points": pts });
+        let r = s.execute("wall", &p);
+        assert!(r.is_ok(), "First large wall creation should succeed");
+
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 4000);
+
+        // Try to add 201 more walls (202 points) -> total 4201 > 4096
+        let pts2: Vec<Value> = (0..=201).map(|i| json!([i as f64, 1.0])).collect();
+        let p2 = json!({ "points": pts2 });
+        let r2 = s.execute("wall", &p2);
+        assert!(r2.is_err(), "Second wall creation should fail due to cap");
+
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 4000, "Wall count should remain at 4000");
+    }
+
+    #[test]
+    fn wall_command_adds_the_a_wall_layer_when_missing() {
+        let mut s = new_session_with_level();
+
+        // Remove A-WALL layer if it exists
+        {
+            let d = s.doc_mut().unwrap();
+            d.layers.retain(|l| l.name != "A-WALL");
+        }
+
+        // Verify it's gone
+        assert!(s.doc().unwrap().layer("A-WALL").is_none());
+
+        // Run wall command
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+        });
+        let _ = s.execute("wall", &p).unwrap();
+
+        // Verify it's back
+        assert!(s.doc().unwrap().layer("A-WALL").is_some());
     }
 
     #[test]
@@ -893,20 +1007,37 @@ mod tests {
     }
 
     #[test]
-    fn wall_unknown_level_uses_first_level() {
+    fn wall_unknown_level_is_rejected() {
         let mut s = Session::new();
         let d = s.doc_mut().unwrap();
         d.arch.levels.push(Level { name: "only".to_string(), ceiling_height: 2.8, structure: 0.3, ..Default::default() });
         d.touch_arch();
-        // Level name "missing" does not exist; falls back to the first level
+        // Level name "missing" does not exist; must be rejected
         let p = json!({
             "points": [[0.0, 0.0], [2.0, 0.0]],
             "level": "missing",
         });
-        let _ = s.execute("wall", &p).unwrap();
-        let d = s.doc().unwrap();
-        // First level is the default (ceiling 2.4 + structure 0.3 = 2.7), not "only"
-        assert!((d.arch.walls[0].height - 2.7).abs() < 1e-9);
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { .. })));
+    }
+
+    #[test]
+    fn wall_unknown_level_uses_first_level() {
+        // Restored test: previously this fell back to the first level.
+        // Now it is rejected (bad params). The refusal happens on the read-only
+        // doc, so it must not leave an empty undo step — assert both that no
+        // wall is created and that the undo stack is untouched.
+        let mut s = Session::new();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "ground".to_string(), ceiling_height: 2.4, structure: 0.3, ..Default::default() });
+        d.touch_arch();
+        let before_undo = s.state().unwrap().undo.len();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "attic",
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { .. })));
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
+        assert_eq!(s.state().unwrap().undo.len(), before_undo);
     }
 
     #[test]
