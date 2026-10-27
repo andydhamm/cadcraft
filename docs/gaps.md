@@ -1,6 +1,6 @@
 # Where CADCraft falls short of AutoCAD
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-25 · **Change:** minor (arch3d phases 2 and 3 landed (openings; rooms/floors/levels): ARCH-7 and ARCH-8 done; later phases (roofs, stairs, HLR elevations, ARCHDETECT, IFC) open; F24 untouched) · **Target:** Autodesk AutoCAD 2027
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-26 · **Change:** minor (arch3d phase 4 landed (roofs): ARCH-9 done; deferred roof items (dormers, crickets, Dutch/half-hip gables, roof returns, attic/knee walls, bump-out roofs, skylights, gutters, interactive plane join, curved walls) added as ARCH-14–ARCH-23; ARCH-13 phase corrected to 12) · **Target:** Autodesk AutoCAD 2027
 
 Every known shortfall, one row each, ranked within each section by user impact. This is the work
 list: agents pick from here (top of a section first), and remove or update a row in the same PR
@@ -64,11 +64,21 @@ one commit each, ending at the ⛔ checkpoint in [DESIGN.md](arch3d/DESIGN.md).
 | ARCH-6 | GLB export: own GLTF 2.0 writer in `io::glb` (no dependency), node names `wall-w1`, POSITION min/max on every accessor | done — phase 1 | — |
 | ARCH-7 | Openings: doors, windows, garages — placement limits, plan symbols, elevation cutouts | done — phase 2 | — |
 | ARCH-8 | Rooms, floors, ceilings, levels: room detection with holes, area/perimeter rules, floor/ceiling geometry | done — phase 3 | — |
-| ARCH-9 | Roofs: straight-skeleton roof generator, pitch and overhang, fascia/soffit, wall-top clip to rafters | open — phase 4 | — |
+| ARCH-9 | Roofs: straight-skeleton hip/gable/mixed auto-roof generator; per-wall `RoofDirective` (hip, gable, half); configurable pitch and overhang; fascia and soffit geometry; wall-top clip to rafter planes; opening-cut profiles at gable ends | done — phase 4 | — |
+| ARCH-14 | Dormers: shed, gable and hip dormers placed on a roof plane; roof surface cut, cheek walls, dormer roof joining | open | — |
+| ARCH-15 | Crickets (saddles): small shed roofs behind chimneys and penetrations to shed water; auto-placed by chimney footprint | open | — |
+| ARCH-16 | Dutch and half-hip (jerkinhead) gables: gable end clipped to a small hip, with matching fascia return | open | — |
+| ARCH-17 | Roof returns: horizontal fascia return from a gable end back into the wall (classical frieze-board detail) | open | — |
+| ARCH-18 | Attic and knee walls: short walls that follow the roof line (auto-height from pitch and `attic_height`); attic floor as a room | open | — |
+| ARCH-19 | Roofs over lower-level bump-outs: shed or independent gable roofs over projections below the main plate; intersect and clip against the main roof | open | — |
+| ARCH-20 | Skylights: rectangular and custom openings through roof planes; curb framing; weathering geometry; plan and 3D symbol | open | — |
+| ARCH-21 | Gutters and downspouts: gutter profiles along fascia; elbow and downspout placement; plan and 3D geometry | open | — |
+| ARCH-22 | Interactive plane joining: drag a roof plane edge to an adjoining plane; constraint solver snaps ridge/valley/hip edges so planes meet without gaps | open | — |
+| ARCH-23 | Curved walls under a roof: straight-skeleton approximation for polygonal walls with arc segments; round-tower hip cap | open | — |
 | ARCH-10 | Stairs, railings, decks: stair code calculator with code limits, landings | open — phase 5 | — |
 | ARCH-11 | HLR elevations and sections: hidden-line removal of our meshes → 2D vectors; orthographic elevation/section cameras | open — phase 7 | — |
 | ARCH-12 | ARCHDETECT on plain DXF: parallel-pair wall finding, door arcs, window mullions, AIA/NCS layer hints | open — phase 8 | — |
-| ARCH-13 | IFC export (`IfcWall`, `IfcWindow`, `IfcSlab`, `IfcRoof`, `IfcStair`, `IfcSpace`, own STEP writer); OBJ export | open — phase 9 | — |
+| ARCH-13 | IFC export (`IfcWall`, `IfcWindow`, `IfcSlab`, `IfcRoof`, `IfcStair`, `IfcSpace`, own STEP writer); OBJ export | open — phase 12 | — |
 
 ## UI/UX
 
@@ -173,6 +183,7 @@ Detail: [localization-parity.md](localization-parity.md).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-26 | minor | arch3d phase 4 landed: hip/gable/mixed auto roofs, per-wall directives, overhang, fascia/soffit, wall-to-roof clipping and opening-cut profiles; ARCH-9 done; deferred roof items (dormers, crickets, Dutch/half-hip gables, roof returns, attic/knee walls, bump-out roofs, skylights, gutters, interactive plane join, curved walls) added as ARCH-14–ARCH-23; ARCH-13 phase corrected from 9 to 12 |
 | 2026-10-25 | minor | arch3d phase 3 landed: rooms, floors, ceilings and levels with detection, area rules, slabs and level build-ups; ARCH-8 done |
 | 2026-10-25 | minor | arch3d phase 2 landed: doors, windows and garage openings with placement limits, plan symbols, elevation cutouts and DXF round-trip; ARCH-7 done |
 | 2026-10-25 | minor | DIMTFILL limits: with DIMTFILL 1 (the drawing's background color) the written `*D` block and EXPLODE keep no background mask (a WIPEOUT over the text box would), and a true-color DIMTFILLCLR is written to DXF as the nearest ACI: F7 updated |
