@@ -206,3 +206,83 @@ fn random_wall_graphs_keep_every_valid_wall() {
         }
     }
 }
+
+/// An empty model must produce no shapes and must not panic.
+#[test]
+fn empty_model_produces_no_shapes() {
+    let model = ArchModel::default();
+    let shapes = solve_joins(&model);
+    assert!(shapes.is_empty(), "empty model should produce no shapes, got {}", shapes.len());
+}
+
+/// A single wall with no neighbours must produce exactly one shape matching
+/// its own polygon, unmodified by any join logic.
+#[test]
+fn single_wall_keeps_its_shape() {
+    let mut model = ArchModel::default();
+    let wall = Wall {
+        start: Vec2::new(0.0, 0.0),
+        end: Vec2::new(5.0, 0.0),
+        thickness: 0.15,
+        height: 2.4,
+        to_ceiling: true,
+        exterior: false,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    };
+    let id = model.add_wall(wall);
+
+    let shapes = solve_joins(&model);
+    assert_eq!(shapes.len(), 1, "single wall should produce exactly one shape");
+    assert_eq!(shapes[0].id, id, "shape must belong to the single wall");
+
+    // The polygon should be the wall's own rectangle (4 vertices).
+    let expected = wall::wall_polygon(&model.wall(id).unwrap()).unwrap();
+    assert_eq!(shapes[0].polygon.len(), expected.len(), "vertex count mismatch");
+    for (a, b) in shapes[0].polygon.iter().zip(expected.iter()) {
+        assert!((a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9, "vertex mismatch: {:?} vs {:?}", a, b);
+    }
+}
+
+/// Two walls with identical start/end coordinates (coincident) must both
+/// survive solve_joins — the solver must not merge or drop either one.
+#[test]
+fn coincident_walls_both_survive() {
+    let mut model = ArchModel::default();
+    let wall = Wall {
+        start: Vec2::new(0.0, 0.0),
+        end: Vec2::new(3.0, 4.0),
+        thickness: 0.15,
+        height: 2.4,
+        to_ceiling: true,
+        exterior: false,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    };
+    let id1 = model.add_wall(wall.clone());
+    let id2 = model.add_wall(wall);
+
+    let shapes = solve_joins(&model);
+    let shape_ids: HashSet<ArchId> = shapes.iter().map(|s| s.id).collect();
+    assert!(shape_ids.contains(&id1), "first coincident wall vanished");
+    assert!(shape_ids.contains(&id2), "second coincident wall vanished");
+}
+
+/// solve_joins must be deterministic: the same model must always produce the
+/// same shapes (same count, same vertices, same order).
+#[test]
+fn solve_joins_is_deterministic() {
+    let (model, _ids) = build_random_model(42, 30);
+
+    let shapes_a = solve_joins(&model);
+    let shapes_b = solve_joins(&model);
+
+    assert_eq!(shapes_a.len(), shapes_b.len(), "shape count differs between runs");
+    for (a, b) in shapes_a.iter().zip(shapes_b.iter()) {
+        assert_eq!(a.id, b.id, "shape id mismatch");
+        assert_eq!(a.polygon.len(), b.polygon.len(), "vertex count mismatch for {:?}", a.id);
+        for (va, vb) in a.polygon.iter().zip(b.polygon.iter()) {
+            assert!((va.x - vb.x).abs() < 1e-9 && (va.y - vb.y).abs() < 1e-9, "vertex mismatch for {:?}", a.id);
+        }
+    }
+}
