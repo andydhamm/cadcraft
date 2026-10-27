@@ -3,8 +3,9 @@
 use crate::mesh::Mesh;
 
 use cadcraft_arch::join::WallShape;
+use cadcraft_doc::ArchModel;
 use cadcraft_doc::arch::{Opening, Wall};
-use cadcraft_geom::Vec2;
+use cadcraft_geom::{point_in_polygon, Vec2};
 
 /// A roof plane clipping the top of a wall.
 ///
@@ -201,6 +202,151 @@ pub fn extrude_wall_profile(shape: &WallShape, profile: WallProfile, base: f64, 
     }
 
     (mesh.triangle_count() > 0).then(|| mesh)
+}
+
+/// The wall's top polyline in wall-local coords `(u, v)`, `u` from `wall.start`
+/// along `wall.end - wall.start`, `v = z - base`. `None` when no roof plane covers it.
+pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) -> Option<Vec<Vec2>> {
+    let fp = cadcraft_arch::roof::outer_footprint(model, wall.base_level)?;
+    let edges: Vec<_> = fp.edges.iter().filter(|e| e.wall == wall.id).collect();
+    if edges.is_empty() {
+        return None;
+    }
+
+    let dx = wall.end.x - wall.start.x;
+    let dy = wall.end.y - wall.start.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1e-9 {
+        return None;
+    }
+    let dir = Vec2::new(dx / len, dy / len);
+
+    // Midpoint of the footprint edges: average of all `a`/`b` points.
+    let mut sum_x = 0.0;
+    let mut sum_y = 0.0;
+    for e in &edges {
+        sum_x += e.a.x + e.b.x;
+        sum_y += e.a.y + e.b.y;
+    }
+    let edge_mid = Vec2::new(sum_x / (edges.len() as f64 * 2.0), sum_y / (edges.len() as f64 * 2.0));
+    let wall_mid = Vec2::new((wall.start.x + wall.end.x) / 2.0, (wall.start.y + wall.end.y) / 2.0);
+    let out_vec = edge_mid - wall_mid;
+    let out_len = (out_vec.x * out_vec.x + out_vec.y * out_vec.y).sqrt();
+    if out_len < 1e-9 {
+        return None;
+    }
+    let out = Vec2::new(out_vec.x / out_len, out_vec.y / out_len);
+
+    // Candidate `u` values: 0, len, and each roof plane ring vertex projected.
+    let mut us: Vec<f64> = vec![0.0, len];
+    for roof in &model.roofs {
+        if roof.level != wall.base_level {
+            continue;
+        }
+        for plane in &roof.planes {
+            for q in &plane.ring {
+                let u = (q - wall.start).dot(dir);
+                let u = u.clamp(0.0, len);
+                if u.is_finite() {
+                    us.push(u);
+                }
+            }
+        }
+    }
+    us.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mut unique_us: Vec<f64> = Vec::new();
+    for &u in &us {
+        if unique_us.last().map_or(true, |&last| (u - last).abs() >= 1e-9) {
+            unique_us.push(u);
+        }
+    }
+
+    // Evaluate the top height at each candidate `u`.
+    let mut points: Vec<Vec2>> = Vec::new();
+    for &u in &unique_us {
+        let p = wall.start + dir * u + out * (wall.thickness / 2.0);
+        let mut z = top;
+        let mut covered = false;
+        for roof in &model.roofs {
+            if roof.level != wall.base_level {
+                continue;
+            }
+            for plane in &roof.planes {
+                let a = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
+                let b = Vec2::new(plane.base_edge[2], plane.base_edge[3]);
+                let edge_len = ((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y)).sqrt();
+                if edge_len < 1e-12 || plane.ring.len() < 3 {
+                    continue;
+                }
+                let perp = Vec2::new(-(b.y - a.y), b.x - a.x);
+                let perp_len = (perp.x * perp.x + perp.y * perp.y).sqrt();
+                if perp_len < 1e-12 {
+                    continue;
+                }
+                let mut n = Vec2::new(perp.x / perp_len, perp.y / perp_len);
+                let mut cx = 0.0;
+                let mut cy = 0.0;
+                for q in &plane.ring {
+                    cx += q.x;
+                    cy += q.y;
+                }
+                let c = Vec2::new(cx / plane.ring.len() as f64, cy / plane.ring.len() as f64);
+                if (c - a).dot(n) < 0.0 {
+                    n = Vec2::new(-n.x, -n.y);
+                }
+                let d = (p - a).dot(n);
+                let mut is_covered = point_in_polygon(&plane.ring, p);
+                if !is_covered {
+                    let to_c = c - p;
+                    let to_c_len = (to_c.x * to_c.x + to_c.y * to_c.y).sqrt();
+                    if to_c_len >= 1e-12 {
+                        let nudged = p + to_c / to_c_len * 1e-6;
+                        is_covered = point_in_polygon(&plane.ring, nudged);
+                    }
+                }
+                if is_covered {
+                    let z_plane = plane.eave_z + plane.slope * d;
+                    if z_plane.is_finite() {
+                        if !covered || z_plane < z {
+                            z = z_plane;
+                        }
+                        covered = true;
+                    }
+                }
+            }
+        }
+        let v = z - base;
+        if v.is_finite() {
+            points.push(Vec2::new(u, v));
+        }
+    }
+
+    if points.is_empty() {
+        return None;
+    }
+
+    // Sort by `u`, then drop collinear points.
+    points.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
+    let mut result: Vec<Vec2>> = Vec::new();
+    for p in &points {
+        if result.len() >= 2 {
+            let a = result[result.len() - 2];
+            let b = result[result.len() - 1];
+            let cross = (b.x - a.x) * (p.y - b.y) - (b.y - a.y) * (p.x - b.x);
+            if cross.abs() < 1e-9 {
+                continue;
+            }
+        }
+        result.push(*p);
+    }
+
+    // Return `None` if the top is unchanged (eave wall).
+    let top_v = top - base;
+    if result.iter().any(|p| (p.y - top_v).abs() > 1e-9) {
+        Some(result)
+    } else {
+        None
+    }
 }
 
 /// Manual extrusion of a profile with holes and/or slopes.
@@ -534,4 +680,119 @@ fn polygon_area(pts: &[Vec2]) -> f64 {
         area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
     }
     area.abs() / 2.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadcraft_doc::arch::{ArchId, Level, Roof, RoofPlane, Wall};
+
+    fn gable_house() -> ArchModel {
+        let mut model = ArchModel::default();
+        model.levels.push(Level {
+            index: 0,
+            elevation: 0.0,
+            ceiling_height: 2.4,
+            ..Default::default()
+        });
+        let _ = model.push_wall(Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            height: 2.4,
+            exterior: true,
+            base_level: 0,
+            ..Default::default()
+        });
+        let _ = model.push_wall(Wall {
+            start: Vec2::new(10.0, 0.0),
+            end: Vec2::new(10.0, 8.0),
+            thickness: 0.2,
+            height: 2.4,
+            exterior: true,
+            base_level: 0,
+            ..Default::default()
+        });
+        let _ = model.push_wall(Wall {
+            start: Vec2::new(10.0, 8.0),
+            end: Vec2::new(0.0, 8.0),
+            thickness: 0.2,
+            height: 2.4,
+            exterior: true,
+            base_level: 0,
+            ..Default::default()
+        });
+        let _ = model.push_wall(Wall {
+            start: Vec2::new(0.0, 8.0),
+            end: Vec2::new(0.0, 0.0),
+            thickness: 0.2,
+            height: 2.4,
+            exterior: true,
+            base_level: 0,
+            ..Default::default()
+        });
+        let mut roof = Roof::default();
+        roof.id = ArchId(100);
+        roof.level = 0;
+        let south = RoofPlane {
+            base_edge: [-0.1, -0.1, 10.1, -0.1],
+            ring: vec![
+                Vec2::new(-0.1, -0.1),
+                Vec2::new(10.1, -0.1),
+                Vec2::new(10.1, 4.0),
+                Vec2::new(-0.1, 4.0),
+            ],
+            slope: 0.5,
+            eave_z: 2.4,
+            thickness: 0.25,
+            ..Default::default()
+        };
+        let north = RoofPlane {
+            base_edge: [-0.1, 8.1, 10.1, 8.1],
+            ring: vec![
+                Vec2::new(-0.1, 8.1),
+                Vec2::new(-0.1, 4.0),
+                Vec2::new(10.1, 4.0),
+                Vec2::new(10.1, 8.1),
+            ],
+            slope: 0.5,
+            eave_z: 2.4,
+            thickness: 0.25,
+            ..Default::default()
+        };
+        roof.planes.push(south);
+        roof.planes.push(north);
+        model.roofs.push(roof);
+        model
+    }
+
+    #[test]
+    fn roof_top_polyline_rises_to_the_ridge() {
+        let model = gable_house();
+        let wall = &model.walls[3]; // west wall (0,8)->(0,0)
+        assert!(roof_top_polyline(&model, wall, 0.0, 2.4).is_some());
+        let poly = roof_top_polyline(&model, wall, 0.0, 2.4).unwrap();
+        assert!(poly.iter().any(|p| (p.x - 4.0).abs() < 1e-3 && (p.y - 4.45).abs() < 1e-3));
+        assert!((poly.first().unwrap().y - 2.45).abs() < 1e-3);
+        assert!((poly.last().unwrap().y - 2.45).abs() < 1e-3);
+        for i in 1..poly.len() {
+            assert!(poly[i].x >= poly[i - 1].x);
+        }
+    }
+
+    #[test]
+    fn roof_top_polyline_is_none_for_an_eave_wall() {
+        let model = gable_house();
+        let wall = &model.walls[0]; // south wall (0,0)->(10,0)
+        assert!(roof_top_polyline(&model, wall, 0.0, 2.4).is_none());
+    }
+
+    #[test]
+    fn roof_top_polyline_is_none_without_a_roof() {
+        let mut model = gable_house();
+        model.roofs.clear();
+        for wall in &model.walls {
+            assert!(roof_top_polyline(&model, wall, 0.0, 2.4).is_none());
+        }
+    }
 }
