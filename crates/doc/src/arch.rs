@@ -918,7 +918,7 @@ impl ArchModel {
 
     /// A message when `counter` is at or below the largest id already in use, or
     /// `None` when nothing is in use or the in-use ids are at [`u32::MAX`].
-    fn stale_next_id(counter_name: &str, counter: u32, max_in_use: Option<u32>) -> Option<String> {
+    fn stale_next_id(&self, counter_name: &str, counter: u32, max_in_use: Option<u32>) -> Option<String> {
         let max = max_in_use?;
         if max == u32::MAX || counter > max {
             return None;
