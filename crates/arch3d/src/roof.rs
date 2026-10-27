@@ -862,4 +862,158 @@ mod tests {
             assert!(!m.positions.is_empty(), "every mesh must have vertices");
         }
     }
+
+    #[test]
+    fn soffit_mesh_zero_depth_returns_none() {
+        let plane = simple_plane();
+        let mesh = soffit_mesh(&plane, 2.5, 0.0, ArchId(1));
+        assert!(mesh.is_none(), "zero depth soffit should return None");
+    }
+
+    #[test]
+    fn soffit_mesh_negative_depth_returns_none() {
+        let plane = simple_plane();
+        let mesh = soffit_mesh(&plane, 2.5, -0.1, ArchId(1));
+        assert!(mesh.is_none(), "negative depth soffit should return None");
+    }
+
+    #[test]
+    fn soffit_mesh_nan_depth_returns_none() {
+        let plane = simple_plane();
+        let mesh = soffit_mesh(&plane, 2.5, f64::NAN, ArchId(1));
+        assert!(mesh.is_none(), "NaN depth soffit should return None");
+    }
+
+    #[test]
+    fn fascia_mesh_zero_length_base_edge_returns_none() {
+        let mut plane = simple_plane();
+        plane.base_edge = [0.0, 0.0, 0.0, 0.0];
+        let mesh = fascia_mesh(&plane, 2.5, 0.1, ArchId(1));
+        assert!(mesh.is_none(), "zero-length base edge fascia should return None");
+    }
+
+    #[test]
+    fn soffit_mesh_zero_length_base_edge_returns_none() {
+        let mut plane = simple_plane();
+        plane.base_edge = [0.0, 0.0, 0.0, 0.0];
+        let mesh = soffit_mesh(&plane, 2.5, 0.1, ArchId(1));
+        assert!(mesh.is_none(), "zero-length base edge soffit should return None");
+    }
+
+    #[test]
+    fn fascia_mesh_degenerate_plane_returns_none() {
+        let mut plane = simple_plane();
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
+        let mesh = fascia_mesh(&plane, 2.5, 0.1, ArchId(1));
+        assert!(mesh.is_none(), "degenerate plane fascia should return None");
+    }
+
+    #[test]
+    fn soffit_mesh_degenerate_plane_returns_none() {
+        let mut plane = simple_plane();
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
+        let mesh = soffit_mesh(&plane, 2.5, 0.1, ArchId(1));
+        assert!(mesh.is_none(), "degenerate plane soffit should return None");
+    }
+
+    #[test]
+    fn roof_plane_collinear_ring_vertices_work() {
+        let mut plane = simple_plane();
+        // Add a collinear point on the bottom edge
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+        assert!(mesh.triangle_count() > 0, "collinear vertices should still produce a mesh");
+        for p in &mesh.positions {
+            assert!(p[0].is_finite() && p[1].is_finite() && p[2].is_finite());
+        }
+    }
+
+    #[test]
+    fn roof_plane_negative_slope_works() {
+        let mut plane = simple_plane();
+        plane.slope = -0.5;
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+        // With negative slope, the far edge should be lower than the eave
+        // Vertex at (0, 5): z = 2.5 + (-0.5) * 5 = 0.0
+        let mut found = false;
+        for p in &mesh.positions {
+            if (p[0] - 0.0).abs() < 1e-4 && (p[1] - 5.0).abs() < 1e-4 {
+                if (p[2] - 0.0).abs() < 1e-4 {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        assert!(found, "vertex at distance 5 with slope -0.5 should be at z=0.0");
+    }
+
+    #[test]
+    fn roof_plane_top_ring_offset_is_thickness() {
+        let plane = simple_plane();
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+        let n_verts = plane.ring.len();
+
+        // Normal: slope=0.5, dir=(1,0), normal_xy=(0,1)
+        // n = (-s*0, -s*1, 1) / |n| = (0, -0.5, 1) / sqrt(1.25)
+        let s = plane.slope;
+        let n_len = (s * s + 1.0).sqrt();
+        let n_x = 0.0;
+        let n_y = -s / n_len;
+        let n_z = 1.0 / n_len;
+
+        for i in 0..n_verts {
+            let b = mesh.positions[i];
+            let t = mesh.positions[n_verts + i];
+            let dx = t[0] as f64 - b[0] as f64;
+            let dy = t[1] as f64 - b[1] as f64;
+            let dz = t[2] as f64 - b[2] as f64;
+            let expected_dx = plane.thickness * n_x;
+            let expected_dy = plane.thickness * n_y;
+            let expected_dz = plane.thickness * n_z;
+            assert!((dx - expected_dx).abs() < 1e-4, "top offset x mismatch at vertex {}", i);
+            assert!((dy - expected_dy).abs() < 1e-4, "top offset y mismatch at vertex {}", i);
+            assert!((dz - expected_dz).abs() < 1e-4, "top offset z mismatch at vertex {}", i);
+        }
+    }
+
+    #[test]
+    fn roof_meshes_empty_planes_returns_empty() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+        let meshes = roof_meshes(&roof, 2.5);
+        assert!(meshes.is_empty(), "roof with no planes should produce no meshes");
+    }
+
+    #[test]
+    fn fascia_and_soffit_use_specified_depths() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+        let mut plane = simple_plane();
+        plane.fascia_depth = 0.15;
+        plane.soffit_depth = 0.25;
+        roof.planes.push(plane);
+
+        let meshes = roof_meshes(&roof, 2.5);
+
+        let fascia = meshes.iter().find(|m| m.material == "fascia").unwrap();
+        let b = fascia.bounds();
+        assert!((b.max[2] - b.min[2] - 0.15).abs() < 1e-4, "fascia depth should be 0.15");
+
+        let soffit = meshes.iter().find(|m| m.material == "soffit").unwrap();
+        let sb = soffit.bounds();
+        assert!((sb.max[1] - sb.min[1] - 0.25).abs() < 1e-4, "soffit depth should be 0.25");
+    }
+
+    #[test]
+    fn roof_plane_huge_slope_and_coordinates_are_finite() {
+        let mut plane = simple_plane();
+        plane.slope = 1000.0;
+        plane.ring = vec![Vec2::new(1e6, 1e6), Vec2::new(1e6 + 10.0, 1e6), Vec2::new(1e6 + 10.0, 1e6 + 5.0), Vec2::new(1e6, 1e6 + 5.0)];
+        plane.base_edge = [1e6, 1e6, 1e6 + 10.0, 1e6];
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        for p in &mesh.positions {
+            assert!(p[0].is_finite() && p[1].is_finite() && p[2].is_finite(), "position not finite: {:?}", p);
+        }
+    }
 }
