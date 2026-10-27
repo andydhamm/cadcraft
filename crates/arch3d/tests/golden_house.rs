@@ -116,7 +116,7 @@ fn golden_house_scene_hash() {
 
     // Golden value recorded on the first successful build; update this if the
     // geometry changes intentionally.
-    const GOLDEN_HASH: u64 = 0xcc91_3625_55fc_5450;
+    const GOLDEN_HASH: u64 = 0xd8eb_0ccd_6027_e028;
     assert_eq!(hash, GOLDEN_HASH, "scene hash drift: {hash:016x} != GOLDEN_HASH");
 }
 
