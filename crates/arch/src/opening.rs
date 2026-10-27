@@ -154,7 +154,8 @@ pub fn validate_placement(
         let gap = (b0 - c1).max(c0 - b1);
         let need = if other.mull_group.is_some() { 0.0 } else { MIN_SEPARATION };
         if gap < need - EPS {
-            return Err(PlacementError(format!("opening overlaps or is too close to opening {other.id}")));
+            let other_id = other.id;
+            return Err(PlacementError(format!("opening overlaps or is too close to opening {other_id}")));
         }
     }
 
