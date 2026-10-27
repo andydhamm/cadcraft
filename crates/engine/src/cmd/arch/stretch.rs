@@ -99,7 +99,7 @@ pub(crate) fn run_stretch(s: &mut Session, p: &Value) -> Result<Value> {
                 reoffsets.push((oi, new_offset));
             }
             for (oi, new_offset) in &reoffsets {
-                arch.openings[oi].offset = new_offset;
+                arch.openings[*oi].offset = new_offset;
             }
             reoffsets.iter().map(|(oi, _)| *oi).collect()
         };
