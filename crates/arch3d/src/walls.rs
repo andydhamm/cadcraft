@@ -482,10 +482,10 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
             continue;
         }
         let j = (i + 1) % m;
-        // Triangle: back_i, back_j, front_j
-        mesh.indices.extend([b_base + i, b_base + j, b_base + m + j]);
-        // Triangle: back_i, front_j, front_i
-        mesh.indices.extend([b_base + i, b_base + m + j, b_base + m + i]);
+        // Triangle: front_j, back_j, back_i
+        mesh.indices.extend([b_base + m + j, b_base + j, b_base + i]);
+        // Triangle: front_j, back_i, front_i
+        mesh.indices.extend([b_base + m + j, b_base + i, b_base + m + i]);
     }
 
     (mesh.triangle_count() > 0).then(|| mesh)
