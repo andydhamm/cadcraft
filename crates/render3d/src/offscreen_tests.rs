@@ -295,7 +295,13 @@ fn lit_fraction(scene: &Scene3d, key: u64, cam: &Camera, light: &Light, size: (u
     r.render(scene, key, cam, light);
     let rgba = r.read_rgba().ok()?;
     let total = rgba.len() / 4;
-    let lit = rgba.chunks_exact(4).filter(|p| !close(*p, clear_srgb(), 8)).count();
+    let lit = rgba
+        .chunks_exact(4)
+        .filter(|p| {
+            let px: [u8; 4] = [p[0], p[1], p[2], p[3]];
+            !close(px, clear_srgb(), 8)
+        })
+        .count();
     Some(lit as f64 / total as f64)
 }
 
