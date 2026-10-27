@@ -1,5 +1,5 @@
 use cadcraft_geom::Vec2;
-use cadcraft_geom::skeleton::{check, roof_skeleton};
+use cadcraft_geom::skeleton::{Skeleton, SkeletonError, check, roof_skeleton};
 
 /// Helper to generate a simple convex polygon (square).
 fn square(size: f64) -> Vec<Vec2> {
@@ -42,9 +42,6 @@ fn polygon_area(pts: &[Vec2]) -> f64 {
 
 /// Helper to check if a vertex is reflex in a CCW polygon.
 /// Reflex if cross product of (v - prev) and (next - v) is negative (for CCW).
-/// Actually, for CCW, interior is to the left.
-/// Vector A = v - prev. Vector B = next - v.
-/// Cross(A, B) < 0 means right turn (reflex).
 fn is_reflex(pts: &[Vec2], idx: usize) -> bool {
     let n = pts.len();
     let prev = pts[(idx + n - 1) % n];
@@ -58,199 +55,222 @@ fn is_reflex(pts: &[Vec2], idx: usize) -> bool {
     cross < -1e-9
 }
 
+/// Helper to assert that a skeleton is valid.
+fn assert_valid(skel: &Skeleton) {
+    let problems = check(skel, 1e-7);
+    assert!(problems.is_empty(), "Skeleton invalid: {problems:#?}");
+}
+
+/// Helper to get the number of ring vertices.
+fn ring_vertex_count(skel: &Skeleton) -> usize {
+    skel.rings.iter().map(|r| r.len()).sum()
+}
+
 #[test]
 fn every_footprint_vertex_starts_exactly_one_sloped_edge() {
     let outer = square(10.0);
     let holes: Vec<Vec<Vec2>> = vec![];
-    let slopes = vec![1.0; outer.len()];
+    let slopes = vec![vec![1.0; outer.len()]];
 
     let skel = roof_skeleton(&outer, &holes, &slopes).expect("skeleton failed");
-    check(&skel).expect("check failed");
+    assert_valid(&skel);
 
-    // In a straight skeleton, each input vertex is the start of exactly one bisector edge.
-    // The skeleton structure usually maps input vertices to skeleton vertices.
-    // We assume skel.faces contains the planes. Each face corresponds to an input edge.
-    // The "edges" of the skeleton are the ridges/valleys.
-    // The prompt says "every footprint vertex starts exactly one sloped edge".
-    // This likely refers to the skeleton edges originating from input vertices.
+    let ring_vertices = ring_vertex_count(&skel);
 
-    // Let's inspect the skeleton structure. Assuming skel has `edges` or similar.
-    // If the API is different, this test might need adjustment.
-    // Based on typical straight skeleton implementations:
-    // There is a mapping from input vertices to skeleton vertices.
-    // Each input vertex generates one skeleton edge (the bisector).
+    // Each input vertex (node index < ring_vertices) should be the start of exactly one arc.
+    // In the skeleton, arcs are stored in `skel.arcs` as (start_node, end_node).
+    // We count how many arcs start at each input vertex.
+    let mut start_counts = vec![0; ring_vertices];
 
-    // Let's assume skel has a method or field to get these.
-    // If not available, we might need to infer from faces.
-    // Each face is a plane over an input edge.
-    // Faces meet at edges.
+    for &(a, _b) in &skel.arcs {
+        if a < ring_vertices {
+            start_counts[a] += 1;
+        }
+    }
 
-    // For now, we assume the skeleton is valid if check() passes,
-    // but we need to verify the specific invariant.
-    // If the API exposes `skel.edges` where each edge has `start_vertex` (input index),
-    // we can count.
-
-    // Since I don't know the exact API, I will rely on `check` passing as a proxy
-    // if specific accessors are missing, but the prompt asks for specific tests.
-    // I will assume `skel` has `edges: Vec<SkeletonEdge>` and `SkeletonEdge` has `input_vertex: usize`.
-
-    // NOTE: Without seeing skeleton.rs, I am guessing the API.
-    // If compilation fails, the user needs to provide skeleton.rs.
-
-    // Let's try to access `skel.edges` if it exists.
-    // If the struct is opaque, we can't test this directly.
-    // However, `check` usually validates these invariants.
-    // I will write a placeholder that passes if check passes,
-    // but ideally we'd iterate.
-
-    // Let's assume `skel` has `faces` and `edges`.
-    // If `check` validates "one edge per vertex", then this test is redundant but required.
-    // I'll implement it by checking if `check` passes, as `check` is documented to validate invariants.
-    // But the prompt implies we should verify it ourselves.
-
-    // Let's assume `skel` exposes `input_vertex_to_edge` or similar.
-    // If not, we might fail to compile.
-
-    // Alternative: The "sloped edge" might refer to the face itself? No, "edge".
-
-    // I will assume the skeleton object allows inspection.
-    // If not, I'll comment out the specific iteration and rely on check.
-
-    // Let's look at `projected_face_areas_sum_to_the_polygon_area`.
-    // This requires iterating faces.
-
-    // I will assume `skel.faces` exists and `Face` has `vertices` (indices into `skel.vertices`).
-    // And `skel.vertices` has coordinates.
-
-    // For `every_footprint_vertex_starts_exactly_one_sloped_edge`:
-    // If we can't access input vertices, we can't test it.
-    // I'll assume `skel` has `input_edges` or similar.
-
-    // Let's try a different approach:
-    // The prompt says "Use ... check".
-    // Maybe `check` is sufficient for some?
-    // No, "Tests: ...".
-
-    // I will write the tests assuming a standard API:
-    // `Skeleton { vertices: Vec<Vec2>, faces: Vec<Face>, edges: Vec<Edge> }`
-    // `Face { vertices: Vec<usize>, edge_index: usize, slope: f64 }`
-    // `Edge { start: usize, end: usize, ... }`
-
-    // If this fails, I need skeleton.rs.
-
-    // For now, I'll implement `projected_face_areas_sum_to_the_polygon_area`
-    // which is more likely to be testable via faces.
-
-    // And `every_footprint_vertex_starts_exactly_one_sloped_edge`
-    // might be testable if `skel` has `bisectors` or similar.
-
-    // I'll add a TODO comment if API is unknown.
-
-    // Actually, let's look at `crates/geom/src/skeleton.rs` in the design notes.
-    // "straight_skeleton(outer,holes)", "inset/outset", "check".
-    // "roof_skeleton(outer,holes,slopes)".
-
-    // I will assume `skel` has `faces`.
-    // I will assume `skel` has `edges`.
-
-    // Let's implement `projected_face_areas_sum_to_the_polygon_area` first.
+    for (i, count) in start_counts.iter().enumerate() {
+        assert_eq!(*count, 1, "Vertex {i} starts {count} arcs, expected 1");
+    }
 }
 
 #[test]
 fn every_footprint_edge_has_exactly_one_plane() {
     let outer = square(10.0);
     let holes: Vec<Vec<Vec2>> = vec![];
-    let slopes = vec![1.0; outer.len()];
+    let slopes = vec![vec![1.0; outer.len()]];
 
     let skel = roof_skeleton(&outer, &holes, &slopes).expect("skeleton failed");
-    check(&skel).expect("check failed");
+    assert_valid(&skel);
 
-    // Each input edge should correspond to exactly one face (plane).
-    // We assume skel.faces has an `edge_index` or similar.
-    // If not, we can't test this.
+    // Each input edge should correspond to exactly one face.
+    // Faces are stored in `skel.faces`. Each face has `ring` and `edge` indices.
+    // We count how many faces refer to each edge.
+    let mut edge_counts = vec![0; outer.len()];
 
-    // Assuming `Face` has `edge_index: usize`.
-    // let mut counts = vec![0; outer.len()];
-    // for f in &skel.faces {
-    //     counts[f.edge_index] += 1;
-    // }
-    // for c in counts {
-    //     assert_eq!(c, 1);
-    // }
+    for face in &skel.faces {
+        if face.ring == 0 {
+            edge_counts[face.edge] += 1;
+        }
+    }
 
-    // Placeholder: check passes.
+    for (i, count) in edge_counts.iter().enumerate() {
+        assert_eq!(*count, 1, "Edge {i} has {count} faces, expected 1");
+    }
 }
 
 #[test]
 fn every_plane_slope_equals_its_pitch() {
     let outer = square(10.0);
     let holes: Vec<Vec<Vec2>> = vec![];
-    let slopes = vec![0.5; outer.len()];
+    let slope_val = 0.5;
+    let slopes = vec![vec![slope_val; outer.len()]];
 
     let skel = roof_skeleton(&outer, &holes, &slopes).expect("skeleton failed");
-    check(&skel).expect("check failed");
+    assert_valid(&skel);
 
-    // Each face's slope should match the input slope for its edge.
-    // Assuming `Face` has `slope: f64` and `edge_index: usize`.
-    // for f in &skel.faces {
-    //     assert!((f.slope - slopes[f.edge_index]).abs() < 1e-9);
-    // }
+    // For each face, check that the slope matches the input slope.
+    // The face's nodes should satisfy: distance_to_edge_line == weight * time.
+    // For roof skeleton, weight = 1 / slope.
+    // So distance == time / slope => slope == time / distance.
 
-    // Placeholder: check passes.
+    for face in &skel.faces {
+        if face.ring != 0 {
+            continue;
+        }
+
+        let ring = &skel.rings[face.ring];
+        let n = ring.len();
+        let a = ring[face.edge];
+        let b = ring[(face.edge + 1) % n];
+
+        // Edge direction
+        let dir = (b - a).normalized();
+        // Normal (left of direction, inward for CCW)
+        let normal = Vec2::new(-dir.y, dir.x);
+
+        let input_slope = slopes[face.ring][face.edge];
+
+        for &node_idx in &face.nodes {
+            let node = &skel.nodes[node_idx];
+            // Distance from node.pos to the line defined by a and dir.
+            // dist = dot(node.pos - a, normal)
+            let dist = (node.pos - a).dot(normal);
+
+            // Expected: dist == node.time * weight == node.time / input_slope
+            // So input_slope == node.time / dist (if dist > 0)
+
+            if dist > 1e-9 {
+                let calculated_slope = node.time / dist;
+                assert!(
+                    (calculated_slope - input_slope).abs() < 1e-6,
+                    "Face edge {}: node {} has slope {} but expected {}",
+                    face.edge,
+                    node_idx,
+                    calculated_slope,
+                    input_slope
+                );
+            }
+        }
+    }
 }
 
 #[test]
 fn interior_arcs_are_shared_by_exactly_two_faces() {
     let outer = square(10.0);
     let holes: Vec<Vec<Vec2>> = vec![];
-    let slopes = vec![1.0; outer.len()];
+    let slopes = vec![vec![1.0; outer.len()]];
 
     let skel = roof_skeleton(&outer, &holes, &slopes).expect("skeleton failed");
-    check(&skel).expect("check failed");
+    assert_valid(&skel);
 
-    // Interior edges (ridges/valleys) are shared by exactly two faces.
-    // Boundary edges are shared by one.
-    // Assuming `skel.edges` has `faces: [usize; 2]` or similar.
+    // Interior arcs are those not on the boundary of the polygon.
+    // An arc is on the boundary if one of its endpoints is an input vertex AND the arc is part of the face boundary?
+    // Actually, simpler: An arc is "interior" if it is not an edge of the input polygon.
+    // But arcs are skeleton edges.
+    // We need to count how many faces share each arc.
+    // Faces are defined by their node loops.
+    // We can iterate over faces and their node loops to find shared edges.
 
-    // Placeholder: check passes.
+    let mut arc_face_counts: std::collections::HashMap<(usize, usize), usize> = std::collections::HashMap::new();
+
+    for face in &skel.faces {
+        let nodes = &face.nodes;
+        let n = nodes.len();
+        for i in 0..n {
+            let a = nodes[i];
+            let b = nodes[(i + 1) % n];
+            // Normalize edge key
+            let key = if a < b { (a, b) } else { (b, a) };
+            *arc_face_counts.entry(key).or_insert(0) += 1;
+        }
+    }
+
+    // Now, identify which arcs are "interior".
+    // An arc is interior if it is not an edge of the input polygon.
+    // Input polygon edges connect input vertices (indices < ring_vertex_count).
+    // But skeleton arcs can connect input vertices too (e.g. if a vertex moves along an edge? No, vertices move along bisectors).
+    // Actually, the skeleton arcs are the ridges/valleys.
+    // The "boundary" of the skeleton is the input polygon.
+    // So any arc connecting two input vertices that is NOT an input edge?
+    // Or simply: any arc that is not part of the input polygon boundary.
+
+    // Let's collect input edges.
+    let ring_vertices = ring_vertex_count(&skel);
+    let mut input_edges: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
+    for ring in &skel.rings {
+        let n = ring.len();
+        for i in 0..n {
+            let a = i; // Assuming ring 0 vertices are 0..n-1, ring 1 are n.. etc.
+            // Wait, node indices for ring vertices are sequential across rings.
+            // We need to map ring/edge to node indices.
+            // This is complex.
+        }
+    }
+
+    // Alternative: Just check that all arcs in `skel.arcs` are shared by exactly 2 faces,
+    // EXCEPT those that are on the boundary.
+    // How to identify boundary arcs?
+    // Boundary arcs are those that lie on the input polygon edges? No, skeleton arcs are internal.
+    // The input polygon edges are NOT skeleton arcs.
+    // So ALL skeleton arcs should be shared by exactly 2 faces?
+    // Let's verify this hypothesis.
+
+    for (key, count) in &arc_face_counts {
+        // If an arc is in skel.arcs, it should be shared by 2 faces.
+        // But some arcs might be on the boundary if the skeleton touches the boundary?
+        // In a straight skeleton, the skeleton is internal.
+        // So all arcs should be shared by 2 faces.
+
+        // Check if this arc is in skel.arcs
+        let is_skel_arc = skel.arcs.iter().any(|&(a, b)| {
+            let k = if a < b { (a, b) } else { (b, a) };
+            k == *key
+        });
+
+        if is_skel_arc {
+            assert_eq!(*count, 2, "Arc {:?} is shared by {} faces, expected 2", key, count);
+        }
+    }
 }
 
 #[test]
 fn projected_face_areas_sum_to_the_polygon_area() {
     let outer = square(10.0);
     let holes: Vec<Vec<Vec2>> = vec![];
-    let slopes = vec![1.0; outer.len()];
+    let slopes = vec![vec![1.0; outer.len()]];
 
     let skel = roof_skeleton(&outer, &holes, &slopes).expect("skeleton failed");
-    check(&skel).expect("check failed");
+    assert_valid(&skel);
 
     let expected_area = polygon_area(&outer);
     let mut total_area = 0.0;
 
-    // Assuming skel.faces contains the planes.
-    // Each face is a polygon in 3D, but we want the projected area (XY).
-    // The face vertices are in 3D? Or 2D?
-    // "node time is roof height".
-    // So vertices are (x, y, z).
-    // Projected area is the area of the XY projection.
+    for face in &skel.faces {
+        let pts: Vec<Vec2> = face.nodes.iter().map(|&i| skel.nodes[i].pos).collect();
+        total_area += polygon_area(&pts);
+    }
 
-    // Assuming `skel.vertices` are `Vec3` or `Vec2` + height?
-    // Design notes: "node time is roof height".
-    // Likely `skel.vertices` are `Vec2` and there's a separate height array,
-    // or `Vec3`.
-
-    // Let's assume `skel.vertices` are `Vec2` and `skel.faces` have `heights`?
-    // Or `skel.vertices` are `Vec3`.
-
-    // If `skel.vertices` are `Vec3`:
-    // for f in &skel.faces {
-    //     let pts: Vec<Vec2> = f.vertices.iter().map(|&i| skel.vertices[i].xy()).collect();
-    //     total_area += polygon_area(&pts);
-    // }
-
-    // assert!((total_area - expected_area).abs() < 1e-6);
-
-    // Placeholder: check passes.
+    assert!((total_area - expected_area).abs() < 1e-6, "Total face area {} != polygon area {}", total_area, expected_area);
 }
 
 #[test]
@@ -258,32 +278,67 @@ fn an_l_footprint_has_one_valley_arc_and_a_t_has_two() {
     // L shape
     let l_outer = l_shape();
     let l_holes: Vec<Vec<Vec2>> = vec![];
-    let l_slopes = vec![1.0; l_outer.len()];
+    let l_slopes = vec![vec![1.0; l_outer.len()]];
 
     let l_skel = roof_skeleton(&l_outer, &l_holes, &l_slopes).expect("L skeleton failed");
-    check(&l_skel).expect("L check failed");
+    assert_valid(&l_skel);
 
     // Count valley arcs.
     // Valley arc = arc whose footprint endpoint is a reflex vertex.
     // We need to identify arcs (edges) that are valleys.
     // And check their endpoints.
 
-    // Assuming `skel.edges` has `type` or we determine valley by slope/geometry.
-    // Or we just count edges connected to reflex vertices?
-    // "valley arc = arc whose footprint endpoint is a reflex vertex".
+    // Identify reflex vertices in the input ring.
+    let mut reflex_indices = vec![];
+    for i in 0..l_outer.len() {
+        if is_reflex(&l_outer, i) {
+            reflex_indices.push(i);
+        }
+    }
 
-    // Let's assume `skel.edges` has `start` and `end` (indices into `skel.vertices`).
-    // And `skel.vertices` map to input vertices?
-    // No, skeleton vertices are new.
-
-    // This test is complex without API details.
-    // I will rely on `check` passing.
+    // Map input vertex index to node index.
+    // For ring 0, node index is just the vertex index.
+    let l_valley_arcs = count_valley_arcs(&l_skel, &reflex_indices);
+    assert_eq!(l_valley_arcs, 1, "L shape should have 1 valley arc");
 
     // T shape
     let t_outer = t_shape();
     let t_holes: Vec<Vec<Vec2>> = vec![];
-    let t_slopes = vec![1.0; t_outer.len()];
+    let t_slopes = vec![vec![1.0; t_outer.len()]];
 
     let t_skel = roof_skeleton(&t_outer, &t_holes, &t_slopes).expect("T skeleton failed");
-    check(&t_skel).expect("T check failed");
+    assert_valid(&t_skel);
+
+    let mut t_reflex_indices = vec![];
+    for i in 0..t_outer.len() {
+        if is_reflex(&t_outer, i) {
+            t_reflex_indices.push(i);
+        }
+    }
+
+    let t_valley_arcs = count_valley_arcs(&t_skel, &t_reflex_indices);
+    assert_eq!(t_valley_arcs, 2, "T shape should have 2 valley arcs");
+}
+
+/// Count arcs that start or end at a reflex vertex.
+/// Note: An arc might be counted twice if both ends are reflex?
+/// The prompt says "valley arc = arc whose footprint endpoint is a reflex vertex".
+/// Usually a valley arc starts at a reflex vertex and ends at another node.
+/// If both ends are reflex, it's still one arc.
+fn count_valley_arcs(skel: &Skeleton, reflex_indices: &[usize]) -> usize {
+    let mut valley_arcs = std::collections::HashSet::new();
+
+    for &(a, b) in &skel.arcs {
+        // Check if a or b is a reflex vertex (node index matches input vertex index for ring 0)
+        // Assuming ring 0 vertices are nodes 0..len-1
+        let a_is_reflex = reflex_indices.contains(&a);
+        let b_is_reflex = reflex_indices.contains(&b);
+
+        if a_is_reflex || b_is_reflex {
+            let key = if a < b { (a, b) } else { (b, a) };
+            valley_arcs.insert(key);
+        }
+    }
+
+    valley_arcs.len()
 }
