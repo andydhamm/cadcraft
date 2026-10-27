@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-27 17:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 17:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 72 of 74 segments merged · 6 of 11 acceptance checks**
 
-4,142 workspace tests passing at the last merge · 329 segments merged in all · 0 of 12 seats working
+4,153 workspace tests passing at the last merge · 331 segments merged in all · 0 of 12 seats working
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 17:15 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 6 / 11 | 32.4 h so far · expected done Oct 27 19:44–Oct 27 22:38 UTC |
+| 4 | Automatic roofs | building | 6 / 11 | 32.7 h so far · expected done Oct 27 19:59–Oct 27 22:53 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -37,6 +37,8 @@ Updated 2026-10-27 17:15 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 27 17:29 | `harden-p2-engine-opening-params` | merged | 4,153 pass | tturbo-mac2 |
+| Oct 27 17:24 | `harden-p4r-doc-validate` | merged | 4,148 pass | tturbo-mac |
 | Oct 27 17:12 | `upstream-sync-0ff1b0353` | merged | 4,142 pass | bonsai-ws2-a |
 | Oct 27 17:08 | `p4h-profile-hole-rects` | merged | 4,142 pass | claude-sonnet-a |
 | Oct 27 16:58 | `harden-p2-open-style-defaults` | merged | 4,137 pass | tturbo-mac2 |
@@ -47,22 +49,20 @@ Updated 2026-10-27 17:15 UTC. This page and the card in the README are regenerat
 | Oct 27 14:08 | `harden-p2-sample-honours-openings` | merged | 4,108 pass | tturbo-mac2 |
 | Oct 27 14:02 | `harden-p4r-join-mitre-limit` | merged | 4,104 pass | tturbo-mac |
 | Oct 27 13:48 | `harden-p4r-join-own-kind` | merged | 4,099 pass | tturbo-mac |
-| Oct 27 13:34 | `harden-p4f-roof-rebuild-on-wall-edit` | merged | 4,095 pass | tturbo-mac |
-| Oct 27 13:18 | `harden-p4f-roof-mesh-solid` | merged | 4,088 pass | tturbo-mac |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 517 |
-| bonsai-b | bonsai2-27b | agent | 456 |
+| bonsai-a | bonsai2-27b | idle | 518 |
+| bonsai-b | bonsai2-27b | gate | 457 |
 | bonsai-ws2-a | bonsai2-27b | idle | 669 |
-| bonsai-ws2-b | bonsai2-27b | agent | 635 |
+| bonsai-ws2-b | bonsai2-27b | merging | 640 |
 | claude-sonnet-a | sonnet | agent | 13 |
 | claude-sonnet-b | sonnet | idle | 14 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 317 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 62 |
 | ornith-a | ornith15-397b-exl3-35 | held | 25 |
 | ornith-b | ornith15-397b-exl3-35 | held | 16 |
-| tturbo-mac | tturbo-ultraheretic | agent | 325 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 140 |
+| tturbo-mac | tturbo-ultraheretic | agent | 326 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 141 |
