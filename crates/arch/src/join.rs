@@ -1762,4 +1762,98 @@ mod tests {
         assert_eq!(ids, vec![ArchId(0)]);
         assert_eq!(model.walls[0].end, Vec2::new(12.0, 3.0));
     }
+
+    #[test]
+    fn prefilter_with_zero_length_wall_being_classified() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Wall 0: zero-length at (0,0), thickness 1.0
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0), 1.0);
+        // Wall 1: (10,0)-(20,0), thickness 1.0 (far away)
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(20.0, 0.0), 1.0);
+
+        let graph = WallGraph::build(&model);
+
+        // Wall 0 is a point at (0,0). Wall 1 is far away.
+        // The prefilter should exclude wall 1.
+        let pref = classify(&model, &graph, ArchId(0), End::Start);
+        let full = classify_full(&model, &graph, ArchId(0), End::Start);
+        assert_eq!(pref, full, "prefilter and full scan disagree for zero-length wall");
+        // No neighbours expected.
+        assert!(pref.is_empty());
+    }
+
+    #[test]
+    fn prefilter_with_zero_length_candidate() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Wall 0: (0,0)-(10,0), thickness 1.0
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        // Wall 1: zero-length at (5,0), thickness 1.0 (on wall 0's centre line)
+        wall(&mut model, 1, Vec2::new(5.0, 0.0), Vec2::new(5.0, 0.0), 1.0);
+
+        let graph = WallGraph::build(&model);
+
+        // Wall 1 is a point at (5,0). Wall 0's centre line passes through (5,0).
+        // So wall 0 should be a Mid neighbour of wall 1.
+        let pref = classify(&model, &graph, ArchId(1), End::Start);
+        let full = classify_full(&model, &graph, ArchId(1), End::Start);
+        assert_eq!(pref, full, "prefilter and full scan disagree for zero-length wall");
+        // Wall 0 should be a Mid neighbour.
+        assert!(pref.iter().any(|n| matches!(n, Neighbour::Mid { id, .. } if *id == ArchId(0))));
+    }
+
+    #[test]
+    fn prefilter_with_nan_in_wall_being_classified() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Wall 0: NaN in start, thickness 1.0
+        wall(&mut model, 0, Vec2::new(f64::NAN, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        // Wall 1: (10,0)-(20,0), thickness 1.0
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(20.0, 0.0), 1.0);
+
+        let graph = WallGraph::build(&model);
+
+        // Wall 0 has NaN in its start. The prefilter should not crash.
+        // The grown box of wall 0 has NaN corners, so no candidates are found.
+        let pref = classify(&model, &graph, ArchId(0), End::End);
+        let full = classify_full(&model, &graph, ArchId(0), End::End);
+        assert_eq!(pref, full, "prefilter and full scan disagree for NaN wall");
+    }
+
+    #[test]
+    fn prefilter_with_large_coordinates() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Wall 0: (0,0)-(10,0), thickness 1.0
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        // Wall 1: (1e15, 0)-(1e15 + 10, 0), thickness 1.0 (far away)
+        wall(&mut model, 1, Vec2::new(1e15, 0.0), Vec2::new(1e15 + 10.0, 0.0), 1.0);
+
+        let graph = WallGraph::build(&model);
+
+        // Wall 1 is far away. The prefilter should exclude it.
+        let pref = classify(&model, &graph, ArchId(0), End::End);
+        let full = classify_full(&model, &graph, ArchId(0), End::End);
+        assert_eq!(pref, full, "prefilter and full scan disagree for large coordinates");
+        // No neighbours expected.
+        assert!(pref.is_empty());
+    }
+
+    #[test]
+    fn prefilter_with_wall_just_inside_and_outside_reach() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Wall 0: (0,0)-(10,0), thickness 1.0
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        // Wall 1: at x=12, just inside the reach (reach = 2.0 + 1e-6)
+        wall(&mut model, 1, Vec2::new(12.0, 0.0), Vec2::new(12.0, 1.0), 1.0);
+        // Wall 2: at x=13, just outside the reach
+        wall(&mut model, 2, Vec2::new(13.0, 0.0), Vec2::new(13.0, 1.0), 1.0);
+
+        let graph = WallGraph::build(&model);
+
+        // Wall 0's End::End is at (10,0).
+        // Wall 1 is at x=12, which is 2 units away. Reach is 2.0 + 1e-6, so wall 1 is inside.
+        // Wall 2 is at x=13, which is 3 units away. Wall 2 is outside.
+        // Neither wall 1 nor wall 2 is a neighbour of wall 0.
+        let pref = classify(&model, &graph, ArchId(0), End::End);
+        let full = classify_full(&model, &graph, ArchId(0), End::End);
+        assert_eq!(pref, full, "prefilter and full scan disagree");
+    }
 }
