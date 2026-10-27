@@ -207,6 +207,12 @@ fn default_wall_type() -> String {
     "Exterior".into()
 }
 
+/// A builtin wall-type name always accepted even without a `WallType` entry in
+/// `ArchModel::types` (matches the names the `wall` command can store).
+fn is_builtin_wall_type(name: &str) -> bool {
+    matches!(name.to_lowercase().as_str(), "exterior" | "interior" | "knee" | "railing" | "retaining")
+}
+
 impl Wall {
     /// A wall with the given centre line and thickness, 2.4 m high and no layer bands.
     pub fn new(start: Vec2, end: Vec2, thickness: f64) -> Self {
@@ -910,13 +916,25 @@ impl ArchModel {
         if pts.is_empty() { Bounds2::EMPTY } else { Bounds2::from_points(pts.iter().copied()) }
     }
 
+    /// A message when `counter` is at or below the largest id already in use, or
+    /// `None` when nothing is in use or the in-use ids are at [`u32::MAX`].
+    fn stale_next_id(&self, counter_name: &str, counter: u32, max_in_use: Option<u32>) -> Option<String> {
+        let max = max_in_use?;
+        if max == u32::MAX || counter > max {
+            return None;
+        }
+        Some(format!("{}: next id {} is not above the largest id in use {}", counter_name, counter, max))
+    }
+
     /// Validate the model, returning a list of human-readable error messages.
     ///
-    /// Checks (in order):
-    /// 1. Wall count does not exceed [`MAX_WALLS`].
-    /// 2. Per-wall: finite endpoints, thickness above minimum, non-zero length,
-    ///    known wall type, known level.
-    /// 3. No duplicate wall ids.
+    /// Checks:
+    /// - Wall count does not exceed [`MAX_WALLS`].
+    /// - Per-wall: finite endpoints, thickness above minimum, non-zero length,
+    ///   a finite height above zero, a known wall type, and a known level.
+    /// - Per-kind id caps and no duplicate ids per kind.
+    /// - Each `next_*_id` counter is above the largest id already in use for
+    ///   its kind (skipped when the in-use ids reach [`u32::MAX`]).
     pub fn validate(&self) -> Vec<String> {
         let mut messages = Vec::new();
 
@@ -941,7 +959,11 @@ impl ArchModel {
                 messages.push(format!("{}: zero or near-zero length", id));
             }
 
-            if !w.wall_type.is_empty() && self.wall_type(&w.wall_type).is_none() {
+            if !w.height.is_finite() || w.height.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+                messages.push(format!("{}: invalid height {} (must be finite and > 0)", id, w.height));
+            }
+
+            if !w.wall_type.is_empty() && !is_builtin_wall_type(&w.wall_type) && self.wall_type(&w.wall_type).is_none() {
                 messages.push(format!("{}: unknown wall type `{}`", id, w.wall_type));
             }
 
@@ -1134,6 +1156,20 @@ impl ArchModel {
         }
         for id in &dupe_roofs {
             messages.push(format!("duplicate roof id {}", id));
+        }
+
+        // Stale id counters: the next id to assign must be above every id in use.
+        if let Some(msg) = self.stale_next_id("next_id", self.next_id, self.walls.iter().map(|w| w.id.0).max()) {
+            messages.push(msg);
+        }
+        if let Some(msg) = self.stale_next_id("next_opening_id", self.next_opening_id, self.openings.iter().map(|o| o.id.0).max()) {
+            messages.push(msg);
+        }
+        if let Some(msg) = self.stale_next_id("next_room_id", self.next_room_id, self.rooms.iter().map(|r| r.id.0).max()) {
+            messages.push(msg);
+        }
+        if let Some(msg) = self.stale_next_id("next_roof_id", self.next_roof_id, self.roofs.iter().map(|r| r.id.0).max()) {
+            messages.push(msg);
         }
 
         messages
@@ -1842,5 +1878,54 @@ mod tests {
         assert_eq!(back.edges.len(), 1);
         assert_eq!(back.edges[0].kind, RoofEdgeKind::Ridge);
         assert!((back.edges[0].za - 4.45).abs() < 1e-12);
+    }
+
+    #[test]
+    fn validate_reports_a_non_positive_or_nan_height() {
+        for (i, height) in [0.0, -2.0, f64::NAN, f64::INFINITY].iter().enumerate() {
+            let mut m = ArchModel::default();
+            m.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: *height, ..Wall::default() });
+            let msgs = m.validate();
+            assert!(!msgs.is_empty() && msgs.iter().any(|m| m.contains("height")), "bad height {i} ({}) not reported: {msgs:?}", height);
+        }
+    }
+
+    #[test]
+    fn validate_reports_a_stale_next_id_counter() {
+        // Two walls use ids 0 and 1; pinning next_id to 1 is not above the in-use max.
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 0.2));
+        m.next_id = 1;
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("next id") && m.contains("next_id")), "stale next_id not reported: {msgs:?}");
+
+        // One opening uses id 0; pinning next_opening_id to 0 is not above the in-use max.
+        let mut m = ArchModel::default();
+        let wid = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_opening(Opening::new(wid, 0.0, 0.9, 2.1, OpeningKind::Door));
+        m.next_opening_id = 0;
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("next id") && m.contains("next_opening_id")), "stale next_opening_id not reported: {msgs:?}");
+    }
+
+    #[test]
+    fn validate_accepts_the_builtin_wall_type_names() {
+        for name in ["exterior", "INTERIOR", "kNeE", "Railing", "RETAINING", "Exterior", "Interior"] {
+            let mut m = ArchModel::default();
+            m.push_wall(Wall {
+                start: Vec2::new(0.0, 0.0),
+                end: Vec2::new(10.0, 0.0),
+                thickness: 0.2,
+                wall_type: name.to_string(),
+                ..Wall::default()
+            });
+            assert!(!m.validate().iter().any(|m| m.contains("unknown wall type")), "builtin wall type `{name}` was reported as unknown");
+        }
+
+        // An unknown name is still reported.
+        let mut m = ArchModel::default();
+        m.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, wall_type: "bogus".into(), ..Wall::default() });
+        assert!(m.validate().iter().any(|m| m.contains("unknown wall type")), "unknown wall type `bogus` was not reported");
     }
 }
