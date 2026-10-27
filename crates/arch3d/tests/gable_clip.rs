@@ -267,3 +267,34 @@ fn incremental_eave_wall_agrees_with_full() {
     let inc_mesh = incremental.mesh_for(&eave_id).expect("incremental eave mesh must be Some");
     assert_eq!(inc_mesh.positions, full_mesh.positions, "build_dirty must reproduce the same eave mesh positions as build");
 }
+
+#[test]
+fn probe_on_the_gable_ridge_crease_is_inside() {
+    let model = gable_house();
+    let scene = Scene3d::build(&model);
+
+    // Ridge is at y=4.0, z=4.45. The gable walls meet the roof planes there.
+    // Probing at z=3.0 on the ridge line (x=0 and x=10) should hit the wall.
+    let hit_west = scene.probe(cadcraft_geom::Vec3::new(0.0, 4.0, 3.0));
+    assert!(hit_west.is_some(), "probe at west ridge (0,4,3) should hit wall");
+    assert_eq!(hit_west.unwrap().part, "wall", "west ridge probe should be wall");
+
+    let hit_east = scene.probe(cadcraft_geom::Vec3::new(10.0, 4.0, 3.0));
+    assert!(hit_east.is_some(), "probe at east ridge (10,4,3) should hit wall");
+    assert_eq!(hit_east.unwrap().part, "wall", "east ridge probe should be wall");
+}
+
+#[test]
+fn probe_above_the_gable_top_is_empty() {
+    let model = gable_house();
+    let scene = Scene3d::build(&model);
+
+    // Eave walls are at height 2.4. Probing above them should miss.
+    // (10, 0.5, 3.0) is above the south/east eave wall area.
+    let hit = scene.probe(cadcraft_geom::Vec3::new(10.0, 0.5, 3.0));
+    assert!(hit.is_none(), "probe above eave wall (10,0.5,3) should be None");
+
+    // (5, 0.0, 3.0) is above the south eave wall.
+    let hit = scene.probe(cadcraft_geom::Vec3::new(5.0, 0.0, 3.0));
+    assert!(hit.is_none(), "probe above south eave wall (5,0,3) should be None");
+}
