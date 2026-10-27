@@ -1447,4 +1447,109 @@ mod tests {
         assert_eq!(parsed.walls.len(), 1);
         assert!(parsed.rooms.is_empty(), "a v2 file predates rooms");
     }
+
+    /// Two walls crossing in the middle (X-junction) produce correct proxy rings.
+    #[test]
+    fn proxy_polylines_x_junction() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 5.0), Vec2::new(10.0, 5.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(5.0, 0.0), Vec2::new(5.0, 10.0), 0.2));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 2, "both X-junction walls should produce proxies");
+
+        for tags in &polys {
+            let vertex_count = tags.iter().find(|t| t.code == 90).map(|t| t.i64()).unwrap_or(0);
+            let actual_points = tags.iter().filter(|t| t.code == 10).count();
+            assert_eq!(vertex_count as usize, actual_points, "vertex count tag must match actual points");
+        }
+    }
+
+    /// Two walls on the same line (coincident) produce correct proxy rings.
+    #[test]
+    fn proxy_polylines_coincident_walls() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), 0.2));
+
+        let polys = proxy_polylines(&m);
+        // Coincident walls may merge or produce separate rings depending on the solver
+        assert!(polys.len() >= 1, "coincident walls should produce at least one proxy");
+
+        for tags in &polys {
+            let vertex_count = tags.iter().find(|t| t.code == 90).map(|t| t.i64()).unwrap_or(0);
+            let actual_points = tags.iter().filter(|t| t.code == 10).count();
+            assert_eq!(vertex_count as usize, actual_points, "vertex count tag must match actual points");
+        }
+    }
+
+    /// A wall with NaN thickness is skipped.
+    #[test]
+    fn proxy_polylines_nan_thickness() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), f64::NAN));
+        m.push_wall(Wall::new(Vec2::new(0.0, 1.0), Vec2::new(10.0, 1.0), 0.2));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 1, "NaN-thickness wall should be skipped, valid wall should produce proxy");
+    }
+
+    /// A wall with negative thickness is skipped.
+    #[test]
+    fn proxy_polylines_negative_thickness() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), -0.2));
+        m.push_wall(Wall::new(Vec2::new(0.0, 1.0), Vec2::new(10.0, 1.0), 0.2));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 1, "negative-thickness wall should be skipped, valid wall should produce proxy");
+    }
+
+    /// A complex layout with multiple join types (L, T, X, angled) produces correct proxies.
+    #[test]
+    fn proxy_polylines_complex_layout() {
+        let mut m = ArchModel::default();
+        // L-shape
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+        // T-junction
+        m.push_wall(Wall::new(Vec2::new(5.0, 0.0), Vec2::new(5.0, 4.0), 0.2));
+        // Angled wall
+        let angle = std::f64::consts::PI / 4.0;
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(5.0 * angle.cos(), 5.0 * angle.sin()), 0.2));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 4, "all four walls should produce proxies");
+
+        for tags in &polys {
+            let vertex_count = tags.iter().find(|t| t.code == 90).map(|t| t.i64()).unwrap_or(0);
+            let actual_points = tags.iter().filter(|t| t.code == 10).count();
+            assert_eq!(vertex_count as usize, actual_points, "vertex count tag must match actual points");
+            // All coordinates should be finite
+            let xs: Vec<f64> = tags.iter().filter(|t| t.code == 10).map(|t| t.f64()).collect();
+            let ys: Vec<f64> = tags.iter().filter(|t| t.code == 20).map(|t| t.f64()).collect();
+            assert!(xs.iter().all(|v| v.is_finite()), "x coords must be finite");
+            assert!(ys.iter().all(|v| v.is_finite()), "y coords must be finite");
+        }
+    }
+
+    /// Mitred join rings survive a DXF round trip with the model intact.
+    #[test]
+    fn proxy_polylines_mitred_round_trip() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        d.arch.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        // The model should be intact after round trip
+        assert_eq!(back.arch.walls.len(), 2, "walls lost on round trip");
+        assert_eq!(back.arch.walls[0].thickness, 0.2);
+        assert_eq!(back.arch.walls[1].thickness, 0.2);
+
+        // No proxy polylines should survive the read
+        let polylines = back.model.iter().filter(|e| matches!(&e.kind, EntityKind::LwPolyline(_))).count();
+        assert_eq!(polylines, 0, "proxy linework survived the read");
+    }
 }
