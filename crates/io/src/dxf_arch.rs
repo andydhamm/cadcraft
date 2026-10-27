@@ -205,7 +205,7 @@ pub(crate) fn proxy_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
             t.push(Tag::s(1001, crate::dxf_ext::APP));
             t.push(Tag::s(1000, ARCH_PROXY_MARKER));
             t.push(Tag::s(1000, &w.id.to_string()));
-            t
+            Some(t)
         })
         .collect()
 }
