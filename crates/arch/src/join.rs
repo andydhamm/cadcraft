@@ -30,6 +30,10 @@ pub const ENDPOINT_TOL: f64 = 1e-6;
 pub const JOIN_EPS: f64 = 1e-9;
 /// Parallelism test for "corresponding" (collinear) neighbour detection.
 const PARALLEL_EPS: f64 = 1e-9;
+/// How far (in world units, scaled by combined wall thickness) a T join's
+/// face-line intersection may be from the join point before we fall back to a
+/// square end.
+const T_JOIN_REACH: f64 = 4.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum End {
@@ -212,6 +216,60 @@ struct EndPlan {
     left: Vec2,
     right: Vec2,
     join: Option<Join>,
+}
+
+/// End each of the incoming wall's two face lines on the host face line the
+/// incoming wall approaches, producing a `Join::T` end.
+///
+/// The host face is chosen by which side of the host the incoming wall comes
+/// from (a point along the incoming wall away from the join, projected onto the
+/// host's normal). Each face line is intersected with that host face line; the
+/// pair is accepted only when both points are finite and within
+/// `T_JOIN_REACH * (w.thickness + host.thickness)` of the join point, otherwise
+/// we fall back to a square end on the face. `Join::T(end)` is recorded either
+/// way.
+fn t_join(w: &Wall, end: End, raw: (Vec2, Vec2), host: &Wall) -> EndPlan {
+    let pt = end.point(w);
+    let Some(wdir) = wall_dir(w) else {
+        return EndPlan { left: raw.0, right: raw.1, join: Some(Join::T(end)) };
+    };
+    let Some(hdir) = wall_dir(host) else {
+        return EndPlan { left: raw.0, right: raw.1, join: Some(Join::T(end)) };
+    };
+    let hperp = Vec2::new(-hdir.y, hdir.x);
+    let hhalf = host.thickness / 2.0;
+    let whalf = w.thickness / 2.0;
+
+    // Which side of the host the incoming wall approaches: a point along the
+    // incoming wall away from the join, dotted with the host's normal.
+    let away = if end == End::End { -wdir } else { wdir };
+    let away_pt = pt + away * 1.0;
+    let side = (away_pt - host.start).dot(hperp);
+    let sign = if side > 0.0 { 1.0 } else { -1.0 };
+    let face_a = host.start + hperp * (sign * hhalf);
+    let face_b = host.end + hperp * (sign * hhalf);
+
+    // End each incoming face line on the host face line.
+    let left = line_line_infinite(raw.0, raw.0 + wdir * 1000.0, face_a, face_b).map(|(p, _, _)| p);
+    let right = line_line_infinite(raw.1, raw.1 + wdir * 1000.0, face_a, face_b).map(|(p, _, _)| p);
+
+    let reach = T_JOIN_REACH * (w.thickness + host.thickness);
+    if let (Some(l), Some(r)) = (left, right) {
+        if l.is_finite() && r.is_finite() && l.dist(pt) < reach && r.dist(pt) < reach {
+            return EndPlan { left: l, right: r, join: Some(Join::T(end)) };
+        }
+    }
+
+    // Fall back to today's square end on the face.
+    let face_pt = if side > 0.0 {
+        host.start + hdir * ((pt - host.start).dot(hdir)) + hperp * hhalf
+    } else {
+        host.start + hdir * ((pt - host.start).dot(hdir)) - hperp * hhalf
+    };
+    let wperp = Vec2::new(-wdir.y, wdir.x);
+    let left = face_pt + wperp * whalf;
+    let right = face_pt - wperp * whalf;
+    EndPlan { left, right, join: Some(Join::T(end)) }
 }
 
 /// A neighbour wall relevant to a join at one end.
@@ -462,33 +520,32 @@ fn plan_end(
         let Some(nw) = model.walls.iter().find(|w| w.id == *nid) else {
             return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
         };
-        let pt = end.point(w);
-        let Some(wdir) = wall_dir(w) else {
-            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
-        };
-        let Some(ndir) = wall_dir(nw) else {
-            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
-        };
-        let perp = Vec2::new(-ndir.y, ndir.x);
-        let half = nw.thickness / 2.0;
-        // Determine which side of the host the incoming wall approaches from
-        // by looking at a point along the incoming wall away from the join.
-        let away = if end == End::End { -wdir } else { wdir };
-        let away_pt = pt + away * 1.0;
-        let side = (away_pt - nw.start).dot(perp);
-        let face_pt = if side > 0.0 {
-            nw.start + ndir * ((pt - nw.start).dot(ndir)) + perp * half
-        } else {
-            nw.start + ndir * ((pt - nw.start).dot(ndir)) - perp * half
-        };
-        let Some(wdir) = wall_dir(w) else {
-            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
-        };
-        let wperp = Vec2::new(-wdir.y, wdir.x);
-        let whalf = w.thickness / 2.0;
-        let left = face_pt + wperp * whalf;
-        let right = face_pt - wperp * whalf;
-        return Ok(EndPlan { left, right, join: Some(Join::T(end)) });
+        return Ok(t_join(w, end, raw, nw));
+    }
+
+    // Tee: two collinear EndToEnd neighbours are one straight host; butt it
+    // with a T join against one of them.
+    {
+        let e2e: Vec<Neighbour> = nbrs.iter().filter(|n| matches!(n, Neighbour::EndToEnd { .. })).cloned().collect();
+        for i in 0..e2e.len() {
+            for j in i + 1..e2e.len() {
+                let Some(wa) = model.walls.iter().find(|w| w.id == e2e[i].id) else {
+                    continue;
+                };
+                let Some(wb) = model.walls.iter().find(|w| w.id == e2e[j].id) else {
+                    continue;
+                };
+                let Some(da) = wall_dir(wa) else {
+                    continue;
+                };
+                let Some(db) = wall_dir(wb) else {
+                    continue;
+                };
+                if da.cross(db).abs() < PARALLEL_EPS {
+                    return Ok(t_join(w, end, raw, wa));
+                }
+            }
+        }
     }
 
     // EndToEnd (L or angled): mitre.
@@ -1269,5 +1326,50 @@ mod tests {
         for s in &shapes {
             assert!(polygon_area(&s.polygon) > 0.0, "shape {:?} has non-positive area (self-intersecting)", s.id);
         }
+    }
+
+    #[test]
+    fn an_angled_t_join_meets_the_host_face_with_both_corners() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(20.0, 0.0), 1.0); // host
+        wall(&mut model, 1, Vec2::new(5.0, 5.0), Vec2::new(10.0, 0.0), 0.5); // incoming
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let incoming = &shapes[1];
+
+        // The incoming wall ends in a T join at its End (the end on the host).
+        assert!(incoming.joins.iter().any(|j| matches!(j, Join::T(End::End))));
+
+        // Exactly two polygon vertices on y = 0.5 (the host's upper face).
+        let on_face: Vec<Vec2> = incoming.polygon.iter().filter(|p| (p.y - 0.5).abs() < 1e-9).cloned().collect();
+        assert_eq!(on_face.len(), 2, "expected 2 vertices on the host face, got {:?}", on_face);
+
+        // No vertex below the host face.
+        for p in &incoming.polygon {
+            assert!(p.y >= 0.5 - 1e-9, "vertex {:?} below the host face", p);
+        }
+    }
+
+    #[test]
+    fn a_tee_of_three_ends_butts_the_straight_pair() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), 1.0); // host left
+        wall(&mut model, 1, Vec2::new(5.0, 0.0), Vec2::new(10.0, 0.0), 1.0); // host right
+        wall(&mut model, 2, Vec2::new(5.0, 0.0), Vec2::new(5.0, 5.0), 0.5); // stem
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 3);
+
+        let stem = &shapes[2];
+
+        // The stem butts the straight pair with a T join at its Start.
+        assert!(stem.joins.iter().any(|j| matches!(j, Join::T(End::Start))));
+
+        let b = stem.bounds();
+        assert!((b.min.y - 0.5).abs() < 1e-9, "stem min.y: {}", b.min.y);
+        assert!((b.min.x - 4.75).abs() < 1e-9, "stem min.x: {}", b.min.x);
+        assert!((b.max.x - 5.25).abs() < 1e-9, "stem max.x: {}", b.max.x);
     }
 }
