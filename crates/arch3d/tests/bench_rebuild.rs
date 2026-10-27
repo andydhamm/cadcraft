@@ -83,8 +83,8 @@ fn benchmark_grid_has_real_junctions() {
     let joins = solve_joins(&model);
     assert_eq!(joins.len(), 300, "expected 300 join shapes");
 
-    let has_l = joins.iter().any(|j| matches!(j.kind, Join::L));
-    let has_t = joins.iter().any(|j| matches!(j.kind, Join::T));
+    let has_l = joins.iter().any(|j| j.joins.iter().any(|k| matches!(k, Join::L(_))));
+    let has_t = joins.iter().any(|j| j.joins.iter().any(|k| matches!(k, Join::T(_))));
 
     assert!(has_l, "expected at least one L join");
     assert!(has_t, "expected at least one T join");
