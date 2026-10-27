@@ -1012,4 +1012,88 @@ mod tests {
             with_hole.triangle_count()
         );
     }
+
+    /// A zero-length wall (start == end) must return None from profile_prism.
+    #[test]
+    fn profile_prism_returns_none_for_zero_length_wall() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 2.4), Vec2::new(0.0, 2.4)];
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(0.0, 0.0), thickness: 0.2, height: 2.4, ..Default::default() };
+        let mesh = profile_prism(&outer, &[], &wall, 0.0, "wall", ArchId(1));
+        assert!(mesh.is_none(), "zero-length wall should return None");
+    }
+
+    /// A wall with zero thickness must return None from profile_prism.
+    #[test]
+    fn profile_prism_returns_none_for_zero_thickness() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 2.4), Vec2::new(0.0, 2.4)];
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(4.0, 0.0), thickness: 0.0, height: 2.4, ..Default::default() };
+        let mesh = profile_prism(&outer, &[], &wall, 0.0, "wall", ArchId(1));
+        assert!(mesh.is_none(), "zero-thickness wall should return None");
+    }
+
+    /// A non-finite base must return None from profile_prism.
+    #[test]
+    fn profile_prism_returns_none_for_nan_base() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 2.4), Vec2::new(0.0, 2.4)];
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(4.0, 0.0), thickness: 0.2, height: 2.4, ..Default::default() };
+        let mesh = profile_prism(&outer, &[], &wall, f64::NAN, "wall", ArchId(1));
+        assert!(mesh.is_none(), "NaN base should return None");
+    }
+
+    /// A vertical wall (going up in Y) must produce a mesh with correct bounds.
+    #[test]
+    fn profile_prism_handles_vertical_wall() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 2.4), Vec2::new(0.0, 2.4)];
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(0.0, 4.0), thickness: 0.2, height: 2.4, ..Default::default() };
+        let mesh = profile_prism(&outer, &[], &wall, 0.0, "wall", ArchId(1));
+        assert!(mesh.is_some(), "vertical wall should produce a mesh");
+        let mesh = mesh.unwrap();
+        let b = mesh.bounds();
+        // Wall goes from (0,0) to (0,4), thickness 0.2 in X direction
+        assert!(b.min[1] >= -0.1 && b.max[1] <= 4.1, "y bounds out of range: {b:?}");
+        assert!(b.min[2] >= -0.1 && b.max[2] <= 2.5, "z bounds out of range: {b:?}");
+    }
+
+    /// A hole with fewer than 3 vertices must be dropped.
+    #[test]
+    fn profile_prism_drops_holes_with_fewer_than_three_vertices() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 2.4), Vec2::new(0.0, 2.4)];
+        let hole = vec![Vec2::new(4.0, 0.5), Vec2::new(6.0, 0.5)]; // Only 2 vertices
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.4, ..Default::default() };
+        let mesh = profile_prism(&outer, &[hole], &wall, 0.0, "wall", ArchId(1));
+        assert!(mesh.is_some(), "should produce a mesh");
+        let mesh = mesh.unwrap();
+        // Same triangle count as no holes (the 2-vertex hole was dropped)
+        let no_holes = profile_prism(&outer, &[], &wall, 0.0, "wall", ArchId(2)).unwrap();
+        assert_eq!(mesh.triangle_count(), no_holes.triangle_count(), "2-vertex hole should be dropped");
+    }
+
+    /// A hole with a NaN vertex must be dropped.
+    #[test]
+    fn profile_prism_drops_holes_with_nan_vertices() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 2.4), Vec2::new(0.0, 2.4)];
+        let hole = vec![Vec2::new(4.0, 0.5), Vec2::new(6.0, 0.5), Vec2::new(6.0, 1.5), Vec2::new(f64::NAN, 1.5)];
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.4, ..Default::default() };
+        let mesh = profile_prism(&outer, &[hole], &wall, 0.0, "wall", ArchId(1));
+        assert!(mesh.is_some(), "should produce a mesh");
+        let mesh = mesh.unwrap();
+        let no_holes = profile_prism(&outer, &[], &wall, 0.0, "wall", ArchId(2)).unwrap();
+        assert_eq!(mesh.triangle_count(), no_holes.triangle_count(), "NaN hole should be dropped");
+    }
+
+    /// Multiple holes must all be extruded correctly.
+    #[test]
+    fn profile_prism_handles_multiple_holes() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 2.4), Vec2::new(0.0, 2.4)];
+        let hole1 = vec![Vec2::new(1.0, 0.5), Vec2::new(1.0, 1.5), Vec2::new(2.0, 1.5), Vec2::new(2.0, 0.5)];
+        let hole2 = vec![Vec2::new(8.0, 0.5), Vec2::new(8.0, 1.5), Vec2::new(9.0, 1.5), Vec2::new(9.0, 0.5)];
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.4, ..Default::default() };
+        let mesh = profile_prism(&outer, &[hole1, hole2], &wall, 0.0, "wall", ArchId(1));
+        assert!(mesh.is_some(), "should produce a mesh");
+        let mesh = mesh.unwrap();
+        assert!(mesh.is_manifold(), "multi-hole prism must be a closed manifold");
+        // More triangles than no holes
+        let no_holes = profile_prism(&outer, &[], &wall, 0.0, "wall", ArchId(2)).unwrap();
+        assert!(mesh.triangle_count() > no_holes.triangle_count(), "two holes should add triangles");
+    }
 }
