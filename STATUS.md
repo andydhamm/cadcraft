@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-27 14:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 15:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 70 of 71 segments merged · 6 of 11 acceptance checks**
 
-4,122 workspace tests passing at the last merge · 324 segments merged in all · 0 of 11 seats working
+4,126 workspace tests passing at the last merge · 325 segments merged in all · 0 of 11 seats working
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 14:45 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 6 / 11 | 29.9 h so far · expected done Oct 27 16:27–Oct 27 18:33 UTC |
+| 4 | Automatic roofs | building | 6 / 11 | 30.2 h so far · expected done Oct 27 16:44–Oct 27 18:53 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -37,6 +37,7 @@ Updated 2026-10-27 14:45 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 27 14:56 | `harden-p4r-join-raw-ring-fallback` | merged | 4,126 pass | tturbo-mac |
 | Oct 27 14:34 | `harden-p2-openings-envelope` | merged | 4,122 pass | tturbo-mac2 |
 | Oct 27 14:26 | `harden-p4r-join-t-junction` | merged | 4,116 pass | tturbo-mac |
 | Oct 27 14:08 | `harden-p2-sample-honours-openings` | merged | 4,108 pass | tturbo-mac2 |
@@ -48,7 +49,6 @@ Updated 2026-10-27 14:45 UTC. This page and the card in the README are regenerat
 | Oct 27 13:03 | `harden-p4f-roofplane-create` | merged | 4,069 pass | tturbo-mac |
 | Oct 27 12:54 | `harden-p4f-valley-classifier` | merged | 4,062 pass | tturbo-mac2 |
 | Oct 27 12:53 | `p4f-geom-roof-invariant-tests` | merged | 4,056 pass | darwin-ws3 |
-| Oct 27 12:39 | `p4f-roof-mesh-solid` | merged | 4,050 pass | claude-sonnet-b |
 
 ## Seats active in the last hour
 
@@ -63,5 +63,5 @@ Updated 2026-10-27 14:45 UTC. This page and the card in the README are regenerat
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 303 |
 | ornith-a | ornith15-397b-exl3-35 | held | 25 |
 | ornith-b | ornith15-397b-exl3-35 | held | 16 |
-| tturbo-mac | tturbo-ultraheretic | agent | 319 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 129 |
+| tturbo-mac | tturbo-ultraheretic | agent | 320 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 131 |
