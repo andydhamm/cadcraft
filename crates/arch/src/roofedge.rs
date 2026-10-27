@@ -90,8 +90,8 @@ pub fn roof_edges_geom(g: &RoofGeom) -> Vec<RoofEdge> {
     edges
 }
 
-fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: usize) -> RoofEdgeKind {
-    // a. GableEnd if any adjacent face has infinite slope
+fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings: usize) -> RoofEdgeKind {
+    // GableEnd if any adjacent face has infinite slope
     for &f_idx in adjacent {
         if let Some(face) = g.skel.faces.get(f_idx) {
             if let Some(&slope) = g.slopes.get(face.edge) {
@@ -102,67 +102,173 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: 
         }
     }
 
-    // b. Ridge if exactly two adjacent faces, parallel base edges, equal slopes
-    if adjacent.len() == 2 {
-        let f0 = &g.skel.faces[adjacent[0]];
-        let f1 = &g.skel.faces[adjacent[1]];
-
-        if let (Some(&s0), Some(&s1)) = (g.slopes.get(f0.edge), g.slopes.get(f1.edge)) {
-            if (s0 - s1).abs() < 1e-9 {
-                // Check parallel base edges
-                if let (Some(e0), Some(e1)) = (g.fp.edges.get(f0.edge), g.fp.edges.get(f1.edge)) {
-                    let v0 = (e0.b - e0.a).normalized();
-                    let v1 = (e1.b - e1.a).normalized();
-                    if v0.cross(v1).abs() < 1e-9 {
-                        return RoofEdgeKind::Ridge;
-                    }
-                }
-            }
-        }
+    // If not exactly two faces, it's an eave (boundary edge)
+    if adjacent.len() != 2 {
+        return RoofEdgeKind::Eave;
     }
 
-    // c. Valley or Hip based on footprint vertex turn
-    let is_a_fp = a < n_rings;
-    let is_b_fp = b < n_rings;
+    let f0_idx = adjacent[0];
+    let f1_idx = adjacent[1];
 
-    if is_a_fp ^ is_b_fp {
-        // Exactly one endpoint is a footprint vertex
-        let v_idx = if is_a_fp { a } else { b };
-        let n = g.fp.outer.len();
-        if n > 0 {
-            let v = g.fp.outer[v_idx];
-            let prev = g.fp.outer[(v_idx + n - 1) % n];
-            let next = g.fp.outer[(v_idx + 1) % n];
+    let node_a = match g.skel.nodes.get(a) {
+        Some(n) => n,
+        None => return RoofEdgeKind::Eave,
+    };
+    let node_b = match g.skel.nodes.get(b) {
+        Some(n) => n,
+        None => return RoofEdgeKind::Eave,
+    };
 
-            // Turn calculation: (next - v) x (prev - v)
-            // For CCW polygon, convex vertex (Hip) has positive cross product?
-            // Prompt says: "turn < 0.0 => Valley (reflex), else => Hip (convex)"
-            // Prompt example: square CCW, v=(-0.1,-0.1), prev=(-0.1,8.1), next=(10.1,-0.1)
-            // next-v = (10.2, 0), prev-v = (0, 8.2)
-            // cross = 10.2*8.2 - 0*0 = 83.64 > 0 => Hip.
+    let m_pt = (node_a.pos + node_b.pos) * 0.5;
+    let e = (node_b.pos - node_a.pos).normalized();
+    let m = e.perp();
 
-            let turn = (next - v).cross(prev - v);
-            if turn < 0.0 {
-                return RoofEdgeKind::Valley;
-            } else {
-                return RoofEdgeKind::Hip;
+    // Helper to calculate surface height at a point for a given face
+    let surface_height = |face_idx: usize, pt: Vec2| -> Option<f64> {
+        let face = g.skel.faces.get(face_idx)?;
+        let slope = g.slopes.get(face.edge)?;
+        if slope.is_infinite() {
+            return None;
+        }
+        let eave_z = g.eave_z.get(face.edge)?;
+        let edge = g.fp.edges.get(face.edge)?;
+
+        // Distance from point to edge line segment
+        let v = edge.b - edge.a;
+        if v.len() < 1e-12 {
+            return Some(*eave_z);
+        }
+        let dist = v.cross(pt - edge.a).abs() / v.len();
+        Some(*eave_z + slope * dist)
+    };
+
+    // Helper to get a sample point inside a face near the midpoint
+    let sample_point = |face_idx: usize| -> Option<Vec2> {
+        let ring = face_ring(g, face_idx);
+        if ring.is_empty() {
+            return None;
+        }
+
+        // Try M + m * 0.05
+        let mut s = m_pt + m * 0.05;
+        if point_in_polygon(&s, &ring) {
+            return Some(s);
+        }
+
+        // Try M - m * 0.05
+        s = m_pt - m * 0.05;
+        if point_in_polygon(&s, &ring) {
+            return Some(s);
+        }
+
+        // Nudge towards centroid
+        let c = face_centroid(g, face_idx);
+        let dir = (c - m_pt).normalized();
+        s = m_pt + dir * 0.05;
+        if point_in_polygon(&s, &ring) {
+            return Some(s);
+        }
+
+        // Try smaller steps towards centroid
+        for step in [0.01, 0.001] {
+            s = m_pt + dir * step;
+            if point_in_polygon(&s, &ring) {
+                return Some(s);
             }
         }
-    }
 
-    // d. Hip if two adjacent faces with finite different slopes, else Eave
-    if adjacent.len() == 2 {
-        let f0 = &g.skel.faces[adjacent[0]];
-        let f1 = &g.skel.faces[adjacent[1]];
+        None
+    };
 
-        if let (Some(&s0), Some(&s1)) = (g.slopes.get(f0.edge), g.slopes.get(f1.edge)) {
-            if s0.is_finite() && s1.is_finite() && (s0 - s1).abs() > 1e-9 {
-                return RoofEdgeKind::Hip;
+    let s0 = sample_point(f0_idx);
+    let s1 = sample_point(f1_idx);
+
+    let z0 = s0.and_then(|p| surface_height(f0_idx, p));
+    let z1 = s1.and_then(|p| surface_height(f1_idx, p));
+
+    // Calculate expected z at midpoint from node times (interpolated)
+    // We use the average of the two faces' node heights to be robust
+    let get_node_z = |node_idx: usize, face_idx: usize| -> Option<f64> {
+        let node = g.skel.nodes.get(node_idx)?;
+        let face = g.skel.faces.get(face_idx)?;
+        let eave_z = g.eave_z.get(face.edge)?;
+        Some(eave_z + node.time)
+    };
+
+    let za0 = get_node_z(a, f0_idx);
+    let zb0 = get_node_z(b, f0_idx);
+    let za1 = get_node_z(a, f1_idx);
+    let zb1 = get_node_z(b, f1_idx);
+
+    let (za, zb) = match (za0, zb0, za1, zb1) {
+        (Some(a0), Some(b0), Some(a1), Some(b1)) => ((a0 + a1) * 0.5, (b0 + b1) * 0.5),
+        _ => return RoofEdgeKind::Eave,
+    };
+
+    let z_mid = (za + zb) * 0.5;
+
+    if let (Some(z0), Some(z1)) = (z0, z1) {
+        let eps = 1e-9;
+        let above0 = z0 > z_mid + eps;
+        let above1 = z1 > z_mid + eps;
+        let below0 = z0 < z_mid - eps;
+        let below1 = z1 < z_mid - eps;
+
+        // Moving into either face rises away from a valley, but falls away
+        // from a convex roof edge. Level convex edges are ridges; sloping
+        // convex edges are hips.
+        if above0 && above1 {
+            return RoofEdgeKind::Valley;
+        }
+        if below0 && below1 {
+            if (za - zb).abs() <= eps {
+                return RoofEdgeKind::Ridge;
             }
+            return RoofEdgeKind::Hip;
+        }
+        if (above0 && below1) || (below0 && above1) {
+            return RoofEdgeKind::Hip;
         }
     }
 
     RoofEdgeKind::Eave
+}
+
+/// Helper to get the ring of vertices for a face.
+fn face_ring(g: &RoofGeom, face_idx: usize) -> Vec<Vec2> {
+    let face = match g.skel.faces.get(face_idx) {
+        Some(f) => f,
+        None => return Vec::new(),
+    };
+    face.nodes.iter().filter_map(|&n| g.skel.nodes.get(n).map(|node| node.pos)).collect()
+}
+
+/// Helper to calculate the centroid of a face's vertices.
+fn face_centroid(g: &RoofGeom, face_idx: usize) -> Vec2 {
+    let ring = face_ring(g, face_idx);
+    if ring.is_empty() {
+        return Vec2::ZERO;
+    }
+    let sum = ring.iter().fold(Vec2::ZERO, |acc, p| acc + *p);
+    sum * (1.0 / ring.len() as f64)
+}
+
+/// Check if point is inside polygon (ray casting).
+fn point_in_polygon(p: &Vec2, poly: &[Vec2]) -> bool {
+    if poly.len() < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = poly.len() - 1;
+    for i in 0..poly.len() {
+        let pi = poly[i];
+        let pj = poly[j];
+        if ((pi.y > p.y) != (pj.y > p.y)) && (p.x < (pj.x - pi.x) * (p.y - pi.y) / (pj.y - pi.y) + pi.x) {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
 }
 
 /// Compute roof edges for a model level and roof configuration.
