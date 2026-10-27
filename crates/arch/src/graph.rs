@@ -14,13 +14,71 @@ use crate::wall::wall_polygon;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WallGraph {
     nodes: Vec<(ArchId, Vec2, Vec2)>,
+    end_points: HashMap<ArchId, (Vec2, Vec2)>,
     clusters: Vec<Vec<(ArchId, End)>>,
     end_cluster: HashMap<(ArchId, End), usize>,
 }
 
+/// Union-Find (disjoint set) with path compression and "lower index as root".
+struct UnionFind {
+    parent: Vec<usize>,
+}
+
+impl UnionFind {
+    /// Create a union-find with `n` singleton sets.
+    fn new(n: usize) -> Self {
+        UnionFind { parent: (0..n).collect() }
+    }
+
+    /// Find the root of `i` with path compression.
+    fn find(&mut self, i: usize) -> usize {
+        if self.parent[i] == i {
+            return i;
+        }
+        self.parent[i] = self.find(self.parent[i]);
+        self.parent[i]
+    }
+
+    /// Union the sets containing `i` and `j`. The lower root becomes the new root.
+    fn union(&mut self, i: usize, j: usize) {
+        let ri = self.find(i);
+        let rj = self.find(j);
+        if ri == rj {
+            return;
+        }
+        if ri < rj {
+            self.parent[rj] = ri;
+        } else {
+            self.parent[ri] = rj;
+        }
+    }
+}
+
+/// Quantise a coordinate to a cell index, saturating for huge values.
+fn saturate_cell_coord(x: f64) -> i64 {
+    if !x.is_finite() {
+        return i64::MIN;
+    }
+    let v = x / ENDPOINT_TOL;
+    if v > i64::MAX as f64 {
+        i64::MAX
+    } else if v < i64::MIN as f64 {
+        i64::MIN
+    } else {
+        v as i64
+    }
+}
+
+/// Squared distance between two points.
+fn dist_sq(a: &Vec2, b: &Vec2) -> f64 {
+    let dx = a.x - b.x;
+    let dy = a.y - b.y;
+    dx * dx + dy * dy
+}
+
 impl WallGraph {
     /// Build from a model. Deterministic: cluster order follows wall order, and
-    /// cluster members are ordered by (ArchId, End).
+    /// cluster members are ordered by (ArchId, Start-before-End).
     pub fn build(model: &ArchModel) -> WallGraph {
         let mut graph = WallGraph::default();
 
@@ -37,107 +95,115 @@ impl WallGraph {
             let start = entry.start;
             let end = entry.end;
             graph.nodes.push((id, start, end));
+            graph.end_points.insert(id, (start, end));
             ends.push((id, End::Start, start));
             ends.push((id, End::End, end));
         }
 
-        // Quantised spatial hash: map quantised position -> cluster index.
-        let mut hash: HashMap<(i64, i64), usize> = HashMap::new();
-        for (id, end, point) in ends {
-            let qx = (point.x / ENDPOINT_TOL).round() as i64;
-            let qy = (point.y / ENDPOINT_TOL).round() as i64;
-            let cluster_idx = match hash.get(&(qx, qy)) {
-                Some(idx) => *idx,
-                None => {
-                    let idx = graph.clusters.len();
-                    graph.clusters.push(Vec::new());
-                    hash.insert((qx, qy), idx);
-                    idx
+        let n = ends.len();
+        if n == 0 {
+            return graph;
+        }
+
+        // Single-linkage union-find over a grid of ENDPOINT_TOL-sized cells.
+        let mut uf = UnionFind::new(n);
+
+        // Quantised cell (saturating for huge coordinates).
+        let cell_of = |p: Vec2| (saturate_cell_coord(p.x), saturate_cell_coord(p.y));
+        let mut cell: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+        for (i, (_, _, point)) in ends.iter().enumerate() {
+            cell.entry(cell_of(*point)).or_default().push(i);
+        }
+
+        // Union ends that are within ENDPOINT_TOL, scanning each cell and its 3x3
+        // neighbours. Each unordered cell-pair is processed once.
+        for (ckey, members) in &cell {
+            for ddx in [-1, 0, 1] {
+                for ddy in [-1, 0, 1] {
+                    // Offsets that would push past the i64 range (saturated
+                    // cells at i64::MAX / i64::MIN) have no real neighbouring
+                    // cell, so skip them instead of overflowing.
+                    let nkey_opt = (ckey.0.checked_add(ddx), ckey.1.checked_add(ddy));
+                    let nkey = match nkey_opt {
+                        (Some(nx), Some(ny)) => (nx, ny),
+                        _ => continue,
+                    };
+                    if ckey > &nkey {
+                        continue;
+                    }
+                    let Some(neighbours) = cell.get(&nkey) else {
+                        continue;
+                    };
+                    for &i in members {
+                        for &j in neighbours {
+                            if i >= j {
+                                continue;
+                            }
+                            if dist_sq(&ends[i].2, &ends[j].2) <= ENDPOINT_TOL * ENDPOINT_TOL {
+                                uf.union(i, j);
+                            }
+                        }
+                    }
                 }
-            };
-            graph.clusters[cluster_idx].push((id, end));
-            graph.end_cluster.insert((id, end), cluster_idx);
+            }
         }
 
-        // Tolerance pass: merge clusters whose representative points are within ENDPOINT_TOL.
-        graph.merge_clusters();
-
-        // Sort cluster members for determinism.
-        for cluster in &mut graph.clusters {
-            cluster.sort_by(|a, b| {
-                a.0.cmp(&b.0).then_with(|| {
-                    let a_val = if a.1 == End::Start { 0u8 } else { 1u8 };
-                    let b_val = if b.1 == End::Start { 0u8 } else { 1u8 };
-                    a_val.cmp(&b_val)
-                })
-            });
+        // Group endpoints by union-find root. The root is the lowest endpoint
+        // index in the component (union keeps lower index as root).
+        let mut root_to_members: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for i in 0..n {
+            let r = uf.find(i);
+            root_to_members.entry(r).or_default().push(i);
         }
+
+        // Build clusters: sort members by (ArchId, Start-before-End).
+        // Sort clusters by root (which is the lowest endpoint index = wall order).
+        let mut clusters: Vec<Vec<(ArchId, End)>> = Vec::new();
+        for (r, members) in &root_to_members {
+            let mut cluster: Vec<(ArchId, End)> = Vec::with_capacity(members.len());
+            for &idx in members {
+                cluster.push((ends[idx].0, ends[idx].1));
+            }
+            cluster.sort_by_key(|m| (m.0, if m.1 == End::Start { 0u8 } else { 1u8 }));
+            clusters.push(cluster);
+        }
+        // Sort by root (lowest endpoint index = wall order).
+        // BTreeMap iterates in key order, so clusters are already sorted by root.
+        // Verify and sort explicitly for safety.
+        let mut indexed: Vec<(usize, Vec<(ArchId, End)>)> = root_to_members
+            .iter()
+            .map(|(r, members)| {
+                let mut cluster: Vec<(ArchId, End)> = Vec::with_capacity(members.len());
+                for &idx in members {
+                    cluster.push((ends[idx].0, ends[idx].1));
+                }
+                cluster.sort_by_key(|m| (m.0, if m.1 == End::Start { 0u8 } else { 1u8 }));
+                (*r, cluster)
+            })
+            .collect();
+        indexed.sort_by_key(|c| c.0);
+        graph.clusters = indexed.into_iter().map(|(_, c)| c).collect();
+
+        // Build end_cluster map: (ArchId, End) -> cluster index.
+        let mut end_cluster = HashMap::with_capacity(graph.nodes.len() * 2);
+        for (ci, members) in graph.clusters.iter().enumerate() {
+            for &(id, end) in members {
+                end_cluster.insert((id, end), ci);
+            }
+        }
+        graph.end_cluster = end_cluster;
 
         graph
     }
 
-    fn merge_clusters(&mut self) {
-        let mut changed = true;
-        while changed {
-            changed = false;
-            let n = self.clusters.len();
-            for i in 0..n {
-                if self.clusters[i].is_empty() {
-                    continue;
-                }
-                for j in (i + 1)..n {
-                    if self.clusters[j].is_empty() {
-                        continue;
-                    }
-                    let (id_i, end_i) = self.clusters[i][0];
-                    let (id_j, end_j) = self.clusters[j][0];
-                    let point_i = self.endpoint_point(id_i, end_i);
-                    let point_j = self.endpoint_point(id_j, end_j);
-                    let dx = point_i.x - point_j.x;
-                    let dy = point_i.y - point_j.y;
-                    if dx * dx + dy * dy <= ENDPOINT_TOL * ENDPOINT_TOL {
-                        let members: Vec<(ArchId, End)> = self.clusters[j].drain(..).collect();
-                        for member in members {
-                            self.clusters[i].push(member);
-                            self.end_cluster.insert(member, i);
-                        }
-                        changed = true;
-                    }
-                }
-            }
-        }
-
-        // Remove empty clusters and reindex.
-        let mut new_clusters = Vec::new();
-        let mut remap = BTreeMap::new();
-        for (i, cluster) in self.clusters.iter().enumerate() {
-            if !cluster.is_empty() {
-                let new_idx = new_clusters.len();
-                remap.insert(i, new_idx);
-                new_clusters.push(cluster.clone());
-            }
-        }
-        self.clusters = new_clusters;
-
-        let mut new_end_cluster = HashMap::new();
-        for ((id, end), idx) in self.end_cluster.iter() {
-            if let Some(new_idx) = remap.get(idx) {
-                new_end_cluster.insert((*id, *end), *new_idx);
-            }
-        }
-        self.end_cluster = new_end_cluster;
-    }
-
     fn endpoint_point(&self, id: ArchId, end: End) -> Vec2 {
-        for (node_id, start, end_pt) in &self.nodes {
-            if *node_id == id {
-                return match end {
-                    End::Start => *start,
-                    End::End => *end_pt,
-                };
-            }
+        match self.end_points.get(&id) {
+            Some((start, e)) => match end {
+                End::Start => *start,
+                End::End => *e,
+            },
+            None => Vec2::ZERO,
         }
-        Vec2::ZERO
     }
 
     /// The wall ends sharing the cluster of `(id, end)`, excluding `(id, end)` itself.
@@ -234,12 +300,29 @@ impl WallGraph {
                 let (id_j, start_j, end_j) = &self.nodes[j];
                 let dir_i = *end_i - *start_i;
                 let dir_j = *end_j - *start_j;
-                let cross = dir_i.x * dir_j.y - dir_i.y * dir_j.x;
+
+                // Check non-degenerate walls.
+                let len_i = dir_i.x * dir_i.x + dir_i.y * dir_i.y;
+                let len_j = dir_j.x * dir_j.x + dir_j.y * dir_j.y;
+                if len_i <= 0.0 || len_j <= 0.0 {
+                    continue;
+                }
+
+                // Unit directions for length-independent comparison.
+                let sqrt_len_i = len_i.sqrt();
+                let sqrt_len_j = len_j.sqrt();
+                let ui = Vec2::new(dir_i.x / sqrt_len_i, dir_i.y / sqrt_len_i);
+                let uj = Vec2::new(dir_j.x / sqrt_len_j, dir_j.y / sqrt_len_j);
+
+                // |cross| < 1e-9 for parallel unit vectors.
+                let cross = ui.x * uj.y - ui.y * uj.x;
                 if cross.abs() >= 1e-9 {
                     continue;
                 }
+
+                // Perpendicular distance from start_j to the line of i.
                 let v = *start_j - *start_i;
-                let dist = (v.x * dir_i.y - v.y * dir_i.x).abs();
+                let dist = (v.x * ui.y - v.y * ui.x).abs();
                 if dist <= ENDPOINT_TOL {
                     let lo = if *id_i < *id_j { *id_i } else { *id_j };
                     let hi = if *id_i < *id_j { *id_j } else { *id_i };
@@ -447,5 +530,85 @@ mod tests {
         let graph = WallGraph::build(&model);
 
         assert!(graph.len() <= MAX_WALLS);
+    }
+
+    #[test]
+    fn graph_build_is_linear_in_the_wall_count() {
+        let mut walls = Vec::new();
+        for i in 0..MAX_WALLS {
+            let x = i as f64 * 20.0;
+            walls.push(Wall::new(Vec2::new(x, 0.0), Vec2::new(x + 10.0, 0.0), 2.0));
+        }
+        let model = make_model(walls);
+
+        let start = std::time::Instant::now();
+        let graph = WallGraph::build(&model);
+        let elapsed = start.elapsed();
+
+        assert!(graph.len() == MAX_WALLS);
+        assert!(elapsed < std::time::Duration::from_secs(5), "Build took {elapsed:?} which exceeds 5s");
+    }
+
+    #[test]
+    fn graph_merges_ends_across_a_grid_cell_boundary() {
+        // w1 ends at 5.0 + 1.9999998e-6, w2 starts at 5.0000022.
+        // These are on either side of a cell edge (at 5.0/ENDPOINT_TOL) and within
+        // ENDPOINT_TOL of each other, so they must share a cluster.
+        let w1 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(5.0 + 1.9999998e-6, 0.0), 2.0);
+        let w2 = Wall::new(Vec2::new(5.0000022, 0.0), Vec2::new(10.0, 0.0), 2.0);
+        let model = make_model(vec![w1, w2]);
+
+        let graph = WallGraph::build(&model);
+
+        let c1 = graph.cluster_of(ArchId(0), End::End).unwrap();
+        let c2 = graph.cluster_of(ArchId(1), End::Start).unwrap();
+        assert_eq!(c1, c2);
+    }
+
+    #[test]
+    fn graph_chains_ends_transitively_and_keeps_distinct_points_apart() {
+        let tol = ENDPOINT_TOL;
+
+        // w1: (0,0) -> (0.9*tol, 0)
+        // w2: (0.9*tol, 0) -> (1.8*tol, 0)
+        // w3: (10*tol, 0) -> (10.1*tol, 0)  [far away]
+        //
+        // End of w1 = (0.9*tol, 0) is within tol of start of w2 = (0.9*tol, 0) (same point).
+        // End of w1 at (0.9*tol, 0) is within tol of start of w1 at (0, 0) (dist = 0.9*tol < tol).
+        // End of w2 at (1.8*tol, 0) is within tol of end of w1 at (0.9*tol, 0) (dist = 0.9*tol < tol).
+        // By transitivity: start of w1, end of w1, end of w2 all in one cluster.
+        // Start of w3 at (10*tol, 0) is at distance > 8.1*tol from end of w2, not in cluster.
+        let w1 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(0.9 * tol, 0.0), 2.0);
+        let w2 = Wall::new(Vec2::new(0.9 * tol, 0.0), Vec2::new(1.8 * tol, 0.0), 2.0);
+        let w3 = Wall::new(Vec2::new(10.0 * tol, 0.0), Vec2::new(10.1 * tol, 0.0), 2.0);
+        let model = make_model(vec![w1, w2, w3]);
+
+        let graph = WallGraph::build(&model);
+
+        // Ends at 0, 0.9*tol, 1.8*tol all in the same cluster.
+        let c_start1 = graph.cluster_of(ArchId(0), End::Start).unwrap();
+        let c_end1 = graph.cluster_of(ArchId(0), End::End).unwrap();
+        let c_end2 = graph.cluster_of(ArchId(1), End::End).unwrap();
+        assert_eq!(c_start1, c_end1);
+        assert_eq!(c_end1, c_end2);
+
+        // End at 10*tol is NOT in that cluster.
+        let c_start3 = graph.cluster_of(ArchId(2), End::Start).unwrap();
+        assert_ne!(c_start3, c_end1);
+    }
+
+    #[test]
+    fn graph_collinear_pairs_ignore_wall_length() {
+        // Long walls: (0,0)-(1000,0) and (1000,0)-(2000, 1e-8)
+        // Must be detected as collinear despite the 1000m wall length.
+        let w1 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(1000.0, 0.0), 2.0);
+        let w2 = Wall::new(Vec2::new(1000.0, 0.0), Vec2::new(2000.0, 1.0e-8), 2.0);
+        let model = make_model(vec![w1, w2]);
+
+        let graph = WallGraph::build(&model);
+
+        let pairs = graph.collinear_pairs();
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0], (ArchId(0), ArchId(1)));
     }
 }
