@@ -772,8 +772,8 @@ mod tests {
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         let r = &rooms[0];
         let handle = r["handle"].as_str().expect("handle must be a string");
-        assert_eq!(handle.len(), 8, "handle must be 8 characters: {handle}");
-        assert!(handle.starts_with("a00"), "handle must start with 'a00': {handle}");
+        assert_eq!(handle.len(), 16, "handle must be 16 characters: {handle}");
+        assert!(handle.starts_with("ffffffff"), "handle must start with 'ffffffff' (arch-proxy base): {handle}");
         assert!(handle.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle must be lowercase hex: {handle}");
     }
 
@@ -855,8 +855,8 @@ mod tests {
         assert_eq!(rooms.len(), 2, "expected two rooms");
         let h0 = rooms[0]["handle"].as_str().expect("handle 0 missing");
         let h1 = rooms[1]["handle"].as_str().expect("handle 1 missing");
-        assert_eq!(h0.len(), 8, "handle 0 must be 8 chars: {h0}");
-        assert_eq!(h1.len(), 8, "handle 1 must be 8 chars: {h1}");
+        assert_eq!(h0.len(), 16, "handle 0 must be 16 chars: {h0}");
+        assert_eq!(h1.len(), 16, "handle 1 must be 16 chars: {h1}");
         assert_ne!(h0, h1, "handles must be distinct");
         assert!(h0.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle 0 must be lowercase hex: {h0}");
         assert!(h1.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle 1 must be lowercase hex: {h1}");
@@ -994,8 +994,8 @@ mod tests {
         assert_eq!(rooms.len(), 2, "expected two rooms");
         let h0 = rooms[0]["handle"].as_str().expect("handle 0 missing");
         let h1 = rooms[1]["handle"].as_str().expect("handle 1 missing");
-        assert_eq!(h0, "a0010000", "room 0 handle must be a0010000, got {h0}");
-        assert_eq!(h1, "a0010001", "room 1 handle must be a0010001, got {h1}");
+        assert_eq!(h0, "ffffffff00010000", "room 0 handle must be ffffffff00010000, got {h0}");
+        assert_eq!(h1, "ffffffff00010001", "room 1 handle must be ffffffff00010001, got {h1}");
     }
 
     #[test]
@@ -1314,7 +1314,7 @@ mod tests {
         let v = exec(&mut s, "arch.inspect", &json!({ "roofs": true }));
         let roofs = v["roofs"].as_array().expect("roofs array missing");
         let handle = roofs[0]["handle"].as_str().expect("handle must be a string");
-        assert!(handle.starts_with("a00"), "handle must start with 'a00': {handle}");
+        assert!(handle.starts_with("ffffffff"), "handle must start with 'ffffffff' (arch-proxy base): {handle}");
         assert!(handle.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle must be lowercase hex: {handle}");
     }
 

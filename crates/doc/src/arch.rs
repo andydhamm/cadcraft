@@ -40,9 +40,11 @@ impl std::str::FromStr for ArchId {
 
 /// Base of the synthetic handle range reserved for architectural objects.
 ///
+/// Lives at the very top of the u64 space so that real DXF entity handles —
+/// which are arbitrary 64-bit hex values — can never collide with it.
 /// Arch objects are not entities in the store; render, grip and pick layers
 /// route on [`is_arch_handle`] to distinguish them from real entity handles.
-pub const ARCH_HANDLE_BASE: u64 = 0xA000_0000;
+pub const ARCH_HANDLE_BASE: u64 = 0xFFFF_FFFF_0000_0000;
 
 /// The synthetic proxy handle for an architectural object.
 ///
@@ -1576,13 +1578,14 @@ mod tests {
     }
 
     #[test]
-    fn opening_handle_hex_starts_with_a000() {
+    fn opening_handle_hex_starts_with_arch_base_prefix() {
+        // With ARCH_HANDLE_BASE = 0xFFFF_FFFF_0000_0000 the prefix is "ffffffff0000".
         let oh = opening_handle(ArchId(0));
         let hex = oh.hex().to_lowercase();
-        assert!(hex.starts_with("a000"), "opening handle hex is `{hex}`, expected prefix `a000`");
+        assert!(hex.starts_with("ffffffff0000"), "opening handle hex is `{hex}`, expected arch-base prefix");
         let oh7 = opening_handle(ArchId(7));
         let hex7 = oh7.hex().to_lowercase();
-        assert!(hex7.starts_with("a000"), "opening handle hex is `{hex7}`, expected prefix `a000`");
+        assert!(hex7.starts_with("ffffffff0000"), "opening handle hex is `{hex7}`, expected arch-base prefix");
     }
 
     #[test]

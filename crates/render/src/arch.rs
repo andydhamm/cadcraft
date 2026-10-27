@@ -363,8 +363,8 @@ mod tests {
 
     #[test]
     fn arch_handle_is_stable_and_unique_per_wall() {
-        assert_eq!(arch_handle(ArchId(0)), Handle(0xA000_0000));
-        assert_eq!(arch_handle(ArchId(7)).0, 0xA000_0007);
+        assert_eq!(arch_handle(ArchId(0)), Handle(0xFFFF_FFFF_0000_0000));
+        assert_eq!(arch_handle(ArchId(7)).0, 0xFFFF_FFFF_0000_0007);
         assert_ne!(arch_handle(ArchId(0)), arch_handle(ArchId(1)));
 
         let mut d = Drawing::new_metric();
