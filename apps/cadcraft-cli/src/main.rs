@@ -342,7 +342,7 @@ fn parse_camera(spec: &str, base: cadcraft_render3d::camera::Orbit) -> Result<ca
                 o.elevation = v;
             }
             "distance" => {
-                if !(0.0 < v && v <= cadcraft_render3d::camera::MAX_DISTANCE) {
+                if !v.is_finite() || v <= 0.0 || v > cadcraft_render3d::camera::MAX_DISTANCE {
                     return Err(format!("camera distance must be in (0, {}], got `{val}`", cadcraft_render3d::camera::MAX_DISTANCE));
                 }
                 o.distance = v;
