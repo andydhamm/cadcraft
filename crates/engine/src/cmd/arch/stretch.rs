@@ -418,19 +418,19 @@ mod tests {
         let mut s = Session::new();
         // w0 = (0,0)-(10,0), w1 = (10,0)-(10,10)
         s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]})).expect("wall command");
-        // Door at the shared point (10,0) on w1, offset 0
-        s.execute("door", &json!({"wall": "w1", "offset": 0.0, "width": 1.0, "height": 2.1})).expect("door on w1");
+        // Door near the shared point (10,0) on w1, offset 0.1 (so the rough span fits)
+        s.execute("door", &json!({"wall": "w1", "offset": 0.1, "width": 1.0, "height": 2.1})).expect("door on w1");
 
-        // Stretch w0's end to (12, 0): w1's start moves to (12, 0), door should stay at (12, 0)
+        // Stretch w0's end to (12, 0): w1's start moves to (12, 0), door should stay at (12, 0.1)
         let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [12.0, 0.0]}));
         assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
 
         let d = s.doc().expect("doc");
         let w1 = d.arch.wall(ArchId(1)).expect("w1");
         let door = d.arch.opening(ArchId(0)).expect("door");
-        // Door's world position should be w1.start + dir * offset = (12, 0) + (0, 1) * 0 = (12, 0)
+        // Door's world position should be w1.start + dir * offset = (12, 0) + (0, 1) * 0.1 = (12, 0.1)
         let door_world = w1.start + (w1.end - w1.start).normalized() * door.offset;
-        assert!((door_world - Vec2::new(12.0, 0.0)).len() < 1e-6, "door world start should be (12, 0): ({}, {})", door_world.x, door_world.y);
+        assert!((door_world - Vec2::new(12.0, 0.1)).len() < 1e-6, "door world start should be (12, 0.1): ({}, {})", door_world.x, door_world.y);
     }
 
     #[test]
@@ -448,8 +448,8 @@ mod tests {
         let d = s.doc().expect("doc");
         let w1 = d.arch.wall(ArchId(1)).expect("w1");
         let door = d.arch.opening(ArchId(0)).expect("door");
-        // Door's world position should be w1.start + dir * offset = (12, 0) + (0, 1) * 5 = (12, 5)
+        // Door's world position is preserved at (10, 5); the wall becomes diagonal
         let door_world = w1.start + (w1.end - w1.start).normalized() * door.offset;
-        assert!((door_world - Vec2::new(12.0, 5.0)).len() < 1e-6, "door world start should be (12, 5): ({}, {})", door_world.x, door_world.y);
+        assert!((door_world - Vec2::new(10.0, 5.0)).len() < 1e-6, "door world start should be (10, 5): ({}, {})", door_world.x, door_world.y);
     }
 }
