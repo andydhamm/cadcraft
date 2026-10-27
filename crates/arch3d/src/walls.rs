@@ -441,7 +441,9 @@ pub(crate) fn profile_prism(outer: &[Vec2], holes: &[Vec<Vec2>], wall: &Wall, ba
 
     // Reverse all triangle windings (the world map has negative determinant).
     for i in (0..mesh.indices.len()).step_by(3) {
-        std::mem::swap(&mut mesh.indices[i + 1], &mut mesh.indices[i + 2]);
+        let tmp = mesh.indices[i + 1];
+        mesh.indices[i + 1] = mesh.indices[i + 2];
+        mesh.indices[i + 2] = tmp;
     }
 
     // Accumulate and normalise per-vertex normals from world-space faces.
