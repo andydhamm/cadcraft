@@ -464,14 +464,9 @@ fn eave_edges_are_at_wall_height() {
     let Ok(built) = build_roof(&model, 0, &r) else {
         return;
     };
-    let Ok(edges) = roof_edges(&model, 0, &built) else {
-        return;
-    };
-    for e in &edges {
-        if matches!(e.kind, RoofEdgeKind::Eave) {
-            assert!((e.a.z - 2.4).abs() < 1e-9, "eave edge a.z {:.6} != wall height 2.4", e.a.z);
-            assert!((e.b.z - 2.4).abs() < 1e-9, "eave edge b.z {:.6} != wall height 2.4", e.b.z);
-        }
+    // All planes should have their eave at wall height.
+    for p in &built.planes {
+        assert!((p.eave_z - 2.4).abs() < 1e-9, "plane eave_z {:.6} != wall height 2.4", p.eave_z);
     }
 }
 
