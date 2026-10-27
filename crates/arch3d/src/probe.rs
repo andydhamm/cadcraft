@@ -123,8 +123,19 @@ pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
         1.3e-7
     };
 
-    // Nudge the point slightly upward so that points on the top face are outside.
-    let p = Vec3::new(p.x + jx, p.y + jy, p.z + 1e-6);
+    // Nudge the point slightly upward so that points on the top face interior are outside.
+    // For points on a top edge or vertex, nudge downward instead so they read as inside.
+    let on_top = (p.z - b.max[2]).abs() < eps;
+    let on_x_edge = (p.x - b.min[0]).abs() < eps || (p.x - b.max[0]).abs() < eps;
+    let on_y_edge = (p.y - b.min[1]).abs() < eps || (p.y - b.max[1]).abs() < eps;
+    let z_nudge = if on_top && !on_x_edge && !on_y_edge {
+        1e-6
+    } else if on_top {
+        -1e-6
+    } else {
+        0.0
+    };
+    let p = Vec3::new(p.x + jx, p.y + jy, p.z + z_nudge);
     mesh_crossings_upward(p, &mesh.positions, &mesh.indices, MAX_PROBE_TRIANGLES) % 2 == 1
 }
 
