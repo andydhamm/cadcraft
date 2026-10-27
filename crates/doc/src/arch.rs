@@ -597,6 +597,12 @@ pub struct RoofPlane {
     pub overhang: f64,
     /// Height of the roof underside at the base edge (eave height).
     pub eave_z: f64,
+    /// Fascia depth at this plane, in metres (0.0 = none). Kept numeric so the 3D
+    /// builder can emit a fascia band of the correct thickness.
+    pub fascia_depth: f64,
+    /// Soffit depth at this plane, in metres (0.0 = none). Kept numeric so the 3D
+    /// builder can emit a soffit of the correct thickness.
+    pub soffit_depth: f64,
 }
 
 /// A classified edge of a roof (eave, ridge, hip, valley, gable end).

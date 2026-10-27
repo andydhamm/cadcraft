@@ -1,7 +1,7 @@
 //! The `roofplane` command: create or edit a single manual roof plane.
 
 use cadcraft_arch::poly::is_simple;
-use cadcraft_doc::arch::{Roof, RoofEdge, RoofEdgeKind, RoofPlane};
+use cadcraft_doc::arch::{Level, Roof, RoofEdge, RoofEdgeKind, RoofPlane, Wall};
 use cadcraft_geom::Vec2;
 use serde_json::Value;
 
