@@ -2,6 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use serde_json::Value;
+
 /// The built `cadcraft-cli` binary. Under `cargo test` the integration test executable
 /// lives in `<root>/target/<profile>/deps/<hash>`; the CLI binary sits at
 /// `<root>/target/<profile>/cadcraft-cli`.
@@ -32,39 +34,74 @@ fn is_glb(path: &PathBuf) -> bool {
     }
 }
 
-/// A temp directory unique to this test (no cross-test clobbering).
-fn temp_dir() -> PathBuf {
-    let base = std::env::temp_dir().join(format!("cadcraft-cli-{}", std::process::id()));
-    let dir = base.join(format!("{:08}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()));
-    fs::create_dir_all(&dir).unwrap();
+/// A temp directory unique to this test process and test name (no cross-test clobbering).
+fn temp_dir(test_name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("cadcraft-cli-{}-{}", std::process::id(), test_name));
+    fs::create_dir_all(&dir).expect("create temp dir");
     dir
+}
+
+/// Build a DXF with 5 arch walls (a closed rectangle of 4 walls + 1 interior partition)
+/// by running `cadcraft-cli run --metric --cmd 'wall ...' --save walls.dxf`.
+fn wall_plan(dir: &Path) -> PathBuf {
+    let out_dxf = dir.join("walls.dxf");
+    let out = run_cli(&[
+        "run".into(),
+        "--metric".into(),
+        "--cmd".into(),
+        r#"wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.4}"#.into(),
+        "--cmd".into(),
+        r#"wall {"points":[[0,3],[10,3]],"thickness":0.1}"#.into(),
+        "--save".into(),
+        out_dxf.to_string_lossy().into(),
+    ]);
+    assert!(out.status.success(), "wall_plan failed: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(out_dxf.exists(), "walls.dxf not written");
+    out_dxf
+}
+
+/// Parse the glTF JSON chunk from a GLB file and return it as a `Value`.
+///
+/// GLB layout: 12-byte header | 4-byte JSON-chunk-length | 4-byte type "JSON" | JSON bytes (padded with 0x20).
+fn glb_json(path: &Path) -> Value {
+    let bytes = fs::read(path).expect("read GLB");
+    assert!(bytes.len() >= 20, "GLB too small to contain a JSON chunk: {} bytes", bytes.len());
+    let chunk_len = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as usize;
+    assert!(bytes.len() >= 20 + chunk_len, "GLB truncated before JSON chunk end: file {} bytes, chunk needs {}", bytes.len(), 20 + chunk_len);
+    serde_json::from_slice(&bytes[20..20 + chunk_len]).expect("parse GLB JSON chunk")
+}
+
+/// Return the names of all `wall-w*` meshes found in a GLB's JSON chunk.
+fn wall_mesh_names(json: &Value) -> Vec<String> {
+    json["meshes"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|m| m["name"].as_str()).filter(|n| n.starts_with("wall-w")).map(|n| n.to_string()).collect())
+        .unwrap_or_default()
 }
 
 #[test]
 fn convert_writes_a_glb_from_a_wall_plan() {
-    let dir = temp_dir();
-    let in_dxf = dir.join("floorplan.dxf");
+    let dir = temp_dir("convert_writes_a_glb_from_a_wall_plan");
+    let in_dxf = wall_plan(&dir);
     let out_glb = dir.join("house.glb");
 
-    // `sample floorplan` writes a floor plan (walls) to disk; that is our "wall plan".
-    assert!(run_cli(&["sample".into(), "floorplan".into(), in_dxf.to_string_lossy().into()]).status.success());
-    assert!(in_dxf.exists(), "floorplan.dxf not written");
-
-    // Convert the wall plan to a GLB and confirm a valid GLB container came out.
     assert!(run_cli(&["convert".into(), in_dxf.to_string_lossy().into(), out_glb.to_string_lossy().into()]).status.success());
     assert!(is_glb(&out_glb), "convert did not write a valid GLB: {}", out_glb.to_string_lossy());
-    assert!(fs::metadata(&out_glb).unwrap().len() > 0, "{:?}", out_glb);
+
+    let json = glb_json(&out_glb);
+    let names = wall_mesh_names(&json);
+    assert_eq!(names.len(), 5, "expected 5 wall meshes named wall-w*, got {}; names: {:?}", names.len(), names);
+    for name in &names {
+        assert!(name.starts_with("wall-w"), "mesh name {name:?} does not start with wall-w");
+    }
 }
 
 #[test]
 fn run_export_glb_matches_convert() {
-    let dir = temp_dir();
-    let in_dxf = dir.join("floorplan.dxf");
+    let dir = temp_dir("run_export_glb_matches_convert");
+    let in_dxf = wall_plan(&dir);
     let glb_convert = dir.join("via_convert.glb");
     let glb_run = dir.join("via_run.glb");
-
-    assert!(run_cli(&["sample".into(), "floorplan".into(), in_dxf.to_string_lossy().into()]).status.success());
-    assert!(in_dxf.exists(), "floorplan.dxf not written");
 
     // Both paths open the same drawing and build the same scene.
     assert!(run_cli(&["convert".into(), in_dxf.to_string_lossy().into(), glb_convert.to_string_lossy().into()]).status.success());
@@ -73,21 +110,24 @@ fn run_export_glb_matches_convert() {
     assert!(is_glb(&glb_convert), "convert GLB invalid: {}", glb_convert.to_string_lossy());
     assert!(is_glb(&glb_run), "run GLB invalid: {}", glb_run.to_string_lossy());
 
+    // Both GLBs must contain exactly 5 wall meshes.
+    for (label, path) in [("convert", &glb_convert), ("run --export", &glb_run)] {
+        let json = glb_json(path);
+        let names = wall_mesh_names(&json);
+        assert_eq!(names.len(), 5, "{label}: expected 5 wall meshes named wall-w*, got {}; names: {:?}", names.len(), names);
+    }
+
     // Deterministic build -> byte-for-byte identical containers.
-    assert_eq!(fs::read(glb_convert).unwrap(), fs::read(glb_run).unwrap(), "convert and run --export must produce identical GLB bytes");
+    assert_eq!(fs::read(&glb_convert).unwrap(), fs::read(&glb_run).unwrap(), "convert and run --export must produce identical GLB bytes");
 }
 
 #[test]
 fn glb_conversion_works_on_a_dxf_reopened_from_disk() {
-    let dir = temp_dir();
-    let on_disk = dir.join("saved.dxf");
+    let dir = temp_dir("glb_conversion_works_on_a_dxf_reopened_from_disk");
+    let on_disk = wall_plan(&dir);
     let out_glb = dir.join("saved.glb");
 
-    // A DXF that was *written* to disk (not a fresh in-memory drawing).
-    assert!(run_cli(&["sample".into(), "floorplan".into(), on_disk.to_string_lossy().into()]).status.success());
-    assert!(on_disk.exists(), "saved.dxf not written");
-
-    // Reopen that on-disk DXF and convert it; the GLB must be a valid container.
+    // Reopen the on-disk DXF and convert it; the GLB must be a valid container.
     assert!(run_cli(&["convert".into(), on_disk.to_string_lossy().into(), out_glb.to_string_lossy().into()]).status.success());
     assert!(is_glb(&out_glb), "reopened-from-disk GLB invalid: {}", out_glb.to_string_lossy());
 
