@@ -1455,8 +1455,8 @@ mod tests {
 
     #[test]
     fn format_projected_rounds_half_up_at_seventh_decimal() {
-        // 0.5 in the 7th decimal should round up (use 0.6 to avoid f64 representation ambiguity)
-        assert_eq!(format_projected([1.0000006, 2.0000006, 3.0000006, 4.0000006]), "PROJECTED 1.000001,2.000001,3.000001,4.000001");
+        // Use 0.8 in the 7th decimal so f32 representation error can't push it below the midpoint.
+        assert_eq!(format_projected([1.0000008, 2.0000008, 3.0000008, 4.0000008]), "PROJECTED 1.000001,2.000001,3.000001,4.000001");
     }
 
     #[test]
