@@ -19,3 +19,6 @@ cadcraft-render3d = { workspace = true }
 serde_json = { workspace = true }
 
 tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }

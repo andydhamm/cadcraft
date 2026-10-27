@@ -32,26 +32,36 @@ fn is_png(path: &Path) -> bool {
     }
 }
 
-/// A temp directory unique to this test (no cross-test clobbering).
-fn temp_dir() -> PathBuf {
-    let base = std::env::temp_dir().join(format!("cadcraft-cli-{}", std::process::id()));
-    let dir = base.join(format!("{:08}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()));
-    fs::create_dir_all(&dir).unwrap();
+/// A temp directory unique to this test process and test name (no cross-test clobbering).
+fn temp_dir(test_name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("cadcraft-cli-{}-{}", std::process::id(), test_name));
+    fs::create_dir_all(&dir).expect("create temp dir");
     dir
 }
 
-/// `sample floorplan` -> the wall plan the render tests draw on.
-fn floorplan(dir: &PathBuf) -> PathBuf {
-    let in_dxf = dir.join("floorplan.dxf");
-    assert!(run_cli(&["sample".into(), "floorplan".into(), in_dxf.to_string_lossy().into()]).status.success());
-    assert!(in_dxf.exists(), "floorplan.dxf not written");
-    in_dxf
+/// Build a DXF with 5 arch walls (a closed rectangle of 4 walls + 1 interior partition)
+/// by running `cadcraft-cli run --metric --cmd 'wall ...' --save walls.dxf`.
+fn wall_plan(dir: &Path) -> PathBuf {
+    let out_dxf = dir.join("walls.dxf");
+    let out = run_cli(&[
+        "run".into(),
+        "--metric".into(),
+        "--cmd".into(),
+        r#"wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.4}"#.into(),
+        "--cmd".into(),
+        r#"wall {"points":[[0,3],[10,3]],"thickness":0.1}"#.into(),
+        "--save".into(),
+        out_dxf.to_string_lossy().into(),
+    ]);
+    assert!(out.status.success(), "wall_plan failed: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(out_dxf.exists(), "walls.dxf not written");
+    out_dxf
 }
 
 #[test]
 fn render_writes_a_png() {
-    let dir = temp_dir();
-    let in_dxf = floorplan(&dir);
+    let dir = temp_dir("render_writes_a_png");
+    let in_dxf = wall_plan(&dir);
     let out_png = dir.join("view.png");
 
     let out = run_cli(&["render".into(), in_dxf.to_string_lossy().into(), out_png.to_string_lossy().into(), "--camera".into(), "orbit".into()]);
@@ -73,8 +83,8 @@ fn render_writes_a_png() {
 
 #[test]
 fn render_writes_a_png_or_skips_without_an_adapter() {
-    let dir = temp_dir();
-    let in_dxf = floorplan(&dir);
+    let dir = temp_dir("render_writes_a_png_or_skips_without_an_adapter");
+    let in_dxf = wall_plan(&dir);
     let out_png = dir.join("view.png");
 
     let out = run_cli(&["render".into(), in_dxf.to_string_lossy().into(), out_png.to_string_lossy().into(), "--camera".into(), "orbit".into()]);
@@ -96,8 +106,8 @@ fn render_writes_a_png_or_skips_without_an_adapter() {
 
 #[test]
 fn render_rejects_a_malformed_camera() {
-    let dir = temp_dir();
-    let in_dxf = floorplan(&dir);
+    let dir = temp_dir("render_rejects_a_malformed_camera");
+    let in_dxf = wall_plan(&dir);
     let out_png = dir.join("view.png");
 
     for camera in ["orbit,azimuth=NaN", "orbit,elevation=inf", "orbit,distance=-1", "orbit,fov=abc", "not-a-camera,fov=1"] {
