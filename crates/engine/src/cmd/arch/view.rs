@@ -45,15 +45,16 @@ fn run_view3d(s: &mut Session, _params: &Value) -> Result<Value, EngineError> {
 /// `{"ok":true,"azimuth":..,"elevation":..,"distance":..,"target":[x,y,z]}`.
 fn run_camera(_s: &mut Session, params: &Value) -> Result<Value, EngineError> {
     let azimuth = match params.get("azimuth") {
-        Some(v) if !v.is_null() => v.as_f64().filter(|n| n.is_finite()).ok_or_else(|| bad("camera", "`azimuth` must be a finite number"))?,
         None | Some(Value::Null) => 0.0,
+        Some(v) => v.as_f64().filter(|n| n.is_finite()).ok_or_else(|| bad("camera", "`azimuth` must be a finite number"))?,
     };
     let elevation = match params.get("elevation") {
-        Some(v) if !v.is_null() => v.as_f64().filter(|n| n.is_finite()).ok_or_else(|| bad("camera", "`elevation` must be a finite number"))?,
         None | Some(Value::Null) => 0.35,
+        Some(v) => v.as_f64().filter(|n| n.is_finite()).ok_or_else(|| bad("camera", "`elevation` must be a finite number"))?,
     };
     let distance = match params.get("distance") {
-        Some(v) if !v.is_null() => {
+        None | Some(Value::Null) => 10.0,
+        Some(v) => {
             let d = v.as_f64().filter(|n| n.is_finite()).ok_or_else(|| bad("camera", "`distance` must be a finite number"))?;
             if d > 0.0 {
                 d
@@ -61,10 +62,10 @@ fn run_camera(_s: &mut Session, params: &Value) -> Result<Value, EngineError> {
                 return Err(bad("camera", "`distance` must be greater than 0"));
             }
         }
-        None | Some(Value::Null) => 10.0,
     };
     let target = match params.get("target") {
-        Some(v) if !v.is_null() => {
+        None | Some(Value::Null) => (0.0, 0.0, 0.0),
+        Some(v) => {
             let a = v.as_array().ok_or_else(|| bad("camera", "`target` must be an array of three numbers"))?;
             if a.len() != 3 {
                 return Err(bad("camera", format!("`target` must have exactly 3 components (got {})", a.len())));
@@ -84,7 +85,6 @@ fn run_camera(_s: &mut Session, params: &Value) -> Result<Value, EngineError> {
                     .ok_or_else(|| bad("camera", "`target` components must be finite numbers"))?,
             )
         }
-        None | Some(Value::Null) => (0.0, 0.0, 0.0),
     };
 
     // The command does not store the camera (the 3D pane owns it); it only
@@ -152,7 +152,7 @@ mod tests {
             json!({ "target": [1, 2, "z"] }),
         ] {
             let r = s.execute("camera", &p);
-            assert!(matches!(r, Err(EngineError::BadParams(_))), format!("camera({p:?}) should be rejected, got {r:?}"));
+            assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })), "camera({p:?}) should be rejected, got {r:?}");
         }
 
         let r = s.execute("camera", &json!({ "target": [1.0, 2.0, 3.0] })).unwrap();
