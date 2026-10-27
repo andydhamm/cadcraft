@@ -877,4 +877,41 @@ mod tests {
         // Below the soffit
         assert!(!probe_mesh(&mesh, Vec3::new(5.0, 0.15, 2.2)), "point below soffit should not hit");
     }
+
+    #[test]
+    fn probe_mesh_point_on_vertical_edge_is_inside() {
+        let mesh = box_mesh(0.0, 0.0, 0.0, 1.0, "wall", ArchId(1));
+        // Point on the vertical edge at x=0, y=0 (front-left edge of the box)
+        assert!(probe_mesh(&mesh, Vec3::new(0.0, 0.0, 0.5)), "point on vertical edge should be inside");
+    }
+
+    #[test]
+    fn probe_mesh_point_on_corner_vertex_is_inside() {
+        let mesh = box_mesh(0.0, 0.0, 0.0, 1.0, "wall", ArchId(1));
+        // Point at the bottom-front-left corner vertex
+        assert!(probe_mesh(&mesh, Vec3::new(0.0, 0.0, 0.0)), "point at corner vertex should be inside");
+    }
+
+    #[test]
+    fn probe_mesh_point_on_horizontal_edge_is_inside() {
+        let mesh = box_mesh(0.0, 0.0, 0.0, 1.0, "wall", ArchId(1));
+        // Point on the top-front horizontal edge (y=0, z=1)
+        assert!(probe_mesh(&mesh, Vec3::new(0.5, 0.0, 1.0)), "point on horizontal edge should be inside");
+    }
+
+    #[test]
+    fn probe_mesh_jitter_does_not_escape_thin_wall() {
+        let mut m = Mesh::new("wall", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(0.001, 0.0), Vec2::new(0.001, 4.0), Vec2::new(0.0, 4.0)];
+        m.push_prism(&outer, 0.0, 3.0);
+        // Point at the center of the 1mm-thick wall (x=0.0005)
+        assert!(probe_mesh(&m, Vec3::new(0.0005, 2.0, 1.5)), "jitter must not escape a 1mm wall");
+    }
+
+    #[test]
+    fn probe_mesh_jitter_with_huge_coordinates() {
+        let mesh = box_mesh(1e6, 1e6, 1e6, 1.0, "wall", ArchId(1));
+        // Point at the center of a box at huge coordinates
+        assert!(probe_mesh(&mesh, Vec3::new(1e6 + 0.5, 1e6 + 0.5, 1e6 + 0.5)), "jitter must work at huge coordinates");
+    }
 }
