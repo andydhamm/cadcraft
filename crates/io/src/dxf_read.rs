@@ -190,7 +190,7 @@ mod arch_handle_tests {
     /// A LINE at handle A0000001 (below the reserved range) keeps its handle and is not an arch handle.
     #[test]
     fn a_file_line_at_a0000001_is_an_ordinary_entity() {
-        let dxf = "0\nLINE\n5\nA0000001\n10\n0\n20\n0\n30\n0\n11\n10\n21\n0\n31\n0\n0\nEOF\n";
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nLINE\n5\nA0000001\n10\n0\n20\n0\n30\n0\n11\n10\n21\n0\n31\n0\n0\nENDSEC\n0\nEOF\n";
         let d = read(dxf.as_bytes()).unwrap();
         let e = d.model.iter().next().unwrap();
         assert_eq!(e.handle, Handle(0xA0000001));
@@ -200,7 +200,7 @@ mod arch_handle_tests {
     /// A LINE at handle FFFFFFFF00000005 (in the reserved range) is reassigned to a fresh handle below ARCH_HANDLE_BASE.
     #[test]
     fn a_file_handle_in_the_reserved_range_is_reassigned() {
-        let dxf = "0\nLINE\n5\nFFFFFFFF00000005\n10\n0\n20\n0\n30\n0\n11\n10\n21\n0\n31\n0\n0\nEOF\n";
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nLINE\n5\nFFFFFFFF00000005\n10\n0\n20\n0\n30\n0\n11\n10\n21\n0\n31\n0\n0\nENDSEC\n0\nEOF\n";
         let d = read(dxf.as_bytes()).unwrap();
         let e = d.model.iter().next().unwrap();
         assert!(e.handle.0 < ARCH_HANDLE_BASE, "handle {:x} should be below reserved range", e.handle.0);
@@ -210,7 +210,7 @@ mod arch_handle_tests {
     /// A LINE at handle FFFFFFFF00010005 (room range) is also reassigned.
     #[test]
     fn a_file_handle_in_the_room_range_is_reassigned() {
-        let dxf = "0\nLINE\n5\nFFFFFFFF00010005\n10\n0\n20\n0\n30\n0\n11\n10\n21\n0\n31\n0\n0\nEOF\n";
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nLINE\n5\nFFFFFFFF00010005\n10\n0\n20\n0\n30\n0\n11\n10\n21\n0\n31\n0\n0\nENDSEC\n0\nEOF\n";
         let d = read(dxf.as_bytes()).unwrap();
         let e = d.model.iter().next().unwrap();
         assert!(e.handle.0 < ARCH_HANDLE_BASE, "handle {:x} should be below reserved range", e.handle.0);
@@ -220,7 +220,7 @@ mod arch_handle_tests {
     /// A LINE at handle FFFFFFFF00008005 (opening range) is also reassigned.
     #[test]
     fn a_file_handle_in_the_opening_range_is_reassigned() {
-        let dxf = "0\nLINE\n5\nFFFFFFFF00008005\n10\n0\n20\n0\n30\n0\n11\n10\n21\n0\n31\n0\n0\nEOF\n";
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nLINE\n5\nFFFFFFFF00008005\n10\n0\n20\n0\n30\n0\n11\n10\n21\n0\n31\n0\n0\nENDSEC\n0\nEOF\n";
         let d = read(dxf.as_bytes()).unwrap();
         let e = d.model.iter().next().unwrap();
         assert!(e.handle.0 < ARCH_HANDLE_BASE, "handle {:x} should be below reserved range", e.handle.0);

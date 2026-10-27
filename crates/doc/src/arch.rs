@@ -56,7 +56,7 @@ pub fn arch_handle(id: ArchId) -> Handle {
 
 /// Whether `h` falls in the synthetic arch-handle range (walls, openings, rooms).
 pub fn is_arch_handle(h: Handle) -> bool {
-    h.0 >= ARCH_HANDLE_BASE && h.0 < ARCH_HANDLE_BASE.saturating_add(1u64 << 32)
+    h.0 >= ARCH_HANDLE_BASE && h.0 <= ARCH_HANDLE_BASE.saturating_add(1u64 << 32)
 }
 
 /// The synthetic proxy handle for an architectural room.
