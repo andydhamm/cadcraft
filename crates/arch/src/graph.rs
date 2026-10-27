@@ -120,7 +120,14 @@ impl WallGraph {
         for (ckey, members) in &cell {
             for ddx in [-1, 0, 1] {
                 for ddy in [-1, 0, 1] {
-                    let nkey = (ckey.0 + ddx, ckey.1 + ddy);
+                    // Offsets that would push past the i64 range (saturated
+                    // cells at i64::MAX / i64::MIN) have no real neighbouring
+                    // cell, so skip them instead of overflowing.
+                    let nkey_opt = (ckey.0.checked_add(ddx), ckey.1.checked_add(ddy));
+                    let nkey = match nkey_opt {
+                        (Some(nx), Some(ny)) => (nx, ny),
+                        _ => continue,
+                    };
                     if ckey > &nkey {
                         continue;
                     }
