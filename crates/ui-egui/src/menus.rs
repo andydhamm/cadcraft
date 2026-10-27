@@ -260,10 +260,15 @@ fn run_ui_command_inner(app: &mut CadApp, id: &str, params: &Value) -> Option<Re
             toggle(&mut app.ui.show_command_line, params);
             Ok(Value::Null)
         }
+        // `{"on": true}`/`{"on": false}` set the pane, no params flips; view3d runs only on the
+        // off->on transition so toggling off returns to the 2D canvas.
         "ui.show3d" => {
-            app.ui.show_three_d = true;
-            let _ = app.run("view3d", json!({}));
-            Ok(json!({"showThreeD": true}))
+            let was = app.ui.show_three_d;
+            toggle(&mut app.ui.show_three_d, params);
+            if app.ui.show_three_d && !was {
+                let _ = app.run("view3d", json!({}));
+            }
+            Ok(json!({"showThreeD": app.ui.show_three_d}))
         }
         "ui.toggle.viewcube" => {
             toggle(&mut app.ui.show_viewcube, params);
@@ -870,6 +875,30 @@ mod tests {
         app.start("exportpdf");
         assert_eq!(asked.borrow().len(), 1);
         assert!(app.session.running.is_none());
+    }
+
+    /// `ui.show3d` is a toggle: no params flips, `{"on": true|false}` sets; `view3d` runs only
+    /// when the pane switches on, so toggling back returns to the 2D canvas.
+    #[test]
+    fn show3d_toggles_back_to_the_drawing() {
+        let (mut app, _asked) = app_with_picker(None);
+        assert!(!app.ui.show_three_d);
+
+        // First flip turns the pane on; a second flip turns it off again.
+        let r = app.run("ui.show3d", json!({})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(true));
+        assert!(app.ui.show_three_d);
+
+        let r = app.run("ui.show3d", json!({})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(false));
+        assert!(!app.ui.show_three_d);
+
+        // Explicit `{"on": true}` is idempotent: two runs leave the pane on.
+        let r = app.run("ui.show3d", json!({"on": true})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(true));
+        let r = app.run("ui.show3d", json!({"on": true})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(true));
+        assert!(app.ui.show_three_d);
     }
 }
 
