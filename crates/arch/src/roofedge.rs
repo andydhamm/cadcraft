@@ -91,7 +91,7 @@ pub fn roof_edges_geom(g: &RoofGeom) -> Vec<RoofEdge> {
 }
 
 fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings: usize) -> RoofEdgeKind {
-    // a. GableEnd if any adjacent face has infinite slope
+    // GableEnd if any adjacent face has infinite slope
     for &f_idx in adjacent {
         if let Some(face) = g.skel.faces.get(f_idx) {
             if let Some(&slope) = g.slopes.get(face.edge) {
@@ -102,7 +102,7 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings:
         }
     }
 
-    // If not exactly two faces, it's likely an eave or boundary edge.
+    // If not exactly two faces, it's an eave (boundary edge)
     if adjacent.len() != 2 {
         return RoofEdgeKind::Eave;
     }
@@ -110,7 +110,6 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings:
     let f0_idx = adjacent[0];
     let f1_idx = adjacent[1];
 
-    // Get node positions
     let node_a = match g.skel.nodes.get(a) {
         Some(n) => n,
         None => return RoofEdgeKind::Eave,
@@ -120,11 +119,70 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings:
         None => return RoofEdgeKind::Eave,
     };
 
-    // Calculate arc midpoint M
     let m_pt = (node_a.pos + node_b.pos) * 0.5;
+    let e = (node_b.pos - node_a.pos).normalized();
+    let m = e.perp();
 
-    // Calculate z for the arc at midpoint
-    // We use the average of the two faces' calculations for the node heights to be robust
+    // Helper to calculate surface height at a point for a given face
+    let surface_height = |face_idx: usize, pt: Vec2| -> Option<f64> {
+        let face = g.skel.faces.get(face_idx)?;
+        let slope = g.slopes.get(face.edge)?;
+        if slope.is_infinite() {
+            return None;
+        }
+        let eave_z = g.eave_z.get(face.edge)?;
+        let edge = g.fp.edges.get(face.edge)?;
+
+        // Distance from point to edge line segment
+        let v = edge.b - edge.a;
+        if v.len() < 1e-12 {
+            return Some(*eave_z);
+        }
+        let dist = v.cross(pt - edge.a).abs() / v.len();
+        Some(*eave_z + slope * dist)
+    };
+
+    // Helper to get a sample point inside a face near the midpoint
+    let sample_point = |face_idx: usize, sign: f64| -> Option<Vec2> {
+        let ring = face_ring(g, face_idx);
+        if ring.is_empty() {
+            return None;
+        }
+
+        // Try M + m * sign * 0.05
+        let mut s = m_pt + m * (0.05 * sign);
+        if point_in_polygon(&s, &ring) {
+            return Some(s);
+        }
+
+        // Try M - m * sign * 0.05
+        s = m_pt - m * (0.05 * sign);
+        if point_in_polygon(&s, &ring) {
+            return Some(s);
+        }
+
+        // Nudge towards centroid
+        let c = face_centroid(g, face_idx);
+        let dir = (c - m_pt).normalized();
+        s = m_pt + dir * 0.05;
+        if point_in_polygon(&s, &ring) {
+            return Some(s);
+        }
+
+        None
+    };
+
+    // Determine which side of the arc each face is on by testing both signs
+    // We want z0 for f0 and z1 for f1.
+
+    let s0 = sample_point(f0_idx, 1.0).or_else(|| sample_point(f0_idx, -1.0));
+    let s1 = sample_point(f1_idx, 1.0).or_else(|| sample_point(f1_idx, -1.0));
+
+    let z0 = s0.and_then(|p| surface_height(f0_idx, p));
+    let z1 = s1.and_then(|p| surface_height(f1_idx, p));
+
+    // Calculate expected z at midpoint from node times (interpolated)
+    // We use the average of the two faces' node heights to be robust
     let get_node_z = |node_idx: usize, face_idx: usize| -> Option<f64> {
         let node = g.skel.nodes.get(node_idx)?;
         let face = g.skel.faces.get(face_idx)?;
@@ -139,67 +197,12 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings:
 
     let (za, zb) = match (za0, zb0, za1, zb1) {
         (Some(a0), Some(b0), Some(a1), Some(b1)) => ((a0 + a1) * 0.5, (b0 + b1) * 0.5),
-        _ => return RoofEdgeKind::Eave, // Fallback if data missing
+        _ => return RoofEdgeKind::Eave,
     };
 
     let z_mid = (za + zb) * 0.5;
 
-    // Direction of arc
-    let e = (node_b.pos - node_a.pos).normalized();
-    let m = e.perp(); // Left normal
-
-    // Helper to calculate surface height at a point for a given face
-    let surface_height = |face_idx: usize, pt: Vec2| -> Option<f64> {
-        let face = g.skel.faces.get(face_idx)?;
-        let slope = g.slopes.get(face.edge)?;
-        if slope.is_infinite() {
-            return None;
-        }
-        let eave_z = g.eave_z.get(face.edge)?;
-        let edge = g.fp.edges.get(face.edge)?;
-
-        // Distance from point to edge line segment (approximate as line for roof plane)
-        let v = edge.b - edge.a;
-        if v.len() < 1e-12 {
-            return Some(*eave_z);
-        }
-        let dist = v.cross(pt - edge.a).abs() / v.len();
-        Some(*eave_z + slope * dist)
-    };
-
-    // Sample points for each face
-    // "take S_i = M + m*0.05 on that face's side"
-
-    let mut z0_opt = None;
-    let mut z1_opt = None;
-
-    // Face 0
-    let ring0 = face_ring(g, f0_idx);
-    let mut s0 = m_pt + m * 0.05;
-    if !point_in_polygon(&s0, &ring0) {
-        s0 = m_pt - m * 0.05;
-    }
-    if !point_in_polygon(&s0, &ring0) {
-        let c = face_centroid(g, f0_idx);
-        let dir = (c - m_pt).normalized();
-        s0 = m_pt + dir * 0.05;
-    }
-    z0_opt = surface_height(f0_idx, s0);
-
-    // Face 1
-    let ring1 = face_ring(g, f1_idx);
-    let mut s1 = m_pt + m * 0.05;
-    if !point_in_polygon(&s1, &ring1) {
-        s1 = m_pt - m * 0.05;
-    }
-    if !point_in_polygon(&s1, &ring1) {
-        let c = face_centroid(g, f1_idx);
-        let dir = (c - m_pt).normalized();
-        s1 = m_pt + dir * 0.05;
-    }
-    z1_opt = surface_height(f1_idx, s1);
-
-    if let (Some(z0), Some(z1)) = (z0_opt, z1_opt) {
+    if let (Some(z0), Some(z1)) = (z0, z1) {
         let eps = 1e-9;
         if z0 > z_mid + eps && z1 > z_mid + eps {
             return RoofEdgeKind::Ridge;
