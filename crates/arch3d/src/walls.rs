@@ -1,6 +1,6 @@
 //! Wall extrusion: turns a solved 2D `WallShape` into a 3D extruded mesh.
 
-use crate::mesh::Mesh;
+use crate::mesh::{Mesh, find_bridge_pair, merge_ring, triangulate_simple};
 
 use cadcraft_arch::join::WallShape;
 use cadcraft_doc::ArchModel;
@@ -360,6 +360,14 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
 }
 
 /// Manual extrusion of a profile with holes and/or slopes.
+///
+/// Builds the wall as a closed 2-manifold by bridging each hole into the
+/// outer ring, triangulating the merged ring, and emitting the two end
+/// caps (one per wall face) plus the side faces along each non-bridge edge.
+/// The winding mirrors [`Mesh::push_prism_with_holes`], which is the
+/// reference for outward-facing glTF windings: the "back" cap is reversed
+/// and the "front" cap is forward, and each side face is split into two
+/// triangles. This guarantees every emitted triangle winds outward.
 fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, material: &str) -> Option<Mesh> {
     let mut mesh = Mesh::new(material, shape.id);
     mesh.level_elevation = base;
@@ -383,88 +391,101 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
 
     // Thickness
     let thickness = ((poly[3].x - poly[0].x) * nx + (poly[3].y - poly[0].y) * ny).abs();
+    if thickness < 1e-12 {
+        return None;
+    }
 
-    // Triangulate profile
-    let tris = triangulate_profile(&profile.outer, &profile.holes);
+    // Bridge each hole into the outer ring (same logic as push_prism_with_holes).
+    let mut ring = profile.outer;
+    for hole in &profile.holes {
+        if let Some((p, q)) = find_bridge_pair(&ring, hole) {
+            ring = merge_ring(ring, p, hole, q);
+        }
+    }
+    if ring.len() < 3 {
+        return None;
+    }
 
-    for tri in tris {
-        // tri is a triangle in (u,v) space: (u0,v0), (u1,v1), (u2,v2)
-        // Create a prism for this triangle along the thickness
+    // Triangulate the merged ring once; both caps share it.
+    let tris = triangulate_simple(&ring);
+    if tris.is_empty() {
+        return None;
+    }
+    let m = ring.len() as u32;
+    let b_base = mesh.positions.len() as u32;
 
-        let mut verts = Vec::new();
-        let mut indices = Vec::new();
+    // Map a profile vertex (u, v) to world space on each wall face.
+    // face 0 = inner (t=0), face 1 = outer (t=1).
+    let face0 = |p: &Vec2| -> [f32; 3] {
+        let x = poly[0].x + p.x * (dx / len);
+        let y = poly[0].y + p.x * (dy / len);
+        [x as f32, y as f32, (base + p.y) as f32]
+    };
+    let face1 = |p: &Vec2| -> [f32; 3] {
+        let x = poly[0].x + p.x * (dx / len) + thickness * nx;
+        let y = poly[0].y + p.x * (dy / len) + thickness * ny;
+        [x as f32, y as f32, (base + p.y) as f32]
+    };
 
-        // 6 vertices: 3 at t=0 (inner), 3 at t=1 (outer)
-        // t=0 is inner face (offset 0), t=1 is outer face (offset thickness)
-        // poly[0] is start-left, poly[1] is end-left, poly[2] is end-right, poly[3] is start-right.
-        // Direction dx, dy is from poly[0] to poly[1].
-        // Normal nx, ny is left normal.
-        // So poly[0] is on the left face. poly[3] is on the right face.
-        // We extrude from left face (t=0) to right face (t=1).
+    // Back cap vertices (inner face).
+    for &p in &ring {
+        let v = face0(&p);
+        if !v.iter().all(|c| c.is_finite()) {
+            return None;
+        }
+        mesh.positions.push(v);
+        mesh.uvs.push([0.0, 0.0]);
+        mesh.normals.push([0.0, 0.0, 0.0]);
+    }
+    // Front cap vertices (outer face).
+    for &p in &ring {
+        let v = face1(&p);
+        if !v.iter().all(|c| c.is_finite()) {
+            return None;
+        }
+        mesh.positions.push(v);
+        mesh.uvs.push([0.0, 0.0]);
+        mesh.normals.push([0.0, 0.0, 0.0]);
+    }
 
-        for t in [0.0, 1.0] {
-            for p in &tri {
-                // Map u,v to world x,y,z on the left face
-                // p.x is u, p.y is v.
-                let x_base = poly[0].x + p.x * (dx / len);
-                let y_base = poly[0].y + p.x * (dy / len);
-                let z_base = base + p.y;
+    // Back cap triangles: forward winding (outward normal on inner face).
+    for tri in &tris {
+        mesh.indices.extend([b_base + tri[0], b_base + tri[1], b_base + tri[2]]);
+    }
+    // Front cap triangles: reversed winding (outward normal on outer face).
+    for tri in &tris {
+        mesh.indices.extend([b_base + m + tri[0], b_base + m + tri[2], b_base + m + tri[1]]);
+    }
 
-                // Offset along normal for thickness
-                let x = x_base + t * thickness * nx;
-                let y = y_base + t * thickness * ny;
-                let z = z_base;
-
-                verts.push([x as f32, y as f32, z as f32]);
+    // Detect bridge edges by index (same as push_prism_with_holes).
+    let mut edge_count: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
+    for i in 0..m {
+        let j = (i + 1) % m;
+        let key = if i < j { (i, j) } else { (j, i) };
+        *edge_count.entry(key).or_insert(0) += 1;
+    }
+    let mut is_bridge = vec![false; m as usize];
+    for i in 0..m {
+        let j = (i + 1) % m;
+        let key = if i < j { (i, j) } else { (j, i) };
+        if let Some(&count) = edge_count.get(&key) {
+            if count >= 2 {
+                is_bridge[i as usize] = true;
             }
         }
+    }
 
-        // Indices for a triangular prism
-        // 0,1,2 (t=0), 3,4,5 (t=1)
-        // We need consistent winding for outward normals.
-        // Assuming CCW in (u,v) plane maps to CCW when viewed from outside (t=1)?
-        // Let's use standard prism winding.
-
-        // Side 0-1
-        indices.push(0);
-        indices.push(1);
-        indices.push(4);
-        indices.push(0);
-        indices.push(4);
-        indices.push(3);
-        // Side 1-2
-        indices.push(1);
-        indices.push(2);
-        indices.push(5);
-        indices.push(1);
-        indices.push(5);
-        indices.push(4);
-        // Side 2-0
-        indices.push(2);
-        indices.push(0);
-        indices.push(3);
-        indices.push(2);
-        indices.push(3);
-        indices.push(5);
-        // Bottom (t=0)
-        indices.push(0);
-        indices.push(2);
-        indices.push(1);
-        // Top (t=1)
-        indices.push(3);
-        indices.push(4);
-        indices.push(5);
-
-        // Add to mesh
-        let base_idx = mesh.positions.len() as u32;
-        for v in &verts {
-            mesh.positions.push(*v);
-            mesh.normals.push([0.0, 0.0, 1.0]); // Placeholder
-            mesh.uvs.push([0.0, 0.0]);
+    // Side faces, skipping bridge edges; vertices are shared with the caps
+    // so the mesh is a closed 2-manifold.
+    for i in 0..m {
+        if is_bridge[i as usize] {
+            continue;
         }
-        for i in &indices {
-            mesh.indices.push(base_idx + i);
-        }
+        let j = (i + 1) % m;
+        // Triangle: front_j, back_j, back_i
+        mesh.indices.extend([b_base + m + j, b_base + j, b_base + i]);
+        // Triangle: front_j, back_i, front_i
+        mesh.indices.extend([b_base + m + j, b_base + i, b_base + m + i]);
     }
 
     (mesh.triangle_count() > 0).then(|| mesh)
@@ -534,8 +555,11 @@ pub fn extrude_profile_slab(shape: &WallShape, profile: &WallProfile, base: f64,
             continue;
         }
 
-        // Emit the same 6-vertex / 8-triangle prism layout as extrude_profile_manual.
-        // Vertices 0-2 are at s = -1; vertices 3-5 are at s = +1.
+        // Emit the 6-vertex / 8-triangle prism layout. Vertices 0-2 are at
+        // s = -1; vertices 3-5 at s = +1. The (u, v) plane's positive normal
+        // points along -s (u × v = -s), so the standard prism winding points
+        // every face into the solid; we reverse each face so all wind outward
+        // (glTF front faces are CCW, normal out).
         let base_idx = mesh.positions.len() as u32;
         for v in &verts {
             mesh.positions.push(*v);
@@ -545,33 +569,33 @@ pub fn extrude_profile_slab(shape: &WallShape, profile: &WallProfile, base: f64,
         mesh.indices.extend_from_slice(&[
             // Side 0-1
             base_idx,
+            base_idx + 4,
             base_idx + 1,
-            base_idx + 4,
             base_idx,
-            base_idx + 4,
             base_idx + 3,
+            base_idx + 4,
             // Side 1-2
             base_idx + 1,
+            base_idx + 5,
             base_idx + 2,
-            base_idx + 5,
             base_idx + 1,
-            base_idx + 5,
             base_idx + 4,
+            base_idx + 5,
             // Side 2-0
             base_idx + 2,
+            base_idx + 3,
             base_idx,
-            base_idx + 3,
             base_idx + 2,
-            base_idx + 3,
             base_idx + 5,
+            base_idx + 3,
             // Bottom face (s = -1)
             base_idx,
-            base_idx + 2,
             base_idx + 1,
+            base_idx + 2,
             // Top face (s = +1)
             base_idx + 3,
-            base_idx + 4,
             base_idx + 5,
+            base_idx + 4,
         ]);
     }
 
@@ -803,7 +827,8 @@ fn polygon_area(pts: &[Vec2]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadcraft_doc::arch::{ArchId, Level, Roof, RoofPlane, Wall};
+    use crate::mesh::Mesh;
+    use cadcraft_doc::arch::{ArchId, Level, Opening, Roof, RoofPlane, Wall};
 
     fn gable_house() -> ArchModel {
         let mut model = ArchModel::default();
@@ -970,5 +995,125 @@ mod tests {
         assert!(mesh.is_some(), "rectangle profile should produce a mesh");
         let mesh = mesh.unwrap();
         assert_eq!(mesh.triangle_count(), 12, "rectangle fast path (push_prism on 4-vertex ring) must yield exactly 12 triangles");
+    }
+
+    /// A wall with a window and a door (both openings) must produce a closed
+    /// manifold whose triangles wind consistently outward: no directed edge
+    /// is repeated and the signed volume is positive.
+    #[test]
+    fn wall_with_openings_mesh_is_consistently_oriented() {
+        let id = ArchId(7);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(10.0, -0.1), Vec2::new(10.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+        let wall = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            height: 2.4,
+            exterior: true,
+            base_level: 0,
+            ..Default::default()
+        };
+
+        let profile = elevation_profile(
+            &shape,
+            &wall,
+            0.0,
+            2.4,
+            None,
+            None,
+            &[
+                &Opening { offset: 3.0, width: 1.0, height: 2.0, sill: 0.9, ..Default::default() },
+                &Opening { offset: 7.0, width: 0.9, height: 2.1, sill: 0.05, ..Default::default() },
+            ],
+        )
+        .unwrap();
+
+        let mesh = extrude_wall_profile(&shape, profile, 0.0, "wall").unwrap();
+        assert!(mesh.triangle_count() > 0, "wall with openings must have triangles");
+
+        // 1) Every directed edge occurs at most once (consistent orientation).
+        let mut edges: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
+        for tri in mesh.indices.chunks(3) {
+            let (a, b, c) = (tri[0], tri[1], tri[2]);
+            for edge in [(a, b), (b, c), (c, a)] {
+                *edges.entry(edge).or_insert(0) += 1;
+            }
+        }
+        assert!(edges.iter().all(|(_, &n)| n <= 1), "directed edge repeated: {edges:?}");
+
+        // 2) Signed volume of the closed mesh is positive (outward winding).
+        let mut vol = 0.0;
+        for tri in mesh.indices.chunks(3) {
+            let (a, b, c) = (tri[0], tri[1], tri[2]);
+            let pa = mesh.positions[a as usize].map(|v| v as f64);
+            let pb = mesh.positions[b as usize].map(|v| v as f64);
+            let pc = mesh.positions[c as usize].map(|v| v as f64);
+            vol += pa[0] * (pb[1] * pc[2] - pb[2] * pc[1]) + pa[1] * (pb[2] * pc[0] - pb[0] * pc[2]) + pa[2] * (pb[0] * pc[1] - pb[1] * pc[0]);
+        }
+        vol /= 6.0;
+        assert!(vol > 0.0, "signed volume must be > 0, got {vol}");
+    }
+
+    /// A room's floor top faces must have +z normals and the ceiling underside
+    /// faces -z, computed from the triangle vertices (not stored normals).
+    #[test]
+    fn room_floor_and_ceiling_meshes_face_outward() {
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(6.0, 0.0), Vec2::new(6.0, 5.0), Vec2::new(0.0, 5.0)];
+
+        // Floor slab: extruded from z=0 to z=0.3. Top faces (z=0.3) must be +z.
+        let mut floor = Mesh::new("floor", ArchId(100));
+        floor.push_prism_with_holes(&ring, &[], 0.0, 0.3);
+        assert!(floor.triangle_count() > 0, "floor must have triangles");
+        for tri in floor.indices.chunks(3) {
+            let (a, b, c) = (tri[0], tri[1], tri[2]);
+            let pa = floor.positions[a as usize].map(|v| v as f64);
+            let pb = floor.positions[b as usize].map(|v| v as f64);
+            let pc = floor.positions[c as usize].map(|v| v as f64);
+            // Only horizontal faces (all vertices at the same z) have a ±z normal.
+            if (pa[2] - pb[2]).abs() > 1e-9 || (pa[2] - pc[2]).abs() > 1e-9 {
+                continue;
+            }
+            let nx = (pb[1] - pa[1]) * (pc[2] - pa[2]) - (pb[2] - pa[2]) * (pc[1] - pa[1]);
+            let nz = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0]);
+            let len = (nx * nx + nz * nz).sqrt();
+            if len < 1e-12 {
+                continue;
+            }
+            // Horizontal faces: top (z≈0.3) → +z, bottom (z≈0) → -z.
+            if pa[2] > 0.15 {
+                assert!(nz / len > 0.9, "floor top face normal must be +z: {nz}");
+            } else {
+                assert!(nz / len < -0.9, "floor bottom face normal must be -z: {nz}");
+            }
+        }
+
+        // Ceiling slab: extruded from z=2.4 to z=2.7. Underside faces (z≈2.4) must be -z.
+        let mut ceil = Mesh::new("ceiling", ArchId(101));
+        ceil.push_prism_with_holes(&ring, &[], 2.4, 2.7);
+        assert!(ceil.triangle_count() > 0, "ceiling must have triangles");
+        for tri in ceil.indices.chunks(3) {
+            let (a, b, c) = (tri[0], tri[1], tri[2]);
+            let pa = ceil.positions[a as usize].map(|v| v as f64);
+            let pb = ceil.positions[b as usize].map(|v| v as f64);
+            let pc = ceil.positions[c as usize].map(|v| v as f64);
+            // Only horizontal faces (all vertices at the same z) have a ±z normal.
+            if (pa[2] - pb[2]).abs() > 1e-9 || (pa[2] - pc[2]).abs() > 1e-9 {
+                continue;
+            }
+            let nx = (pb[1] - pa[1]) * (pc[2] - pa[2]) - (pb[2] - pa[2]) * (pc[1] - pa[1]);
+            let nz = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0]);
+            let len = (nx * nx + nz * nz).sqrt();
+            if len < 1e-12 {
+                continue;
+            }
+            // Underside (z≈2.4) must be -z; top (z≈2.7) must be +z.
+            if pa[2] < 2.55 {
+                assert!((nz / len) < -0.9, "ceiling underside normal must be -z: {nz}");
+            } else {
+                assert!((nz / len) > 0.9, "ceiling top normal must be +z: {nz}");
+            }
+        }
     }
 }
