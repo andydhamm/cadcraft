@@ -102,24 +102,45 @@ impl Mesh {
 
     /// Check if the mesh is a valid closed 2-manifold.
     ///
-    /// Every directed edge must appear the same number of times as its reverse
-    /// (each undirected edge is shared by exactly two triangles).
+    /// Vertices are welded by *position* (not index): two vertices count as the
+    /// same point when their quantised coordinates agree, so caps and side faces
+    /// that coincide in space are still matched. Every directed edge (position
+    /// → position) must appear the same number of times as its reverse, which
+    /// means each undirected edge is shared by exactly two triangles.
     pub fn is_manifold(&self) -> bool {
-        let mut edge_count: HashMap<(u32, u32), u32> = HashMap::new();
+        if self.indices.len() % 3 != 0 {
+            return false;
+        }
+        // Quantise each vertex position into a hashable key so coincident
+        // vertices (shared corners emitted by caps and by side faces) weld
+        // into a single point.
+        let n = self.positions.len();
+        let mut pos_key: Vec<(i64, i64, i64)> = Vec::with_capacity(n);
+        for p in &self.positions {
+            if !p.iter().all(|v| v.is_finite()) {
+                return false;
+            }
+            pos_key.push(((p[0] * 1e6).round() as i64, (p[1] * 1e6).round() as i64, (p[2] * 1e6).round() as i64));
+        }
+        let mut edge_count: HashMap<((i64, i64, i64), (i64, i64, i64)), u32> = HashMap::new();
         for tri in self.indices.chunks(3) {
             if tri.len() != 3 {
                 return false;
             }
             let (a, b, c) = (tri[0], tri[1], tri[2]);
-            if a == b || b == c || c == a {
+            if a >= n as u32 || b >= n as u32 || c >= n as u32 {
                 return false;
             }
-            for edge in [(a, b), (b, c), (c, a)] {
+            let (ka, kb, kc) = (pos_key[a as usize], pos_key[b as usize], pos_key[c as usize]);
+            if ka == kb || kb == kc || kc == ka {
+                return false;
+            }
+            for edge in [(ka, kb), (kb, kc), (kc, ka)] {
                 *edge_count.entry(edge).or_insert(0) += 1;
             }
         }
-        for (&(a, b), &count) in edge_count.iter() {
-            match edge_count.get(&(b, a)) {
+        for (&e, &count) in edge_count.iter() {
+            match edge_count.get(&(e.1, e.0)) {
                 Some(&r) if r != count => return false,
                 Some(_) => {}
                 None => return false,
@@ -158,6 +179,15 @@ impl Mesh {
         let z0f = z0 as f32;
         let z1f = z1 as f32;
         let b_base = self.positions.len() as u32;
+        let n = self.positions.len();
+        // Quantised position keys so bridge detection compares positions,
+        // not raw vertex indices.
+        let pos_key: Vec<(i64, i64, i64)> = (0..n as usize)
+            .map(|i| {
+                let p = &self.positions[i];
+                ((p[0] * 1e6).round() as i64, (p[1] * 1e6).round() as i64, (p[2] * 1e6).round() as i64)
+            })
+            .collect();
 
         // Bottom cap vertices (outward normal: -Z).
         for &p in &ring {
@@ -185,15 +215,38 @@ impl Mesh {
             self.indices.extend([(b_base + m + tri[0]) as u32, (b_base + m + tri[1]) as u32, (b_base + m + tri[2]) as u32]);
         }
 
-        // Side faces: each ring edge becomes a quad split into two triangles.
-        // Vertices are shared with the cap rings (no duplication), so the
-        // mesh is a closed 2-manifold.
+        // Side faces: each ring edge gets four dedicated vertices (the edge at
+        // z0 and z1) so the vertical faces carry their own horizontal outward
+        // normal from `outward_normal`. The two triangles are wound so their
+        // geometric normal points outward (away from the prism centre); the
+        // caps keep their own vertices, so no indices are shared with them.
+        let mut side_base: u32 = b_base + (m + m) as u32;
         for i in 0..m {
             let j = (i + 1) % m;
-            // Triangle: bottom_i, bottom_j, top_j
-            self.indices.extend([b_base + i, b_base + j, b_base + m + j]);
-            // Triangle: bottom_i, top_j, top_i
-            self.indices.extend([b_base + i, b_base + m + j, b_base + m + i]);
+            let a = ring[i as usize];
+            let b = ring[j as usize];
+            let normal = outward_normal(&a, &b);
+            let s0 = side_base;
+            let s1 = side_base + 1;
+            let s2 = side_base + 2;
+            let s3 = side_base + 3;
+            self.positions.push([a.x as f32, a.y as f32, z0f]);
+            self.uvs.push([a.x as f32, z0f]);
+            self.normals.push(normal);
+            self.positions.push([b.x as f32, b.y as f32, z0f]);
+            self.uvs.push([b.x as f32, z0f]);
+            self.normals.push(normal);
+            self.positions.push([b.x as f32, b.y as f32, z1f]);
+            self.uvs.push([b.x as f32, z1f]);
+            self.normals.push(normal);
+            self.positions.push([a.x as f32, a.y as f32, z1f]);
+            self.uvs.push([a.x as f32, z1f]);
+            self.normals.push(normal);
+            // Triangle: a@z0, b@z0, b@z1
+            self.indices.extend([s0, s1, s2]);
+            // Triangle: a@z0, b@z1, a@z1
+            self.indices.extend([s0, s2, s3]);
+            side_base += 4;
         }
     }
 
@@ -289,20 +342,24 @@ impl Mesh {
             self.indices.extend([(b_base + m + tri[0]) as u32, (b_base + m + tri[1]) as u32, (b_base + m + tri[2]) as u32]);
         }
 
-        // Detect bridge edges by index: an edge (i, j) with j = (i+1) % m is a
-        // bridge if the undirected edge (min(i,j), max(i,j)) appears more than
-        // once. In the merged ring each edge has a unique starting index, so
-        // no edges are bridges and none are skipped.
-        let mut edge_count: HashMap<(u32, u32), u32> = HashMap::new();
+        // Bridge edges (the two seams that stitch a hole to the outer ring) connect
+        // the same two positions, so the position-pair (min(pos, pos), max(pos, pos))
+        // repeats. Any repeated position-pair is a bridge and its side face is
+        // skipped so the merged ring stays a closed 2-manifold.
+        let mut edge_count: HashMap<((i64, i64, i64), (i64, i64, i64)), u32> = HashMap::new();
         for i in 0..m {
             let j = (i + 1) % m;
-            let key = if i < j { (i, j) } else { (j, i) };
+            let pa = pos_key[i as usize];
+            let pb = pos_key[j as usize];
+            let key = if pa <= pb { (pa, pb) } else { (pb, pa) };
             *edge_count.entry(key).or_insert(0) += 1;
         }
         let mut is_bridge = vec![false; m as usize];
         for i in 0..m {
             let j = (i + 1) % m;
-            let key = if i < j { (i, j) } else { (j, i) };
+            let pa = pos_key[i as usize];
+            let pb = pos_key[j as usize];
+            let key = if pa <= pb { (pa, pb) } else { (pb, pa) };
             if let Some(&count) = edge_count.get(&key) {
                 if count >= 2 {
                     is_bridge[i as usize] = true;
@@ -310,17 +367,39 @@ impl Mesh {
             }
         }
 
-        // Side faces, skipping bridge edges; vertices are shared with the caps
-        // so the mesh is a closed 2-manifold.
+        // Side faces, skipping bridge edges. Each side quad gets four dedicated
+        // vertices with the horizontal outward normal, so the mesh stays a
+        // closed 2-manifold while vertical faces light correctly.
+        let mut side_base: u32 = b_base + (m + m) as u32;
         for i in 0..m {
             if is_bridge[i as usize] {
                 continue;
             }
             let j = (i + 1) % m;
-            // Triangle: bottom_i, bottom_j, top_j
-            self.indices.extend([b_base + i, b_base + j, b_base + m + j]);
-            // Triangle: bottom_i, top_j, top_i
-            self.indices.extend([b_base + i, b_base + m + j, b_base + m + i]);
+            let a = ring[i as usize];
+            let b = ring[j as usize];
+            let normal = outward_normal(&a, &b);
+            let s0 = side_base;
+            let s1 = side_base + 1;
+            let s2 = side_base + 2;
+            let s3 = side_base + 3;
+            self.positions.push([a.x as f32, a.y as f32, z0f]);
+            self.uvs.push([a.x as f32, z0f]);
+            self.normals.push(normal);
+            self.positions.push([b.x as f32, b.y as f32, z0f]);
+            self.uvs.push([b.x as f32, z0f]);
+            self.normals.push(normal);
+            self.positions.push([b.x as f32, b.y as f32, z1f]);
+            self.uvs.push([b.x as f32, z1f]);
+            self.normals.push(normal);
+            self.positions.push([a.x as f32, a.y as f32, z1f]);
+            self.uvs.push([a.x as f32, z1f]);
+            self.normals.push(normal);
+            // Triangle: a@z0, b@z0, b@z1
+            self.indices.extend([s0, s1, s2]);
+            // Triangle: a@z0, b@z1, a@z1
+            self.indices.extend([s0, s2, s3]);
+            side_base += 4;
         }
     }
 }
@@ -409,15 +488,15 @@ pub(crate) fn merge_ring(ring: Vec<Vec2>, p: u32, hole: &[Vec2], q: u32) -> Vec<
     merged
 }
 
-/// Outward unit normal for the edge from `a` to `b` on a CCW polygon.
-fn outward_normal(a: &Vec2, b: &Vec2) -> (f32, f32) {
+/// Outward unit horizontal normal for the edge from `a` to `b` on a CCW polygon.
+fn outward_normal(a: &Vec2, b: &Vec2) -> [f32; 3] {
     let dx = b.x - a.x;
     let dy = b.y - a.y;
     // For a CCW polygon, the outward normal of edge a→b is (dy, -dx).
     let nx = dy as f32;
     let ny = -(dx as f32);
     let len = (nx * nx + ny * ny).sqrt();
-    if len < 1e-15 { (0.0, 0.0) } else { (nx / len, ny / len) }
+    if len < 1e-15 { [0.0, 0.0, 0.0] } else { [nx / len, ny / len, 0.0] }
 }
 
 /// Signed area of a polygon (shoelace formula).
@@ -1398,5 +1477,100 @@ mod tests {
             total_area += signed.abs();
         }
         assert!((total_area - 16.0).abs() < 1e-6, "area {total_area} not within 1e-6 of 16.0");
+    }
+
+    /// The four side faces of a square prism each carry a horizontal unit normal
+    /// pointing away from the prism centre (0, ±1, 0) or (±1, 0, 0).
+    #[test]
+    fn side_faces_carry_their_own_outward_normals() {
+        let ring = square_ring();
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism(&ring, 0.0, 2.5);
+        let (cx, cy, cz) = (4.0f32, 4.0f32, 1.25f32);
+        for (i, p) in mesh.positions.iter().enumerate() {
+            let [x, y, z] = p;
+            let [nx, ny, nz] = mesh.normals[i];
+            assert!(nx.is_finite() && ny.is_finite() && nz.is_finite());
+            assert!((nz).abs() < 1e-9, "side-face vertex {i} at ({x}, {y}, {z}) carries non-horizontal normal ({nx}, {ny}, {nz})");
+            let dot = (x - cx) * nx + (y - cy) * ny;
+            assert!(dot > -1e-6, "normal at side vertex {i} points inward: dot={dot}");
+        }
+        // The south face (y = 3) must have normal (0, -1, 0); the north face (y = 5)
+        // (0, 1, 0); the west face (x = 3) (-1, 0, 0); the east face (x = 5) (1, 0, 0).
+        let find_side_normal = |px: f32, py: f32, pz: f32| -> [f32; 3] {
+            let pos = (px, py, pz);
+            mesh.positions.iter().position(|p| p == &pos).map(|i| mesh.normals[i]).unwrap()
+        };
+        let n = find_side_normal(3.0, 3.0, 0.0);
+        assert!((n[1] + 1.0).abs() < 1e-6, "south side normal is {n:?}, expected (0,-1,0)");
+        let n = find_side_normal(5.0, 5.0, 0.0);
+        assert!((n[1] - 1.0).abs() < 1e-6, "north side normal is {n:?}, expected (0,1,0)");
+        let n = find_side_normal(3.0, 5.0, 0.0);
+        assert!((n[0] + 1.0).abs() < 1e-6, "west side normal is {n:?}, expected (-1,0,0)");
+        let n = find_side_normal(5.0, 3.0, 0.0);
+        assert!((n[0] - 1.0).abs() < 1e-6, "east side normal is {n:?}, expected (1,0,0)");
+    }
+
+    /// `is_manifold` welds vertices by position, so a prism that emits a
+    /// duplicate vertex per face (caps and sides share the corner in space but
+    /// not an index) is still manifold, while a mesh missing a triangle is not.
+    #[test]
+    fn is_manifold_welds_vertices_by_position() {
+        let ring = square_ring();
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism(&ring, 0.0, 2.5);
+        // The square prism now has duplicated vertices per face (caps and sides
+        // share corners in space but not index), yet is still a closed 2-manifold.
+        assert!(mesh.is_manifold(), "square prism with duplicated vertices must be manifold");
+        // Remove one full triangle (drop three indices) → three boundary edges
+        // with no reverse partner → not manifold.
+        let mut broken = mesh.clone();
+        assert!(broken.indices.len() >= 3, "must have at least one triangle to drop");
+        broken.indices.pop();
+        broken.indices.pop();
+        broken.indices.pop();
+        assert!(!broken.is_manifold(), "prism missing a triangle must not be manifold");
+    }
+
+    /// For every triangle, the geometric normal (cross product of its edges)
+    /// agrees in direction with each stored vertex normal (positive dot product).
+    /// Verified on both a simple square ring and a ring with a hole, and for a
+    /// concave ring.
+    #[test]
+    fn normals_face_outwards_by_geometric_normal() {
+        let check = |mesh: Mesh| {
+            for tri in mesh.indices.chunks(3) {
+                let (a, b, c) = (tri[0], tri[1], tri[2]);
+                let pa = mesh.positions[a as usize];
+                let pb = mesh.positions[b as usize];
+                let pc = mesh.positions[c as usize];
+                let eg1 = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+                let eg2 = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+                let geom = [eg1[1] * eg2[2] - eg1[2] * eg2[1], eg1[2] * eg2[0] - eg1[0] * eg2[2], eg1[0] * eg2[1] - eg1[1] * eg2[0]];
+                for v in [a, b, c] {
+                    let vn = mesh.normals[v as usize];
+                    let dot = geom[0] * vn[0] + geom[1] * vn[1] + geom[2] * vn[2];
+                    assert!(dot > -1e-6, "geometric normal disagrees with stored vertex normal at index {v}");
+                }
+            }
+        };
+        let ring = square_ring();
+        let mut m1 = Mesh::new("wall", ArchId(1));
+        m1.push_prism(&ring, 0.0, 2.5);
+        check(m1);
+        let hole = vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(1.0, 2.0)];
+        let mut m2 = Mesh::new("wall", ArchId(1));
+        m2.push_prism_with_holes(&ring, &[hole], 0.0, 2.5);
+        check(m2);
+        check(mesh_with_concave());
+    }
+
+    /// Small helper building a mesh from a concave ring (for the geometric-normal
+    /// outward test on non-convex geometry).
+    fn mesh_with_concave() -> Mesh {
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(1.5, 1.5), Vec2::new(0.0, 4.0)];
+        let mut m = Mesh::new("wall", ArchId(1));
+        m.push_prism(&ring, 0.0, 2.5);
+        m
     }
 }
