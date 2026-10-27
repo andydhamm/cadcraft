@@ -1,12 +1,7 @@
 //! Architecture command group.
 use crate::cmd::CommandSpec;
 
-/// Maximum number of walls that can be created in a single `wall` invocation.
-pub const MAX_WALLS: usize = 4096;
-
-/// Minimum length (drawing units) of a wall segment. Shorter segments are rejected
-/// rather than producing degenerate geometry.
-pub const MIN_WALL_LENGTH: f64 = 1e-6;
+pub use cadcraft_doc::arch::{MAX_WALLS, MIN_WALL_LENGTH};
 
 /// Default exterior wall thickness (m).
 pub const DEFAULT_EXT_THICKNESS: f64 = 0.2;
