@@ -90,7 +90,7 @@ pub fn roof_edges_geom(g: &RoofGeom) -> Vec<RoofEdge> {
     edges
 }
 
-fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: usize) -> RoofEdgeKind {
+fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings: usize) -> RoofEdgeKind {
     // a. GableEnd if any adjacent face has infinite slope
     for &f_idx in adjacent {
         if let Some(face) = g.skel.faces.get(f_idx) {
@@ -102,28 +102,13 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: 
         }
     }
 
-    // If not exactly two faces, fallback to heuristics or Eave
+    // If not exactly two faces, it's likely an eave or boundary edge.
     if adjacent.len() != 2 {
-        if adjacent.len() == 1 {
-            return RoofEdgeKind::Eave;
-        }
-        // For >2 faces, use old heuristic as fallback
-        if let (Some(&f0), Some(&f1)) = (adjacent.get(0), adjacent.get(1)) {
-            let face0 = &g.skel.faces[f0];
-            let face1 = &g.skel.faces[f1];
-            if let (Some(&s0), Some(&s1)) = (g.slopes.get(face0.edge), g.slopes.get(face1.edge)) {
-                if s0.is_finite() && s1.is_finite() && (s0 - s1).abs() > 1e-9 {
-                    return RoofEdgeKind::Hip;
-                }
-            }
-        }
         return RoofEdgeKind::Eave;
     }
 
     let f0_idx = adjacent[0];
     let f1_idx = adjacent[1];
-    let f0 = &g.skel.faces[f0_idx];
-    let f1 = &g.skel.faces[f1_idx];
 
     // Get node positions
     let node_a = match g.skel.nodes.get(a) {
@@ -139,7 +124,6 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: 
     let m_pt = (node_a.pos + node_b.pos) * 0.5;
 
     // Calculate z for the arc at midpoint
-    // z_node = eave_z[face.edge] + node.time
     // We use the average of the two faces' calculations for the node heights to be robust
     let get_node_z = |node_idx: usize, face_idx: usize| -> Option<f64> {
         let node = g.skel.nodes.get(node_idx)?;
@@ -175,10 +159,6 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: 
         let edge = g.fp.edges.get(face.edge)?;
 
         // Distance from point to edge line segment (approximate as line for roof plane)
-        // Using Vec2::dist for point to line segment is safer if available,
-        // but roof planes are infinite. The skeleton edge defines the plane.
-        // The plane is defined by the footprint edge and the slope.
-        // Distance from pt to the line containing edge.a and edge.b.
         let v = edge.b - edge.a;
         if v.len() < 1e-12 {
             return Some(*eave_z);
@@ -228,47 +208,6 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: 
             return RoofEdgeKind::Valley;
         }
         if (z0 > z_mid + eps && z1 < z_mid - eps) || (z0 < z_mid - eps && z1 > z_mid + eps) {
-            return RoofEdgeKind::Hip;
-        }
-    }
-
-    // Fallback to old logic if geometric check fails or is ambiguous
-    // b. Ridge if exactly two adjacent faces, parallel base edges, equal slopes
-    if let (Some(&s0), Some(&s1)) = (g.slopes.get(f0.edge), g.slopes.get(f1.edge)) {
-        if (s0 - s1).abs() < 1e-9 {
-            if let (Some(e0), Some(e1)) = (g.fp.edges.get(f0.edge), g.fp.edges.get(f1.edge)) {
-                let v0 = (e0.b - e0.a).normalized();
-                let v1 = (e1.b - e1.a).normalized();
-                if v0.cross(v1).abs() < 1e-9 {
-                    return RoofEdgeKind::Ridge;
-                }
-            }
-        }
-    }
-
-    // c. Valley or Hip based on footprint vertex turn (fallback)
-    let is_a_fp = a < n_rings;
-    let is_b_fp = b < n_rings;
-
-    if is_a_fp ^ is_b_fp {
-        let v_idx = if is_a_fp { a } else { b };
-        let n = g.fp.outer.len();
-        if n > 0 {
-            let v = g.fp.outer[v_idx];
-            let prev = g.fp.outer[(v_idx + n - 1) % n];
-            let next = g.fp.outer[(v_idx + 1) % n];
-            let turn = (next - v).cross(prev - v);
-            if turn < 0.0 {
-                return RoofEdgeKind::Valley;
-            } else {
-                return RoofEdgeKind::Hip;
-            }
-        }
-    }
-
-    // d. Hip if two adjacent faces with finite different slopes, else Eave
-    if let (Some(&s0), Some(&s1)) = (g.slopes.get(f0.edge), g.slopes.get(f1.edge)) {
-        if s0.is_finite() && s1.is_finite() && (s0 - s1).abs() > 1e-9 {
             return RoofEdgeKind::Hip;
         }
     }
