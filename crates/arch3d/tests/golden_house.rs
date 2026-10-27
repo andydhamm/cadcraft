@@ -192,3 +192,138 @@ fn crossing_interior_walls_keep_their_full_length() {
     assert!((min_y5 - 0.0).abs() < 0.2, "wall 5 min.y: {}", min_y5);
     assert!((max_y5 - 8.0).abs() < 0.2, "wall 5 max.y: {}", max_y5);
 }
+
+/// build_dirty with all walls marked dirty must equal a full build.
+#[test]
+fn build_dirty_with_all_walls_dirty_equals_full_build() {
+    let model = load_fixture();
+    let full = build(&model);
+
+    let dirty_set: std::collections::BTreeSet<cadcraft_arch::ArchId> = full.meshes.iter().map(|m| m.object).collect();
+    let dirty_scene = build_dirty(&model, &dirty_set, &full);
+
+    assert_eq!(scene_bytes(&dirty_scene), scene_bytes(&full), "build_dirty(all) differs from full build");
+}
+
+/// build_dirty with an empty dirty set must return the previous scene unchanged.
+#[test]
+fn build_dirty_with_empty_dirty_set_returns_previous() {
+    let model = load_fixture();
+    let full = build(&model);
+
+    let empty: std::collections::BTreeSet<cadcraft_arch::ArchId> = std::collections::BTreeSet::new();
+    let unchanged = build_dirty(&model, &empty, &full);
+
+    assert_eq!(scene_bytes(&unchanged), scene_bytes(&full), "build_dirty(empty) changed the scene");
+}
+
+/// A single wall builds a scene with exactly one mesh.
+#[test]
+fn single_wall_builds_one_mesh() {
+    let mut model = ArchModel::default();
+    model.add_wall(Wall {
+        start: Vec2::new(0.0, 0.0),
+        end: Vec2::new(3.0, 0.0),
+        thickness: 0.2,
+        height: 2.5,
+        exterior: true,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    });
+
+    let scene = build(&model);
+    assert_eq!(scene.meshes.len(), 1, "single wall should produce exactly one mesh");
+    let tri_count = scene.meshes[0].indices.len() / 3;
+    assert!(tri_count > 0, "single wall mesh has no triangles");
+}
+
+/// A zero-length wall (start == end) must not crash and must not produce a mesh.
+#[test]
+fn zero_length_wall_is_skipped() {
+    let mut model = ArchModel::default();
+    model.add_wall(Wall {
+        start: Vec2::new(1.0, 1.0),
+        end: Vec2::new(1.0, 1.0),
+        thickness: 0.2,
+        height: 2.5,
+        exterior: true,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    });
+
+    let scene = build(&model);
+    assert!(scene.meshes.is_empty(), "zero-length wall should produce no mesh");
+}
+
+/// Building the same model twice must produce byte-identical scenes.
+#[test]
+fn scene_bytes_are_deterministic_across_builds() {
+    let model = load_fixture();
+    let scene1 = build(&model);
+    let scene2 = build(&model);
+
+    assert_eq!(scene_bytes(&scene1), scene_bytes(&scene2), "two builds of the same model differ");
+}
+
+/// Two collinear walls on the same line build without error.
+#[test]
+fn collinear_walls_build_without_error() {
+    let mut model = ArchModel::default();
+    model.add_wall(Wall {
+        start: Vec2::new(0.0, 0.0),
+        end: Vec2::new(5.0, 0.0),
+        thickness: 0.2,
+        height: 2.5,
+        exterior: true,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    });
+    model.add_wall(Wall {
+        start: Vec2::new(5.0, 0.0),
+        end: Vec2::new(10.0, 0.0),
+        thickness: 0.2,
+        height: 2.5,
+        exterior: true,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    });
+
+    let scene = build(&model);
+    assert_eq!(scene.meshes.len(), 2, "two collinear walls should produce two meshes");
+}
+
+/// A wall with huge coordinates builds without overflow.
+#[test]
+fn huge_coordinate_wall_builds_without_error() {
+    let mut model = ArchModel::default();
+    model.add_wall(Wall {
+        start: Vec2::new(0.0, 0.0),
+        end: Vec2::new(1e6, 1e6),
+        thickness: 0.2,
+        height: 2.5,
+        exterior: true,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    });
+
+    let scene = build(&model);
+    assert_eq!(scene.meshes.len(), 1, "huge wall should produce one mesh");
+}
+
+/// A wall with NaN coordinates is handled gracefully (no mesh, no crash).
+#[test]
+fn nan_coordinate_wall_is_handled() {
+    let mut model = ArchModel::default();
+    model.add_wall(Wall {
+        start: Vec2::new(f64::NAN, 0.0),
+        end: Vec2::new(3.0, 0.0),
+        thickness: 0.2,
+        height: 2.5,
+        exterior: true,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    });
+
+    let scene = build(&model);
+    assert!(scene.meshes.is_empty(), "NaN wall should produce no mesh");
+}
