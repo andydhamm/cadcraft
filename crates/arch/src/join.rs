@@ -1636,6 +1636,101 @@ mod tests {
     }
 
     #[test]
+    fn a_corner_wider_than_29_degrees_still_mitres() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        // 30-degree corner (well within the 29-degree threshold for mitring).
+        let angle = std::f64::consts::PI / 6.0;
+        let end = Vec2::new(10.0, 0.0) + Vec2::new(-10.0 * angle.cos(), 10.0 * angle.sin());
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), end, 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        // Both walls should still mitre (L join), not square off.
+        assert!(shapes[0].joins.iter().any(|j| matches!(j, Join::L(End::End))));
+        assert!(shapes[1].joins.iter().any(|j| matches!(j, Join::L(End::Start))));
+    }
+
+    #[test]
+    fn a_thin_wall_meeting_a_thick_wall_at_an_acute_corner_squares_off() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+        // 10-degree corner with a thick wall.
+        let angle = std::f64::consts::PI / 18.0;
+        let end = Vec2::new(10.0, 0.0) + Vec2::new(-10.0 * angle.cos(), 10.0 * angle.sin());
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), end, 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        // The mitre limit uses the thicker wall (1.0), so both should square off.
+        assert!(shapes[0].joins.iter().any(|j| matches!(j, Join::Square(End::End))));
+        assert!(shapes[1].joins.iter().any(|j| matches!(j, Join::Square(End::Start))));
+    }
+
+    #[test]
+    fn both_walls_of_a_squared_off_corner_agree() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        let angle = std::f64::consts::PI / 18.0; // 10 degrees
+        let end = Vec2::new(10.0, 0.0) + Vec2::new(-10.0 * angle.cos(), 10.0 * angle.sin());
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), end, 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        // Both walls must agree: either both L or both Square. Never one L and one Square.
+        let s0_has_l = shapes[0].joins.iter().any(|j| matches!(j, Join::L(End::End)));
+        let s0_has_sq = shapes[0].joins.iter().any(|j| matches!(j, Join::Square(End::End)));
+        let s1_has_l = shapes[1].joins.iter().any(|j| matches!(j, Join::L(End::Start)));
+        let s1_has_sq = shapes[1].joins.iter().any(|j| matches!(j, Join::Square(End::Start)));
+
+        assert!(
+            (s0_has_l && s1_has_l) || (s0_has_sq && s1_has_sq),
+            "walls disagree on join type: s0 L={} Sq={}, s1 L={} Sq={}",
+            s0_has_l,
+            s0_has_sq,
+            s1_has_l,
+            s1_has_sq
+        );
+    }
+
+    #[test]
+    fn an_acute_corner_with_large_coordinates_squares_off() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(1e15, 0.0), Vec2::new(1e15 + 10.0, 0.0), 1.0);
+        let angle = std::f64::consts::PI / 18.0; // 10 degrees
+        let corner = Vec2::new(1e15 + 10.0, 0.0);
+        let end = corner + Vec2::new(-10.0 * angle.cos(), 10.0 * angle.sin());
+        wall(&mut model, 1, corner, end, 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        // Large coordinates should not break the mitre limit calculation.
+        assert!(shapes[0].joins.iter().any(|j| matches!(j, Join::Square(End::End))));
+        assert!(shapes[1].joins.iter().any(|j| matches!(j, Join::Square(End::Start))));
+    }
+
+    #[test]
+    fn a_mitre_limit_with_very_thin_walls() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.001);
+        // 20-degree corner with very thin walls: limit = 4.0 * 0.001 / 2.0 = 0.002
+        // mitre distance = 0.0005 / sin(10°) = 0.00288 > 0.002 → squares off
+        let angle = std::f64::consts::PI / 9.0; // 20 degrees
+        let end = Vec2::new(10.0, 0.0) + Vec2::new(-10.0 * angle.cos(), 10.0 * angle.sin());
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), end, 0.001);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        assert!(shapes[0].joins.iter().any(|j| matches!(j, Join::Square(End::End))));
+        assert!(shapes[1].joins.iter().any(|j| matches!(j, Join::Square(End::Start))));
+    }
+
+    #[test]
     fn a_tee_of_three_ends_butts_the_straight_pair() {
         let mut model = cadcraft_doc::ArchModel::default();
         wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), 1.0); // host left
