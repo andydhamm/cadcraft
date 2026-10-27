@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use crate::Session;
 
 /// Run body. Returns `{"meshes": ..., "triangles": ..., "rebuildMs": ...,
-/// "bounds": {"min": [x,y,z], "max": [x,y,z]}, "floors": ..., "ceilings": ...,
+/// "bounds": {"min": [x,y,z], "max": [x,y,z]}, "floors": ..., "ceilings": ..., "roofs": ...,
 /// "openings": ..., "revision": ..., "probe": [{id, part, level} | null, ...]}`.
 /// The optional `probe` key is a list of at most 1024 `[x, y, z]` points;
 /// each element of the returned `probe` array is the hit (or `null`) for the
@@ -50,6 +50,7 @@ fn run_build3d(s: &mut Session, params: &Value) -> crate::Result<Value> {
         },
         "floors": scene.floors,
         "ceilings": scene.ceilings,
+        "roofs": scene.roofs,
         "openings": scene.openings_built,
         "revision": d.arch_revision,
         "probe": probe_results,
@@ -684,5 +685,34 @@ mod tests {
         let r = s.execute("build3d", &params).unwrap();
         let probe = r["probe"].as_array().expect("missing `probe` array");
         assert!(probe[0].is_null(), "probe just past wall end should miss");
+    }
+
+    /// A session holding the phase-1 wall chain: a closed 10 x 8 m perimeter,
+    /// one `wall` command per side, on the default level.
+    fn wall_chain_session() -> Session {
+        let mut s = fresh_session();
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]], "thickness": 0.2})).unwrap();
+        s.execute("wall", &json!({"points": [[10.0, 0.0], [10.0, 8.0]], "thickness": 0.2})).unwrap();
+        s.execute("wall", &json!({"points": [[10.0, 8.0], [0.0, 8.0]], "thickness": 0.2})).unwrap();
+        s.execute("wall", &json!({"points": [[0.0, 8.0], [0.0, 0.0]], "thickness": 0.2})).unwrap();
+        s
+    }
+
+    /// `roofauto` on the phase-1 chain produces one roof, which `build3d` must
+    /// report in `roofs`.
+    #[test]
+    fn build3d_reports_roof_count() {
+        let mut s = wall_chain_session();
+        s.execute("roofauto", &json!({"pitchRise": 6, "pitchRun": 12})).unwrap();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["roofs"].as_u64(), Some(1), "roofauto'd phase-1 chain must report 1 roof");
+    }
+
+    /// Walls without a roof must report zero.
+    #[test]
+    fn build3d_reports_zero_roofs_without_roofs() {
+        let mut s = wall_session();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["roofs"].as_u64(), Some(0), "walls only must report 0 roofs");
     }
 }
