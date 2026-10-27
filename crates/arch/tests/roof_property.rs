@@ -50,6 +50,76 @@ fn shoelace(pts: &[Vec2]) -> f64 {
 }
 
 #[test]
+fn a_t_footprint_has_two_valleys() {
+    let t_shape = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (7.0, 8.0), (7.0, 12.0), (3.0, 12.0), (3.0, 8.0), (0.0, 8.0)];
+    let model = house(&t_shape, 2.4);
+    let r = roof(6.0, 0.0);
+    let built = build_roof(&model, 0, &r).expect("T-shape roof should build");
+    let edges = roof_edges(&model, 0, &built).expect("roof edges should be generated");
+
+    let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+    assert_eq!(valleys.len(), 2, "Expected exactly two valleys in T-shape footprint");
+}
+
+#[test]
+fn an_l_footprint_has_one_valley() {
+    let l_shape = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (6.0, 8.0), (6.0, 12.0), (0.0, 12.0)];
+    let model = house(&l_shape, 2.4);
+    let r = roof(6.0, 0.0);
+    let built = build_roof(&model, 0, &r).expect("L-shape roof should build");
+    let edges = roof_edges(&model, 0, &built).expect("roof edges should be generated");
+
+    let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+    assert_eq!(valleys.len(), 1, "Expected exactly one valley in L-shape footprint");
+}
+
+/// Helper to create a closed ring of exterior walls on level 0.
+fn house(pts: &[(f64, f64)], height: f64) -> ArchModel {
+    let mut model = ArchModel::default();
+    model.levels.push(Level::default());
+
+    if pts.len() < 3 {
+        return model;
+    }
+
+    for i in 0..pts.len() {
+        let a = Vec2::new(pts[i].0, pts[i].1);
+        let b = Vec2::new(pts[(i + 1) % pts.len()].0, pts[(i + 1) % pts.len()].1);
+
+        // Check for finite points
+        if !a.is_finite() || !b.is_finite() {
+            continue;
+        }
+
+        let mut wall = Wall::new(a, b, 0.2);
+        wall.height = height;
+        wall.base_level = 0;
+        wall.wall_type = "Exterior".into();
+        wall.roof_directive = RoofDirective::Auto;
+        model.push_wall(wall);
+    }
+    model
+}
+
+/// Helper to create a roof spec.
+fn roof(rise: f64, overhang: f64) -> Roof {
+    Roof { pitch_rise: rise, pitch_run: 12.0, overhang, thickness: 0.0, ..Roof::default() }
+}
+
+/// Shoelace formula for polygon area.
+fn shoelace(pts: &[Vec2]) -> f64 {
+    if pts.len() < 3 {
+        return 0.0;
+    }
+    let mut sum = 0.0;
+    for i in 0..pts.len() {
+        let j = (i + 1) % pts.len();
+        sum += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+    }
+    sum.abs() / 2.0
+}
+
+#[test]
 fn all_hip_orthogonal_footprints_have_one_sloped_edge_per_vertex() {
     let rect = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
     let l_shape = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (6.0, 8.0), (6.0, 12.0), (0.0, 12.0)];
