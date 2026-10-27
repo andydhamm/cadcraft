@@ -69,7 +69,7 @@ fn with_roof(model: &mut ArchModel, directives: &[(usize, RoofDirective)], r: &R
 /// Highest z of the wall/roof mesh tagged with `id`.
 fn mesh_max_z(scene: &cadcraft_arch3d::Scene3d, id: ArchId) -> f32 {
     let m = scene.meshes.iter().find(|m| m.object == id).expect("mesh for id missing");
-    m.positions.iter().map(|p| p[2]).max().expect("wall mesh has no vertices")
+    m.positions.iter().map(|p| p[2] as f64).max().expect("wall mesh has no vertices") as f32
 }
 
 /// Vertices of the mesh tagged with `id` whose z is within 1e-3 of `z`.
