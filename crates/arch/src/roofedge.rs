@@ -180,11 +180,11 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: 
         // The plane is defined by the footprint edge and the slope.
         // Distance from pt to the line containing edge.a and edge.b.
         let v = edge.b - edge.a;
-        if v.len_sq() < 1e-12 {
-            return Some(eave_z);
+        if v.len() < 1e-12 {
+            return Some(*eave_z);
         }
         let dist = v.cross(pt - edge.a).abs() / v.len();
-        Some(eave_z + slope * dist)
+        Some(*eave_z + slope * dist)
     };
 
     // Sample points for each face
