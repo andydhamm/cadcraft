@@ -646,9 +646,10 @@ mod tests {
     #[test]
     fn graph_huge_coordinates() {
         // Walls at coordinates near 1e18 to exercise saturate_cell_coord.
+        // At 1e18, f64 spacing is ~128, so use 1000m walls to stay non-degenerate.
         let big = 1e18;
-        let w1 = Wall::new(Vec2::new(big, 0.0), Vec2::new(big + 10.0, 0.0), 2.0);
-        let w2 = Wall::new(Vec2::new(big + 10.0, 0.0), Vec2::new(big + 10.0, 10.0), 2.0);
+        let w1 = Wall::new(Vec2::new(big, 0.0), Vec2::new(big + 1000.0, 0.0), 2.0);
+        let w2 = Wall::new(Vec2::new(big + 1000.0, 0.0), Vec2::new(big + 1000.0, 1000.0), 2.0);
         let model = make_model(vec![w1, w2]);
         let graph = WallGraph::build(&model);
         assert_eq!(graph.len(), 2);
