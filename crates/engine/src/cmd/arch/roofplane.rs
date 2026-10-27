@@ -87,7 +87,7 @@ fn create_roof_plane(
     }
     // Closed rings commonly repeat the first vertex as the last; drop the redundant
     // trailing point before any simplicity or edge check so the ring is well formed.
-    if points.len() >= 2 && points.last().near(points.first(), 1e-6) {
+    if points.len() >= 2 && points.last().is_some_and(|last| points.first().is_some_and(|first| last.near(*first, 1e-6))) {
         points.pop();
     }
     if points.len() < 3 {
