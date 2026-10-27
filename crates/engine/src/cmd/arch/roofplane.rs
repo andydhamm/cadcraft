@@ -357,16 +357,13 @@ pub fn run_roofplane(s: &mut Session, p: &Value) -> Result<Value> {
     // two-point form `[[x0, y0], [x1, y1]]`; anything else is rejected.
     let (base_0, base_1) = match base_arr.len() {
         4 if base_arr.iter().all(|v| v.as_f64().is_some_and(|x| x.is_finite())) => {
-            let [x0, y0, x1, y1]: [f64; 4] = base_arr
-                .iter()
-                .map(|v| v.as_f64().filter(|x| x.is_finite()).unwrap_or(f64::NAN))
-                .collect();
-            (Vec2::new(x0, y0), Vec2::new(x1, y1))
+            let vals: Vec<f64> = base_arr.iter().map(|v| v.as_f64().filter(|x| x.is_finite()).unwrap_or(f64::NAN)).collect();
+            (Vec2::new(vals[0], vals[1]), Vec2::new(vals[2], vals[3]))
         }
         2 => (
             crate::cmd::point_value(&base_arr[0]).ok_or_else(|| bad("roofplane", "invalid base point 0"))?,
             crate::cmd::point_value(&base_arr[1]).ok_or_else(|| bad("roofplane", "invalid base point 1"))?,
-        )
+        ),
         _ => {
             return Err(bad("roofplane", "`base` must be an array of two points"));
         }
@@ -937,11 +934,8 @@ mod tests {
         });
         let res = run_roofplane(&mut s, &params);
         assert!(res.is_err());
-        assert!(
-            res.unwrap_err().to_string().contains("must be an array of two points"),
-            "base [0.0, 0.0, 6.0] should be rejected, got {:?}",
-            res.unwrap_err()
-        );
+        let err = res.as_ref().unwrap_err();
+        assert!(err.to_string().contains("must be an array of two points"));
     }
 
     /// An unknown level index falls back to the top level (level 0 in a new drawing).
