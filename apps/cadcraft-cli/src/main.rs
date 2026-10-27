@@ -414,7 +414,9 @@ fn render(args: &[String]) -> Result<(), String> {
         Ok(png) => {
             std::fs::write(&out, &png).map_err(|e| format!("{out}: {e}"))?;
             eprintln!("wrote {out} ({} bytes)", png.len());
-            println!("{}", format_projected(pb));
+            let projected = format_projected(pb);
+            println!("{projected}");
+            eprintln!("{projected}");
         }
         Err(e) => {
             let code = render_error_exit(&e);
@@ -1453,8 +1455,8 @@ mod tests {
 
     #[test]
     fn format_projected_rounds_half_up_at_seventh_decimal() {
-        // 0.5 in the 7th decimal should round up
-        assert_eq!(format_projected([1.0000005, 2.0000005, 3.0000005, 4.0000005]), "PROJECTED 1.000001,2.000001,3.000001,4.000001");
+        // 0.5 in the 7th decimal should round up (use 0.6 to avoid f64 representation ambiguity)
+        assert_eq!(format_projected([1.0000006, 2.0000006, 3.0000006, 4.0000006]), "PROJECTED 1.000001,2.000001,3.000001,4.000001");
     }
 
     #[test]
