@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-27 02:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 02:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 23 of 30 segments merged · 5 of 11 acceptance checks**
 
-3,773 workspace tests passing at the last merge · 238 segments merged in all · 0 of 10 seats working · PAUSED
+3,773 workspace tests passing at the last merge · 238 segments merged in all · 0 of 12 seats working
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 02:30 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 5 / 11 | 17.7 h so far · expected done Oct 27 12:28–Oct 27 21:04 UTC |
+| 4 | Automatic roofs | building | 5 / 11 | 17.9 h so far · expected done Oct 27 13:22–Oct 27 22:33 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -27,12 +27,13 @@ Updated 2026-10-27 02:30 UTC. This page and the card in the README are regenerat
 
 ## Phase 4 segments
 
-23 merged, 5 replaced, 5 queued, 2 working
+23 merged, 5 replaced, 4 queued, 3 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p4x-wall-mesh-winding` | Wall, floor and ceiling meshes wind outward | working | claude-sonnet-b |
-| `p4x-cli-render-draws` | cadcraft-cli render draws the scene, not only the clear colour | working | bonsai-a |
+| `p4x-wall-mesh-winding` | Wall, floor and ceiling meshes wind outward | working | bonsai-a |
+| `p4x-cli-render-draws` | cadcraft-cli render draws the scene, not only the clear colour | working | bonsai-ws2-b |
+| `p4g-profile-slab-extrude` | extrude_profile_slab + rectangle-only fast path | working | claude-sonnet-a |
 
 ## Recent merges
 
@@ -55,13 +56,15 @@ Updated 2026-10-27 02:30 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 470 |
-| bonsai-b | bonsai2-27b | gate | 420 |
-| bonsai-ws2-a | bonsai2-27b | idle | 600 |
-| bonsai-ws2-b | bonsai2-27b | gate | 573 |
-| claude-sonnet-a | sonnet | idle | 2 |
-| claude-sonnet-b | sonnet | agent | 1 |
+| bonsai-a | bonsai2-27b | agent | 471 |
+| bonsai-b | bonsai2-27b | agent | 420 |
+| bonsai-ws2-a | bonsai2-27b | agent | 602 |
+| bonsai-ws2-b | bonsai2-27b | agent | 574 |
+| claude-sonnet-a | sonnet | agent | 2 |
+| claude-sonnet-b | sonnet | idle | 2 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 248 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 55 |
-| tturbo-mac | tturbo-ultraheretic | agent | 275 |
-| tturbo-mac2 | tturbo-ultraheretic | gate | 82 |
+| ornith-a | ornith15-397b-exl3-35 | idle | 0 |
+| ornith-b | ornith15-397b-exl3-35 | idle | 0 |
+| tturbo-mac | tturbo-ultraheretic | gate | 275 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 83 |
