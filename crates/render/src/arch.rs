@@ -17,9 +17,21 @@ pub fn arch_handle(id: ArchId) -> Handle {
     cadcraft_doc::arch_handle(id)
 }
 
-/// The poché (2D cross-section) primitives for `d.arch`, in wall order. The caller merges the
-/// returned list into the main one. `_opts` is unused for now but kept for the caller's hook.
-pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
+/// Whether `build_arch` should skip linework drawn on `layer`.
+///
+/// A layer that exists and is off, frozen, or — while plotting — marked no-plot is skipped.
+/// A missing layer is never skipped, so it draws as before.
+fn arch_layer_skipped(d: &Drawing, layer: &str, plotting: bool) -> bool {
+    d.layer(layer).map_or(false, |l| !l.on || l.frozen || (plotting && !l.plot))
+}
+
+/// The poché (2D cross-section) primitives for `d.arch`, in wall order. The caller merges
+/// the returned list into the main one. `_opts` is unused but kept as the caller's hook.
+///
+/// A wall's poché (fill, outline, gap edges) is skipped when `A-WALL` is off or frozen
+/// (and no-plot while plotting); an opening's symbol is skipped by its own layer's state.
+/// A missing layer draws as before.
+pub fn build_arch(d: &Drawing, _opts: &Options, plotting: bool) -> DisplayList {
     let mut list = DisplayList::default();
     let layer = d.layer("A-WALL").map(|l| l.color).unwrap_or(Color::Index(7));
     let ink = crate::ink(Color::ByLayer, layer, Color::Index(7));
@@ -27,50 +39,75 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
     let shapes = cadcraft_arch::join::solve_joins(&d.arch);
     let solved: BTreeMap<ArchId, &Vec<Vec2>> = shapes.iter().map(|s| (s.id, &s.polygon)).collect();
 
-    for wall in &d.arch.walls {
-        if !wall.start.is_finite() || !wall.end.is_finite() {
-            continue;
-        }
-        let len = wall.start.dist(wall.end);
-        if len < 1e-12 || !len.is_finite() {
-            continue;
-        }
-        if wall.thickness <= 0.0 || !wall.thickness.is_finite() {
-            continue;
-        }
-        let half = wall.thickness / 2.0;
-        let dir = (wall.end - wall.start).normalized();
-        let perp = dir.perp();
-        let a = wall.start - perp * half;
-        let b = wall.end - perp * half;
-        let c = wall.end + perp * half;
-        let e = wall.start + perp * half;
-
-        let ring: Vec<Vec2> = match solved.get(&wall.id) {
-            Some(r) if !r.is_empty() => r.iter().map(|p| p.clone()).collect(),
-            _ => vec![a, b, c, e],
-        };
-
-        // Poché gaps: rectangular holes from openings, in wall coordinate space.
-        let gaps = cadcraft_arch::symbol::poché_gaps(&d.arch, wall.id);
-        let mut polys: Vec<Vec<Vec2>> = vec![ring.clone()];
-        for &(gs, ge) in &gaps {
-            let p1 = wall.start + dir * gs - perp * half;
-            let p2 = wall.start + dir * gs + perp * half;
-            let p3 = wall.start + dir * ge + perp * half;
-            let p4 = wall.start + dir * ge - perp * half;
-            if p1.is_finite() && p2.is_finite() && p3.is_finite() && p4.is_finite() {
-                polys.push(vec![p1, p2, p3, p4]);
+    // Poché gaps from openings are only meaningful while the wall poché is drawn, so the
+    // whole loop is skipped when the wall's layer is off or frozen (or no-plot while plotting).
+    if !arch_layer_skipped(d, "A-WALL", plotting) {
+        for wall in &d.arch.walls {
+            if !wall.start.is_finite() || !wall.end.is_finite() {
+                continue;
             }
-        }
+            let len = wall.start.dist(wall.end);
+            if len < 1e-12 || !len.is_finite() {
+                continue;
+            }
+            if wall.thickness <= 0.0 || !wall.thickness.is_finite() {
+                continue;
+            }
+            let half = wall.thickness / 2.0;
+            let dir = (wall.end - wall.start).normalized();
+            let perp = dir.perp();
+            let a = wall.start - perp * half;
+            let b = wall.end - perp * half;
+            let c = wall.end + perp * half;
+            let e = wall.start + perp * half;
 
-        // Filled poché with holes
-        let tris = crate::triangulate_evenodd(&polys);
-        if tris.len() >= 3 {
-            let start = u32::try_from(list.tris.len()).unwrap_or(u32::MAX);
-            for q in &tris {
+            let ring: Vec<Vec2> = match solved.get(&wall.id) {
+                Some(r) if !r.is_empty() => r.iter().map(|p| p.clone()).collect(),
+                _ => vec![a, b, c, e],
+            };
+
+            // Poché gaps: rectangular holes from openings, in wall coordinate space.
+            let gaps = cadcraft_arch::symbol::poché_gaps(&d.arch, wall.id);
+            let mut polys: Vec<Vec<Vec2>> = vec![ring.clone()];
+            for &(gs, ge) in &gaps {
+                let p1 = wall.start + dir * gs - perp * half;
+                let p2 = wall.start + dir * gs + perp * half;
+                let p3 = wall.start + dir * ge + perp * half;
+                let p4 = wall.start + dir * ge - perp * half;
+                if p1.is_finite() && p2.is_finite() && p3.is_finite() && p4.is_finite() {
+                    polys.push(vec![p1, p2, p3, p4]);
+                }
+            }
+
+            // Filled poché with holes
+            let tris = crate::triangulate_evenodd(&polys);
+            if tris.len() >= 3 {
+                let start = u32::try_from(list.tris.len()).unwrap_or(u32::MAX);
+                for q in &tris {
+                    list.bounds.add(*q);
+                    list.tris.push(*q);
+                }
+                list.prims.push(DPrim {
+                    handle: arch_handle(wall.id),
+                    color: ink.rgb,
+                    aci7: ink.aci7,
+                    lw: 0.0,
+                    transparency: 0,
+                    kind: Kind::Tris,
+                    start,
+                    len: u32::try_from(tris.len()).unwrap_or(u32::MAX),
+                });
+            }
+
+            // Outline
+            let mut closed = ring;
+            if !closed.is_empty() {
+                closed.push(closed[0]);
+            }
+            let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+            for q in &closed {
                 list.bounds.add(*q);
-                list.tris.push(*q);
+                list.verts.push(*q);
             }
             list.prims.push(DPrim {
                 handle: arch_handle(wall.id),
@@ -78,72 +115,51 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
                 aci7: ink.aci7,
                 lw: 0.0,
                 transparency: 0,
-                kind: Kind::Tris,
+                kind: Kind::Polyline,
                 start,
-                len: u32::try_from(tris.len()).unwrap_or(u32::MAX),
+                len: u32::try_from(closed.len()).unwrap_or(u32::MAX),
             });
-        }
 
-        // Outline
-        let mut closed = ring;
-        if !closed.is_empty() {
-            closed.push(closed[0]);
-        }
-        let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
-        for q in &closed {
-            list.bounds.add(*q);
-            list.verts.push(*q);
-        }
-        list.prims.push(DPrim {
-            handle: arch_handle(wall.id),
-            color: ink.rgb,
-            aci7: ink.aci7,
-            lw: 0.0,
-            transparency: 0,
-            kind: Kind::Polyline,
-            start,
-            len: u32::try_from(closed.len()).unwrap_or(u32::MAX),
-        });
-
-        // Gap edge outlines: one polyline per side of each cut.
-        for &(gs, ge) in &gaps {
-            let p1 = wall.start + dir * gs - perp * half;
-            let p2 = wall.start + dir * gs + perp * half;
-            if p1.is_finite() && p2.is_finite() {
-                let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
-                list.bounds.add(p1);
-                list.bounds.add(p2);
-                list.verts.push(p1);
-                list.verts.push(p2);
-                list.prims.push(DPrim {
-                    handle: arch_handle(wall.id),
-                    color: ink.rgb,
-                    aci7: ink.aci7,
-                    lw: 0.0,
-                    transparency: 0,
-                    kind: Kind::Polyline,
-                    start,
-                    len: 2,
-                });
-            }
-            let p3 = wall.start + dir * ge - perp * half;
-            let p4 = wall.start + dir * ge + perp * half;
-            if p3.is_finite() && p4.is_finite() {
-                let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
-                list.bounds.add(p3);
-                list.bounds.add(p4);
-                list.verts.push(p3);
-                list.verts.push(p4);
-                list.prims.push(DPrim {
-                    handle: arch_handle(wall.id),
-                    color: ink.rgb,
-                    aci7: ink.aci7,
-                    lw: 0.0,
-                    transparency: 0,
-                    kind: Kind::Polyline,
-                    start,
-                    len: 2,
-                });
+            // Gap edge outlines: one polyline per side of each cut.
+            for &(gs, ge) in &gaps {
+                let p1 = wall.start + dir * gs - perp * half;
+                let p2 = wall.start + dir * gs + perp * half;
+                if p1.is_finite() && p2.is_finite() {
+                    let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+                    list.bounds.add(p1);
+                    list.bounds.add(p2);
+                    list.verts.push(p1);
+                    list.verts.push(p2);
+                    list.prims.push(DPrim {
+                        handle: arch_handle(wall.id),
+                        color: ink.rgb,
+                        aci7: ink.aci7,
+                        lw: 0.0,
+                        transparency: 0,
+                        kind: Kind::Polyline,
+                        start,
+                        len: 2,
+                    });
+                }
+                let p3 = wall.start + dir * ge - perp * half;
+                let p4 = wall.start + dir * ge + perp * half;
+                if p3.is_finite() && p4.is_finite() {
+                    let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+                    list.bounds.add(p3);
+                    list.bounds.add(p4);
+                    list.verts.push(p3);
+                    list.verts.push(p4);
+                    list.prims.push(DPrim {
+                        handle: arch_handle(wall.id),
+                        color: ink.rgb,
+                        aci7: ink.aci7,
+                        lw: 0.0,
+                        transparency: 0,
+                        kind: Kind::Polyline,
+                        start,
+                        len: 2,
+                    });
+                }
             }
         }
     }
@@ -152,6 +168,9 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
     // tagged with the opening's proxy handle so picking and selection work.
     for o in &d.arch.openings {
         if let Some(sym) = cadcraft_arch::symbol::opening_symbol(&d.arch, o) {
+            if arch_layer_skipped(d, &sym.layer, plotting) {
+                continue;
+            }
             let all_finite = sym.polylines.iter().all(|p| p.iter().all(|pt| pt.is_finite()));
             if !all_finite {
                 continue;
@@ -274,7 +293,7 @@ mod tests {
         let mut d = Drawing::new_metric();
         d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let tris_prim = list.prims.iter().find(|p| p.kind == Kind::Tris).expect("no tris prim");
         assert!(tris_prim.len >= 3);
@@ -303,7 +322,7 @@ mod tests {
         let id0 = d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
         let id1 = d.arch.add_wall(wall(Vec2::new(0.0, 10.0), Vec2::new(10.0, 10.0), 0.2));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         assert_eq!(list.prims[0].handle, arch_handle(id0));
         assert_eq!(list.prims[1].handle, arch_handle(id0));
@@ -314,7 +333,7 @@ mod tests {
     #[test]
     fn empty_arch_model_adds_no_prims() {
         let d = Drawing::new_metric();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
         assert!(list.prims.is_empty());
         assert!(list.bounds.is_empty());
     }
@@ -327,7 +346,7 @@ mod tests {
         }
         d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
         for p in &list.prims {
             assert_eq!(p.color, Rgb::from_u32(0x00ff00));
             assert!(!p.aci7);
@@ -336,7 +355,7 @@ mod tests {
         let mut d = Drawing::new_metric();
         d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
         for p in &list.prims {
             assert!(p.aci7);
         }
@@ -352,7 +371,7 @@ mod tests {
         let id0 = d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
         let id1 = d.arch.add_wall(wall(Vec2::new(0.0, 10.0), Vec2::new(10.0, 10.0), 0.2));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
         assert_eq!(list.prims[0].handle, arch_handle(id0));
         assert_eq!(list.prims[2].handle, arch_handle(id1));
         assert_ne!(list.prims[0].handle, list.prims[2].handle);
@@ -367,7 +386,7 @@ mod tests {
         d.arch.add_wall(wall(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), t));
         d.arch.add_wall(wall(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), t));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let poly = list.prims.iter().find(|p| p.kind == Kind::Polyline && p.handle == arch_handle(id0));
         assert!(poly.is_some(), "no polyline prim for bottom wall");
@@ -397,7 +416,7 @@ mod tests {
         d.arch.add_wall(wall(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), t));
         let id_int = d.arch.add_wall(wall(Vec2::new(0.0, 3.0), Vec2::new(10.0, 3.0), 0.1));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let poly = list.prims.iter().find(|p| p.kind == Kind::Polyline && p.handle == arch_handle(id_int));
         assert!(poly.is_some(), "no polyline prim for interior wall");
@@ -419,7 +438,7 @@ mod tests {
         d.arch.add_wall(wall(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), t));
         d.arch.add_wall(wall(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), t));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         assert!((list.bounds.min.x - (-0.1)).abs() < 1e-6);
         assert!((list.bounds.min.y - (-0.1)).abs() < 1e-6);
@@ -436,7 +455,7 @@ mod tests {
         let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
         d.arch.push_opening(Opening::new(wid, 5.0, 1.0, 2.1, OpeningKind::Door));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = arch_handle(wid);
         let wall_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -451,7 +470,7 @@ mod tests {
         let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
         let oid = d.arch.push_opening(Opening::new(wid, 5.0, 1.0, 2.1, OpeningKind::Door));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = opening_handle(oid);
         let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -468,7 +487,7 @@ mod tests {
             l.color = Color::True(Rgb::from_u32(0xff0000));
         }
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = opening_handle(ArchId(0));
         let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -488,7 +507,7 @@ mod tests {
             l.color = Color::True(Rgb::from_u32(0x0000ff));
         }
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = opening_handle(ArchId(0));
         let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -505,7 +524,7 @@ mod tests {
         // Opening whose host wall does not exist.
         d.arch.push_opening(Opening::new(ArchId(999), 5.0, 1.0, 2.1, OpeningKind::Door));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = opening_handle(ArchId(0));
         assert!(list.prims.iter().all(|p| p.handle != handle), "prims drawn for a missing-host opening");
@@ -519,7 +538,7 @@ mod tests {
         let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
         let oid = d.arch.push_opening(Opening::new(wid, 5.0, 1.0, 2.1, OpeningKind::Door));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         // In this fixture the wall and opening share id 0, so their proxy handles differ only
         // by range. Picking the opening must never land on the wall handle.
@@ -539,7 +558,7 @@ mod tests {
         let mut d = Drawing::new_metric();
         d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 3.0, ..Wall::default() });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let tris_prim = list.prims.iter().find(|p| p.kind == Kind::Tris).expect("no tris prim");
         assert!(tris_prim.len >= 3);
@@ -566,7 +585,7 @@ mod tests {
             ..Room::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = room_handle(rid);
         let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -593,7 +612,7 @@ mod tests {
             l.color = Color::True(Rgb::from_u32(0xff00ff));
         }
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -620,7 +639,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         // All three non-eave edges produce prims on the roof handle.
@@ -645,7 +664,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         assert!(list.prims.iter().all(|p| p.handle != handle), "eave edges were drawn as roof linework");
@@ -665,7 +684,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -685,7 +704,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let h0 = roof_handle(rid0);
         let h1 = roof_handle(rid1);
@@ -705,7 +724,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -731,7 +750,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -747,7 +766,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -766,7 +785,7 @@ mod tests {
         let mut d = Drawing::new_metric();
         let rid = d.arch.push_roof(Roof { edges: vec![], ..Roof::default() });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         assert!(list.prims.iter().all(|p| p.handle != handle), "roof with no edges drew prims");
@@ -781,7 +800,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -809,7 +828,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let prims0: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == roof_handle(rid0)).collect();
         let prims1: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == roof_handle(rid1)).collect();
@@ -830,7 +849,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -854,7 +873,7 @@ mod tests {
             ..Room::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = room_handle(rid);
         let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -875,7 +894,7 @@ mod tests {
             l.color = Color::True(Rgb::from_u32(0x00ffff));
         }
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = room_handle(ArchId(0));
         let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -896,7 +915,7 @@ mod tests {
             ..Room::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = room_handle(ArchId(0));
         let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -904,5 +923,54 @@ mod tests {
         for p in &label_prims {
             assert!(p.aci7, "label should use aci7 when A-ROOM layer is missing");
         }
+    }
+
+    /// A wall's poché (fill, outline, gap edges) is skipped when `A-WALL` is off or frozen;
+    /// a screen build still draws it when the layer is on and not frozen.
+    #[test]
+    fn arch_walls_are_not_drawn_when_a_wall_is_off_or_frozen() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-WALL");
+        d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 3.0, ..Wall::default() });
+        d.touch_arch();
+
+        // A-WALL on and not frozen: the wall draws.
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(!list.prims.is_empty(), "wall should draw when A-WALL is on and not frozen");
+
+        // A-WALL off: no arch prims.
+        if let Some(l) = d.layer_mut("A-WALL") {
+            l.on = false;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(list.prims.is_empty(), "no prims when A-WALL is off");
+
+        // A-WALL frozen: no arch prims.
+        if let Some(l) = d.layer_mut("A-WALL") {
+            l.on = true;
+            l.frozen = true;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(list.prims.is_empty(), "no prims when A-WALL is frozen");
+    }
+
+    /// A plot build skips the wall when `A-WALL` is set to no-plot; a screen build still draws it.
+    #[test]
+    fn arch_walls_are_not_plotted_when_a_wall_is_no_plot() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-WALL");
+        d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 3.0, ..Wall::default() });
+        d.touch_arch();
+
+        // Screen build (plotting = false) still draws the wall.
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(!list.prims.is_empty(), "wall should draw in a screen build");
+
+        // Mark A-WALL no-plot; a plot build skips it.
+        if let Some(l) = d.layer_mut("A-WALL") {
+            l.plot = false;
+        }
+        let list = build_arch(&d, &Options::default(), true);
+        assert!(list.prims.is_empty(), "no prims when A-WALL is no-plot during plotting");
     }
 }
