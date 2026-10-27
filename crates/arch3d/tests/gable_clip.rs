@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use cadcraft_arch3d::{ArchId, Scene3d};
+use cadcraft_arch3d::{ArchId, Mesh, Scene3d};
 use cadcraft_doc::ArchModel;
 use cadcraft_doc::arch::{Level, Roof, RoofPlane, Wall};
 use cadcraft_geom::Vec2;
@@ -73,6 +73,90 @@ fn gable_house() -> ArchModel {
 /// Find a wall id by matching its start and end points.
 fn find_wall_id(model: &ArchModel, start: Vec2, end: Vec2) -> Option<ArchId> {
     model.walls.iter().find(|w| (w.start - start).len() < 1e-3 && (w.end - end).len() < 1e-3).map(|w| w.id)
+}
+
+/// Odd-even upward ray crossing count: a point is inside when the count is odd.
+fn ray_crossings(mesh: &Mesh, x: f64, y: f64, z: f64) -> usize {
+    let mut count = 0;
+    for i in (0..mesh.indices.len()).step_by(3) {
+        let (i0, i1, i2) = (mesh.indices[i] as usize, mesh.indices[i + 1] as usize, mesh.indices[i + 2] as usize);
+        let a = mesh.positions[i0];
+        let b = mesh.positions[i1];
+        let c = mesh.positions[i2];
+        let ax = a[0] as f64;
+        let ay = a[1] as f64;
+        let az = a[2] as f64;
+        let bx = b[0] as f64;
+        let by = b[1] as f64;
+        let bz = b[2] as f64;
+        let cx = c[0] as f64;
+        let cy = c[1] as f64;
+        let cz = c[2] as f64;
+        // Cross product in xy-plane; zero => triangle is vertical (parallel to ray)
+        let den = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+        if den.abs() < 1e-12 {
+            continue;
+        }
+        // Ray direction (0,0,1) intersects the triangle plane at t above az,bz,cz
+        let rx = x - ax;
+        let ry = y - ay;
+        let s = (rx * (cy - ay) - ry * (cx - ax)) / den;
+        let t = (ry * (bx - ax) - rx * (by - ay)) / den;
+        if s < -1e-6 || t < -1e-6 || s + t > 1.0 + 1e-6 {
+            continue;
+        }
+        let hit_z = az + s * (cz - az) + t * (bz - az);
+        if hit_z > z + 1e-9 {
+            count += 1;
+        }
+    }
+    count
+}
+
+#[test]
+fn gable_wall_is_a_probeable_solid() {
+    let model = gable_house();
+    let scene = Scene3d::build(&model);
+
+    // (0, 4, 3) is inside the west gable wall (wall from (0,8) to (0,0))
+    // The ridge is at y=4, z=4.45. At y=4 the wall goes up to 4.45.
+    let west_id = find_wall_id(&model, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)).expect("west gable wall not found");
+    let west_mesh = scene.mesh_for(&west_id).expect("west gable mesh");
+    assert!(ray_crossings(&west_mesh, 0.0, 4.0, 3.0) % 2 == 1, "probe (0,4,3) must find wall inside west gable");
+
+    // (10, 4, 3) is inside the east gable wall (wall from (10,0) to (10,8))
+    let east_id = find_wall_id(&model, Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0)).expect("east gable wall not found");
+    let east_mesh = scene.mesh_for(&east_id).expect("east gable mesh");
+    assert!(ray_crossings(&east_mesh, 10.0, 4.0, 3.0) % 2 == 1, "probe (10,4,3) must find wall inside east gable");
+
+    // (10, 0.5, 3.0) is above the eave at y=0.5 (wall height there is ~2.45)
+    // so it should find nothing in any wall.
+    for w in &model.walls {
+        if let Some(wmesh) = scene.mesh_for(&w.id) {
+            assert!(ray_crossings(&wmesh, 10.0, 0.5, 3.0) % 2 == 0, "probe (10, 0.5, 3.0) must find no wall above the eave");
+        }
+    }
+}
+
+#[test]
+fn gable_build_full_matches_incremental() {
+    let model = gable_house();
+    let west_id = find_wall_id(&model, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)).expect("west gable wall not found");
+    let east_id = find_wall_id(&model, Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0)).expect("east gable wall not found");
+
+    let full = Scene3d::build(&model);
+    let dirty = BTreeSet::from([west_id, east_id]);
+    let incremental = Scene3d::build_dirty(&model, &dirty, &full);
+
+    let full_west = full.mesh_for(&west_id).expect("full west mesh");
+    let inc_west = incremental.mesh_for(&west_id).expect("incremental west mesh");
+    assert_eq!(full_west.positions, inc_west.positions, "full and incremental west gable positions must be identical");
+    assert_eq!(full_west.indices, inc_west.indices, "full and incremental west gable indices must be identical");
+
+    let full_east = full.mesh_for(&east_id).expect("full east mesh");
+    let inc_east = incremental.mesh_for(&east_id).expect("incremental east mesh");
+    assert_eq!(full_east.positions, inc_east.positions, "full and incremental east gable positions must be identical");
+    assert_eq!(full_east.indices, inc_east.indices, "full and incremental east gable indices must be identical");
 }
 
 #[test]
