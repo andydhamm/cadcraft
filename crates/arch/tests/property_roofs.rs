@@ -455,3 +455,53 @@ fn interior_edges_are_shared_by_two_planes() {
         }
     }
 }
+
+#[test]
+fn eave_edges_are_at_wall_height() {
+    let pts = [(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+    let r = roof(6.0, 0.0);
+    let Ok(built) = build_roof(&model, 0, &r) else {
+        return;
+    };
+    let Ok(edges) = roof_edges(&model, 0, &built) else {
+        return;
+    };
+    for e in &edges {
+        if matches!(e.kind, RoofEdgeKind::Eave) {
+            assert!((e.a.z - 2.4).abs() < 1e-9, "eave edge a.z {:.6} != wall height 2.4", e.a.z);
+            assert!((e.b.z - 2.4).abs() < 1e-9, "eave edge b.z {:.6} != wall height 2.4", e.b.z);
+        }
+    }
+}
+
+#[test]
+fn overhang_projected_area_matches_outset() {
+    let pts = [(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+    let r = roof(6.0, 0.5);
+    let Ok(built) = build_roof(&model, 0, &r) else {
+        return;
+    };
+    let area = projected_area_sum(&built);
+    // 10x8 with 0.5 overhang on all sides = 11x9 = 99.0
+    assert!((area - 99.0).abs() < 1e-6, "projected area {:.6} != outset area 99.0", area);
+}
+
+#[test]
+fn zero_pitch_produces_flat_roof() {
+    let pts = [(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+    let r = roof(0.0, 0.0);
+    let Ok(_built) = build_roof(&model, 0, &r) else {
+        return;
+    };
+    let Ok(geom) = roof_geometry(&model, 0, &r) else {
+        return;
+    };
+    let heights: Vec<f64> = geom.skel.nodes.iter().map(|n| n.time).collect();
+    let min_h = heights.iter().cloned().fold(f64::MAX, f64::min);
+    let max_h = heights.iter().cloned().fold(f64::MIN, f64::max);
+    assert!((max_h - min_h).abs() < 1e-9, "flat roof has height variation: min {:.6} max {:.6}", min_h, max_h);
+    assert!((min_h - 2.4).abs() < 1e-9, "flat roof height {:.6} != wall height 2.4", min_h);
+}
