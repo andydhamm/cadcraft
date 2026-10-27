@@ -579,22 +579,19 @@ pub fn solve_joins_with(model: &cadcraft_doc::ArchModel, ov: &JoinOverrides) -> 
         };
 
         let corners = ring_from_corners(plan_s.left, plan_s.right, plan_e.left, plan_e.right);
-        let mut ring = match corners {
-            Some(r) => r,
+        let (ring, joins) = match corners {
+            Some(r) => (r, vec![plan_s.join, plan_e.join].into_iter().filter_map(|j| j).collect()),
             None => {
-                // Rule 6: crossed/degenerate → fall back to the raw (untrimmed) corners.
-                let raw = ring_from_corners(ls, rs, le, re);
-                let _ = raw;
-                continue;
+                // Rule 6: crossed/degenerate → fall back to the raw (untrimmed)
+                // corners. The wall still exists; it simply records no joins.
+                match ring_from_corners(ls, rs, le, re) {
+                    Some(r) => (r, Vec::new()),
+                    None => continue,
+                }
             }
         };
 
-        out.push(WallShape {
-            id: w.id,
-            polygon: ring,
-            centre: (w.start, w.end),
-            joins: vec![plan_s.join, plan_e.join].into_iter().filter_map(|j| j).collect(),
-        });
+        out.push(WallShape { id: w.id, polygon: ring, centre: (w.start, w.end), joins });
     }
 
     out
@@ -1208,6 +1205,25 @@ mod tests {
         for s in &shapes {
             assert!(s.joins.iter().any(|j| matches!(j, Join::Square(End::End))), "shape {:?} should record Join::Square", s.id);
         }
+    }
+
+    #[test]
+    fn a_wall_shorter_than_its_neighbours_mitre_keeps_its_raw_ring() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(0.1, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(0.1, 0.0), Vec2::new(0.1, 10.0), 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2, "both walls should produce a shape");
+
+        // w0 is the 0.1 m stub mitred into a 1 m thick wall. Its trimmed corners
+        // cross over, so it must fall back to its raw ring and record no joins.
+        let w0 = &model.walls[0];
+        let shape0 = &shapes[0];
+
+        assert_eq!(shape0.id, w0.id);
+        assert_eq!(shape0.polygon, crate::wall::wall_polygon(w0).unwrap());
+        assert!(shape0.joins.is_empty());
     }
 
     #[test]
