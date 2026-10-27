@@ -455,3 +455,53 @@ fn interior_edges_are_shared_by_two_planes() {
         }
     }
 }
+
+#[test]
+fn eave_edges_are_at_wall_height() {
+    let pts = [(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+    let r = roof(6.0, 0.0);
+    let Ok(built) = build_roof(&model, 0, &r) else {
+        return;
+    };
+    // All planes should have their eave at wall height.
+    for p in &built.planes {
+        assert!((p.eave_z - 2.4).abs() < 1e-9, "plane eave_z {:.6} != wall height 2.4", p.eave_z);
+    }
+}
+
+#[test]
+fn overhang_projected_area_matches_outset() {
+    let pts = [(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+    let r = roof(6.0, 0.5);
+    let Ok(built) = build_roof(&model, 0, &r) else {
+        return;
+    };
+    let area = projected_area_sum(&built);
+    // 10x8 with 0.5 overhang on all sides = 11.2x9.2 = 103.04 (mitred overhang)
+    assert!((area - 103.04).abs() < 1e-6, "projected area {:.6} != outset area 103.04", area);
+}
+
+#[test]
+fn zero_pitch_produces_flat_roof() {
+    let pts = [(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+    let r = roof(0.0, 0.0);
+    let Ok(built) = build_roof(&model, 0, &r) else {
+        return;
+    };
+    let Ok(geom) = roof_geometry(&model, 0, &r) else {
+        return;
+    };
+    let heights: Vec<f64> = geom.skel.nodes.iter().map(|n| n.time).collect();
+    let min_h = heights.iter().cloned().fold(f64::MAX, f64::min);
+    let max_h = heights.iter().cloned().fold(f64::MIN, f64::max);
+    assert!((max_h - min_h).abs() < 1e-4, "flat roof has height variation: min {:.6} max {:.6}", min_h, max_h);
+    // For a flat roof, node times are heights above the eave, which is 0.
+    assert!(min_h.abs() < 1e-9, "flat roof node times should be 0, got {:.6}", min_h);
+    // The eave should be at wall height.
+    for p in &built.planes {
+        assert!((p.eave_z - 2.4).abs() < 1e-9, "plane eave_z {:.6} != wall height 2.4", p.eave_z);
+    }
+}
