@@ -1421,7 +1421,7 @@ fn arch_counters_are_repaired_on_read() {
     let _ = d.arch.push_wall(Wall::new(Vec2::ZERO, Vec2::new(10.0, 0.0), 0.2));
     let _ = d.arch.push_wall(Wall::new(Vec2::new(12.0, 0.0), Vec2::new(22.0, 0.0), 0.2));
     d.arch.next_id = 0;
-    let back = read_dxf(write_dxf(&d).as_bytes()).unwrap();
+    let mut back = read_dxf(write_dxf(&d).as_bytes()).unwrap();
     assert_eq!(back.arch.next_id, 2);
     let fresh = back.arch.push_wall(Wall::new(Vec2::new(24.0, 0.0), Vec2::new(34.0, 0.0), 0.2));
     assert_eq!(fresh.0, 2);

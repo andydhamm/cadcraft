@@ -260,7 +260,7 @@ fn drop_arch_proxies(d: &mut cadcraft_doc::Drawing, proxies: &[cadcraft_doc::Han
         l.entities.retain(|e| !set.contains(&e.handle));
     }
     for b in d.blocks.values_mut() {
-        b.entities.retain(|e| !set.contains(&e.handle));
+        std::sync::Arc::make_mut(b).entities.retain(|e| !set.contains(&e.handle));
     }
 }
 
