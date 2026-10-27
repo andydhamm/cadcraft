@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-27 22:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 22:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 81 of 82 segments merged · 10 of 11 acceptance checks**
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 22:00 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 10 / 11 | 37.2 h so far · expected done Oct 27 22:32–Oct 28 01:55 UTC |
+| 4 | Automatic roofs | building | 10 / 11 | 37.4 h so far · expected done Oct 27 22:47–Oct 28 02:10 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -54,15 +54,15 @@ Updated 2026-10-27 22:00 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 521 |
-| bonsai-b | bonsai2-27b | agent | 462 |
-| bonsai-ws2-a | bonsai2-27b | agent | 676 |
+| bonsai-a | bonsai2-27b | idle | 522 |
+| bonsai-b | bonsai2-27b | agent | 465 |
+| bonsai-ws2-a | bonsai2-27b | gate | 680 |
 | bonsai-ws2-b | bonsai2-27b | idle | 650 |
 | claude-sonnet-a | sonnet | idle | 17 |
 | claude-sonnet-b | sonnet | idle | 15 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 326 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 330 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 62 |
 | ornith-a | ornith15-397b-exl3-35 | down | 29 |
 | ornith-b | ornith15-397b-exl3-35 | down | 17 |
-| tturbo-mac | tturbo-ultraheretic | agent | 339 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 162 |
+| tturbo-mac | tturbo-ultraheretic | agent | 340 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 163 |
