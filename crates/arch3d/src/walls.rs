@@ -360,6 +360,14 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
 }
 
 /// Manual extrusion of a profile with holes and/or slopes.
+///
+/// Builds the wall as a closed 2-manifold by bridging each hole into the
+/// outer ring, triangulating the merged ring, and emitting the two end
+/// caps (one per wall face) plus the side faces along each non-bridge edge.
+/// The winding mirrors [`Mesh::push_prism_with_holes`], which is the
+/// reference for outward-facing glTF windings: the "back" cap is reversed
+/// and the "front" cap is forward, and each side face is split into two
+/// triangles. This guarantees every emitted triangle winds outward.
 fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, material: &str) -> Option<Mesh> {
     let mut mesh = Mesh::new(material, shape.id);
     mesh.level_elevation = base;
@@ -383,88 +391,101 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
 
     // Thickness
     let thickness = ((poly[3].x - poly[0].x) * nx + (poly[3].y - poly[0].y) * ny).abs();
+    if thickness < 1e-12 {
+        return None;
+    }
 
-    // Triangulate profile
-    let tris = triangulate_profile(&profile.outer, &profile.holes);
+    // Bridge each hole into the outer ring (same logic as push_prism_with_holes).
+    let mut ring = profile.outer;
+    for hole in &profile.holes {
+        if let Some((p, q)) = find_bridge_pair(&ring, hole) {
+            ring = merge_ring(ring, p, hole, q);
+        }
+    }
+    if ring.len() < 3 {
+        return None;
+    }
 
-    for tri in tris {
-        // tri is a triangle in (u,v) space: (u0,v0), (u1,v1), (u2,v2)
-        // Create a prism for this triangle along the thickness
+    // Triangulate the merged ring once; both caps share it.
+    let tris = triangulate_simple(&ring);
+    if tris.is_empty() {
+        return None;
+    }
+    let m = ring.len() as u32;
+    let b_base = mesh.positions.len() as u32;
 
-        let mut verts = Vec::new();
-        let mut indices = Vec::new();
+    // Map a profile vertex (u, v) to world space on each wall face.
+    // face 0 = inner (t=0), face 1 = outer (t=1).
+    let face0 = |p: &Vec2| -> [f32; 3] {
+        let x = poly[0].x + p.x * (dx / len);
+        let y = poly[0].y + p.x * (dy / len);
+        [x as f32, y as f32, (base + p.y) as f32]
+    };
+    let face1 = |p: &Vec2| -> [f32; 3] {
+        let x = poly[0].x + p.x * (dx / len) + thickness * nx;
+        let y = poly[0].y + p.x * (dy / len) + thickness * ny;
+        [x as f32, y as f32, (base + p.y) as f32]
+    };
 
-        // 6 vertices: 3 at t=0 (inner), 3 at t=1 (outer)
-        // t=0 is inner face (offset 0), t=1 is outer face (offset thickness)
-        // poly[0] is start-left, poly[1] is end-left, poly[2] is end-right, poly[3] is start-right.
-        // Direction dx, dy is from poly[0] to poly[1].
-        // Normal nx, ny is left normal.
-        // So poly[0] is on the left face. poly[3] is on the right face.
-        // We extrude from left face (t=0) to right face (t=1).
+    // Back cap vertices (inner face).
+    for &p in &ring {
+        let v = face0(&p);
+        if !v.iter().all(|c| c.is_finite()) {
+            return None;
+        }
+        mesh.positions.push(v);
+        mesh.uvs.push([0.0, 0.0]);
+        mesh.normals.push([0.0, 0.0, 0.0]);
+    }
+    // Front cap vertices (outer face).
+    for &p in &ring {
+        let v = face1(&p);
+        if !v.iter().all(|c| c.is_finite()) {
+            return None;
+        }
+        mesh.positions.push(v);
+        mesh.uvs.push([0.0, 0.0]);
+        mesh.normals.push([0.0, 0.0, 0.0]);
+    }
 
-        for t in [0.0, 1.0] {
-            for p in &tri {
-                // Map u,v to world x,y,z on the left face
-                // p.x is u, p.y is v.
-                let x_base = poly[0].x + p.x * (dx / len);
-                let y_base = poly[0].y + p.x * (dy / len);
-                let z_base = base + p.y;
+    // Back cap triangles: reversed winding (outward normal on inner face).
+    for tri in &tris {
+        mesh.indices.extend([b_base + tri[0], b_base + tri[2], b_base + tri[1]]);
+    }
+    // Front cap triangles: forward winding (outward normal on outer face).
+    for tri in &tris {
+        mesh.indices.extend([b_base + m + tri[0], b_base + m + tri[1], b_base + m + tri[2]]);
+    }
 
-                // Offset along normal for thickness
-                let x = x_base + t * thickness * nx;
-                let y = y_base + t * thickness * ny;
-                let z = z_base;
-
-                verts.push([x as f32, y as f32, z as f32]);
+    // Detect bridge edges by index (same as push_prism_with_holes).
+    let mut edge_count: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
+    for i in 0..m {
+        let j = (i + 1) % m;
+        let key = if i < j { (i, j) } else { (j, i) };
+        *edge_count.entry(key).or_insert(0) += 1;
+    }
+    let mut is_bridge = vec![false; m as usize];
+    for i in 0..m {
+        let j = (i + 1) % m;
+        let key = if i < j { (i, j) } else { (j, i) };
+        if let Some(&count) = edge_count.get(&key) {
+            if count >= 2 {
+                is_bridge[i as usize] = true;
             }
         }
+    }
 
-        // Indices for a triangular prism.
-        // 0,1,2 are at t=0; 3,4,5 at t=1. The (u, v) plane's positive
-        // normal points along -t (u × v = -t), so the standard prism
-        // winding points every face into the solid. We reverse each face
-        // so all wind outward (glTF front faces are CCW, normal out).
-
-        // Side 0-1
-        indices.push(0);
-        indices.push(4);
-        indices.push(1);
-        indices.push(0);
-        indices.push(3);
-        indices.push(4);
-        // Side 1-2
-        indices.push(1);
-        indices.push(5);
-        indices.push(2);
-        indices.push(1);
-        indices.push(4);
-        indices.push(5);
-        // Side 2-0
-        indices.push(2);
-        indices.push(3);
-        indices.push(0);
-        indices.push(2);
-        indices.push(5);
-        indices.push(3);
-        // Bottom (t=0)
-        indices.push(0);
-        indices.push(1);
-        indices.push(2);
-        // Top (t=1)
-        indices.push(3);
-        indices.push(5);
-        indices.push(4);
-
-        // Add to mesh
-        let base_idx = mesh.positions.len() as u32;
-        for v in &verts {
-            mesh.positions.push(*v);
-            mesh.normals.push([0.0, 0.0, 1.0]); // Placeholder
-            mesh.uvs.push([0.0, 0.0]);
+    // Side faces, skipping bridge edges; vertices are shared with the caps
+    // so the mesh is a closed 2-manifold.
+    for i in 0..m {
+        if is_bridge[i as usize] {
+            continue;
         }
-        for i in &indices {
-            mesh.indices.push(base_idx + i);
-        }
+        let j = (i + 1) % m;
+        // Triangle: back_i, back_j, front_j
+        mesh.indices.extend([b_base + i, b_base + j, b_base + m + j]);
+        // Triangle: back_i, front_j, front_i
+        mesh.indices.extend([b_base + i, b_base + m + j, b_base + m + i]);
     }
 
     (mesh.triangle_count() > 0).then(|| mesh)
