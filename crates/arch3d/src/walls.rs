@@ -5,7 +5,7 @@ use crate::mesh::Mesh;
 use cadcraft_arch::join::WallShape;
 use cadcraft_doc::ArchModel;
 use cadcraft_doc::arch::{Opening, Wall};
-use cadcraft_geom::{point_in_polygon, Vec2};
+use cadcraft_geom::{Vec2, point_in_polygon};
 
 /// A roof plane clipping the top of a wall.
 ///
@@ -327,7 +327,7 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
 
     // Sort by `u`, then drop collinear points.
     points.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
-    let mut result: Vec<Vec2>> = Vec::new();
+    let mut result = Vec::new();
     for p in &points {
         if result.len() >= 2 {
             let a = result[result.len() - 2];
@@ -342,11 +342,7 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
 
     // Return `None` if the top is unchanged (eave wall).
     let top_v = top - base;
-    if result.iter().any(|p| (p.y - top_v).abs() > 1e-9) {
-        Some(result)
-    } else {
-        None
-    }
+    if result.iter().any(|p| (p.y - top_v).abs() > 1e-9) { Some(result) } else { None }
 }
 
 /// Manual extrusion of a profile with holes and/or slopes.
@@ -689,12 +685,7 @@ mod tests {
 
     fn gable_house() -> ArchModel {
         let mut model = ArchModel::default();
-        model.levels.push(Level {
-            index: 0,
-            elevation: 0.0,
-            ceiling_height: 2.4,
-            ..Default::default()
-        });
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
         let _ = model.push_wall(Wall {
             start: Vec2::new(0.0, 0.0),
             end: Vec2::new(10.0, 0.0),
@@ -736,12 +727,7 @@ mod tests {
         roof.level = 0;
         let south = RoofPlane {
             base_edge: [-0.1, -0.1, 10.1, -0.1],
-            ring: vec![
-                Vec2::new(-0.1, -0.1),
-                Vec2::new(10.1, -0.1),
-                Vec2::new(10.1, 4.0),
-                Vec2::new(-0.1, 4.0),
-            ],
+            ring: vec![Vec2::new(-0.1, -0.1), Vec2::new(10.1, -0.1), Vec2::new(10.1, 4.0), Vec2::new(-0.1, 4.0)],
             slope: 0.5,
             eave_z: 2.4,
             thickness: 0.25,
@@ -749,12 +735,7 @@ mod tests {
         };
         let north = RoofPlane {
             base_edge: [-0.1, 8.1, 10.1, 8.1],
-            ring: vec![
-                Vec2::new(-0.1, 8.1),
-                Vec2::new(-0.1, 4.0),
-                Vec2::new(10.1, 4.0),
-                Vec2::new(10.1, 8.1),
-            ],
+            ring: vec![Vec2::new(-0.1, 8.1), Vec2::new(-0.1, 4.0), Vec2::new(10.1, 4.0), Vec2::new(10.1, 8.1)],
             slope: 0.5,
             eave_z: 2.4,
             thickness: 0.25,
