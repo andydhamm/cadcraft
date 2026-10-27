@@ -219,7 +219,7 @@ mod tests {
     fn make_long_wall_with_window() -> Session {
         let mut s = Session::new();
         s.execute("wall", &json!({"points": [[0.0, 0.0], [5000.0, 0.0]]})).expect("wall command");
-        s.execute("window", &json!({"wall": "w0", "offset": 2000.0, "width": 900.0, "height": 2.0})).expect("window command");
+        s.execute("window", &json!({"wall": "w0", "offset": 2000.0, "width": 900.0, "height": 2.0, "sill": 0.6})).expect("window command");
         s
     }
 
@@ -266,12 +266,15 @@ mod tests {
     #[test]
     fn a_neighbour_whose_start_moves_keeps_its_openings() {
         let mut s = Session::new();
-        // L-shape: w0 = (0,0)-(10,0), w1 = (10,0)-(10,10), w2 = (10,10)-(20,10).
-        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [20.0, 10.0]]})).expect("wall command");
+        // w0 = (0,0)-(10,0), w1 = (10,0)-(10,10), w2 = (10,10)-(10,20): w2 is a
+        // collinear continuation of w1, so sliding w2's start along the shared
+        // axis does not rotate the wall.
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [10.0, 20.0]]})).expect("wall command");
         s.execute("door", &json!({"wall": "w2", "offset": 5.0, "width": 1.0, "height": 2.1})).expect("door on w2");
 
-        // Door's world start is (15, 10). Stretch w1's end (10, 10) along w1 to
-        // (10, 12); w2's start follows, the door must keep its world position.
+        // Door's world start is (10, 15). Stretch w1's end (10, 10) along w1 to
+        // (10, 12); w2's start follows to (10, 12) and the door must keep its
+        // world position.
         let res = s.execute("arch.wall.stretch", &json!({"wall": "w1", "end": "end", "to": [10.0, 12.0]}));
         assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
 
@@ -280,7 +283,7 @@ mod tests {
         assert!((d.arch.wall(ArchId(2)).expect("w2").start - Vec2::new(10.0, 12.0)).len() < 1e-6, "w2.start should have moved to (10, 12)");
         let door_world = d.arch.wall(ArchId(2)).expect("w2").start
             + (d.arch.wall(ArchId(2)).expect("w2").end - d.arch.wall(ArchId(2)).expect("w2").start).normalized() * door.offset;
-        assert!((door_world - Vec2::new(15.0, 10.0)).len() < 1e-5, "door world start should still be (15, 10): ({}, {})", door_world.x, door_world.y);
+        assert!((door_world - Vec2::new(10.0, 15.0)).len() < 1e-5, "door world start should still be (10, 15): ({}, {})", door_world.x, door_world.y);
     }
 
     #[test]
