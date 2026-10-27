@@ -38,19 +38,19 @@ fn rough_opening_is_a_hole_in_the_wall() {
     // Rough opening spans x 3.49..4.51 and z 0.9..2.22 (sill 0.9 + height 1.2 + rough allowance).
     // Probe inside the rough opening: should NOT hit wall.
     let p_in = scene.probe(Vec3::new(4.0, 8.0, 1.5));
-    assert!(p_in.is_none() || p_in.unwrap().part != "wall", "probe inside rough opening hit wall: {:?}", p_in);
+    assert!(p_in.is_none() || p_in.as_ref().unwrap().part != "wall", "probe inside rough opening hit wall: {:?}", p_in);
 
     // Probe below sill: should hit wall.
     let p_below = scene.probe(Vec3::new(4.0, 8.0, 0.5));
-    assert!(p_below.is_some() && p_below.unwrap().part == "wall", "probe below sill did not hit wall: {:?}", p_below);
+    assert!(p_below.is_some() && p_below.as_ref().unwrap().part == "wall", "probe below sill did not hit wall: {:?}", p_below);
 
     // Probe above rough opening: should hit wall.
     let p_above = scene.probe(Vec3::new(4.0, 8.0, 2.3));
-    assert!(p_above.is_some() && p_above.unwrap().part == "wall", "probe above rough opening did not hit wall: {:?}", p_above);
+    assert!(p_above.is_some() && p_above.as_ref().unwrap().part == "wall", "probe above rough opening did not hit wall: {:?}", p_above);
 
     // Probe beside rough opening: should hit wall.
     let p_side = scene.probe(Vec3::new(5.0, 8.0, 1.5));
-    assert!(p_side.is_some() && p_side.unwrap().part == "wall", "probe beside rough opening did not hit wall: {:?}", p_side);
+    assert!(p_side.is_some() && p_side.as_ref().unwrap().part == "wall", "probe beside rough opening did not hit wall: {:?}", p_side);
 }
 
 #[test]
