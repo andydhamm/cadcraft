@@ -245,7 +245,7 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
         }
         for plane in &roof.planes {
             for q in &plane.ring {
-                let u = (q - wall.start).dot(dir);
+                let u = (*q - wall.start).dot(dir);
                 let u = u.clamp(0.0, len);
                 if u.is_finite() {
                     us.push(u);
@@ -262,7 +262,7 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
     }
 
     // Evaluate the top height at each candidate `u`.
-    let mut points: Vec<Vec2>> = Vec::new();
+    let mut points: Vec<Vec2> = Vec::new();
     for &u in &unique_us {
         let p = wall.start + dir * u + out * (wall.thickness / 2.0);
         let mut z = top;
