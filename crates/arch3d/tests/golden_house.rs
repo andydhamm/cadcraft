@@ -51,7 +51,7 @@ fn scene_bytes(scene: &Scene3d) -> Vec<u8> {
 }
 
 /// Build the 10×8 m demo house model programmatically (matches the fixture JSON).
-fn load_fixture() -> ArchModel {
+fn programmatic_house() -> ArchModel {
     let mut model = ArchModel::default();
 
     // Exterior walls: 4 walls forming a 10×8 m rectangle
@@ -72,6 +72,27 @@ fn load_fixture() -> ArchModel {
     }
 
     model
+}
+
+/// Build the 10×8 m demo house by parsing `fixtures/house_10x8.json`.
+///
+/// Walls are added through [`ArchModel::add_wall`] in file order so that
+/// their assigned ids match those produced by [`programmatic_house`].
+fn load_fixture() -> ArchModel {
+    let json = include_str!("fixtures/house_10x8.json");
+    let parsed: ArchModel = serde_json::from_str(json).expect("fixtures/house_10x8.json must be valid JSON");
+    let mut model = ArchModel::default();
+    for wall in parsed.walls {
+        model.add_wall(wall);
+    }
+    model
+}
+
+/// The JSON fixture must produce exactly the same wall data as the programmatic
+/// builder so that the two paths stay in sync.
+#[test]
+fn fixture_json_matches_the_programmatic_house() {
+    assert_eq!(load_fixture().walls, programmatic_house().walls);
 }
 
 /// The 10×8 m house: 4 exterior walls + 2 interior walls produce a fixed,
@@ -127,7 +148,6 @@ fn build_dirty_equals_full_build() {
     let model = load_fixture();
     let full = build(&model);
 
-    let dirty: std::collections::BTreeSet<_> = full.meshes.iter().map(|m| m.object).collect();
     // Keep only the first wall marked dirty; recompute from a "previous"
     // scene that already has all other walls.
     let first_id = full.meshes.first().map(|m| m.object).expect("no meshes");
@@ -141,6 +161,7 @@ fn build_dirty_equals_full_build() {
     let tri_full: usize = full.meshes.iter().map(|m| m.indices.len() / 3).sum();
     let tri_dirty: usize = dirty_scene.meshes.iter().map(|m| m.indices.len() / 3).sum();
     assert_eq!(tri_full, tri_dirty, "build_dirty changed triangle count");
+    assert_eq!(scene_bytes(&dirty_scene), scene_bytes(&full), "build_dirty scene bytes differ from full build");
 }
 
 /// The two interior walls cross at (5, 4); after the X-crossing fix each keeps
