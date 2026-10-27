@@ -79,7 +79,6 @@ pub fn wall_layer_polygons(w: &Wall) -> Vec<(String, Vec<Vec2>)> {
     let dir = (w.end - w.start).normalized();
     let perp = dir.perp();
     let half = w.thickness / 2.0;
-    let outer = half;
     let mut out: Vec<(String, Vec<Vec2>)> = Vec::new();
     let mut consumed = 0.0;
     for (name, t) in &w.layers {
@@ -348,5 +347,125 @@ mod tests {
         // thickness and the second is skipped (no remaining budget).
         assert_eq!(polys.len(), 1, "only one band fits in a 1e-10 wall");
         assert_eq!(polys[0].0, "a");
+    }
+
+    #[test]
+    fn layer_bands_on_diagonal_wall() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 10.0),
+            thickness: 2.0,
+            height: 3.0,
+            layers: vec![("a".into(), 0.5), ("b".into(), 1.0)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        assert_eq!(polys.len(), 2);
+        for (_, pts) in &polys {
+            assert_eq!(pts.len(), 4);
+            assert!(pts.iter().all(|p| p.is_finite()));
+        }
+    }
+
+    #[test]
+    fn layer_band_exactly_fills_wall_thickness() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 2.0,
+            height: 3.0,
+            layers: vec![("full".into(), 2.0)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        assert_eq!(polys.len(), 1);
+        let pts = &polys[0].1;
+        let width = (pts[0] - pts[3]).y.abs();
+        assert!((width - 2.0).abs() < 1e-9, "band should span full thickness");
+    }
+
+    #[test]
+    fn layer_bands_with_floating_point_sum() {
+        // 0.1 + 0.2 + 0.3 in f64 is 0.6000000000000001, not exactly 0.6.
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.6,
+            height: 3.0,
+            layers: vec![("a".into(), 0.1), ("b".into(), 0.2), ("c".into(), 0.3)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        // All three bands should fit despite floating-point rounding.
+        assert_eq!(polys.len(), 3);
+    }
+
+    #[test]
+    fn layer_bands_on_wall_with_negative_coordinates() {
+        let w = Wall {
+            start: Vec2::new(-5.0, -3.0),
+            end: Vec2::new(5.0, -3.0),
+            thickness: 2.0,
+            height: 3.0,
+            layers: vec![("a".into(), 0.5), ("b".into(), 1.0)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        assert_eq!(polys.len(), 2);
+        for (_, pts) in &polys {
+            assert!(pts.iter().all(|p| p.is_finite()));
+        }
+    }
+
+    #[test]
+    fn layer_bands_on_very_long_wall() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(1e6, 0.0),
+            thickness: 2.0,
+            height: 3.0,
+            layers: vec![("a".into(), 0.5), ("b".into(), 1.0)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        assert_eq!(polys.len(), 2);
+        for (_, pts) in &polys {
+            assert!(pts.iter().all(|p| p.is_finite()));
+        }
+    }
+
+    #[test]
+    fn layer_bands_on_wall_with_huge_thickness() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 1e15,
+            height: 3.0,
+            layers: vec![("a".into(), 0.5), ("b".into(), 1.0)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        assert_eq!(polys.len(), 2);
+        for (_, pts) in &polys {
+            assert!(pts.iter().all(|p| p.is_finite()));
+        }
+    }
+
+    #[test]
+    fn layer_bands_summing_to_less_than_thickness_do_not_reach_inner_face() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 2.0,
+            height: 3.0,
+            layers: vec![("a".into(), 0.5)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        assert_eq!(polys.len(), 1);
+        let pts = &polys[0].1;
+        // Band starts at outer face (y = -1.0) and ends at y = -0.5, not at inner face.
+        assert!((pts[0].y - (-1.0)).abs() < 1e-9, "band starts at outer face");
+        assert!((pts[3].y - (-0.5)).abs() < 1e-9, "band ends at y = -0.5");
     }
 }
