@@ -25,9 +25,9 @@ mod tests;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use arch::{
-    ARCH_HANDLE_BASE, ArchId, ArchModel, JoinKind, Level, MAX_ROOF_PLANES, MAX_ROOMS, MAX_WALLS, OPENING_HANDLE_OFFSET, RefSide, Roof, RoofDirective,
-    RoofEdge, RoofEdgeKind, RoofPlane, Room, RoomType, Wall, WallLayer, WallType, arch_handle, is_arch_handle, is_opening_handle, is_room_handle,
-    opening_handle, opening_label, room_handle, room_label, wall_label,
+    ARCH_HANDLE_BASE, ArchId, ArchModel, JoinKind, Level, MAX_ROOF_PLANES, MAX_ROOMS, MAX_WALLS, OPENING_HANDLE_OFFSET, Opening, RefSide, Roof,
+    RoofDirective, RoofEdge, RoofEdgeKind, RoofPlane, Room, RoomType, Wall, WallLayer, WallType, arch_handle, is_arch_handle, is_opening_handle,
+    is_room_handle, opening_handle, opening_label, room_handle, room_label, wall_label,
 };
 pub use array::*;
 pub use cadcraft_color as color;

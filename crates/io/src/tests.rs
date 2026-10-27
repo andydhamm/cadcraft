@@ -1356,13 +1356,17 @@ fn garbage_arch_xrecord_is_ignored_not_fatal() {
     let back = read_dxf(bad.as_bytes()).unwrap();
     assert!(back.arch.is_empty());
     assert_eq!(back.arch_revision, 0);
-    assert_eq!(back.model.len(), d.model.len());
+    // The record is unreadable, so its save-time proxy linework survives as ordinary
+    // A-WALL entities (one per wall).
+    assert_eq!(back.model.len(), d.model.len() + 2);
     // Empty payload.
     let empty = text.replace(&chunks[0], "");
     let back2 = read_dxf(empty.as_bytes()).unwrap();
     assert!(back2.arch.is_empty());
     assert_eq!(back2.arch_revision, 0);
-    assert_eq!(back2.model.len(), d.model.len());
+    // The record is empty, so its save-time proxy linework survives as ordinary
+    // A-WALL entities (one per wall).
+    assert_eq!(back2.model.len(), d.model.len() + 2);
 }
 
 #[test]
@@ -1380,6 +1384,54 @@ fn hostile_arch_xrecord_never_panics() {
         assert!(back.arch.is_empty());
         assert_eq!(back.arch_revision, 0);
     }
+}
+
+/// Arch proxy linework (save-time A-WALL polylines) survives a file whose arch record is gone
+/// or unreadable, and is dropped again when the record parses.
+#[test]
+fn arch_proxies_are_kept_as_linework_when_the_arch_record_is_gone() {
+    let walls = |n: usize| {
+        let mut d = Drawing::new_metric();
+        for i in 0..n {
+            d.arch.push_wall(Wall::new(Vec2::new(0.0, i as f64 * 12.0), Vec2::new(10.0, i as f64 * 12.0), 0.2));
+        }
+        d
+    };
+    let d = walls(2);
+    let text = write_dxf(&d);
+    // Rewrite the payload version to a number this build rejects (parse_arch accepts 1..=4).
+    let chunks = crate::dxf_arch::arch_chunks(&d.arch).unwrap();
+    let corrupt = text.replace(&chunks[0], "{\"version\":9999,\"model\":{}}");
+    let back = read_dxf(corrupt.as_bytes()).unwrap();
+    assert!(back.arch.is_empty());
+    let n_wall = back.model.iter().filter(|e| e.common.layer == "A-WALL" && matches!(&e.kind, EntityKind::LwPolyline(_))).count();
+    assert_eq!(n_wall, 2);
+    // With the record intact the proxies are dropped and the model is unchanged.
+    let back2 = read_dxf(text.as_bytes()).unwrap();
+    assert_eq!(back2.model.len(), d.model.len());
+    assert_eq!(back2.arch.walls.len(), 2);
+}
+
+/// Arch id counters at or below a live id are raised past every id in use on read, so the next
+/// push hands out a fresh id; the opening counter gets the same repair.
+#[test]
+fn arch_counters_are_repaired_on_read() {
+    // Walls.
+    let mut d = Drawing::new_metric();
+    let _ = d.arch.push_wall(Wall::new(Vec2::ZERO, Vec2::new(10.0, 0.0), 0.2));
+    let _ = d.arch.push_wall(Wall::new(Vec2::new(12.0, 0.0), Vec2::new(22.0, 0.0), 0.2));
+    d.arch.next_id = 0;
+    let mut back = read_dxf(write_dxf(&d).as_bytes()).unwrap();
+    assert_eq!(back.arch.next_id, 2);
+    let fresh = back.arch.push_wall(Wall::new(Vec2::new(24.0, 0.0), Vec2::new(34.0, 0.0), 0.2));
+    assert_eq!(fresh.0, 2);
+    assert_eq!(back.arch.next_id, 3);
+    // Openings: one opening at id 1 with the counter at 0 -> the read repairs it to 2.
+    let mut d = Drawing::new_metric();
+    d.arch.openings.push(Opening { id: ArchId(1), ..Default::default() });
+    d.arch.next_opening_id = 0;
+    let back = read_dxf(write_dxf(&d).as_bytes()).unwrap();
+    assert_eq!(back.arch.next_opening_id, 2);
 }
 
 #[test]
