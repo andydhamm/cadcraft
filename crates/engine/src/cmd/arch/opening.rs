@@ -472,7 +472,7 @@ fn run_garagedoor(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
 /// ([x,y]) which is projected onto the wall. The opening is re-validated against
 /// the host wall (a position that runs past either end, leaving less than the
 /// minimum wall segment, is rejected). Undoable by default.
-fn run_opening_move(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
+pub(crate) fn run_opening_move(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     let cmd = "arch.opening.move";
 
     // 1. Host opening id.

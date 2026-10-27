@@ -45,9 +45,18 @@ fn stretch(s: &mut Session, cmd: &str, p: &Value) -> Result<Value> {
     if let Some(target) = crate::grips::arch_id_from_handle(h) {
         return match target {
             ArchTarget::Wall(id) => {
-                let end = if i == 0 { "start" } else { "end" };
-                s.execute(
-                    "arch.wall.stretch",
+                // Exactly two grips: 0 = start, 1 = end.
+                let end = match i {
+                    0 => "start",
+                    1 => "end",
+                    _ => return Err(bad(cmd, "an arch wall has two grips: 0 (start) and 1 (end)")),
+                };
+                if s.doc().ok().is_some_and(|d| d.layer("A-WALL").is_some_and(|l| l.locked)) {
+                    return Err(EngineError::Other("The object is on a locked layer.".into()));
+                }
+                // Call the body directly to stay inside the outer execute's undo step.
+                crate::cmd::arch::stretch::run_stretch(
+                    s,
                     &json!({
                         "wall": format!("w{}", id.0),
                         "end": end,
@@ -56,14 +65,20 @@ fn stretch(s: &mut Session, cmd: &str, p: &Value) -> Result<Value> {
                 )
             }
             ArchTarget::Opening(id) => {
-                let d = s.doc()?;
-                let o = d.arch.opening(id).ok_or_else(|| bad(cmd, "no such opening"))?;
-                if d.arch.wall(o.host).is_none() {
-                    return Err(bad(cmd, "no such wall"));
-                }
-                let off = cadcraft_arch::opening::project_to_wall(&d.arch, o.host, to).ok_or_else(|| bad(cmd, "could not project point to wall"))?;
-                s.execute(
-                    "arch.opening.move",
+                let off = {
+                    let d = s.doc()?;
+                    let o = d.arch.opening(id).ok_or_else(|| bad(cmd, "no such opening"))?;
+                    if d.arch.wall(o.host).is_none() {
+                        return Err(bad(cmd, "no such wall"));
+                    }
+                    if d.layer(&o.layer).is_some_and(|l| l.locked) {
+                        return Err(EngineError::Other("The object is on a locked layer.".into()));
+                    }
+                    cadcraft_arch::opening::project_to_wall(&d.arch, o.host, to).ok_or_else(|| bad(cmd, "could not project point to wall"))?
+                };
+                // Call the body directly to stay inside the outer execute's undo step.
+                crate::cmd::arch::opening::run_opening_move(
+                    s,
                     &json!({
                         "opening": format!("o{}", id.0),
                         "offset": off,

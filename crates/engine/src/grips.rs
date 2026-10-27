@@ -566,7 +566,12 @@ impl Session {
                 ArchTarget::Room(_) => Ok(()),
                 ArchTarget::Opening(id) => {
                     let o = d.arch.opening(id).ok_or_else(|| EngineError::Other("no such opening".into()))?;
-                    let w = d.arch.wall(o.host).ok_or_else(|| EngineError::Other("no such wall".into()))?;
+                    if d.arch.wall(o.host).is_none() {
+                        return Err(EngineError::Other("no such wall".into()));
+                    }
+                    if d.layer(&o.layer).is_some_and(|l| l.locked) {
+                        return Err(EngineError::Other("The object is on a locked layer.".into()));
+                    }
                     let off = cadcraft_arch::opening::project_to_wall(&d.arch, o.host, new_point)
                         .ok_or_else(|| EngineError::Other("could not project point to wall".into()))?;
                     self.execute(
@@ -579,7 +584,14 @@ impl Session {
                     .map(|_| ())
                 }
                 ArchTarget::Wall(id) => {
-                    let end = if grip_index == 0 { "start" } else { "end" };
+                    let end = match grip_index {
+                        0 => "start",
+                        1 => "end",
+                        _ => return Err(EngineError::Other("an arch wall has two grips: 0 (start) and 1 (end)".into())),
+                    };
+                    if d.layer("A-WALL").is_some_and(|l| l.locked) {
+                        return Err(EngineError::Other("The object is on a locked layer.".into()));
+                    }
                     self.execute(
                         "arch.wall.stretch",
                         &json!({
