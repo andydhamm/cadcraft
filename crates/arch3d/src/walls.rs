@@ -448,13 +448,13 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
         mesh.normals.push([0.0, 0.0, 0.0]);
     }
 
-    // Back cap triangles: reversed winding (outward normal on inner face).
+    // Back cap triangles: forward winding (outward normal on inner face).
     for tri in &tris {
-        mesh.indices.extend([b_base + tri[0], b_base + tri[2], b_base + tri[1]]);
+        mesh.indices.extend([b_base + tri[0], b_base + tri[1], b_base + tri[2]]);
     }
-    // Front cap triangles: forward winding (outward normal on outer face).
+    // Front cap triangles: reversed winding (outward normal on outer face).
     for tri in &tris {
-        mesh.indices.extend([b_base + m + tri[0], b_base + m + tri[1], b_base + m + tri[2]]);
+        mesh.indices.extend([b_base + m + tri[0], b_base + m + tri[2], b_base + m + tri[1]]);
     }
 
     // Detect bridge edges by index (same as push_prism_with_holes).
