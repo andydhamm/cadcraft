@@ -56,6 +56,10 @@ struct Rx {
     block_arrays: HashMap<String, cadcraft_doc::ArrayParams>,
     /// LAYER record handle (upper case) → layer name (VIEWPORT group 341 frozen layers).
     layers: HashMap<String, String>,
+    /// Handles of arch proxy linework (wall/opening/room/roof) that was kept while reading
+    /// so the arch model can drop them in `Objects::apply` if a valid record turns out to be
+    /// present.
+    arch_proxies: Vec<Handle>,
 }
 
 /// Read a DXF file into a drawing.
@@ -92,7 +96,6 @@ fn read_budgeted(bytes: &[u8], mut table_cells_left: usize) -> Result<Drawing> {
     // CADCraft wrote names its own next handle, above which its rebuilt records are numbered
     // (#495), so it is left to that.
     let ours = secs.iter().any(|s| s.name == "OBJECTS" && s.tags.iter().any(|t| t.code == 3 && t.str() == crate::dxf_ext::HANDSEED_KEY));
-    let has_arch_record = secs.iter().any(|s| s.name == "OBJECTS" && s.tags.iter().any(|t| t.code == 3 && t.str() == crate::dxf_arch::ARCH_KEY));
     for t in secs.iter().filter(|_| !ours).flat_map(|s| s.tags.iter()).filter(|t| t.code == 5 || t.code == 105) {
         if let Some(h) = Handle::parse_hex(t.str().trim()) {
             d.bump_handseed(h);
@@ -104,11 +107,11 @@ fn read_budgeted(bytes: &[u8], mut table_cells_left: usize) -> Result<Drawing> {
         match s.name.as_str() {
             "HEADER" => header(&s.tags, &mut d),
             "TABLES" => tables(&s.tags, &mut d, &mut rx),
-            "BLOCKS" => blocks.extend(read_blocks(&s.tags, &mut d, &mut rx, &mut table_cells_left, &mut skipped, has_arch_record)),
+            "BLOCKS" => blocks.extend(read_blocks(&s.tags, &mut d, &mut rx, &mut table_cells_left, &mut skipped)),
             // A damaged file may split its entities over several ENTITIES sections (#865).
             "ENTITIES" => {
                 let mut n = 0;
-                entities.extend(parse_entities(&records(&s.tags), &mut d, &mut rx, &mut n, &mut table_cells_left, has_arch_record));
+                entities.extend(parse_entities(&records(&s.tags), &mut d, &mut rx, &mut n, &mut table_cells_left));
                 count_skipped(&mut skipped, "ENTITIES", n);
             }
             "OBJECTS" => read_objects(&s.tags, &mut objs, &mut layout_objs),

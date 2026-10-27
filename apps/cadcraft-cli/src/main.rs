@@ -1572,4 +1572,40 @@ mod render_args_tests {
         assert!(check_framed_output(Framing::Extents, Some("house.png")).is_ok());
         assert!(check_framed_output(Framing::Auto, Some("house.glb")).is_ok());
     }
+
+    #[test]
+    fn parse_size_asymmetric_boundaries() {
+        assert_eq!(parse_size("1x8192"), Ok((1, 8192)));
+        assert_eq!(parse_size("8192x1"), Ok((8192, 1)));
+        assert!(parse_size("0x8192").is_err());
+        assert!(parse_size("8192x0").is_err());
+        assert!(parse_size("8193x8192").is_err());
+        assert!(parse_size("8192x8193").is_err());
+    }
+
+    #[test]
+    fn parse_camera_boundary_angles() {
+        let bounds = cadcraft_arch3d::mesh::Bounds3::new([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let base = cadcraft_render3d::camera::Orbit::fit(&bounds);
+        assert!(parse_camera("orbit,fov=0.1", base).is_ok());
+        assert!(parse_camera("orbit,fov=179.999", base).is_ok());
+        assert!(parse_camera("orbit,elevation=89", base).is_ok());
+        assert!(parse_camera("orbit,elevation=-89", base).is_ok());
+        let cam = parse_camera("orbit,azimuth=0,elevation=0,distance=1,fov=90", base).unwrap();
+        let cadcraft_render3d::camera::Camera::Orbit(o) = cam else { panic!("expected orbit") };
+        assert_eq!(o.azimuth, 0.0);
+        assert_eq!(o.elevation, 0.0);
+        assert_eq!(o.distance, 1.0);
+        assert_eq!(o.fov_deg, 90.0);
+    }
+
+    #[test]
+    fn framing_output_extensions() {
+        assert!(check_framed_output(Framing::Extents, Some("house.svg")).is_ok());
+        assert!(check_framed_output(Framing::Extents, Some("house.pdf")).is_ok());
+        assert!(check_framed_output(Framing::Extents, Some("house.PNG")).is_ok());
+        assert!(check_framed_output(Framing::Extents, Some("house.SVG")).is_ok());
+        assert!(check_framed_output(Framing::Extents, Some("house.PDF")).is_ok());
+        assert!(check_framed_output(Framing::Extents, Some("house.GLB")).is_err());
+    }
 }

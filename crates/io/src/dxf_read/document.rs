@@ -9,7 +9,6 @@ pub(super) fn parse_entities(
     rx: &mut Rx,
     skipped: &mut usize,
     table_cells_left: &mut usize,
-    drop_room_proxies: bool,
 ) -> Vec<(Option<String>, bool, Entity)> {
     let mut out = Vec::new();
     let mut i = 0;
@@ -18,7 +17,7 @@ pub(super) fn parse_entities(
         let owner = crate::dxf_ext::owner(tags);
         let paper = t.i(67) == Some(1);
         let handle = t.s(5).and_then(|h| Handle::parse_hex(&h));
-        let mut kindent = entity_with_table_budget(kind, tags, table_cells_left, drop_room_proxies);
+        let mut kindent = entity_with_table_budget(kind, tags, table_cells_left);
         if let Some((c, _)) = kindent.as_mut()
             && let Some(n) = entity_plot_style(tags, rx)
         {
@@ -62,6 +61,11 @@ pub(super) fn parse_entities(
                 None => d.new_handle(),
             };
             entity_extras(kind, tags, h, &mut k, rx);
+            // A proxy we keep (record absent or unreadable) is remembered so the arch model
+            // can drop it later if a valid record turns out to be present.
+            if crate::dxf_arch::is_arch_proxy(tags) || crate::dxf_arch::is_room_proxy(tags) || crate::dxf_arch::is_roof_proxy(tags) {
+                rx.arch_proxies.push(h);
+            }
             let more: Vec<_> =
                 extra.into_iter().map(|f| (owner.clone(), paper, Entity { handle: d.new_handle(), common: c.clone(), kind: f })).collect();
             out.push((owner, paper, Entity { handle: h, common: c, kind: k }));
@@ -90,7 +94,6 @@ pub(super) fn read_blocks(
     rx: &mut Rx,
     table_cells_left: &mut usize,
     skipped: &mut std::collections::BTreeMap<String, usize>,
-    has_arch_record: bool,
 ) -> Vec<BlockDef> {
     let recs = records(tags);
     for (k, tg) in &recs {
@@ -115,7 +118,7 @@ pub(super) fn read_blocks(
                 j += 1;
             }
             let body = recs.get(i + 1..j).unwrap_or(&[]);
-            let ents = parse_entities(body, d, rx, &mut n, table_cells_left, has_arch_record);
+            let ents = parse_entities(body, d, rx, &mut n, table_cells_left);
             blocks.push((name, base, description, ents, xref));
             i = j + 1;
         } else {
