@@ -560,4 +560,84 @@ mod tests {
         let res = validate_placement(&model, host, 1.67, 1.0, 0.0, 2.0, OpeningKind::Door, "hinged", None);
         assert!(res.is_ok());
     }
+
+    #[test]
+    fn validate_rejects_zero_length_wall() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::ZERO, 0.2);
+        let res = validate_placement(&model, host, 0.0, 0.9, 0.0, 2.0, OpeningKind::Door, "hinged", None);
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(err.0.contains("zero or non-finite length"));
+    }
+
+    #[test]
+    fn validate_rejects_negative_sill() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        let res = validate_placement(&model, host, 1.0, 0.9, -0.1, 2.0, OpeningKind::Window, "slider", None);
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(err.0.contains("positive"));
+    }
+
+    #[test]
+    fn validate_survives_huge_values() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        // Huge offset: clamped to wall end, then rough span check fails
+        let res = validate_placement(&model, host, 1e308, 0.9, 0.0, 2.0, OpeningKind::Door, "hinged", None);
+        assert!(res.is_err());
+        // Huge width: fails rough span check
+        let res2 = validate_placement(&model, host, 2.5, 1e308, 0.0, 2.0, OpeningKind::Door, "hinged", None);
+        assert!(res2.is_err());
+        // Huge sill: fails sill+height > wall.height
+        let res3 = validate_placement(&model, host, 2.5, 0.9, 1e308, 2.0, OpeningKind::Door, "hinged", None);
+        assert!(res3.is_err());
+    }
+
+    #[test]
+    fn fit_false_returns_error_when_opening_does_not_fit() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(1.0, 0.0), 0.2);
+        let o = Opening::new(host, 0.5, 2.0, 2.0, OpeningKind::Door);
+        let res = place_opening(&model, o, false);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn project_to_wall_returns_none_for_zero_length_wall() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::ZERO, 0.2);
+        assert_eq!(project_to_wall(&model, host, Vec2::new(3.0, 5.0)), None);
+    }
+
+    #[test]
+    fn fit_on_short_wall_uses_relaxed_physical_bounds() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(0.5, 0.0), 0.2);
+        model.walls.iter_mut().find(|w| w.id == host).map(|w| w.height = 2.5);
+        let o = Opening::new(host, 0.0, 0.3, 2.0, OpeningKind::Door);
+        let placed = place_opening(&model, o, true).unwrap();
+        assert!(placed.offset >= 0.21 - 1e-9);
+        assert!(placed.offset <= 0.29 + 1e-9);
+        assert_eq!(placed.width, 0.3);
+    }
+
+    #[test]
+    fn validate_rejects_wall_with_non_finite_endpoints() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::new(f64::NAN, 0.0), Vec2::new(5.0, 0.0), 0.2);
+        let res = validate_placement(&model, host, 1.0, 0.9, 0.0, 2.0, OpeningKind::Door, "hinged", None);
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(err.0.contains("non-finite"));
+    }
+
+    #[test]
+    fn project_to_wall_returns_none_for_non_finite_wall() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::new(f64::NAN, 0.0), Vec2::new(5.0, 0.0), 0.2);
+        assert_eq!(project_to_wall(&model, host, Vec2::new(3.0, 5.0)), None);
+    }
 }
