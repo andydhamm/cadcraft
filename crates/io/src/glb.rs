@@ -200,7 +200,8 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
         }));
         let acc_norm = accessors.len() - 1;
 
-        // TEXTURE_COORDS_0 (VEC2, f32).
+        // TEXCOORD_0 (VEC2, f32). glTF 2.0 names the first UV set TEXCOORD_0;
+        // application-specific semantics must instead start with an underscore.
         let uv_start = bin.len();
         for uv in &m.uvs {
             push_f32(&mut bin, uv[0]);
@@ -254,7 +255,7 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
                     "attributes": {
                         "POSITION": acc_pos,
                         "NORMAL": acc_norm,
-                        "TEXTURE_COORDS_0": acc_uv
+                        "TEXCOORD_0": acc_uv
                     },
                     "indices": acc_idx,
                     "material": mat_idx
@@ -262,21 +263,37 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
             ]
         }));
 
+        // Per-mesh node. The mesh is placed under a single root node that
+        // rotates the Z-up arch3d scene into glTF's Y-up convention
+        // (-90 degrees about X: (x, y, z) -> (x, z, -y)).
         nodes.push(json!({
             "name": name,
-            "mesh": i as u32,
-            "translation": [0.0, 0.0, 0.0]
+            "mesh": i as u32
         }));
     }
 
     let buffers: Vec<Value> = if bin.is_empty() { Vec::new() } else { vec![json!({ "byteLength": bin.len() as u32 })] };
-    let node_refs: Vec<u32> = (0..written_meshes.len() as u32).collect();
+    // Root node carries the Z-up -> Y-up rotation; its children are the per-mesh
+    // nodes. An empty scene keeps an empty node list.
+    let root = if written_meshes.is_empty() {
+        Vec::new()
+    } else {
+        // Per-mesh nodes are the children; the root is node 0, so mesh nodes are
+        // renumbered 1..=n to sit after it in the node list.
+        let children: Vec<u32> = (1..=written_meshes.len() as u32).collect();
+        vec![json!({
+            "name": "arch3d-root",
+            "rotation": [ROOT_ROTATION[0], ROOT_ROTATION[1], ROOT_ROTATION[2], ROOT_ROTATION[3]],
+            "children": children,
+        })]
+    };
+    let all_nodes: Vec<Value> = root.into_iter().chain(nodes).collect();
+    let scene_nodes: Vec<Value> = if written_meshes.is_empty() { Vec::new() } else { vec![json!(0)] };
     let value = json!({
-        "version": 2,
         "asset": { "version": "2.0", "generator": "CADCraft arch3d" },
         "scene": 0,
-        "scenes": [ { "name": "arch3d", "nodes": node_refs } ],
-        "nodes": nodes,
+        "scenes": [ { "name": "arch3d", "nodes": scene_nodes } ],
+        "nodes": all_nodes,
         "meshes": meshes,
         "materials": materials,
         "buffers": buffers,
@@ -286,6 +303,12 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
 
     (json_string(value), bin)
 }
+
+/// Root node rotation: -90 degrees about X, the quaternion that turns the Z-up
+/// arch3d scene into glTF's Y-up convention, mapping (x, y, z) to (x, z, -y).
+/// Stored as (x, y, z, w); the angle is -π/2, so the axis (1,0,0) scaled by
+/// sin(-π/4) ≈ -0.7071068 with w = cos(-π/4) ≈ 0.7071068.
+const ROOT_ROTATION: [f64; 4] = [-0.7071068, 0.0, 0.0, 0.7071068];
 
 /// Matte reddish roof albedo, as a 0..=1 `f64` triple.
 const ROOF_ALBEDO: [f64; 3] = [151.0 / 255.0, 84.0 / 255.0, 74.0 / 255.0];
@@ -372,6 +395,11 @@ mod tests {
     /// Parse the JSON chunk of a GLB byte slice.
     fn glb_json(bytes: &[u8], offset: usize, len: usize) -> Value {
         serde_json::from_slice(&bytes[offset..offset + len]).unwrap_or_default()
+    }
+
+    /// The root node of the scene, if any (present only when there is a mesh).
+    fn root_node(json: &Value) -> Option<&Value> {
+        json["nodes"].as_array()?.first()
     }
 
     /// Read the JSON chunk of a GLB byte slice and parse it.
@@ -547,6 +575,8 @@ mod tests {
         let json = glb_json_chunk(&bytes);
         assert_eq!(json["meshes"].as_array().and_then(|a| Some(a.len())), Some(0));
         assert_eq!(json["scenes"][0]["nodes"].as_array().and_then(|a| Some(a.len())), Some(0));
+        // No root node when the scene is empty.
+        assert_eq!(json["nodes"].as_array().and_then(|a| Some(a.len())), Some(0));
         let json_len = le32(&bytes, 12) as usize;
         let json_pad = (4 - json_len % 4) % 4;
         let bin_start = 12 + 8 + json_len + json_pad;
@@ -684,8 +714,8 @@ mod tests {
         let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().map(|m| m["name"].as_str().unwrap().to_string()).collect();
         assert!(mesh_names.contains(&"door-frame-o0".to_string()), "missing door-frame-o0: {:?}", mesh_names);
         assert!(mesh_names.contains(&"window-glass-o1".to_string()), "missing window-glass-o1: {:?}", mesh_names);
-        // Nodes mirror mesh names.
-        let node_names: Vec<String> = nodes.iter().map(|n| n["name"].as_str().unwrap().to_string()).collect();
+        // Nodes mirror mesh names (the first node is the root, the rest are meshes).
+        let node_names: Vec<String> = nodes.iter().skip(1).map(|n| n["name"].as_str().unwrap().to_string()).collect();
         assert!(node_names.contains(&"door-frame-o0".to_string()), "node missing door-frame-o0: {:?}", node_names);
         assert!(node_names.contains(&"window-glass-o1".to_string()), "node missing window-glass-o1: {:?}", node_names);
         // Glass material: alphaMode BLEND and baseColorFactor[3] < 0.6.
@@ -704,7 +734,8 @@ mod tests {
         let json = glb_json_chunk(&bytes);
         let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
         assert_eq!(mesh_names, vec!["roof-r0p0", "roof-r0p1", "roof-r0-fascia", "roof-r0-soffit"]);
-        let node_names: Vec<String> = json["nodes"].as_array().unwrap().iter().filter_map(|n| n["name"].as_str()).map(String::from).collect();
+        // The first node is the root; the rest are the per-mesh nodes.
+        let node_names: Vec<String> = json["nodes"].as_array().unwrap().iter().skip(1).filter_map(|n| n["name"].as_str()).map(String::from).collect();
         assert_eq!(node_names, vec!["roof-r0p0", "roof-r0p1", "roof-r0-fascia", "roof-r0-soffit"]);
     }
 
@@ -889,7 +920,7 @@ mod tests {
         let json_data = &bytes[20..20 + json_len];
         let json_str = std::str::from_utf8(json_data).expect("JSON chunk is not valid UTF-8");
         let value: Value = serde_json::from_str(json_str).expect("JSON chunk is not valid JSON");
-        assert!(value.get("version").is_some());
+        assert_eq!(value["asset"]["version"], "2.0");
         assert!(value.get("meshes").is_some());
     }
 
@@ -922,6 +953,54 @@ mod tests {
         // Each wall mesh contributes: 3*12 (pos) + 3*12 (norm) + 3*8 (uv) + 3*4 (idx) = 108 bytes
         let expected_bin = n * 108;
         assert_eq!(bin_len, expected_bin, "BIN chunk length {bin_len} != expected {expected_bin}");
+    }
+
+    /// Every primitive attribute key is a valid glTF 2.0 semantic: one of the
+    /// built-in names or an application-specific name starting with "_".
+    #[test]
+    fn glb_attribute_names_are_gltf_semantics() {
+        let bytes = write(&scene_with(2));
+        let json = glb_json_chunk(&bytes);
+        let attrs = json["meshes"].as_array().unwrap();
+        for prim in attrs {
+            let attributes = prim["primitives"][0]["attributes"].as_object().unwrap();
+            for key in attributes.keys() {
+                let builtin =
+                    matches!(key.as_str(), "POSITION" | "NORMAL" | "TANGENT" | "TEXCOORD_0" | "TEXCOORD_1" | "COLOR_0" | "JOINTS_0" | "WEIGHTS_0");
+                assert!(builtin || key.starts_with('_'), "non-gltf attribute {key}");
+            }
+        }
+    }
+
+    /// The scene is Y-up: a single root node carries the -90°-about-X rotation
+    /// and the per-mesh nodes are its children.
+    #[test]
+    fn glb_scene_is_y_up() {
+        let bytes = write(&scene_with(1));
+        let json = glb_json_chunk(&bytes);
+        let root = root_node(&json).expect("root node");
+        assert_eq!(root["name"], "arch3d-root");
+        let rot = root["rotation"].as_array().unwrap();
+        assert_eq!(rot[0].as_f64().unwrap(), -0.7071068);
+        assert_eq!(rot[1].as_f64().unwrap(), 0.0);
+        assert_eq!(rot[2].as_f64().unwrap(), 0.0);
+        assert_eq!(rot[3].as_f64().unwrap(), 0.7071068);
+        let children = root["children"].as_array().unwrap();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].as_u64().unwrap(), 1);
+        // scenes[0].nodes references only the root.
+        assert_eq!(json["scenes"][0]["nodes"].as_array().unwrap().len(), 1);
+        assert_eq!(json["scenes"][0]["nodes"][0].as_u64().unwrap(), 0);
+    }
+
+    /// The top-level JSON carries no stray "version" key; the version lives in
+    /// asset.version per glTF 2.0.
+    #[test]
+    fn glb_json_has_no_stray_top_level_version() {
+        let bytes = write(&scene_with(1));
+        let json = glb_json_chunk(&bytes);
+        assert!(json.get("version").is_none(), "stray top-level version");
+        assert_eq!(json["asset"]["version"], "2.0");
     }
 
     #[test]
