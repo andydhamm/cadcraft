@@ -619,3 +619,133 @@ fn random_wall_rings_never_panic() {
         }
     }
 }
+
+#[test]
+fn a_roof_on_a_pentagonal_footprint_builds() {
+    // Regular pentagon centered at origin with radius 5
+    let mut pts = Vec::new();
+    for i in 0..5 {
+        let angle = (i as f64) * std::f64::consts::PI * 2.0 / 5.0 - std::f64::consts::PI / 2.0;
+        pts.push((5.0 * angle.cos(), 5.0 * angle.sin()));
+    }
+    let model = house(&pts, 2.4);
+    let r = roof(6.0, 0.0);
+    let built = build_roof(&model, 0, &r).expect("pentagonal roof should build");
+    assert!(!built.planes.is_empty(), "pentagonal roof has no planes");
+    for plane in &built.planes {
+        assert!(plane.slope.is_finite() || plane.slope.is_infinite(), "pentagonal roof: non-finite slope");
+        assert!(plane.projected_area >= 0.0, "pentagonal roof: negative area");
+        for p in &plane.ring {
+            assert!(p.is_finite(), "pentagonal roof: non-finite vertex {:?}", p);
+        }
+    }
+}
+
+#[test]
+fn a_roof_with_mixed_wall_thicknesses_builds() {
+    // Rectangle with different wall thicknesses on each side
+    let mut model = ArchModel::default();
+    model.levels.push(Level::default());
+
+    let walls = [
+        (Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.1),
+        (Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2),
+        (Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), 0.3),
+        (Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.15),
+    ];
+
+    for (a, b, t) in walls {
+        let mut wall = Wall::new(a, b, t);
+        wall.height = 2.4;
+        wall.base_level = 0;
+        wall.wall_type = "Exterior".into();
+        wall.roof_directive = RoofDirective::Auto;
+        model.push_wall(wall);
+    }
+
+    let r = roof(6.0, 0.0);
+    let built = build_roof(&model, 0, &r).expect("mixed thickness roof should build");
+    assert!(!built.planes.is_empty(), "mixed thickness roof has no planes");
+    for plane in &built.planes {
+        assert!(plane.slope.is_finite() || plane.slope.is_infinite(), "mixed thickness roof: non-finite slope");
+        assert!(plane.projected_area >= 0.0, "mixed thickness roof: negative area");
+        for p in &plane.ring {
+            assert!(p.is_finite(), "mixed thickness roof: non-finite vertex {:?}", p);
+        }
+    }
+}
+
+#[test]
+fn a_roof_with_a_very_long_narrow_footprint_builds() {
+    // 20 x 1 rectangle
+    let pts = vec![(0.0, 0.0), (20.0, 0.0), (20.0, 1.0), (0.0, 1.0)];
+    let model = house(&pts, 2.4);
+    let r = roof(6.0, 0.0);
+    let built = build_roof(&model, 0, &r).expect("long narrow roof should build");
+    assert!(!built.planes.is_empty(), "long narrow roof has no planes");
+    for plane in &built.planes {
+        assert!(plane.slope.is_finite() || plane.slope.is_infinite(), "long narrow roof: non-finite slope");
+        assert!(plane.projected_area >= 0.0, "long narrow roof: negative area");
+        for p in &plane.ring {
+            assert!(p.is_finite(), "long narrow roof: non-finite vertex {:?}", p);
+        }
+    }
+}
+
+#[test]
+fn a_roof_with_a_very_large_overhang_builds() {
+    // 10 x 8 rectangle with 2.0 overhang
+    let pts = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&pts, 2.4);
+    let r = roof(6.0, 2.0);
+    let built = build_roof(&model, 0, &r).expect("large overhang roof should build");
+    assert!(!built.planes.is_empty(), "large overhang roof has no planes");
+    for plane in &built.planes {
+        assert!(plane.slope.is_finite() || plane.slope.is_infinite(), "large overhang roof: non-finite slope");
+        assert!(plane.projected_area >= 0.0, "large overhang roof: negative area");
+        for p in &plane.ring {
+            assert!(p.is_finite(), "large overhang roof: non-finite vertex {:?}", p);
+        }
+    }
+    // Outer footprint is 10.2 x 8.2 (wall thickness 0.2), so with 2.0 overhang:
+    // (10.2 + 2*2.0) * (8.2 + 2*2.0) = 14.2 * 12.2 = 173.24
+    let area = projected_area_sum(&built);
+    assert!((area - 173.24).abs() < 1e-3, "large overhang roof: area {} != 173.24", area);
+}
+
+#[test]
+fn a_roof_with_zero_thickness_walls_builds() {
+    // Rectangle with 0.0 thickness walls
+    let mut model = ArchModel::default();
+    model.levels.push(Level::default());
+
+    let walls = [
+        (Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)),
+        (Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0)),
+        (Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)),
+        (Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)),
+    ];
+
+    for (a, b) in walls {
+        let mut wall = Wall::new(a, b, 0.0);
+        wall.height = 2.4;
+        wall.base_level = 0;
+        wall.wall_type = "Exterior".into();
+        wall.roof_directive = RoofDirective::Auto;
+        model.push_wall(wall);
+    }
+
+    let r = roof(6.0, 0.0);
+    let res = build_roof(&model, 0, &r);
+    // Zero thickness might error or build; either is acceptable as long as it doesn't panic
+    if let Ok(built) = res {
+        assert!(!built.planes.is_empty(), "zero thickness roof has no planes");
+        for plane in &built.planes {
+            assert!(plane.slope.is_finite() || plane.slope.is_infinite(), "zero thickness roof: non-finite slope");
+            assert!(plane.projected_area >= 0.0, "zero thickness roof: negative area");
+            for p in &plane.ring {
+                assert!(p.is_finite(), "zero thickness roof: non-finite vertex {:?}", p);
+            }
+        }
+    }
+}
