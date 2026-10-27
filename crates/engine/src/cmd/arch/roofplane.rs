@@ -333,7 +333,7 @@ pub fn run_roofplane(s: &mut Session, p: &Value) -> Result<Value> {
     let points_arr = points_val.as_array().ok_or_else(|| bad("roofplane", "`points` must be an array"))?;
     let mut points = Vec::new();
     for pt in points_arr {
-        let v = crate::cmd::point_value(pt).ok_or_else(|| bad("roofplane", "invalid point in `points`"))?;
+        let v = crate::cmd::point_value(pt).ok_or_else(|| bad("roofplane", "points must be finite"))?;
         if !v.is_finite() {
             return Err(bad("roofplane", "points must be finite"));
         }
