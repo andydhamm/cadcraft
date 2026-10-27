@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-27 03:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 04:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 27 of 31 segments merged · 5 of 11 acceptance checks**
 
-3,788 workspace tests passing at the last merge · 244 segments merged in all · 0 of 12 seats working
+3,793 workspace tests passing at the last merge · 245 segments merged in all · 0 of 12 seats working · PAUSED
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 03:45 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 5 / 11 | 18.9 h so far · expected done Oct 27 10:38–Oct 27 17:01 UTC |
+| 4 | Automatic roofs | building | 5 / 11 | 19.2 h so far · expected done Oct 27 10:52–Oct 27 17:16 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -27,18 +27,19 @@ Updated 2026-10-27 03:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 4 segments
 
-27 merged, 5 replaced, 2 escalate, 1 queued, 1 working
+27 merged, 5 replaced, 3 escalate, 1 queued
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p4g-golden-roofs` | Golden roof scenes for the phase-1 house | escalate |  |
-| `p4x-wall-mesh-winding` | Wall, floor and ceiling meshes wind outward | working | bonsai-a |
+| `p4x-wall-mesh-winding` | Wall, floor and ceiling meshes wind outward | escalate |  |
 | `p4x-cli-render-draws` | cadcraft-cli render draws the scene, not only the clear colour | escalate |  |
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 27 03:47 | `harden-p4g-gable-clip-test-names` | merged | 3,793 pass | tturbo-mac |
 | Oct 27 03:38 | `upstream-sync-d864a08b0` | merged | 3,788 pass | claude-sonnet-b |
 | Oct 27 03:33 | `p4g-gable-clip-test-names` | merged | 3,788 pass | bonsai-ws2-a |
 | Oct 27 03:30 | `harden-p3r-mesh-shader` | merged | 3,788 pass | tturbo-mac2 |
@@ -50,14 +51,13 @@ Updated 2026-10-27 03:45 UTC. This page and the card in the README are regenerat
 | Oct 27 01:45 | `harden-p3r-cli-projected-exit3` | merged | 3,768 pass | tturbo-mac |
 | Oct 27 01:18 | `harden-p3r-pipeline-depth` | merged | 3,764 pass | tturbo-mac |
 | Oct 27 01:15 | `harden-p3-area-rules` | merged | 3,758 pass | tturbo-mac2 |
-| Oct 27 01:04 | `harden-p3r-png-codec` | merged | 3,750 pass | tturbo-mac |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 475 |
-| bonsai-b | bonsai2-27b | agent | 423 |
+| bonsai-a | bonsai2-27b | idle | 476 |
+| bonsai-b | bonsai2-27b | agent | 424 |
 | bonsai-ws2-a | bonsai2-27b | idle | 612 |
 | bonsai-ws2-b | bonsai2-27b | idle | 578 |
 | claude-sonnet-a | sonnet | idle | 4 |
@@ -66,5 +66,5 @@ Updated 2026-10-27 03:45 UTC. This page and the card in the README are regenerat
 | kimi-k31 | k3.1-pro-highspeed | down | 55 |
 | ornith-a | ornith15-397b-exl3-35 | idle | 0 |
 | ornith-b | ornith15-397b-exl3-35 | agent | 0 |
-| tturbo-mac | tturbo-ultraheretic | merging | 279 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 85 |
+| tturbo-mac | tturbo-ultraheretic | merging | 280 |
+| tturbo-mac2 | tturbo-ultraheretic | merging | 87 |
