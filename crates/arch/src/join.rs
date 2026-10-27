@@ -1531,9 +1531,10 @@ mod tests {
     #[test]
     fn a_short_wall_between_two_walls_keeps_its_raw_ring_at_both_ends() {
         let mut model = cadcraft_doc::ArchModel::default();
-        // Short horizontal wall between two vertical walls; both ends cross.
+        // Short horizontal wall between two vertical walls; wall 1 is thicker so the
+        // mitres at both ends cross over and the raw ring is kept.
         wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(0.1, 0.0), 1.0);
-        wall(&mut model, 1, Vec2::new(0.0, 0.0), Vec2::new(0.0, 10.0), 1.0);
+        wall(&mut model, 1, Vec2::new(0.0, 0.0), Vec2::new(0.0, 10.0), 1.5);
         wall(&mut model, 2, Vec2::new(0.1, 0.0), Vec2::new(0.1, 10.0), 1.0);
 
         let shapes = solve_joins(&model);
@@ -1583,10 +1584,10 @@ mod tests {
     #[test]
     fn a_wall_with_one_crossed_end_falls_back_to_raw_ring_for_both_ends() {
         let mut model = cadcraft_doc::ArchModel::default();
-        // Short wall: start has a clean L join, end has crossing corners.
-        // The whole wall must fall back to the raw ring with no joins.
+        // Short wall: the thicker wall 1 makes the mitres cross over at the start,
+        // so the whole wall falls back to the raw ring with no joins.
         wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(0.1, 0.0), 1.0);
-        wall(&mut model, 1, Vec2::new(0.0, 0.0), Vec2::new(0.0, 10.0), 1.0);
+        wall(&mut model, 1, Vec2::new(0.0, 0.0), Vec2::new(0.0, 10.0), 1.5);
         wall(&mut model, 2, Vec2::new(0.1, 0.0), Vec2::new(0.1, 10.0), 1.0);
 
         let shapes = solve_joins(&model);
