@@ -269,16 +269,17 @@ fn sample(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether `name` is a frameable output (2D image or 3D GLB).
+/// Whether `name` is a frameable output (a 2D image: png, svg, pdf). A `.glb` is written whole
+/// (its own camera framing) and ignores `--window`/`--view`, so it is not frameable here.
 fn is_frameable_output(name: &str) -> bool {
-    cadcraft_io::is_image(name) || std::path::Path::new(name).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()) == Some("glb".to_string())
+    cadcraft_io::is_image(name)
 }
 
 /// Reject an explicit framing option without a frameable output to apply it to.
 fn check_framed_output(framing: Framing, out: Option<&str>) -> Result<(), String> {
     match out {
         _ if framing == Framing::Auto => Ok(()),
-        Some(o) if !is_frameable_output(o) => Err(format!("--window/--view only apply to image output (png, svg, pdf) or glb, not `{o}`")),
+        Some(o) if !is_frameable_output(o) => Err(format!("--window/--view only apply to image output (png, svg, pdf), not `{o}`")),
         Some(_) => Ok(()),
         None => Err("--window/--view need a frameable output (--export OUT.png|svg|pdf|glb)".into()),
     }
@@ -287,17 +288,30 @@ fn check_framed_output(framing: Framing, out: Option<&str>) -> Result<(), String
 /// Default pixel size for `render`.
 const RENDER_DEFAULT_SIZE: (u32, u32) = (2400, 1600);
 
-/// Parse `WxH` into a pixel size (positive whole numbers).
+/// The largest render size the CLI will honour: wgpu's default `max_texture_dimension_2d`.
+/// A larger request would be silently shrunk by `Offscreen::clamp_size`, so the `PROJECTED`
+/// line (computed for the requested size) would no longer describe the PNG — refuse it instead.
+const RENDER_MAX_SIZE: u32 = 8192;
+
+/// Parse `WxH` into a pixel size (whole numbers in `1..=RENDER_MAX_SIZE`). A size outside that
+/// range is an error, never a value `Offscreen::clamp_size` would silently shrink — which would
+/// make the `PROJECTED` line describe a different image than the PNG that was written.
 fn parse_size(v: &str) -> Result<(u32, u32), String> {
     let parts: Vec<&str> = v.split(['x', 'X']).map(str::trim).collect();
     let [w, h] = parts.as_slice() else { return Err(format!("--size needs WxH, got `{v}`")) };
     let num = |name: &str, t: &str| -> Result<u32, String> {
         match t.parse::<u32>() {
             Ok(n) if n > 0 => Ok(n),
-            _ => Err(format!("--size {name} must be a positive whole number, got `{t}`")),
+            _ => return Err(format!("--size {name} must be a positive whole number, got `{t}`")),
         }
     };
-    Ok((num("width", w)?, num("height", h)?))
+    let (w, h) = (num("width", w)?, num("height", h)?);
+    for (name, n) in [("width", w), ("height", h)] {
+        if n > RENDER_MAX_SIZE {
+            return Err(format!("--size {name} must be at most {RENDER_MAX_SIZE}, got {n}"));
+        }
+    }
+    Ok((w, h))
 }
 
 /// Parse `'orbit[,azimuth=A][,elevation=E][,distance=D][,fov=F]'` into a [`Camera`], seeded
@@ -321,16 +335,21 @@ fn parse_camera(spec: &str, base: cadcraft_render3d::camera::Orbit) -> Result<ca
         }
         match name {
             "azimuth" => o.azimuth = v,
-            "elevation" => o.elevation = v,
+            "elevation" => {
+                if !(-89.0..=89.0).contains(&v) {
+                    return Err(format!("camera elevation must be in [-89, 89] degrees, got `{val}`"));
+                }
+                o.elevation = v;
+            }
             "distance" => {
-                if v <= 0.0 {
-                    return Err(format!("camera distance must be positive, got `{val}`"));
+                if !(0.0..=cadcraft_render3d::camera::MAX_DISTANCE).contains(&v) {
+                    return Err(format!("camera distance must be in (0, {}}], got `{val}`", cadcraft_render3d::camera::MAX_DISTANCE));
                 }
                 o.distance = v;
             }
             "fov" => {
-                if v <= 0.0 {
-                    return Err(format!("camera fov must be positive, got `{val}`"));
+                if !(0.0..180.0).contains(&v) {
+                    return Err(format!("camera fov must be in (0, 180) degrees, got `{val}`"));
                 }
                 o.fov_deg = v;
             }
@@ -1416,8 +1435,8 @@ mod tests {
         // With spaces and uppercase X
         assert_eq!(parse_size(" 100 x 200 "), Ok((100, 200)));
         assert_eq!(parse_size("100X200"), Ok((100, 200)));
-        // u32 max
-        assert_eq!(parse_size("4294967295x4294967295"), Ok((4294967295, 4294967295)));
+        // Largest size the CLI honours (wgpu's default max_texture_dimension_2d).
+        assert_eq!(parse_size("8192x8192"), Ok((8192, 8192)));
     }
 
     #[test]
@@ -1431,8 +1450,9 @@ mod tests {
         assert!(parse_size("abcxdef").is_err());
         assert!(parse_size("100x200x300").is_err());
         assert!(parse_size("100 x 200 x 300").is_err());
-        // u32 max + 1
-        assert!(parse_size("4294967296x100").is_err());
+        // Over the wgpu texture limit.
+        assert!(parse_size("8193x100").is_err());
+        assert!(parse_size("4294967295x1").is_err());
         // Negative
         assert!(parse_size("-1x100").is_err());
         // Decimal
@@ -1505,5 +1525,48 @@ mod tests {
         assert!(parse_camera("orbit,fov=0", base).is_err());
         assert!(parse_camera("orbit,fov=-1", base).is_err());
         assert!(parse_camera("orbit,unknown=1", base).is_err());
+    }
+}
+
+#[cfg(test)]
+mod render_args_tests {
+    use super::*;
+
+    /// A render size is only accepted if it fits a wgpu texture (`1..=RENDER_MAX_SIZE`); a larger
+    /// one would be silently shrunk by `Offscreen::clamp_size`, so the `PROJECTED` line would no
+    /// longer describe the PNG.
+    #[test]
+    fn size_must_fit_a_wgpu_texture() {
+        assert!(parse_size("640x480").is_ok());
+        assert!(parse_size("8192X8192").is_ok());
+        for bad in ["0x10", "10x0", "8193x10", "100000x100000", "4294967295x1", "x", "10", "-5x5"] {
+            assert!(parse_size(bad).is_err(), "`{bad}` should be rejected");
+        }
+    }
+
+    /// Camera fields that have no finite projection, or that the orbit control can't reach, are
+    /// refused before the GPU is touched: fov in (0,180), |elevation| <= 89, distance in (0, MAX].
+    #[test]
+    fn camera_fields_outside_a_finite_projection_are_refused() {
+        let bounds = cadcraft_arch3d::mesh::Bounds3::new([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let base = cadcraft_render3d::camera::Orbit::fit(&bounds);
+        for bad in ["orbit,fov=180", "orbit,fov=360", "orbit,elevation=90", "orbit,elevation=-120", "orbit,distance=1e300"] {
+            assert!(parse_camera(bad, base).is_err(), "`{bad}` should be rejected");
+        }
+        let cam = parse_camera("orbit,azimuth=35,elevation=30,distance=25,fov=60", base).unwrap();
+        let cadcraft_render3d::camera::Camera::Orbit(o) = cam else { panic!("expected orbit") };
+        assert_eq!(o.azimuth, 35.0);
+        assert_eq!(o.elevation, 30.0);
+        assert_eq!(o.distance, 25.0);
+        assert_eq!(o.fov_deg, 60.0);
+    }
+
+    /// `--window`/`--view` only frame image output. A `.glb` is written whole and ignores them, so
+    /// framing a glb is an error; an image is fine; `Auto` (no explicit framing) is always fine.
+    #[test]
+    fn framing_does_not_apply_to_glb() {
+        assert!(check_framed_output(Framing::Extents, Some("house.glb")).is_err());
+        assert!(check_framed_output(Framing::Extents, Some("house.png")).is_ok());
+        assert!(check_framed_output(Framing::Auto, Some("house.glb")).is_ok());
     }
 }
