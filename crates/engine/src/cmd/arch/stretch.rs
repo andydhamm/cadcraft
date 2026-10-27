@@ -384,6 +384,57 @@ mod tests {
     }
 
     #[test]
+    fn stretching_start_with_opening_at_start() {
+        let mut s = Session::new();
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]]})).expect("wall command");
+        // Door at the very start (offset = ROUGH_ALLOWANCE = 0.12)
+        s.execute("door", &json!({"wall": "w0", "offset": 0.12, "width": 1.0, "height": 2.1})).expect("door at start");
+
+        // Stretch start to (-1, 0): door offset should become 1.12
+        let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "start", "to": [-1.0, 0.0]}));
+        assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
+
+        let d = s.doc().expect("doc");
+        let door = d.arch.opening(ArchId(0)).expect("door");
+        assert!((door.offset - 1.12).abs() < 1e-6, "door offset should be 1.12: {}", door.offset);
+    }
+
+    #[test]
+    fn stretching_end_with_opening_at_end() {
+        let mut s = Session::new();
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]]})).expect("wall command");
+        // Door near the end (offset = 10 - 1.0 - 0.12 = 8.88)
+        s.execute("door", &json!({"wall": "w0", "offset": 8.88, "width": 1.0, "height": 2.1})).expect("door at end");
+
+        // Stretch end to (12, 0): door offset should stay 8.88
+        let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [12.0, 0.0]}));
+        assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
+
+        let d = s.doc().expect("doc");
+        let door = d.arch.opening(ArchId(0)).expect("door");
+        assert!((door.offset - 8.88).abs() < 1e-6, "door offset should be 8.88: {}", door.offset);
+    }
+
+    #[test]
+    fn stretching_t_junction_stem_with_opening() {
+        let mut s = Session::new();
+        // w0 = (0,0)-(10,0), w1 = (5,0)-(5,10) (T-junction)
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]]})).expect("wall w0");
+        s.execute("wall", &json!({"points": [[5.0, 0.0], [5.0, 10.0]]})).expect("wall w1");
+        // Door on w1 at offset 5
+        s.execute("door", &json!({"wall": "w1", "offset": 5.0, "width": 1.0, "height": 2.1})).expect("door on w1");
+
+        // Stretch w0's end to (12, 0): w1 is not affected (it's not connected to w0's end)
+        let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [12.0, 0.0]}));
+        assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
+
+        let d = s.doc().expect("doc");
+        let door = d.arch.opening(ArchId(0)).expect("door");
+        // w1 is unchanged, so the door offset should be unchanged
+        assert!((door.offset - 5.0).abs() < 1e-6, "door offset should be 5.0: {}", door.offset);
+    }
+
+    #[test]
     fn arch_wall_stretch_isolated_wall() {
         let mut s = Session::new();
         s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]]})).expect("wall command");
@@ -418,19 +469,19 @@ mod tests {
         let mut s = Session::new();
         // w0 = (0,0)-(10,0), w1 = (10,0)-(10,10)
         s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]})).expect("wall command");
-        // Door near the shared point (10,0) on w1, offset 0.1 (so the rough span fits)
-        s.execute("door", &json!({"wall": "w1", "offset": 0.1, "width": 1.0, "height": 2.1})).expect("door on w1");
+        // Door near the shared point (10,0) on w1, offset 0.5 (so the rough span fits)
+        s.execute("door", &json!({"wall": "w1", "offset": 0.5, "width": 1.0, "height": 2.1})).expect("door on w1");
 
-        // Stretch w0's end to (12, 0): w1's start moves to (12, 0), door should stay at (12, 0.1)
+        // Stretch w0's end to (12, 0): w1's start moves to (12, 0), door should stay at (12, 0.5)
         let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [12.0, 0.0]}));
         assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
 
         let d = s.doc().expect("doc");
         let w1 = d.arch.wall(ArchId(1)).expect("w1");
         let door = d.arch.opening(ArchId(0)).expect("door");
-        // Door's world position should be w1.start + dir * offset = (12, 0) + (0, 1) * 0.1 = (12, 0.1)
+        // Door's world position should be w1.start + dir * offset = (12, 0) + (0, 1) * 0.5 = (12, 0.5)
         let door_world = w1.start + (w1.end - w1.start).normalized() * door.offset;
-        assert!((door_world - Vec2::new(12.0, 0.1)).len() < 1e-6, "door world start should be (12, 0.1): ({}, {})", door_world.x, door_world.y);
+        assert!((door_world - Vec2::new(12.0, 0.5)).len() < 1e-6, "door world start should be (12, 0.5): ({}, {})", door_world.x, door_world.y);
     }
 
     #[test]
@@ -441,15 +492,17 @@ mod tests {
         // Door at offset 5 on w1 (middle of the wall)
         s.execute("door", &json!({"wall": "w1", "offset": 5.0, "width": 1.0, "height": 2.1})).expect("door on w1");
 
-        // Stretch w0's end to (12, 0): w1's start moves to (12, 0), door should stay at (12, 5)
-        let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [12.0, 0.0]}));
+        // Stretch w0's end to (10, 2): w1's start moves to (10, 2), w1 stays vertical,
+        // door's world position should stay at (10, 5) with offset adjusted to 3.
+        let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [10.0, 2.0]}));
         assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
 
         let d = s.doc().expect("doc");
         let w1 = d.arch.wall(ArchId(1)).expect("w1");
         let door = d.arch.opening(ArchId(0)).expect("door");
-        // Door's world position is preserved at (10, 5); the wall becomes diagonal
+        // Door's world position is preserved at (10, 5); offset adjusted from 5 to 3
         let door_world = w1.start + (w1.end - w1.start).normalized() * door.offset;
         assert!((door_world - Vec2::new(10.0, 5.0)).len() < 1e-6, "door world start should be (10, 5): ({}, {})", door_world.x, door_world.y);
+        assert!((door.offset - 3.0).abs() < 1e-6, "door offset should be 3.0: {}", door.offset);
     }
 }
