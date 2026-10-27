@@ -10,7 +10,7 @@ use cadcraft_arch::wall::{wall_layer_polygons, wall_polygon};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::Handle;
 use cadcraft_doc::arch::{
-    OpeningKind, Roof, RoofEdge, RoofEdgeKind, RoofPlane, RoomType, roof_handle, roof_label, room_handle, room_label, wall_label,
+    OpeningKind, ROOM_HANDLE_OFFSET, Roof, RoofEdge, RoofEdgeKind, RoofPlane, RoomType, roof_handle, roof_label, room_label, wall_label,
 };
 // RoofId might be ArchId or a new type. If it's not found, we might need to use ArchId or import it if it exists.
 // Assuming RoofId is in cadcraft_doc::arch based on naming convention, but if E0425 says not found,
@@ -144,7 +144,10 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
             let level = d.arch.level(r.level);
             let mut obj = JsonMap::new();
             obj.insert("id".to_string(), json!(room_label(r.id)));
-            obj.insert("handle".to_string(), json!(room_handle(r.id).hex().to_lowercase()));
+            obj.insert(
+                "handle".to_string(),
+                json!(format!("{:x}", 0xa000_0000u64.saturating_add(ROOM_HANDLE_OFFSET).saturating_add(u64::from(r.id.0)))),
+            );
             obj.insert("name".to_string(), json!(r.name));
             obj.insert("type".to_string(), json!(room_type_key(r.room_type)));
             obj.insert("level".to_string(), json!(level.map(|l| l.name.clone()).unwrap_or_default()));
@@ -773,7 +776,7 @@ mod tests {
         let r = &rooms[0];
         let handle = r["handle"].as_str().expect("handle must be a string");
         assert_eq!(handle.len(), 8, "handle must be 8 characters: {handle}");
-        assert!(handle.starts_with("a00"), "handle must start with 'a00': {handle}");
+        assert!(handle.starts_with("a001"), "handle must start with 'a001' (room proxy range): {handle}");
         assert!(handle.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle must be lowercase hex: {handle}");
     }
 
@@ -1314,7 +1317,7 @@ mod tests {
         let v = exec(&mut s, "arch.inspect", &json!({ "roofs": true }));
         let roofs = v["roofs"].as_array().expect("roofs array missing");
         let handle = roofs[0]["handle"].as_str().expect("handle must be a string");
-        assert!(handle.starts_with("a00"), "handle must start with 'a00': {handle}");
+        assert!(handle.starts_with("ffffffff"), "handle must start with 'ffffffff' (arch-proxy base): {handle}");
         assert!(handle.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle must be lowercase hex: {handle}");
     }
 

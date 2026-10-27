@@ -54,11 +54,15 @@ pub(super) fn parse_entities(
         }
         if let Some((c, mut k)) = kindent {
             let h = match handle {
-                Some(h) => {
+                // Handles in the arch-proxy reserved range [ARCH_HANDLE_BASE, ..] come from
+                // old CADCraft proxy linework or from external software that happened to use a
+                // handle in that range.  Give the entity a fresh handle so it is treated as
+                // ordinary linework and never confused with a synthetic arch proxy.
+                Some(h) if h.0 < ARCH_HANDLE_BASE => {
                     d.bump_handseed(h);
                     h
                 }
-                None => d.new_handle(),
+                Some(_) | None => d.new_handle(),
             };
             entity_extras(kind, tags, h, &mut k, rx);
             // A proxy we keep (record absent or unreadable) is remembered so the arch model

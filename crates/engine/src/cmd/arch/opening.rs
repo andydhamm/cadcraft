@@ -578,7 +578,7 @@ mod tests {
         let one = &r["openings"].as_array().expect("openings")[0];
         assert_eq!(one["id"], json!("o0"), "id should be o0");
         let handle = one["handle"].as_str().expect("handle is a string");
-        assert!(handle.starts_with("a000"), "handle should start with a000, got {handle}");
+        assert!(handle.starts_with("ffffffff"), "handle should start with ffffffff (arch-proxy base), got {handle}");
         assert_eq!(one["host"], json!("w0"), "host should be w0");
     }
 
