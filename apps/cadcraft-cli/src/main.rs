@@ -1464,7 +1464,7 @@ mod tests {
 
     #[test]
     fn format_projected_f32_max_is_finite() {
-        let max = f32::MAX as f64;
+        let max = f32::MAX;
         let s = format_projected([max, max, max, max]);
         assert!(s.starts_with("PROJECTED "));
         let rest = s.strip_prefix("PROJECTED ").unwrap();
@@ -1485,7 +1485,7 @@ mod tests {
         assert_eq!(parts.len(), 4);
         for (i, p) in parts.iter().enumerate() {
             let v: f64 = p.parse().unwrap();
-            assert!((v - pb[i]).abs() < 1e-6, "round-trip failed for index {i}: {v} vs {}", pb[i]);
+            assert!((v - pb[i] as f64).abs() < 1e-6, "round-trip failed for index {i}: {v} vs {}", pb[i]);
         }
     }
 
