@@ -406,7 +406,7 @@ mod uk_tests {
     use super::*;
 
     fn uk_source() -> &'static str {
-        include_str!("uk.tsv")
+        include_str!("i18n/uk.tsv")
     }
 
     #[test]
