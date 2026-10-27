@@ -41,17 +41,36 @@ pub(crate) fn run_stretch(s: &mut Session, p: &Value) -> Result<Value> {
     // `to` is the new world position of the moved end.
     let to = point_req("arch.wall.stretch", p, "to")?;
 
+    // Validate on a clone so a refused drag never changes the document Arc
+    // (Session::execute pushes an undo step whenever the Arc changes, even on Err).
+    let (arch_after, moved) = {
+        let doc = s.doc()?;
+        let w = doc.arch.wall(id).ok_or_else(|| bad("arch.wall.stretch", format!("no wall {id}")))?;
+
+        // Refuse to drag an end onto the wall's other end (would collapse it).
+        let other = if end == join::End::Start { w.end } else { w.start };
+        if to.near(other, MIN_WALL_LENGTH) {
+            return Err(bad("arch.wall.stretch", "the dragged end would collapse the wall"));
+        }
+
+        let mut arch = doc.arch.clone();
+        let moved = join::stretch_wall(&mut arch, id, end, to).map_err(|e| EngineError::Other(e.to_string()))?;
+
+        // Refuse if the drag would collapse any neighbour wall.
+        for &mid in &moved {
+            if let Some(w) = arch.wall(mid) {
+                if w.start.near(w.end, MIN_WALL_LENGTH) {
+                    return Err(bad("arch.wall.stretch", format!("the drag would collapse wall w{}", mid.0)));
+                }
+            }
+        }
+
+        (arch, moved)
+    };
+
+    // All checks passed — commit to the live document.
     let d = s.doc_mut()?;
-    let w = d.arch.wall(id).ok_or_else(|| bad("arch.wall.stretch", format!("no wall {id}")))?;
-
-    // Refuse to drag an end onto the wall's other end (would collapse it).
-    let other = if end == join::End::Start { w.end } else { w.start };
-    if to.near(other, MIN_WALL_LENGTH) {
-        return Err(bad("arch.wall.stretch", "the dragged end would collapse the wall"));
-    }
-
-    let moved = join::stretch_wall(&mut d.arch, id, end, to).map_err(|e| EngineError::Other(e.to_string()))?;
-
+    d.arch = arch_after;
     d.touch_arch();
 
     Ok(json!({
@@ -110,6 +129,25 @@ mod tests {
         // Invalid `end` value.
         let r = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "middle", "to": [1.0, 1.0]}));
         assert!(matches!(r, Err(EngineError::BadParams { .. })), "bad end should be BadParams: {:?}", r);
+    }
+
+    #[test]
+    fn arch_wall_stretch_refuses_to_collapse_a_neighbour() {
+        let mut s = make_l();
+        let undo_before = s.state().expect("should have state").undo.len();
+
+        // Drag w0's end to (10,10): w1.start is at (10,0) and also moves to (10,10),
+        // collapsing w1 (start == end).
+        let r = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [10.0, 10.0]}));
+        assert!(matches!(r, Err(EngineError::BadParams { .. })), "collapsing a neighbour should be BadParams: {:?}", r);
+
+        // No undo step should have been pushed for the refused drag.
+        assert_eq!(s.state().expect("should have state").undo.len(), undo_before, "failed stretch must not push an undo step");
+
+        // w1.start must be unchanged.
+        let d = s.doc_mut().expect("doc_mut should succeed");
+        let w1 = d.arch.wall(ArchId(1)).expect("w1 should exist");
+        assert!((w1.start.x - 10.0).abs() < 1e-6 && w1.start.y.abs() < 1e-6, "w1.start should still be (10, 0): ({}, {})", w1.start.x, w1.start.y);
     }
 
     #[test]
