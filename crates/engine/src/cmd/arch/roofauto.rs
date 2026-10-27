@@ -618,4 +618,282 @@ mod tests {
         assert!(d.layers.iter().any(|l| l.name == "A-ROOF"), "A-ROOF not created by roofauto");
         assert_eq!(d.layers.iter().filter(|l| l.name == "A-ROOF").count(), 1, "A-ROOF created more than once");
     }
+
+    #[test]
+    fn multiple_auto_roofs_rebuild_on_wall_edit() {
+        let mut s = new_session_with_level();
+        // Add a second level
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "upper".to_string(), ceiling_height: 2.4, structure: 0.3, ..Default::default() });
+        d.touch_arch();
+
+        // Add exterior walls on both levels
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0]],
+                "exterior": true,
+                "closed": true,
+                "level": "ground",
+            }),
+        )
+        .unwrap();
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0]],
+                "exterior": true,
+                "closed": true,
+                "level": "upper",
+            }),
+        )
+        .unwrap();
+
+        // Build auto roofs on both levels
+        s.execute("roofauto", &json!({ "pitchRise": 6.0, "pitchRun": 12.0, "level": "ground" })).unwrap();
+        s.execute("roofauto", &json!({ "pitchRise": 6.0, "pitchRun": 12.0, "level": "upper" })).unwrap();
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 2);
+
+        // Edit a wall on the ground level
+        let r = s
+            .execute(
+                "wall",
+                &json!({
+                    "points": [[2.0, 2.0], [8.0, 2.0]],
+                    "type": "interior",
+                    "level": "ground",
+                }),
+            )
+            .unwrap();
+        // refresh_auto_roofs rebuilds all auto roofs, not just the one whose level changed
+        assert_eq!(r["roofsRebuilt"].as_u64().unwrap(), 2, "both auto roofs should rebuild");
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 2, "both roofs should survive");
+    }
+
+    #[test]
+    fn mixed_auto_and_hand_edited_roofs() {
+        let mut s = new_session_with_level();
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0]],
+                "exterior": true,
+                "closed": true,
+            }),
+        )
+        .unwrap();
+
+        // Build an auto roof and mark it hand-edited
+        s.execute("roofauto", &json!({ "pitchRise": 6.0, "pitchRun": 12.0 })).unwrap();
+        {
+            let d = s.doc_mut().unwrap();
+            d.arch.roofs[0].hand_edited = true;
+            d.touch_arch();
+        }
+
+        // Add a second level with an auto roof
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "upper".to_string(), ceiling_height: 2.4, structure: 0.3, ..Default::default() });
+        d.touch_arch();
+
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0]],
+                "exterior": true,
+                "closed": true,
+                "level": "upper",
+            }),
+        )
+        .unwrap();
+        s.execute("roofauto", &json!({ "pitchRise": 6.0, "pitchRun": 12.0, "level": "upper" })).unwrap();
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 2);
+
+        // Edit a wall
+        let r = s
+            .execute(
+                "wall",
+                &json!({
+                    "points": [[2.0, 2.0], [8.0, 2.0]],
+                    "type": "interior",
+                }),
+            )
+            .unwrap();
+        // Only the auto roof should rebuild
+        assert_eq!(r["roofsRebuilt"].as_u64().unwrap(), 1, "only the auto roof should rebuild");
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 2, "both roofs should survive");
+    }
+
+    #[test]
+    fn roof_rebuild_preserves_roof_id() {
+        let mut s = new_session_with_level();
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0]],
+                "exterior": true,
+                "closed": true,
+            }),
+        )
+        .unwrap();
+        s.execute("roofauto", &json!({ "pitchRise": 6.0, "pitchRun": 12.0 })).unwrap();
+
+        let original_id = s.doc().unwrap().arch.roofs[0].id;
+
+        // Edit a wall to trigger rebuild
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[2.0, 2.0], [8.0, 2.0]],
+                "type": "interior",
+            }),
+        )
+        .unwrap();
+
+        let rebuilt_id = s.doc().unwrap().arch.roofs[0].id;
+        assert_eq!(original_id, rebuilt_id, "rebuild should preserve roof id");
+    }
+
+    #[test]
+    fn roof_rebuild_is_idempotent() {
+        let mut s = new_session_with_level();
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0]],
+                "exterior": true,
+                "closed": true,
+            }),
+        )
+        .unwrap();
+        s.execute("roofauto", &json!({ "pitchRise": 6.0, "pitchRun": 12.0 })).unwrap();
+
+        let first_planes = s.doc().unwrap().arch.roofs[0].planes.len();
+
+        // Trigger rebuild twice with different wall edits
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[2.0, 2.0], [8.0, 2.0]],
+                "type": "interior",
+            }),
+        )
+        .unwrap();
+        let second_planes = s.doc().unwrap().arch.roofs[0].planes.len();
+
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[2.0, 4.0], [8.0, 4.0]],
+                "type": "interior",
+            }),
+        )
+        .unwrap();
+        let third_planes = s.doc().unwrap().arch.roofs[0].planes.len();
+
+        assert_eq!(first_planes, second_planes, "rebuild should be idempotent");
+        assert_eq!(second_planes, third_planes, "rebuild should be idempotent");
+    }
+
+    #[test]
+    fn manual_roof_survives_wall_edit() {
+        let mut s = new_session_with_level();
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0]],
+                "exterior": true,
+                "closed": true,
+            }),
+        )
+        .unwrap();
+
+        // Create a manual roof
+        {
+            let d = s.doc_mut().unwrap();
+            d.arch.roofs.push(Roof { manual: true, ..Roof::default() });
+            d.touch_arch();
+        }
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 1);
+
+        // Edit a wall
+        let r = s
+            .execute(
+                "wall",
+                &json!({
+                    "points": [[2.0, 2.0], [8.0, 2.0]],
+                    "type": "interior",
+                }),
+            )
+            .unwrap();
+
+        // Manual roof should survive and not rebuild
+        assert_eq!(r["roofsRebuilt"].as_u64().unwrap(), 0, "manual roof should not rebuild");
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 1, "manual roof should survive");
+        assert!(s.doc().unwrap().arch.roofs[0].manual, "manual flag should be preserved");
+    }
+
+    #[test]
+    fn roof_rebuild_with_nan_pitch_does_not_crash() {
+        let mut s = new_session_with_level();
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0]],
+                "exterior": true,
+                "closed": true,
+            }),
+        )
+        .unwrap();
+
+        // Create a roof with NaN pitch
+        {
+            let d = s.doc_mut().unwrap();
+            d.arch.roofs.push(Roof { pitch_rise: f64::NAN, pitch_run: 12.0, ..Roof::default() });
+            d.touch_arch();
+        }
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 1);
+
+        // Edit a wall to trigger rebuild — should not crash
+        let r = s.execute(
+            "wall",
+            &json!({
+                "points": [[2.0, 2.0], [8.0, 2.0]],
+                "type": "interior",
+            }),
+        );
+        assert!(r.is_ok(), "wall edit with NaN pitch roof should not crash");
+        assert!(s.doc().unwrap().arch.roofs.len() <= 1, "at most one roof should remain after rebuild");
+    }
+
+    #[test]
+    fn wall_edit_with_no_roof_is_noop() {
+        let mut s = new_session_with_level();
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0]],
+                "exterior": true,
+                "closed": true,
+            }),
+        )
+        .unwrap();
+
+        // No roof exists
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 0);
+
+        // Edit a wall — should not crash and roofsRebuilt should be 0
+        let r = s
+            .execute(
+                "wall",
+                &json!({
+                    "points": [[2.0, 2.0], [8.0, 2.0]],
+                    "type": "interior",
+                }),
+            )
+            .unwrap();
+
+        assert_eq!(r["roofsRebuilt"].as_u64().unwrap(), 0, "no roofs to rebuild");
+        assert_eq!(s.doc().unwrap().arch.roofs.len(), 0, "no roof should be created");
+    }
 }
