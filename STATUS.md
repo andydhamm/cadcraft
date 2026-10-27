@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-27 18:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 19:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 4 of 13: Automatic roofs — 74 of 74 segments merged · 7 of 11 acceptance checks**
+**Phase 4 of 13: Automatic roofs — 74 of 79 segments merged · 7 of 11 acceptance checks**
 
-4,182 workspace tests passing at the last merge · 336 segments merged in all · 0 of 11 seats working
+4,182 workspace tests passing at the last merge · 336 segments merged in all · 0 of 12 seats working
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 18:45 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 7 / 11 | 33.9 h so far · expected done Oct 27 21:15–Oct 28 00:36 UTC |
+| 4 | Automatic roofs | building | 7 / 11 | 34.2 h so far · expected done Oct 27 22:14–Oct 28 02:13 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -27,8 +27,15 @@ Updated 2026-10-27 18:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 4 segments
 
-74 merged, 6 replaced
+74 merged, 6 replaced, 5 working
 
+| Segment | What | State | Seat |
+|---|---|---|---|
+| `p4h-probe-crease-jitter` | Probe ray: jitter the origin so a point on a mesh crease/vertex still counts as inside | working | bonsai-ws2-a |
+| `p4h-valley-convexity` | Classify hips and valleys from footprint-vertex convexity, not only face samples | working | claude-sonnet-a |
+| `p4h-roofplane-arg-forms` | roofplane: accept base as [x0,y0,x1,y1] and fascia/soffit as booleans | working | ornith-b |
+| `p4h-roof-eave-z-per-plane` | Roof meshes use each plane's own eave_z | working | ornith-a |
+| `p4h-roof-invariant-tests` | Add the two named roof invariants to the arch property suite | working | bonsai-a |
 
 ## Recent merges
 
@@ -51,14 +58,15 @@ Updated 2026-10-27 18:45 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | idle | 519 |
-| bonsai-b | bonsai2-27b | idle | 459 |
-| bonsai-ws2-a | bonsai2-27b | idle | 669 |
-| bonsai-ws2-b | bonsai2-27b | idle | 642 |
-| claude-sonnet-a | sonnet | idle | 15 |
+| bonsai-a | bonsai2-27b | agent | 519 |
+| bonsai-b | bonsai2-27b | agent | 459 |
+| bonsai-ws2-a | bonsai2-27b | agent | 669 |
+| bonsai-ws2-b | bonsai2-27b | agent | 642 |
+| claude-sonnet-a | sonnet | agent | 15 |
 | claude-sonnet-b | sonnet | idle | 14 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 320 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 62 |
-| ornith-a | ornith15-397b-exl3-35 | idle | 25 |
-| ornith-b | ornith15-397b-exl3-35 | idle | 16 |
-| tturbo-mac | tturbo-ultraheretic | agent | 331 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 146 |
+| ornith-a | ornith15-397b-exl3-35 | agent | 25 |
+| ornith-b | ornith15-397b-exl3-35 | agent | 16 |
+| tturbo-mac | tturbo-ultraheretic | merging | 332 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 148 |
