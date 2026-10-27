@@ -1026,9 +1026,9 @@ mod tests {
         let mut vol = 0.0;
         for tri in mesh.indices.chunks(3) {
             let (a, b, c) = (tri[0], tri[1], tri[2]);
-            let pa = mesh.positions[a as usize] as [f64; 3];
-            let pb = mesh.positions[b as usize] as [f64; 3];
-            let pc = mesh.positions[c as usize] as [f64; 3];
+            let pa = mesh.positions[a as usize].map(|v| v as f64);
+            let pb = mesh.positions[b as usize].map(|v| v as f64);
+            let pc = mesh.positions[c as usize].map(|v| v as f64);
             vol += pa[0] * (pb[1] * pc[2] - pb[2] * pc[1]) + pa[1] * (pb[2] * pc[0] - pb[0] * pc[2]) + pa[2] * (pb[0] * pc[1] - pb[1] * pc[0]);
         }
         vol /= 6.0;
@@ -1047,9 +1047,9 @@ mod tests {
         assert!(floor.triangle_count() > 0, "floor must have triangles");
         for tri in floor.indices.chunks(3) {
             let (a, b, c) = (tri[0], tri[1], tri[2]);
-            let pa = floor.positions[a as usize] as [f64; 3];
-            let pb = floor.positions[b as usize] as [f64; 3];
-            let pc = floor.positions[c as usize] as [f64; 3];
+            let pa = floor.positions[a as usize].map(|v| v as f64);
+            let pb = floor.positions[b as usize].map(|v| v as f64);
+            let pc = floor.positions[c as usize].map(|v| v as f64);
             let nx = (pb[1] - pa[1]) * (pc[2] - pa[2]) - (pb[2] - pa[2]) * (pc[1] - pa[1]);
             let nz = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0]);
             let len = (nx * nx + nz * nz).sqrt();
@@ -1070,9 +1070,9 @@ mod tests {
         assert!(ceil.triangle_count() > 0, "ceiling must have triangles");
         for tri in ceil.indices.chunks(3) {
             let (a, b, c) = (tri[0], tri[1], tri[2]);
-            let pa = ceil.positions[a as usize] as [f64; 3];
-            let pb = ceil.positions[b as usize] as [f64; 3];
-            let pc = ceil.positions[c as usize] as [f64; 3];
+            let pa = ceil.positions[a as usize].map(|v| v as f64);
+            let pb = ceil.positions[b as usize].map(|v| v as f64);
+            let pc = ceil.positions[c as usize].map(|v| v as f64);
             let nx = (pb[1] - pa[1]) * (pc[2] - pa[2]) - (pb[2] - pa[2]) * (pc[1] - pa[1]);
             let nz = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0]);
             let len = (nx * nx + nz * nz).sqrt();
