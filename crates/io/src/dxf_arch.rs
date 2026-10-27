@@ -1325,6 +1325,60 @@ mod tests {
 
     /// T-junction walls produce correct proxy rings.
     #[test]
+    fn proxy_polylines_empty_when_no_walls() {
+        let mut m = ArchModel::default();
+        // Add an opening but no walls - should produce no wall proxies
+        let wid = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
+        // Now remove the wall to test no-walls case
+        m.walls.clear();
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 0, "no walls should produce no wall proxies");
+    }
+
+    #[test]
+    fn proxy_polylines_very_thin_wall() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.001));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 1, "very thin wall should still produce a proxy");
+
+        let tags = &polys[0];
+        let xs: Vec<f64> = tags.iter().filter(|t| t.code == 10).map(|t| t.f64()).collect();
+        let ys: Vec<f64> = tags.iter().filter(|t| t.code == 20).map(|t| t.f64()).collect();
+        assert_eq!(xs.len(), 4, "expected 4 x coords for thin wall");
+        assert_eq!(ys.len(), 4, "expected 4 y coords for thin wall");
+        // All coordinates should be finite
+        assert!(xs.iter().all(|v| v.is_finite()), "x coords must be finite");
+        assert!(ys.iter().all(|v| v.is_finite()), "y coords must be finite");
+    }
+
+    #[test]
+    fn proxy_polylines_triangle_ring() {
+        // Three walls forming a triangle
+        let mut m = ArchModel::default();
+        let a = Vec2::new(0.0, 0.0);
+        let b = Vec2::new(10.0, 0.0);
+        let c = Vec2::new(5.0, 8.0);
+        m.push_wall(Wall::new(a, b, 0.2));
+        m.push_wall(Wall::new(b, c, 0.2));
+        m.push_wall(Wall::new(c, a, 0.2));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 3, "triangle should produce 3 wall proxies");
+
+        for tags in &polys {
+            let vertex_count = tags.iter().find(|t| t.code == 90).map(|t| t.i64()).unwrap_or(0);
+            let actual_points = tags.iter().filter(|t| t.code == 10).count();
+            assert_eq!(vertex_count as usize, actual_points, "vertex count tag must match actual points");
+            // A triangle corner should have at least 3 vertices
+            assert!(vertex_count >= 3, "triangle corner should have at least 3 vertices");
+        }
+    }
+
+    #[test]
     fn proxy_polylines_t_junction() {
         let mut m = ArchModel::default();
         m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
