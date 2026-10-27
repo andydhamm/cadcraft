@@ -1043,4 +1043,114 @@ mod tests {
             assert!(p[0].is_finite() && p[1].is_finite() && p[2].is_finite(), "position not finite: {:?}", p);
         }
     }
+
+    #[test]
+    fn roof_meshes_fallback_eave_z_when_plane_eave_z_is_nan() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+        let mut plane = simple_plane();
+        plane.eave_z = f64::NAN;
+        roof.planes.push(plane);
+
+        // Fallback eave_z is 2.5; with NaN on the plane, the fallback must be used.
+        let meshes = roof_meshes(&roof, 2.5);
+        let roof_mesh = meshes.iter().find(|m| m.material == "roof").expect("roof mesh");
+        let b = roof_mesh.bounds();
+
+        // Base edge vertices should be at z = 2.5 (the fallback), not NaN.
+        assert!(b.min[2] >= 2.49, "min z should be near fallback 2.5, got {}", b.min[2]);
+        for p in &roof_mesh.positions {
+            assert!(p[2].is_finite(), "position z should be finite, got {}", p[2]);
+        }
+    }
+
+    #[test]
+    fn roof_meshes_fallback_eave_z_when_plane_eave_z_is_infinite() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+        let mut plane = simple_plane();
+        plane.eave_z = f64::INFINITY;
+        roof.planes.push(plane);
+
+        // is_finite() is false for INFINITY, so the fallback must be used.
+        let meshes = roof_meshes(&roof, 3.0);
+        let roof_mesh = meshes.iter().find(|m| m.material == "roof").expect("roof mesh");
+        let b = roof_mesh.bounds();
+
+        assert!(b.min[2] >= 2.99, "min z should be near fallback 3.0, got {}", b.min[2]);
+        for p in &roof_mesh.positions {
+            assert!(p[2].is_finite(), "position z should be finite, got {}", p[2]);
+        }
+    }
+
+    #[test]
+    fn roof_meshes_plane_eave_z_zero_is_used() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+        let mut plane = simple_plane();
+        plane.eave_z = 0.0; // finite, so it must be used (not the fallback)
+        roof.planes.push(plane);
+
+        // Fallback is 2.5, but the plane's 0.0 must win.
+        let meshes = roof_meshes(&roof, 2.5);
+        let roof_mesh = meshes.iter().find(|m| m.material == "roof").expect("roof mesh");
+        let b = roof_mesh.bounds();
+
+        // Base edge at z=0.0, far edge at z = 0.0 + 0.5*5 = 2.5, plus thickness.
+        assert!(b.min[2] < 0.01, "min z should be near 0.0, got {}", b.min[2]);
+        assert!(b.max[2] < 2.6, "max z should be below 2.6, got {}", b.max[2]);
+    }
+
+    #[test]
+    fn roof_meshes_each_plane_uses_own_eave_z() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+
+        let mut plane1 = simple_plane();
+        plane1.eave_z = 2.0;
+        plane1.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)];
+        plane1.base_edge = [0.0, 0.0, 4.0, 0.0];
+        roof.planes.push(plane1);
+
+        let mut plane2 = simple_plane();
+        plane2.eave_z = 4.0;
+        plane2.ring = vec![Vec2::new(4.0, 0.0), Vec2::new(8.0, 0.0), Vec2::new(8.0, 3.0), Vec2::new(4.0, 3.0)];
+        plane2.base_edge = [4.0, 0.0, 8.0, 0.0];
+        roof.planes.push(plane2);
+
+        let meshes = roof_meshes(&roof, 0.0);
+        let roof_meshes: Vec<_> = meshes.iter().filter(|m| m.material == "roof").collect();
+        assert_eq!(roof_meshes.len(), 2, "expected 2 roof meshes");
+
+        // Plane 1: eave at z=2.0, far edge at z = 2.0 + 0.5*3 = 3.5
+        let b1 = roof_meshes[0].bounds();
+        assert!((b1.min[2] - 2.0).abs() < 0.01, "plane 1 min z should be 2.0, got {}", b1.min[2]);
+
+        // Plane 2: eave at z=4.0, far edge at z = 4.0 + 0.5*3 = 5.5
+        let b2 = roof_meshes[1].bounds();
+        assert!((b2.min[2] - 4.0).abs() < 0.01, "plane 2 min z should be 4.0, got {}", b2.min[2]);
+    }
+
+    #[test]
+    fn fascia_and_soffit_use_plane_eave_z() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+        let mut plane = simple_plane();
+        plane.eave_z = 2.4;
+        plane.fascia_depth = 0.12;
+        plane.soffit_depth = 0.2;
+        roof.planes.push(plane);
+
+        let meshes = roof_meshes(&roof, 0.0);
+
+        // Fascia top should be at eave_z = 2.4
+        let fascia = meshes.iter().find(|m| m.material == "fascia").expect("fascia mesh");
+        let fb = fascia.bounds();
+        assert!((fb.max[2] - 2.4).abs() < 0.01, "fascia top should be at 2.4, got {}", fb.max[2]);
+
+        // Soffit top should be at eave_z - thickness = 2.4 - 0.2 = 2.2
+        let soffit = meshes.iter().find(|m| m.material == "soffit").expect("soffit mesh");
+        let sb = soffit.bounds();
+        assert!((sb.max[2] - 2.2).abs() < 0.01, "soffit top should be at 2.2, got {}", sb.max[2]);
+    }
 }
