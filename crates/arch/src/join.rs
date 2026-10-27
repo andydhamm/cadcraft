@@ -228,7 +228,7 @@ enum Neighbour {
     /// fall back to a square end.
     Parallel { id: ArchId, end: End },
     /// A crossing: two centre lines intersect at an interior point of both.
-    X { id: ArchId, end: End, pt: Vec2 },
+    X,
 }
 
 /// Classify the neighbours at one end of a wall.
@@ -329,7 +329,7 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
         // This end is the nearest to the crossing (End wins the tie when equidistant).
         let this_is_nearest = if end == End::Start { pt.dist(cross_pt) < w.end.dist(cross_pt) } else { pt.dist(cross_pt) <= w.start.dist(cross_pt) };
         if this_is_nearest {
-            neighbours.push(Neighbour::X { id: nw.id, end, pt: cross_pt });
+            neighbours.push(Neighbour::X);
         }
     }
 
@@ -414,18 +414,6 @@ fn plan_end(
         let left = pt + wperp * whalf;
         let right = pt - wperp * whalf;
         return Ok(EndPlan { left, right, join: Some(Join::Butt(end)) });
-    }
-
-    // X: square end at the crossing centre.
-    if let Some(Neighbour::X { pt, .. }) = nbrs.iter().find(|n| matches!(n, Neighbour::X { .. })) {
-        let Some(wdir) = wall_dir(w) else {
-            return Ok(EndPlan { left: raw.0, right: raw.1, join: None });
-        };
-        let wperp = Vec2::new(-wdir.y, wdir.x);
-        let whalf = w.thickness / 2.0;
-        let left = *pt + wperp * whalf;
-        let right = *pt - wperp * whalf;
-        return Ok(EndPlan { left, right, join: Some(Join::X(end)) });
     }
 
     // Parallel neighbour: square end at the shared join point.
@@ -552,6 +540,11 @@ fn plan_end(
         };
 
         return Ok(EndPlan { left, right, join: Some(Join::L(end)) });
+    }
+
+    // X: a crossing joins nothing — record it and keep the end's own corners.
+    if nbrs.iter().any(|n| matches!(n, Neighbour::X)) {
+        return Ok(EndPlan { left: raw.0, right: raw.1, join: Some(Join::X(end)) });
     }
 
     Ok(EndPlan { left: raw.0, right: raw.1, join: None })
