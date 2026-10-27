@@ -675,4 +675,112 @@ mod tests {
         let room2 = Room { ceiling_height: None, polygon: vec![], room_type: RoomType::Living, level: 0, ..Default::default() };
         assert!(effective_ceiling(&room2, Some(&level)).is_none());
     }
+
+    #[test]
+    fn standard_area_with_only_divider_walls_equals_interior() {
+        let mut model = ArchModel::default();
+        // Add only divider walls (no exterior walls)
+        let mut w1 = Wall::new(pt(0.0, 3.0), pt(10.0, 3.0), 0.1);
+        w1.base_level = 0;
+        w1.divider = true;
+        model.push_wall(w1);
+
+        let room = south_room();
+        let interior = interior_area(&room);
+        let standard = standard_area(&model, &room);
+        // With no exterior walls, standard area should equal interior area
+        assert!((standard - interior).abs() < 1e-9);
+    }
+
+    #[test]
+    fn interior_area_with_huge_coordinates() {
+        let room = Room {
+            polygon: vec![pt(1e15, 1e15), pt(1e15 + 10.0, 1e15), pt(1e15 + 10.0, 1e15 + 8.0), pt(1e15, 1e15 + 8.0)],
+            holes: vec![],
+            room_type: RoomType::Living,
+            level: 0,
+            ..Default::default()
+        };
+        let area = interior_area(&room);
+        // 10 * 8 = 80
+        assert!((area - 80.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn standard_area_with_repeated_closing_vertex() {
+        let mut model = ArchModel::default();
+        push_exterior(&mut model, pt(0.0, 0.0), pt(10.0, 0.0));
+        push_exterior(&mut model, pt(10.0, 0.0), pt(10.0, 8.0));
+        push_exterior(&mut model, pt(10.0, 8.0), pt(0.0, 8.0));
+        push_exterior(&mut model, pt(0.0, 8.0), pt(0.0, 0.0));
+        push_interior(&mut model, pt(0.0, 3.0), pt(10.0, 3.0), 0.1);
+
+        // Same as south_room but with repeated closing vertex
+        let room = Room {
+            polygon: vec![pt(0.1, 0.1), pt(9.9, 0.1), pt(9.9, 2.95), pt(0.1, 2.95), pt(0.1, 0.1)],
+            holes: vec![],
+            room_type: RoomType::Living,
+            level: 0,
+            ..Default::default()
+        };
+        let area = standard_area(&model, &room);
+        assert!((area - 31.62).abs() < 1e-6);
+    }
+
+    #[test]
+    fn living_area_uses_level_default_ceiling() {
+        let mut model = ArchModel::default();
+        let polygon = vec![pt(0.0, 0.0), pt(1.0, 0.0), pt(1.0, 1.0), pt(0.0, 1.0)];
+
+        // Room with no ceiling_height, level with ceiling 1.0 -> not living
+        model.levels.push(Level { ceiling_height: 1.0, ..Default::default() });
+        model.rooms.push(Room {
+            standard_area: 10.0,
+            room_type: RoomType::Living,
+            level: 0,
+            ceiling_height: None,
+            polygon: polygon.clone(),
+            ..Default::default()
+        });
+
+        assert!((living_area(&model) - 0.0).abs() < 1e-9);
+
+        // Now set level ceiling to 1.2 -> living
+        model.levels[0].ceiling_height = 1.2;
+        assert!((living_area(&model) - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn standard_area_non_convex_l_shaped_room() {
+        let mut model = ArchModel::default();
+        // L-shaped room: (0,0) to (10,0) to (10,5) to (5,5) to (5,10) to (0,10)
+        // Exterior walls around the L
+        push_exterior(&mut model, pt(0.0, 0.0), pt(10.0, 0.0));
+        push_exterior(&mut model, pt(10.0, 0.0), pt(10.0, 5.0));
+        push_exterior(&mut model, pt(10.0, 5.0), pt(5.0, 5.0));
+        push_exterior(&mut model, pt(5.0, 5.0), pt(5.0, 10.0));
+        push_exterior(&mut model, pt(5.0, 10.0), pt(0.0, 10.0));
+        push_exterior(&mut model, pt(0.0, 10.0), pt(0.0, 0.0));
+
+        let room = Room {
+            polygon: vec![pt(0.1, 0.1), pt(9.9, 0.1), pt(9.9, 4.9), pt(5.1, 4.9), pt(5.1, 9.9), pt(0.1, 9.9)],
+            holes: vec![],
+            room_type: RoomType::Living,
+            level: 0,
+            ..Default::default()
+        };
+
+        let interior = interior_area(&room);
+        let standard = standard_area(&model, &room);
+
+        // Interior area: 10*5 + 5*5 - 0.1*0.1 (approx) = 75 - small
+        // Actually: the L shape is 10 wide x 5 tall + 5 wide x 5 tall = 50 + 25 = 75
+        // But the polygon is slightly inside (0.1 offset), so it's a bit less
+        assert!(interior > 0.0);
+        assert!(interior.is_finite());
+
+        // Standard area should be larger (offset to outer faces)
+        assert!(standard >= interior);
+        assert!(standard.is_finite());
+    }
 }
