@@ -179,15 +179,6 @@ impl Mesh {
         let z0f = z0 as f32;
         let z1f = z1 as f32;
         let b_base = self.positions.len() as u32;
-        let n = self.positions.len();
-        // Quantised position keys so bridge detection compares positions,
-        // not raw vertex indices.
-        let pos_key: Vec<(i64, i64, i64)> = (0..n as usize)
-            .map(|i| {
-                let p = &self.positions[i];
-                ((p[0] * 1e6).round() as i64, (p[1] * 1e6).round() as i64, (p[2] * 1e6).round() as i64)
-            })
-            .collect();
 
         // Bottom cap vertices (outward normal: -Z).
         for &p in &ring {
@@ -346,6 +337,14 @@ impl Mesh {
         // the same two positions, so the position-pair (min(pos, pos), max(pos, pos))
         // repeats. Any repeated position-pair is a bridge and its side face is
         // skipped so the merged ring stays a closed 2-manifold.
+        // Quantised position keys for the merged ring: the two seam vertices
+        // repeat in space, while every other ring edge is a unique position-pair.
+        let pos_key: Vec<(i64, i64, i64)> = (0..m as usize)
+            .map(|i| {
+                let p = &ring[i];
+                ((p.x * 1e6).round() as i64, (p.y * 1e6).round() as i64, 0)
+            })
+            .collect();
         let mut edge_count: HashMap<((i64, i64, i64), (i64, i64, i64)), u32> = HashMap::new();
         for i in 0..m {
             let j = (i + 1) % m;
@@ -1490,6 +1489,14 @@ mod tests {
         for (i, p) in mesh.positions.iter().enumerate() {
             let [x, y, z] = p;
             let [nx, ny, nz] = mesh.normals[i];
+            // Skip cap vertices: they carry their own +/-Z normals and live on
+            // the same boundary positions as the side-face vertices.
+            if (z - 0.0).abs() < 1e-9 && mesh.normals[i][2].abs() > 0.5 {
+                continue;
+            }
+            if (z - 2.5f32).abs() < 1e-9 && mesh.normals[i][2].abs() > 0.5 {
+                continue;
+            }
             assert!(nx.is_finite() && ny.is_finite() && nz.is_finite());
             assert!((nz).abs() < 1e-9, "side-face vertex {i} at ({x}, {y}, {z}) carries non-horizontal normal ({nx}, {ny}, {nz})");
             let dot = (x - cx) * nx + (y - cy) * ny;
@@ -1498,7 +1505,7 @@ mod tests {
         // The south face (y = 3) must have normal (0, -1, 0); the north face (y = 5)
         // (0, 1, 0); the west face (x = 3) (-1, 0, 0); the east face (x = 5) (1, 0, 0).
         let find_side_normal = |px: f32, py: f32, pz: f32| -> [f32; 3] {
-            let pos = (px, py, pz);
+            let pos: [f32; 3] = [px, py, pz];
             mesh.positions.iter().position(|p| p == &pos).map(|i| mesh.normals[i]).unwrap()
         };
         let n = find_side_normal(3.0, 3.0, 0.0);
