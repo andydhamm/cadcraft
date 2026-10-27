@@ -1609,3 +1609,61 @@ mod render_args_tests {
         assert!(check_framed_output(Framing::Extents, Some("house.GLB")).is_err());
     }
 }
+
+#[cfg(test)]
+mod render_harden_tests {
+    use super::*;
+
+    #[test]
+    fn render_command_requires_file_and_output() {
+        assert!(render(&[]).is_err());
+        assert!(render(&["model.dxf".to_string()]).is_err());
+        assert!(render(&["out.png".to_string()]).is_err());
+        assert!(render(&["a.dxf".to_string(), "b.png".to_string(), "c.dxf".to_string()]).is_err());
+    }
+
+    #[test]
+    fn render_command_parsing_with_options() {
+        let result = render(&["--camera".to_string(), "orbit".to_string(), "--size".to_string(), "640x480".to_string()]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("FILE OUT.png"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn offscreen_render_of_a_two_room_model_has_lit_pixels() {
+        let d = cadcraft_engine::sample::floor_plan();
+        let scene = cadcraft_arch3d::build(&d.arch);
+
+        if cadcraft_render3d::offscreen::device_within(std::time::Duration::from_secs(5)).is_none() {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        }
+
+        let camera = cadcraft_render3d::camera::Orbit::fit(&scene.bounds);
+        let camera = cadcraft_render3d::camera::Camera::Orbit(camera);
+        let png = cadcraft_render3d::offscreen::render_png(&scene, &camera, &cadcraft_render3d::light::Light::DEFAULT, (320, 200)).expect("render");
+        let rgba = cadcraft_render3d::offscreen::png_rgba(&png).expect("decode");
+
+        let clear = [5u8, 6, 9, 255];
+        let different = rgba.chunks_exact(4).filter(|p| p.iter().zip(clear.iter()).any(|(a, b)| (a as i32 - b as i32).abs() > 10)).count();
+        let total = rgba.len() / 4;
+        let fraction = different as f64 / total as f64;
+        assert!(fraction > 0.02, "only {fraction:.2%} of pixels differ from clear color (need > 2%)");
+    }
+
+    #[test]
+    fn parse_camera_with_duplicate_fields() {
+        let bounds = cadcraft_arch3d::mesh::Bounds3::new([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let base = cadcraft_render3d::camera::Orbit::fit(&bounds);
+        let cam = parse_camera("orbit,azimuth=10,azimuth=20", base).unwrap();
+        let cadcraft_render3d::camera::Camera::Orbit(o) = cam else { panic!("expected orbit") };
+        assert_eq!(o.azimuth, 20.0);
+    }
+
+    #[test]
+    fn parse_size_with_whitespace() {
+        assert_eq!(parse_size("  100  x  200  "), Ok((100, 200)));
+        assert_eq!(parse_size("\t100\tX\t200\t"), Ok((100, 200)));
+    }
+}

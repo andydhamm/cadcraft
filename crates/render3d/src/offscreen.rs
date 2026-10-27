@@ -401,5 +401,45 @@ mod codec_tests {
 }
 
 #[cfg(test)]
+mod offscreen_behavior_tests {
+    use super::*;
+
+    fn with_offscreen<F>(size: (u32, u32), f: F)
+    where
+        F: FnOnce(&mut Offscreen),
+    {
+        match device_within(Duration::from_secs(5)) {
+            Some((device, queue)) => {
+                let mut off = Offscreen::with_device(device, queue, size);
+                f(&mut off);
+            }
+            None => {
+                eprintln!("SKIP: no GPU adapter available");
+            }
+        }
+    }
+
+    #[test]
+    fn offscreen_resize_same_size_returns_false() {
+        with_offscreen((320, 200), |off| {
+            assert_eq!(off.size(), (320, 200));
+            assert!(!off.resize((320, 200)));
+            assert_eq!(off.size(), (320, 200));
+        });
+    }
+
+    #[test]
+    fn offscreen_resize_increases_generation() {
+        with_offscreen((320, 200), |off| {
+            let gen1 = off.generation();
+            off.resize((640, 400));
+            let gen2 = off.generation();
+            assert!(gen2 > gen1, "generation should increase after resize");
+            assert_eq!(off.size(), (640, 400));
+        });
+    }
+}
+
+#[cfg(test)]
 #[path = "offscreen_tests.rs"]
 mod tests;
