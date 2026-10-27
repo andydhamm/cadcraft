@@ -1578,6 +1578,18 @@ mod tests {
     }
 
     #[test]
+    fn opening_handle_hex_starts_with_a000() {
+        // ARCH_HANDLE_BASE moved from 0xA000_0000 to 0xFFFF_FFFF_0000_0000; the hex
+        // prefix is now "ffffffff0000" rather than "a000". Assertions updated accordingly.
+        let oh = opening_handle(ArchId(0));
+        let hex = oh.hex().to_lowercase();
+        assert!(hex.starts_with("ffffffff0000"), "opening handle hex is `{hex}`, expected arch-base prefix");
+        let oh7 = opening_handle(ArchId(7));
+        let hex7 = oh7.hex().to_lowercase();
+        assert!(hex7.starts_with("ffffffff0000"), "opening handle hex is `{hex7}`, expected arch-base prefix");
+    }
+
+    #[test]
     fn opening_handle_hex_starts_with_arch_base_prefix() {
         // With ARCH_HANDLE_BASE = 0xFFFF_FFFF_0000_0000 the prefix is "ffffffff0000".
         let oh = opening_handle(ArchId(0));
