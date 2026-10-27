@@ -38,8 +38,17 @@ pub enum Perimeter {
 }
 
 /// Interior area: the room polygon minus its holes (inner surfaces).
+///
+/// Translates the geometry near the origin first so the shoelace formula
+/// stays accurate for rooms placed far from the origin (e.g. at 1e15 m).
 pub fn interior_area(room: &Room) -> f64 {
-    region_area(&room.polygon, &room.holes)
+    if room.polygon.is_empty() {
+        return 0.0;
+    }
+    let origin = room.polygon[0];
+    let poly: Vec<Vec2> = room.polygon.iter().map(|p| *p - origin).collect();
+    let holes: Vec<Vec<Vec2>> = room.holes.iter().map(|h| h.iter().map(|p| *p - origin).collect()).collect();
+    region_area(&poly, &holes)
 }
 
 /// The effective rough ceiling height for a room.
@@ -739,6 +748,55 @@ mod tests {
 
         // Level ceiling 1.2 -> living
         assert!(is_living(&room, Some(&level_ok)));
+    }
+
+    #[test]
+    fn interior_area_triangle() {
+        let room = Room {
+            polygon: vec![pt(0.0, 0.0), pt(4.0, 0.0), pt(0.0, 3.0)],
+            holes: vec![],
+            room_type: RoomType::Living,
+            level: 0,
+            ..Default::default()
+        };
+        // Right triangle: 0.5 * 4 * 3 = 6
+        assert!((interior_area(&room) - 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn interior_area_with_multiple_holes() {
+        let room = Room {
+            polygon: vec![pt(0.0, 0.0), pt(10.0, 0.0), pt(10.0, 10.0), pt(0.0, 10.0)],
+            holes: vec![vec![pt(1.0, 1.0), pt(2.0, 1.0), pt(2.0, 2.0), pt(1.0, 2.0)], vec![pt(5.0, 5.0), pt(7.0, 5.0), pt(7.0, 7.0), pt(5.0, 7.0)]],
+            room_type: RoomType::Living,
+            level: 0,
+            ..Default::default()
+        };
+        // 100 - 1 - 4 = 95
+        assert!((interior_area(&room) - 95.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn interior_area_is_translation_invariant() {
+        let base = Room {
+            polygon: vec![pt(0.0, 0.0), pt(5.0, 0.0), pt(5.0, 4.0), pt(0.0, 4.0)],
+            holes: vec![],
+            room_type: RoomType::Living,
+            level: 0,
+            ..Default::default()
+        };
+        let translated = Room {
+            polygon: vec![pt(1e6, 1e6), pt(1e6 + 5.0, 1e6), pt(1e6 + 5.0, 1e6 + 4.0), pt(1e6, 1e6 + 4.0)],
+            holes: vec![],
+            room_type: RoomType::Living,
+            level: 0,
+            ..Default::default()
+        };
+        let a1 = interior_area(&base);
+        let a2 = interior_area(&translated);
+        assert!((a1 - 20.0).abs() < 1e-9);
+        assert!((a2 - 20.0).abs() < 1e-9);
+        assert!((a1 - a2).abs() < 1e-9);
     }
 
     #[test]
