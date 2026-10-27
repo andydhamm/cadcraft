@@ -293,7 +293,7 @@ mod tests {
         let mut d = Drawing::new_metric();
         d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let tris_prim = list.prims.iter().find(|p| p.kind == Kind::Tris).expect("no tris prim");
         assert!(tris_prim.len >= 3);
@@ -322,7 +322,7 @@ mod tests {
         let id0 = d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
         let id1 = d.arch.add_wall(wall(Vec2::new(0.0, 10.0), Vec2::new(10.0, 10.0), 0.2));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         assert_eq!(list.prims[0].handle, arch_handle(id0));
         assert_eq!(list.prims[1].handle, arch_handle(id0));
@@ -333,7 +333,7 @@ mod tests {
     #[test]
     fn empty_arch_model_adds_no_prims() {
         let d = Drawing::new_metric();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
         assert!(list.prims.is_empty());
         assert!(list.bounds.is_empty());
     }
@@ -346,7 +346,7 @@ mod tests {
         }
         d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
         for p in &list.prims {
             assert_eq!(p.color, Rgb::from_u32(0x00ff00));
             assert!(!p.aci7);
@@ -355,7 +355,7 @@ mod tests {
         let mut d = Drawing::new_metric();
         d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
         for p in &list.prims {
             assert!(p.aci7);
         }
@@ -371,7 +371,7 @@ mod tests {
         let id0 = d.arch.add_wall(wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
         let id1 = d.arch.add_wall(wall(Vec2::new(0.0, 10.0), Vec2::new(10.0, 10.0), 0.2));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
         assert_eq!(list.prims[0].handle, arch_handle(id0));
         assert_eq!(list.prims[2].handle, arch_handle(id1));
         assert_ne!(list.prims[0].handle, list.prims[2].handle);
@@ -386,7 +386,7 @@ mod tests {
         d.arch.add_wall(wall(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), t));
         d.arch.add_wall(wall(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), t));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let poly = list.prims.iter().find(|p| p.kind == Kind::Polyline && p.handle == arch_handle(id0));
         assert!(poly.is_some(), "no polyline prim for bottom wall");
@@ -416,7 +416,7 @@ mod tests {
         d.arch.add_wall(wall(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), t));
         let id_int = d.arch.add_wall(wall(Vec2::new(0.0, 3.0), Vec2::new(10.0, 3.0), 0.1));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let poly = list.prims.iter().find(|p| p.kind == Kind::Polyline && p.handle == arch_handle(id_int));
         assert!(poly.is_some(), "no polyline prim for interior wall");
@@ -438,7 +438,7 @@ mod tests {
         d.arch.add_wall(wall(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), t));
         d.arch.add_wall(wall(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), t));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         assert!((list.bounds.min.x - (-0.1)).abs() < 1e-6);
         assert!((list.bounds.min.y - (-0.1)).abs() < 1e-6);
@@ -455,7 +455,7 @@ mod tests {
         let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
         d.arch.push_opening(Opening::new(wid, 5.0, 1.0, 2.1, OpeningKind::Door));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = arch_handle(wid);
         let wall_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -470,7 +470,7 @@ mod tests {
         let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
         let oid = d.arch.push_opening(Opening::new(wid, 5.0, 1.0, 2.1, OpeningKind::Door));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = opening_handle(oid);
         let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -487,7 +487,7 @@ mod tests {
             l.color = Color::True(Rgb::from_u32(0xff0000));
         }
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = opening_handle(ArchId(0));
         let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -507,7 +507,7 @@ mod tests {
             l.color = Color::True(Rgb::from_u32(0x0000ff));
         }
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = opening_handle(ArchId(0));
         let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -524,7 +524,7 @@ mod tests {
         // Opening whose host wall does not exist.
         d.arch.push_opening(Opening::new(ArchId(999), 5.0, 1.0, 2.1, OpeningKind::Door));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = opening_handle(ArchId(0));
         assert!(list.prims.iter().all(|p| p.handle != handle), "prims drawn for a missing-host opening");
@@ -538,7 +538,7 @@ mod tests {
         let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
         let oid = d.arch.push_opening(Opening::new(wid, 5.0, 1.0, 2.1, OpeningKind::Door));
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         // In this fixture the wall and opening share id 0, so their proxy handles differ only
         // by range. Picking the opening must never land on the wall handle.
@@ -558,7 +558,7 @@ mod tests {
         let mut d = Drawing::new_metric();
         d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 3.0, ..Wall::default() });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let tris_prim = list.prims.iter().find(|p| p.kind == Kind::Tris).expect("no tris prim");
         assert!(tris_prim.len >= 3);
@@ -585,7 +585,7 @@ mod tests {
             ..Room::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = room_handle(rid);
         let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -612,7 +612,7 @@ mod tests {
             l.color = Color::True(Rgb::from_u32(0xff00ff));
         }
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -639,7 +639,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         // All three non-eave edges produce prims on the roof handle.
@@ -664,7 +664,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         assert!(list.prims.iter().all(|p| p.handle != handle), "eave edges were drawn as roof linework");
@@ -684,7 +684,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -704,7 +704,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let h0 = roof_handle(rid0);
         let h1 = roof_handle(rid1);
@@ -724,7 +724,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -750,7 +750,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -766,7 +766,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -785,7 +785,7 @@ mod tests {
         let mut d = Drawing::new_metric();
         let rid = d.arch.push_roof(Roof { edges: vec![], ..Roof::default() });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         assert!(list.prims.iter().all(|p| p.handle != handle), "roof with no edges drew prims");
@@ -800,7 +800,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -828,7 +828,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let prims0: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == roof_handle(rid0)).collect();
         let prims1: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == roof_handle(rid1)).collect();
@@ -849,7 +849,7 @@ mod tests {
             ..Roof::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = roof_handle(rid);
         let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -873,7 +873,7 @@ mod tests {
             ..Room::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = room_handle(rid);
         let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -894,7 +894,7 @@ mod tests {
             l.color = Color::True(Rgb::from_u32(0x00ffff));
         }
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = room_handle(ArchId(0));
         let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -915,7 +915,7 @@ mod tests {
             ..Room::default()
         });
         d.touch_arch();
-        let list = build_arch(&d, &Options::default());
+        let list = build_arch(&d, &Options::default(), false);
 
         let handle = room_handle(ArchId(0));
         let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
@@ -923,5 +923,54 @@ mod tests {
         for p in &label_prims {
             assert!(p.aci7, "label should use aci7 when A-ROOM layer is missing");
         }
+    }
+
+    /// A wall's poché (fill, outline, gap edges) is skipped when `A-WALL` is off or frozen;
+    /// a screen build still draws it when the layer is on and not frozen.
+    #[test]
+    fn arch_walls_are_not_drawn_when_a_wall_is_off_or_frozen() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-WALL");
+        d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 3.0, ..Wall::default() });
+        d.touch_arch();
+
+        // A-WALL on and not frozen: the wall draws.
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(!list.prims.is_empty(), "wall should draw when A-WALL is on and not frozen");
+
+        // A-WALL off: no arch prims.
+        if let Some(l) = d.layer_mut("A-WALL") {
+            l.on = false;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(list.prims.is_empty(), "no prims when A-WALL is off");
+
+        // A-WALL frozen: no arch prims.
+        if let Some(l) = d.layer_mut("A-WALL") {
+            l.on = true;
+            l.frozen = true;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(list.prims.is_empty(), "no prims when A-WALL is frozen");
+    }
+
+    /// A plot build skips the wall when `A-WALL` is set to no-plot; a screen build still draws it.
+    #[test]
+    fn arch_walls_are_not_plotted_when_a_wall_is_no_plot() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-WALL");
+        d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 3.0, ..Wall::default() });
+        d.touch_arch();
+
+        // Screen build (plotting = false) still draws the wall.
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(!list.prims.is_empty(), "wall should draw in a screen build");
+
+        // Mark A-WALL no-plot; a plot build skips it.
+        if let Some(l) = d.layer_mut("A-WALL") {
+            l.plot = false;
+        }
+        let list = build_arch(&d, &Options::default(), true);
+        assert!(list.prims.is_empty(), "no prims when A-WALL is no-plot during plotting");
     }
 }
