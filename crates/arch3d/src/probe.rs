@@ -84,6 +84,11 @@ pub struct Hit {
 /// [`is_probeable`]. When the mesh has more than
 /// [`MAX_PROBE_TRIANGLES`] triangles, only the first N are scanned and
 /// their parity is used.
+///
+/// The ray origin is jittered slightly in X and Y to avoid degenerate
+/// cases where the point lies exactly on a mesh crease or vertex (e.g.
+/// the ridge of a gable wall), which can cause adjacent triangles to
+/// both reject the point due to half-open edge rules.
 pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
     if !is_probeable(mesh) {
         return false;
@@ -96,7 +101,8 @@ pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
         return false;
     }
     // Nudge the point slightly upward so that points on the top face are outside.
-    let p = Vec3::new(p.x, p.y, p.z + 1e-6);
+    // Jitter X and Y to avoid crease/vertex degeneracies in point_in_triangle2.
+    let p = Vec3::new(p.x + 1e-7, p.y + 1.3e-7, p.z + 1e-6);
     mesh_crossings_upward(p, &mesh.positions, &mesh.indices, MAX_PROBE_TRIANGLES) % 2 == 1
 }
 
