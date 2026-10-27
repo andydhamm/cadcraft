@@ -41,13 +41,15 @@ pub fn write(scene: &Scene3d) -> Vec<u8> {
     push_u32(&mut out, total as u32);
 
     // JSON chunk (0x4E4F534A), padded to 4-byte alignment with 0x20.
-    push_u32(&mut out, json_text.len() as u32);
+    // chunkLength is the padded length per glTF 2.0 §4.4.
+    push_u32(&mut out, (json_text.len() + json_pad) as u32);
     out.extend_from_slice(&[0x4a, 0x53, 0x4f, 0x4e]);
     out.extend_from_slice(json_text.as_bytes());
     out.resize(out.len() + json_pad, 0x20);
 
     // Binary chunk (0x004E4942), padded to 4-byte alignment with 0x00.
-    push_u32(&mut out, bin.len() as u32);
+    // chunkLength is the padded length per glTF 2.0 §4.4.
+    push_u32(&mut out, (bin.len() + bin_pad) as u32);
     out.extend_from_slice(&[0x42, 0x49, 0x4e, 0x00]);
     out.extend_from_slice(&bin);
     out.resize(out.len() + bin_pad, 0);
@@ -825,6 +827,35 @@ mod tests {
         let json = glb_json_chunk(&bytes);
         let materials: Vec<String> = json["materials"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
         assert!(!materials.contains(&"roof".to_string()));
+    }
+
+    /// Verify that both chunk length fields carry the PADDED length (a multiple
+    /// of 4) and that the BIN chunk header sits exactly at 12 + 8 + jsonChunkLen.
+    /// Four successive model sizes are tested so every alignment residue (0‥3)
+    /// is exercised, guaranteeing that the padding code path is hit.
+    #[test]
+    fn glb_chunk_lengths_are_padded_multiples_of_four() {
+        for n in 0..=3 {
+            let bytes = write(&scene_with(n));
+            let json_chunk_len = le32(&bytes, 12) as usize;
+            assert_eq!(json_chunk_len % 4, 0, "n={n}: JSON chunkLength {json_chunk_len} is not 4-byte aligned");
+            // BIN chunk must start at 12 (header) + 8 (JSON chunk header) + json_chunk_len.
+            let bin_offset = 12 + 8 + json_chunk_len;
+            assert!(bin_offset + 8 <= bytes.len(), "n={n}: bin_offset {bin_offset} is out of bounds (file len {})", bytes.len());
+            assert_eq!(le32(&bytes, bin_offset + 4), 0x004E4942, "n={n}: chunk at byte {bin_offset} is not a BIN chunk");
+            let bin_chunk_len = le32(&bytes, bin_offset) as usize;
+            assert_eq!(bin_chunk_len % 4, 0, "n={n}: BIN chunkLength {bin_chunk_len} is not 4-byte aligned");
+        }
+    }
+
+    /// The 12-byte GLB header's `length` field must equal the total byte count.
+    #[test]
+    fn glb_header_length_is_the_file_length() {
+        for n in 0..=3 {
+            let bytes = write(&scene_with(n));
+            let header_len = le32(&bytes, 8) as usize;
+            assert_eq!(header_len, bytes.len(), "n={n}: header length {header_len} != actual file length {}", bytes.len());
+        }
     }
 
     #[test]
