@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-27 15:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 16:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 70 of 71 segments merged · 6 of 11 acceptance checks**
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 15:45 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 6 / 11 | 30.9 h so far · expected done Oct 27 17:36–Oct 27 19:54 UTC |
+| 4 | Automatic roofs | building | 6 / 11 | 31.2 h so far · expected done Oct 27 17:51–Oct 27 20:09 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -61,5 +61,5 @@ Updated 2026-10-27 15:45 UTC. This page and the card in the README are regenerat
 | kimi-k31 | k3.1-pro-highspeed | idle | 62 |
 | ornith-a | ornith15-397b-exl3-35 | held | 25 |
 | ornith-b | ornith15-397b-exl3-35 | held | 16 |
-| tturbo-mac | tturbo-ultraheretic | gate | 322 |
+| tturbo-mac | tturbo-ultraheretic | agent | 323 |
 | tturbo-mac2 | tturbo-ultraheretic | agent | 134 |
