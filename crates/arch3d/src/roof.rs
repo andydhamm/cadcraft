@@ -14,7 +14,9 @@ use cadcraft_geom::{Vec2, Vec3};
 ///
 /// The underside is defined by lifting the plane's ring vertices by `z = eave_z + slope * dist`,
 /// where `dist` is the perpendicular distance from the vertex to the base edge's line.
-/// The top surface is offset by `thickness` along the plane's normal.
+/// The top surface is the underside raised vertically by `thickness / cos(theta)`, where
+/// `theta` is the pitch angle, so the plan ring is identical for both rings and the sides
+/// are vertical.
 ///
 /// Returns `None` if the plane is degenerate or contains non-finite values.
 pub fn roof_plane_mesh(plane: &RoofPlane, eave_z: f64, material: &str, id: ArchId) -> Option<Mesh> {
@@ -101,16 +103,15 @@ pub fn roof_plane_mesh(plane: &RoofPlane, eave_z: f64, material: &str, id: ArchI
         let v = plane.ring[i];
         let z = bottom_z[i];
 
-        // Offset by thickness along normal
-        let tx = v.x + plane.thickness * n.x;
-        let ty = v.y + plane.thickness * n.y;
-        let tz = z + plane.thickness * n.z;
+        // Vertical thickness: keep the plan ring and raise it by
+        // thickness / cos(theta) = thickness * sqrt(1 + slope^2).
+        let tz = z + plane.thickness * (1.0 + plane.slope * plane.slope).sqrt();
 
-        if !tx.is_finite() || !ty.is_finite() || !tz.is_finite() {
+        if !tz.is_finite() {
             return None;
         }
 
-        top_ring.push(Vec2::new(tx, ty));
+        top_ring.push(v);
         top_z.push(tz);
     }
 
@@ -658,6 +659,21 @@ mod tests {
     }
 
     #[test]
+    fn roof_plane_top_is_directly_above_its_plan_ring() {
+        let plane = simple_plane();
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        let n_verts = plane.ring.len();
+        // Bottom vertices are 0..n_verts, top vertices are n_verts..2*n_verts.
+        for i in 0..n_verts {
+            let b = mesh.positions[i];
+            let t = mesh.positions[n_verts + i];
+            assert!((b[0] - t[0]).abs() < 1e-4, "top x mismatch at vertex {}", i);
+            assert!((b[1] - t[1]).abs() < 1e-4, "top y mismatch at vertex {}", i);
+        }
+    }
+
+    #[test]
     fn roof_meshes_multiple_planes() {
         let mut roof = Roof::default();
         roof.id = ArchId(1);
@@ -957,26 +973,19 @@ mod tests {
         let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
         let n_verts = plane.ring.len();
 
-        // Normal: slope=0.5, dir=(1,0), normal_xy=(0,1)
-        // n = (-s*0, -s*1, 1) / |n| = (0, -0.5, 1) / sqrt(1.25)
-        let s = plane.slope;
-        let n_len = (s * s + 1.0).sqrt();
-        let n_x = 0.0;
-        let n_y = -s / n_len;
-        let n_z = 1.0 / n_len;
+        // Vertical thickness: the top ring keeps the plan ring and is raised by
+        // thickness / cos(theta) = thickness * sqrt(1 + slope^2).
+        let dz = plane.thickness * (1.0 + plane.slope * plane.slope).sqrt();
 
         for i in 0..n_verts {
             let b = mesh.positions[i];
             let t = mesh.positions[n_verts + i];
             let dx = t[0] as f64 - b[0] as f64;
             let dy = t[1] as f64 - b[1] as f64;
-            let dz = t[2] as f64 - b[2] as f64;
-            let expected_dx = plane.thickness * n_x;
-            let expected_dy = plane.thickness * n_y;
-            let expected_dz = plane.thickness * n_z;
-            assert!((dx - expected_dx).abs() < 1e-4, "top offset x mismatch at vertex {}", i);
-            assert!((dy - expected_dy).abs() < 1e-4, "top offset y mismatch at vertex {}", i);
-            assert!((dz - expected_dz).abs() < 1e-4, "top offset z mismatch at vertex {}", i);
+            let dz_obs = t[2] as f64 - b[2] as f64;
+            assert!((dx - 0.0).abs() < 1e-4, "top offset x should be 0 at vertex {}", i);
+            assert!((dy - 0.0).abs() < 1e-4, "top offset y should be 0 at vertex {}", i);
+            assert!((dz_obs - dz).abs() < 1e-4, "top offset z mismatch at vertex {}", i);
         }
     }
 
@@ -1097,9 +1106,9 @@ mod tests {
         let b = roof_mesh.bounds();
 
         // Base edge at z=0.0, far edge bottom at z = 0.0 + 0.5*5 = 2.5, top adds
-        // thickness/sqrt(1+slope^2) = 0.2/sqrt(1.25) ≈ 0.179, so max z ≈ 2.679.
+        // thickness * sqrt(1+slope^2) = 0.2 * sqrt(1.25) ≈ 0.224, so max z ≈ 2.724.
         assert!(b.min[2] < 0.01, "min z should be near 0.0, got {}", b.min[2]);
-        assert!(b.max[2] < 2.7, "max z should be below 2.7, got {}", b.max[2]);
+        assert!(b.max[2] < 2.75, "max z should be below 2.75, got {}", b.max[2]);
     }
 
     #[test]
@@ -1153,5 +1162,46 @@ mod tests {
         let soffit = meshes.iter().find(|m| m.material == "soffit").expect("soffit mesh");
         let sb = soffit.bounds();
         assert!((sb.max[2] - 2.2).abs() < 0.01, "soffit top should be at 2.2, got {}", sb.max[2]);
+    }
+
+    #[test]
+    fn probe_above_the_ridge_hits_roof() {
+        use crate::Scene3d;
+        use crate::probe::probe;
+        use cadcraft_doc::ArchModel;
+
+        let mut model = ArchModel::default();
+
+        let mut roof = Roof::default();
+        roof.id = ArchId(0);
+        roof.level = 0;
+
+        // South plane: base edge at y=0, ridge at y=4.1
+        // z at ridge = 2.4 + 0.5 * 4.1 = 4.45 (underside)
+        let mut south = RoofPlane::default();
+        south.base_edge = [0.0, 0.0, 8.2, 0.0];
+        south.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(8.2, 0.0), Vec2::new(8.2, 4.1), Vec2::new(0.0, 4.1)];
+        south.slope = 0.5;
+        south.thickness = 0.2;
+        south.eave_z = 2.4;
+
+        // North plane: base edge at y=8.2 (reversed so the slope normal points toward the ridge),
+        // ridge at y=4.1. z at ridge = 2.4 + 0.5 * 4.1 = 4.45 (underside).
+        let mut north = RoofPlane::default();
+        north.base_edge = [8.2, 8.2, 0.0, 8.2];
+        north.ring = vec![Vec2::new(8.2, 8.2), Vec2::new(0.0, 8.2), Vec2::new(0.0, 4.1), Vec2::new(8.2, 4.1)];
+        north.slope = 0.5;
+        north.thickness = 0.2;
+        north.eave_z = 2.4;
+
+        roof.planes = vec![south, north];
+        model.push_roof(roof);
+
+        let scene = Scene3d::build(&model);
+        // Ridge underside is at z = 4.45; vertical top is at 4.45 + 0.2*sqrt(1.25) ≈ 4.674.
+        // z = 4.6 is inside the roof solid.
+        let hit = probe(&scene, Vec3::new(4.1, 4.1, 4.6));
+        assert!(hit.is_some(), "probe at ridge midpoint (4.1, 4.1, 4.6) should hit the roof");
+        assert_eq!(hit.unwrap().part, "roof", "ridge probe should report part 'roof'");
     }
 }
