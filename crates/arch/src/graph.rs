@@ -611,4 +611,71 @@ mod tests {
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0], (ArchId(0), ArchId(1)));
     }
+
+    #[test]
+    fn graph_empty_model() {
+        let model = ArchModel::default();
+        let graph = WallGraph::build(&model);
+        assert!(graph.is_empty());
+        assert_eq!(graph.len(), 0);
+        assert_eq!(graph.components().len(), 0);
+        assert!(!graph.is_closed_loop());
+        assert_eq!(graph.collinear_pairs().len(), 0);
+    }
+
+    #[test]
+    fn graph_single_wall() {
+        let w1 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 2.0);
+        let model = make_model(vec![w1]);
+        let graph = WallGraph::build(&model);
+        assert_eq!(graph.len(), 1);
+        // Two clusters, each of size 1 (the two ends don't coincide).
+        let c_start = graph.cluster_of(ArchId(0), End::Start).unwrap();
+        let c_end = graph.cluster_of(ArchId(0), End::End).unwrap();
+        assert_ne!(c_start, c_end);
+        assert_eq!(graph.cluster(c_start).len(), 1);
+        assert_eq!(graph.cluster(c_end).len(), 1);
+        // One component with one wall.
+        let comps = graph.components();
+        assert_eq!(comps.len(), 1);
+        assert_eq!(comps[0], vec![ArchId(0)]);
+        // Not a closed loop.
+        assert!(!graph.is_closed_loop());
+    }
+
+    #[test]
+    fn graph_huge_coordinates() {
+        // Walls at coordinates near 1e18 to exercise saturate_cell_coord.
+        let big = 1e18;
+        let w1 = Wall::new(Vec2::new(big, 0.0), Vec2::new(big + 10.0, 0.0), 2.0);
+        let w2 = Wall::new(Vec2::new(big + 10.0, 0.0), Vec2::new(big + 10.0, 10.0), 2.0);
+        let model = make_model(vec![w1, w2]);
+        let graph = WallGraph::build(&model);
+        assert_eq!(graph.len(), 2);
+        // The shared endpoint should be in the same cluster.
+        let c1 = graph.cluster_of(ArchId(0), End::End).unwrap();
+        let c2 = graph.cluster_of(ArchId(1), End::Start).unwrap();
+        assert_eq!(c1, c2);
+    }
+
+    #[test]
+    fn graph_collinear_pairs_anti_parallel() {
+        // Same line, opposite directions.
+        let w1 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 2.0);
+        let w2 = Wall::new(Vec2::new(10.0, 0.0), Vec2::new(0.0, 0.0), 2.0);
+        let model = make_model(vec![w1, w2]);
+        let graph = WallGraph::build(&model);
+        let pairs = graph.collinear_pairs();
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0], (ArchId(0), ArchId(1)));
+    }
+
+    #[test]
+    fn graph_cluster_out_of_range_returns_empty() {
+        let w1 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 2.0);
+        let model = make_model(vec![w1]);
+        let graph = WallGraph::build(&model);
+        // There are 2 clusters (indices 0 and 1). Index 100 is out of range.
+        assert_eq!(graph.cluster(100), &[]);
+    }
 }
