@@ -702,4 +702,88 @@ mod tests {
         assert!((z_max - z_min).abs() <= expected.z, "scene height off: {}", z_max - z_min);
         assert!((z_max - z_min).abs() >= expected.z - 2.0 * eps, "scene height too small: {}", z_max - z_min);
     }
+
+    #[test]
+    fn a_window_produces_a_header() {
+        let model = wall_model();
+        let o = window_opening();
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
+        let has_header = meshes.iter().any(|m| m.material == "window-header");
+        assert!(has_header, "missing window-header mesh");
+    }
+
+    #[test]
+    fn a_thin_wall_still_produces_meshes() {
+        let model = band_wall(0.05);
+        let o = window_opening();
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
+        assert!(!meshes.is_empty(), "no meshes for thin wall");
+    }
+
+    #[test]
+    fn openings_handle_nan_dimensions_gracefully() {
+        let model = wall_model();
+        let mut o = window_opening();
+        o.width = f64::NAN;
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
+        for m in &meshes {
+            for p in &m.positions {
+                let _ = p[0];
+            }
+        }
+    }
+
+    #[test]
+    fn a_zero_height_opening_produces_no_degenerate_meshes() {
+        let model = wall_model();
+        let mut o = window_opening();
+        o.height = 0.0;
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
+        for m in &meshes {
+            assert!(m.triangle_count() > 0, "mesh {} has no triangles", m.material);
+        }
+    }
+
+    #[test]
+    fn a_span_limits_the_opening_height() {
+        let model = wall_model();
+        let o = window_opening();
+        let meshes = opening_meshes(&walls_map(&model), &o, Some((0.5, 1.5)));
+        assert!(!meshes.is_empty(), "no meshes for spanned opening");
+        for m in &meshes {
+            for p in &m.positions {
+                let z = p[2] as f64;
+                assert!(z >= 0.5 - 1e-6, "vertex below span base: z={}", z);
+                assert!(z <= 1.5 + 1e-6, "vertex above span top: z={}", z);
+            }
+        }
+    }
+
+    #[test]
+    fn a_garage_door_produces_frame_and_leaf() {
+        let model = wall_model();
+        let o = Opening {
+            id: ArchId(102),
+            host: ArchId(1),
+            offset: 5.0,
+            width: 3.0,
+            height: 2.2,
+            sill: 0.0,
+            frame_width: 0.05,
+            frame_depth: 0.1,
+            casing_width: 0.05,
+            casing_depth: 0.02,
+            sill_depth: 0.0,
+            swing_angle: 0.0,
+            style: "garage".to_string(),
+            recess: 0.0,
+            kind: OpeningKind::GarageDoor,
+            ..Default::default()
+        };
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
+        let has_frame = meshes.iter().any(|m| m.material == "garage-frame");
+        let has_leaf = meshes.iter().any(|m| m.material == "garage-leaf");
+        assert!(has_frame, "missing garage-frame mesh");
+        assert!(has_leaf, "missing garage-leaf mesh");
+    }
 }
