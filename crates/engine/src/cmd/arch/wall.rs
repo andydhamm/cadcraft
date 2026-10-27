@@ -18,6 +18,7 @@
 //!
 //! Returns JSON: `{"walls": [{"id": "w1", "handle": "a0000001"}, ...], "joins": 0}`
 
+use cadcraft_arch::join::solve_joins;
 use cadcraft_arch::{Level, Wall};
 use cadcraft_doc::{Handle, Layer, arch::MIN_WALL_THICKNESS};
 use cadcraft_geom::Vec2;
@@ -364,7 +365,19 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
 
     // --- Build wall objects ---
     let base_level_idx = level_idx as u32;
-    let layers = super::wall_layers(exterior);
+    let raw_layers = super::wall_layers(exterior);
+    let layers = if thickness == 0.0 {
+        // Divider with zero thickness: no bands.
+        Vec::new()
+    } else {
+        let natural_sum: f64 = raw_layers.iter().map(|(_, t)| t).sum();
+        if natural_sum <= 0.0 || !natural_sum.is_finite() || !thickness.is_finite() {
+            raw_layers
+        } else {
+            let scale = thickness / natural_sum;
+            raw_layers.into_iter().map(|(name, t)| (name, t * scale)).collect()
+        }
+    };
     let mut new_walls: Vec<Wall> = Vec::with_capacity(new_segment_count);
     for i in 0..new_segment_count {
         let id = d.arch.next_wall_id();
@@ -397,12 +410,13 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
         })
         .collect();
 
+    let new_wall_ids: Vec<_> = new_walls.iter().map(|w| w.id).collect();
     d.arch.walls.extend(new_walls);
     d.touch_arch();
 
-    // --- Join solver (pending p1-join-solver merge) ---
-    let joins = 0usize;
-    // TODO(p1-join-solver): let joins = cadcraft_arch::join::solve_joins(&mut d.arch);
+    // Count joins produced at the newly added wall ends.
+    let shapes = solve_joins(&d.arch);
+    let joins: usize = shapes.iter().filter(|s| new_wall_ids.contains(&s.id)).map(|s| s.joins.len()).sum();
 
     // Rebuild roofs if any level has a non-hand-edited roof
     for level in d.arch.levels.iter() {
@@ -1097,6 +1111,46 @@ mod tests {
         assert!(d.arch.walls[0].divider);
         assert!(!d.arch.walls[0].exterior);
         assert_eq!(d.arch.walls[0].wall_type, "interior".to_string());
+    }
+
+    #[test]
+    fn wall_layer_bands_sum_to_the_wall_thickness() {
+        let mut s = new_session_with_level();
+
+        // Exterior wall at a non-default thickness.
+        let p = json!({
+            "points": [[0.0, 0.0], [4.0, 0.0]],
+            "thickness": 0.3,
+            "exterior": true,
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        let w = &d.arch.walls[0];
+        let sum: f64 = w.layers.iter().map(|(_, t)| t).sum();
+        assert!((sum - w.thickness).abs() < 1e-12, "exterior bands sum {sum} != thickness {}", w.thickness);
+
+        // Interior wall (default interior thickness).
+        let p = json!({
+            "points": [[0.0, 1.0], [4.0, 1.0]],
+            "exterior": false,
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        let w = &d.arch.walls[1];
+        let sum: f64 = w.layers.iter().map(|(_, t)| t).sum();
+        assert!((sum - w.thickness).abs() < 1e-12, "interior bands sum {sum} != thickness {}", w.thickness);
+    }
+
+    #[test]
+    fn wall_command_reports_the_joins_it_made() {
+        let mut s = new_session_with_level();
+        // Two walls sharing endpoint (4,0): an L join → 1 join per wall end → total 2.
+        let p = json!({
+            "points": [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0]],
+        });
+        let r = s.execute("wall", &p).unwrap();
+        let joins = r["joins"].as_u64().unwrap_or(u64::MAX);
+        assert_eq!(joins, 2, "L join at (4,0) should produce joins==2, got {joins}");
     }
 
     #[test]

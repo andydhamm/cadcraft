@@ -113,7 +113,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
         walls.push(Value::Object(obj));
     }
 
-    let joins = shapes.len();
+    let joins: usize = shapes.iter().map(|s| s.joins.len()).sum();
 
     let bounds = d.arch.bounds();
     let bounds_json = if bounds.min.is_finite() && bounds.max.is_finite() {
@@ -353,6 +353,26 @@ mod tests {
             Ok(v) => v,
             Err(_) => json!(null),
         }
+    }
+
+    #[test]
+    fn arch_inspect_counts_joined_ends_not_walls() {
+        let mut s = Session::new();
+        // Open chain of 3 walls: (0,0)→(4,0)→(4,3)→(8,3).
+        // Two interior junctions each produce 2 joined ends → total 4, not 3 (shapes.len()).
+        exec(
+            &mut s,
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [8.0, 3.0]],
+                "thickness": 0.2,
+            }),
+        );
+        let v = exec(&mut s, "arch.inspect", &json!({}));
+        let wall_count = v["walls"].as_array().map(|a| a.len()).unwrap_or(0);
+        assert_eq!(wall_count, 3, "expected 3 walls in model");
+        let joins = v["joins"].as_u64().unwrap_or(u64::MAX);
+        assert_eq!(joins, 4, "open chain of 3 walls has 4 joined ends, got {joins}");
     }
 
     #[test]
