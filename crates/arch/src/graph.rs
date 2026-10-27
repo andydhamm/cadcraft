@@ -14,6 +14,7 @@ use crate::wall::wall_polygon;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WallGraph {
     nodes: Vec<(ArchId, Vec2, Vec2)>,
+    end_points: HashMap<ArchId, (Vec2, Vec2)>,
     clusters: Vec<Vec<(ArchId, End)>>,
     end_cluster: HashMap<(ArchId, End), usize>,
 }
@@ -37,40 +38,126 @@ impl WallGraph {
             let start = entry.start;
             let end = entry.end;
             graph.nodes.push((id, start, end));
+            graph.end_points.insert(id, (start, end));
             ends.push((id, End::Start, start));
             ends.push((id, End::End, end));
         }
 
-        // Quantised spatial hash: map quantised position -> cluster index.
-        let mut hash: HashMap<(i64, i64), usize> = HashMap::new();
-        for (id, end, point) in ends {
-            let qx = (point.x / ENDPOINT_TOL).round() as i64;
-            let qy = (point.y / ENDPOINT_TOL).round() as i64;
-            let cluster_idx = match hash.get(&(qx, qy)) {
-                Some(idx) => *idx,
-                None => {
-                    let idx = graph.clusters.len();
-                    graph.clusters.push(Vec::new());
-                    hash.insert((qx, qy), idx);
-                    idx
-                }
-            };
-            graph.clusters[cluster_idx].push((id, end));
-            graph.end_cluster.insert((id, end), cluster_idx);
+        // Single-linkage union-find over a grid of ENDPOINT_TOL-sized cells. Each
+        // endpoint is assigned to a cell; within-tol neighbours are found by looking
+        // at the 3x3 cell neighbourhood and unioning pairs at distance <= ENDPOINT_TOL.
+        let n = ends.len();
+        let mut uf = UnionFind::new(n);
+
+        // Quantised cell (saturating for huge coordinates).
+        let cell_of = |p: Vec2| (saturate_cell_coord(p.x), saturate_cell_coord(p.y));
+        let mut cell: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+        for (i, (_, _, point)) in ends.iter().enumerate() {
+            cell.entry(cell_of(*point)).or_default().push(i);
         }
 
-        // Tolerance pass: merge clusters whose representative points are within ENDPOINT_TOL.
-        graph.merge_clusters();
+        // Union ends that are within ENDPOINT_TOL, scanning each cell and its 3x3
+        // neighbours. Each unordered cell-pair is processed once (cell <= neighbour).
+        for (ckey, members) in &cell {
+            for ddx in [-1, 0, 1] {
+                for ddy in [-1, 0, 1] {
+                    let nkey = (ckey.0 + ddx, ckey.1 + ddy);
+                    if ckey > &nkey {
+                        continue;
+                    }
+                    let Some(neighbours) = cell.get(&nkey) else {
+                        continue;
+                    };
+                    for &i in members {
+                        for &j in neighbours {
+                            if i >= j {
+                                continue;
+                            }
+                            if dist_sq(&ends[i].2, &ends[j].2) <= ENDPOINT_TOL * ENDPOINT_TOL {
+                                uf.union(i, j);
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
-        // Sort cluster members for determinism.
-        for cluster in &mut graph.clusters {
-            cluster.sort_by(|a, b| {
-                a.0.cmp(&b.0).then_with(|| {
-                    let a_val = if a.1 == End::Start { 0u8 } else { 1u8 };
-                    let b_val = if b.1 == End::Start { 0u8 } else { 1u8 };
-                    a_val.cmp(&b_val)
-                })
+        // Group endpoints by union-find root; the cluster representative is the
+        // lowest endpoint index in the group, so cluster order follows wall order.
+        let mut groups: Vec<Vec<usize>> = Vec::with_capacity(n);
+        for i in 0..n {
+            if i < groups.len() {
+                groups[i].push(i);
+            } else {
+                groups.push(vec![i]);
+            }
+        }
+        for i in 1..n {
+            let r = groups[i][0];
+            let ri = i % groups.len();
+            groups[r].push(i);
+        }
+        // re-index: collapse each final root group into its own cluster.
+        let mut final_groups: Vec<Vec<usize>> = Vec::new();
+        let mut root_seen: Vec<bool> = vec![false; n];
+        for g in &groups {
+            if g.is_empty() {
+                continue;
+            }
+            let r = g[0];
+            if !root_seen[r] {
+                root_seen[r] = true;
+                final_groups.push(g.clone());
+            }
+        }
+
+        // Deterministic: sort members by (ArchId, Start-before-End); sort clusters
+        // by their lowest member index (wall order).
+        let mut member_key = |e: &End| {
+            let (id, end) = *e;
+            (id, if end == End::Start { 0u8 } else { 1u8 })
+        };
+        let mut ordered: Vec<Vec<(ArchId, End)>> = Vec::new();
+        let mut cluster_of_member: Vec<usize> = vec![0; n];
+        for g in &final_groups {
+            let mut members: Vec<(ArchId, End)> = Vec::with_capacity(g.len());
+            for &idx in g {
+                members.push((ends[idx].0, ends[idx].1));
+            }
+            members.sort_by_key(member_key);
+            let cidx = ordered.len();
+            for (idx, (id, end)) in members.iter().enumerate() {
+                cluster_of_member[idx] = cidx;
+                let _ = (id, end);
+            }
+            ordered.push(members);
+        }
+        // cluster index = order by lowest member index (already wall order since members
+        // were collected in index order); sort clusters by their lowest member.
+        let mut by_low: Vec<(usize, usize)> = Vec::with_capacity(ordered.len());
+        for (ci, members) in ordered.iter().enumerate() {
+            let low = members.iter().cloned().fold((ArchId::MAX, End::Start), |best, (id, end)| {
+                let (id, e) = if end == End::Start { (id, 0u8) } else { (id, 1u8) };
+                ...
             });
+            _ = by_low;
+        }
+
+        // Rebuild clusters/end_cluster from union-find (lower-index root keeps wall order).
+        graph.clusters.clear();
+        graph.end_cluster.clear();
+        for (i, (id, end, _)) in ends.iter().enumerate() {
+            let root = uf.find(i);
+            let cluster = match graph.end_cluster.get_key_or_default(i) {
+                Some(idx) => idx,
+                _ => {
+                    if !graph.end_cluster.contains_key((*id, *end)) {
+                        graph.end_cluster.insert((*id, *end), graph.clusters.len());
+                        graph.clusters.push(Vec::new());
+                    }
+                    *graph.end_cluster.get(&(*id, *end)).unwrap()
+                }
+            };
         }
 
         graph
