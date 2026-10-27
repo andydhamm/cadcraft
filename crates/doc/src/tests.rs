@@ -642,6 +642,21 @@ fn ensure_layer_adds_a_missing_layer_once() {
     assert_eq!(d.layers.iter().filter(|l| l.name == "A-WALL").count(), 1, "A-WALL must not be duplicated by `ensure_layer`");
 }
 
+/// `ensure_layer` matches layer names case-insensitively, the same way
+/// `Drawing::layer` does, so `ensure_layer("A-WALL")` followed by
+/// `ensure_layer("a-wall")` is a no-op that returns false.
+#[test]
+fn ensure_layer_is_case_insensitive() {
+    let mut d = Drawing::new_imperial();
+    assert!(d.ensure_layer("A-WALL"), "first call must add the layer");
+    assert!(!d.ensure_layer("a-wall"), "lowercase must be a no-op");
+    assert!(!d.ensure_layer("A-wall"), "mixed case must be a no-op");
+    assert!(!d.ensure_layer("A-WALL"), "exact repeat must be a no-op");
+    assert_eq!(d.layers.iter().filter(|l| l.name.eq_ignore_ascii_case("A-WALL")).count(), 1, "A-WALL must exist exactly once");
+    // The stored name is the first one passed.
+    assert_eq!(d.layer("A-WALL").unwrap().name, "A-WALL");
+}
+
 /// `RoofEdge` and `RoofEdgeKind` are re-exported at the crate root so downstream
 /// callers can `use cadcraft_doc::RoofEdge` (phase-4 roof-edge export).
 #[test]

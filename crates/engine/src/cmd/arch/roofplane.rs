@@ -533,6 +533,22 @@ mod tests {
         assert!((roof.planes[0].slope - 1.0).abs() < 1e-9);
     }
 
+    /// `roofplane` creates the A-ROOF save-time proxy layer on first use (exactly once).
+    #[test]
+    fn roofplane_creates_roof_layer() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0
+        });
+        run_roofplane(&mut s, &params).unwrap();
+        let d = s.doc().unwrap();
+        assert!(d.layers.iter().any(|l| l.name == "A-ROOF"), "A-ROOF not created by roofplane");
+        assert_eq!(d.layers.iter().filter(|l| l.name == "A-ROOF").count(), 1, "A-ROOF created more than once");
+    }
+
     #[test]
     fn roofplane_rejects_negative_thickness() {
         let mut s = Session::new();

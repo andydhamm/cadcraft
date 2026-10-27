@@ -204,6 +204,9 @@ fn run_house(s: &mut Session, _params: &Value) -> crate::Result<Value> {
     let rooms = cadcraft_arch::room::detect_rooms(&m);
     let placed = rooms.into_iter().map(|r| m.push_room(r)).count();
     let d = s.doc_mut()?;
+    d.ensure_layer("A-WALL");
+    d.ensure_layer("A-DOOR");
+    d.ensure_layer("A-GLAZ");
     d.arch = m;
     d.touch_arch();
     Ok(json!({
@@ -239,6 +242,9 @@ fn run_house2(s: &mut Session, _params: &Value) -> crate::Result<Value> {
     let rooms = cadcraft_arch::room::detect_rooms(&m);
     let placed = rooms.into_iter().map(|r| m.push_room(r)).count();
     let d = s.doc_mut()?;
+    d.ensure_layer("A-WALL");
+    d.ensure_layer("A-DOOR");
+    d.ensure_layer("A-GLAZ");
     d.arch = m;
     d.touch_arch();
     Ok(json!({
@@ -275,6 +281,9 @@ fn run_sample(s: &mut Session, params: &Value) -> crate::Result<Value> {
     d.arch.next_id = n as u32;
     d.arch.openings.clear();
     let placed = seed_openings(&mut d.arch, count);
+    d.ensure_layer("A-WALL");
+    d.ensure_layer("A-DOOR");
+    d.ensure_layer("A-GLAZ");
     d.touch_arch();
 
     Ok(json!({ "walls": n, "openings": placed, "revision": d.arch_revision }))
@@ -701,6 +710,16 @@ mod tests {
         assert_eq!(d.arch.rooms.len(), 5);
         assert!(d.arch.openings.is_empty());
         assert_eq!(d.arch.levels.len(), 3);
+    }
+
+    /// `arch.sample {"house":true}` creates the A-WALL layer on first use (exactly once).
+    #[test]
+    fn arch_sample_creates_wall_layer() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "house": true })).unwrap();
+        let d = s.doc().unwrap();
+        assert!(d.layers.iter().any(|l| l.name == "A-WALL"), "A-WALL not created by arch.sample");
+        assert_eq!(d.layers.iter().filter(|l| l.name == "A-WALL").count(), 1, "A-WALL created more than once");
     }
 
     /// `{"house":true}` must bump the arch revision from 0.
