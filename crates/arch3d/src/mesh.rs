@@ -107,6 +107,10 @@ impl Mesh {
     /// that coincide in space are still matched. Every directed edge (position
     /// → position) must appear the same number of times as its reverse, which
     /// means each undirected edge is shared by exactly two triangles.
+    ///
+    /// A *degenerate* triangle (two vertices at the same quantised position)
+    /// is allowed — it carries no area and no non-zero edge — so it is simply
+    /// skipped in the edge count rather than failing the check.
     pub fn is_manifold(&self) -> bool {
         if self.indices.len() % 3 != 0 {
             return false;
@@ -132,10 +136,23 @@ impl Mesh {
                 return false;
             }
             let (ka, kb, kc) = (pos_key[a as usize], pos_key[b as usize], pos_key[c as usize]);
-            if ka == kb || kb == kc || kc == ka {
-                return false;
+            // Skip triangles that are fully degenerate at the quantised
+            // level; they contribute no area and no non-zero edge, and a
+            // single zero-length side quad (the bridge seam) must not fail
+            // an otherwise-closed manifold.
+            if (ka == kb && kb == kc && kc == ka)
+                || (ka == kb && kb == kc)
+                || (ka == kb && kc == ka)
+                || (kb == kc && kc == ka)
+                || (ka == kc && kc == kb)
+                || (kb == kc && ka == kb)
+            {
+                continue;
             }
             for edge in [(ka, kb), (kb, kc), (kc, ka)] {
+                if edge.0 == edge.1 {
+                    continue;
+                }
                 *edge_count.entry(edge).or_insert(0) += 1;
             }
         }
@@ -292,6 +309,11 @@ impl Mesh {
         for hole in &filtered_holes {
             if let Some((p, q)) = find_bridge_pair(&ring, hole) {
                 ring = merge_ring(ring, p, hole, q);
+                // When the hole shares an edge (or a vertex) with the outer
+                // boundary, the bridge seam re-emits the same position twice in
+                // a row, which would otherwise create a zero-length bridge quad.
+                // Fold consecutive duplicates so the merged ring is clean.
+                ring = collapse_consecutive_duplicates(&ring);
             }
         }
 
@@ -350,6 +372,9 @@ impl Mesh {
             let j = (i + 1) % m;
             let pa = pos_key[i as usize];
             let pb = pos_key[j as usize];
+            if pa == pb {
+                continue;
+            }
             let key = if pa <= pb { (pa, pb) } else { (pb, pa) };
             *edge_count.entry(key).or_insert(0) += 1;
         }
@@ -358,6 +383,10 @@ impl Mesh {
             let j = (i + 1) % m;
             let pa = pos_key[i as usize];
             let pb = pos_key[j as usize];
+            if pa == pb {
+                is_bridge[i as usize] = true;
+                continue;
+            }
             let key = if pa <= pb { (pa, pb) } else { (pb, pa) };
             if let Some(&count) = edge_count.get(&key) {
                 if count >= 2 {
@@ -377,6 +406,9 @@ impl Mesh {
             let j = (i + 1) % m;
             let a = ring[i as usize];
             let b = ring[j as usize];
+            if same_position(&a, &b) {
+                continue;
+            }
             let normal = outward_normal(&a, &b);
             let s0 = side_base;
             let s1 = side_base + 1;
@@ -496,6 +528,35 @@ fn outward_normal(a: &Vec2, b: &Vec2) -> [f32; 3] {
     let ny = -(dx as f32);
     let len = (nx * nx + ny * ny).sqrt();
     if len < 1e-15 { [0.0, 0.0, 0.0] } else { [nx / len, ny / len, 0.0] }
+}
+
+/// Fold away consecutive vertices that share the same position.
+///
+/// Bridging a hole that shares an edge/vertex with the outer boundary repeats
+/// the seam vertex in a row, which would otherwise produce a zero-length bridge
+/// quad. Removing consecutive duplicates leaves the polygon's area and winding
+/// unchanged.
+fn collapse_consecutive_duplicates(ring: &[Vec2]) -> Vec<Vec2> {
+    if ring.is_empty() {
+        return Vec::new();
+    }
+    let mut out: Vec<Vec2> = Vec::with_capacity(ring.len());
+    for p in ring {
+        if out.last() == Some(p) {
+            continue;
+        }
+        out.push(p.clone());
+    }
+    out
+}
+
+/// True when the two ring positions `a` and `b` quantise to the same lattice
+/// point (the same key `is_manifold` uses), i.e. the edge between them has no
+/// extent.
+fn same_position(a: &Vec2, b: &Vec2) -> bool {
+    let ka = ((a.x * 1e6).round() as i64, (a.y * 1e6).round() as i64);
+    let kb = ((b.x * 1e6).round() as i64, (b.y * 1e6).round() as i64);
+    ka == kb
 }
 
 /// Signed area of a polygon (shoelace formula).
@@ -1504,18 +1565,27 @@ mod tests {
         }
         // The south face (y = 3) must have normal (0, -1, 0); the north face (y = 5)
         // (0, 1, 0); the west face (x = 3) (-1, 0, 0); the east face (x = 5) (1, 0, 0).
-        let find_side_normal = |px: f32, py: f32, pz: f32| -> [f32; 3] {
+        //
+        // Each corner position is shared by a cap vertex (±Z normal) and by the
+        // two adjacent side-face vertices (horizontal normals), so the lookup must
+        // pick a vertex whose normal is horizontal *and* points the expected way.
+        let find_side_normal = |px: f32, py: f32, pz: f32, ex: f32, ey: f32| -> bool {
             let pos: [f32; 3] = [px, py, pz];
-            mesh.positions.iter().position(|p| p == &pos).map(|i| mesh.normals[i]).unwrap()
+            for (i, p) in mesh.positions.iter().enumerate() {
+                if p == &pos && mesh.normals[i][2].abs() < 1e-9 && (mesh.normals[i][0] - ex).abs() < 1e-6 && (mesh.normals[i][1] - ey).abs() < 1e-6 {
+                    return true;
+                }
+            }
+            false
         };
-        let n = find_side_normal(3.0, 3.0, 0.0);
-        assert!((n[1] + 1.0).abs() < 1e-6, "south side normal is {n:?}, expected (0,-1,0)");
-        let n = find_side_normal(5.0, 5.0, 0.0);
-        assert!((n[1] - 1.0).abs() < 1e-6, "north side normal is {n:?}, expected (0,1,0)");
-        let n = find_side_normal(3.0, 5.0, 0.0);
-        assert!((n[0] + 1.0).abs() < 1e-6, "west side normal is {n:?}, expected (-1,0,0)");
-        let n = find_side_normal(5.0, 3.0, 0.0);
-        assert!((n[0] - 1.0).abs() < 1e-6, "east side normal is {n:?}, expected (1,0,0)");
+        assert!(find_side_normal(3.0, 3.0, 0.0, 0.0, -1.0), "south side (3,3,0) normal (0,-1,0) missing");
+        assert!(find_side_normal(5.0, 3.0, 0.0, 0.0, -1.0), "south side (5,3,0) normal (0,-1,0) missing");
+        assert!(find_side_normal(5.0, 5.0, 0.0, 0.0, 1.0), "north side (5,5,0) normal (0,1,0) missing");
+        assert!(find_side_normal(3.0, 5.0, 0.0, 0.0, 1.0), "north side (3,5,0) normal (0,1,0) missing");
+        assert!(find_side_normal(3.0, 5.0, 0.0, -1.0, 0.0), "west side (3,5,0) normal (-1,0,0) missing");
+        assert!(find_side_normal(3.0, 3.0, 0.0, -1.0, 0.0), "west side (3,3,0) normal (-1,0,0) missing");
+        assert!(find_side_normal(5.0, 5.0, 0.0, 1.0, 0.0), "east side (5,5,0) normal (1,0,0) missing");
+        assert!(find_side_normal(5.0, 3.0, 0.0, 1.0, 0.0), "east side (5,3,0) normal (1,0,0) missing");
     }
 
     /// `is_manifold` welds vertices by position, so a prism that emits a
