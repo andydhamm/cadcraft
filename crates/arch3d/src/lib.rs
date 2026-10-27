@@ -251,7 +251,7 @@ impl Scene3d {
             }
         }
 
-        meshes.retain(|m| !m.positions.is_empty());
+        meshes.retain(|m| !m.positions.is_empty() && mesh_is_finite(m));
 
         let bounds = match meshes.first() {
             None => Bounds3::empty(),
@@ -449,7 +449,7 @@ impl Scene3d {
             }
         }
 
-        meshes.retain(|m| !m.positions.is_empty());
+        meshes.retain(|m| !m.positions.is_empty() && mesh_is_finite(m));
 
         let bounds = match meshes.first() {
             None => Bounds3::empty(),
@@ -511,6 +511,18 @@ fn point_to_line_dist(p: Vec2, a: Vec2, b: Vec2) -> f64 {
     let proj_x = a.x + t * dx;
     let proj_y = a.y + t * dy;
     ((p.x - proj_x) * (p.x - proj_x) + (p.y - proj_y) * (p.y - proj_y)).sqrt()
+}
+
+/// Returns `true` if every position, normal, and UV component in the mesh is finite as f32.
+///
+/// A finite f64 such as 1e300 silently becomes `+inf` when cast to f32; this
+/// guard ensures that the scene, the GLB writer, and the renderer never see
+/// non-finite coordinates (which would produce `null` in GLTF min/max and
+/// break the file).
+fn mesh_is_finite(mesh: &Mesh) -> bool {
+    mesh.positions.iter().all(|p| p[0].is_finite() && p[1].is_finite() && p[2].is_finite())
+        && mesh.normals.iter().all(|n| n[0].is_finite() && n[1].is_finite() && n[2].is_finite())
+        && mesh.uvs.iter().all(|uv| uv[0].is_finite() && uv[1].is_finite())
 }
 
 /// XY bounding box of a mesh, derived from its f32 vertex positions.
@@ -1830,6 +1842,174 @@ mod tests {
             assert_eq!(a.indices, b.indices, "indices mismatch for wall {}", a.object.0);
             assert_eq!(a.material, b.material, "material mismatch for wall {}", a.object.0);
         }
+    }
+
+    /// A wall whose endpoint is 1e300 is finite as f64 but overflows to +inf when
+    /// cast to f32.  Both `build` and `build_dirty` must drop that mesh so that
+    /// the scene bounds, the GLB POSITION accessor min/max, and the renderer never
+    /// receive non-finite coordinates.
+    #[test]
+    fn scene_skips_meshes_with_coordinates_beyond_f32() {
+        let mut model = ArchModel::default();
+        // Ordinary wall — should survive.
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        // Wall whose end coordinate is 1e300: finite as f64, +inf as f32.
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(1e300, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        // --- build ---
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.mesh_count(), 1, "build: expected 1 mesh, got {}", scene.mesh_count());
+        assert!(scene.mesh_for(&ArchId(1)).is_some(), "ordinary wall must be present");
+        assert!(scene.mesh_for(&ArchId(2)).is_none(), "overflow wall must be dropped");
+        for i in 0..3 {
+            assert!(scene.bounds.min[i].is_finite(), "build bounds.min[{i}] must be finite");
+            assert!(scene.bounds.max[i].is_finite(), "build bounds.max[{i}] must be finite");
+        }
+
+        // --- build_dirty: rebuild only the overflow wall (reuse the good one) ---
+        let prev = scene.clone();
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(2)]);
+        let partial = Scene3d::build_dirty(&model, &dirty, &prev);
+        assert_eq!(partial.mesh_count(), 1, "build_dirty: expected 1 mesh, got {}", partial.mesh_count());
+        assert!(partial.mesh_for(&ArchId(1)).is_some(), "ordinary wall must be present in partial");
+        assert!(partial.mesh_for(&ArchId(2)).is_none(), "overflow wall must be dropped in partial");
+        for i in 0..3 {
+            assert!(partial.bounds.min[i].is_finite(), "build_dirty bounds.min[{i}] must be finite");
+            assert!(partial.bounds.max[i].is_finite(), "build_dirty bounds.max[{i}] must be finite");
+        }
+    }
+
+    #[test]
+    fn scene_skips_meshes_with_nan_coordinates() {
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        // Wall with NaN in end coordinate: finite check passes, but NaN as f32 is still NaN.
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(f64::NAN, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.mesh_count(), 1, "build: expected 1 mesh, got {}", scene.mesh_count());
+        assert!(scene.mesh_for(&ArchId(1)).is_some(), "ordinary wall must be present");
+        assert!(scene.mesh_for(&ArchId(2)).is_none(), "NaN wall must be dropped");
+        for i in 0..3 {
+            assert!(scene.bounds.min[i].is_finite(), "bounds.min[{i}] must be finite");
+            assert!(scene.bounds.max[i].is_finite(), "bounds.max[{i}] must be finite");
+        }
+    }
+
+    #[test]
+    fn scene_skips_all_overflow_walls() {
+        let mut model = ArchModel::default();
+        for i in 1..4u32 {
+            let x0 = i as f64 * 1e300;
+            model.walls.push(Wall {
+                id: ArchId(i),
+                start: Vec2::new(x0, 0.0),
+                end: Vec2::new(x0 + 2.0, 0.0),
+                thickness: 0.3,
+                height: 2.5,
+                ..Default::default()
+            });
+        }
+
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.mesh_count(), 0, "expected 0 meshes, got {}", scene.mesh_count());
+        // Empty bounds should still be finite (or at least not NaN).
+        for i in 0..3 {
+            assert!(scene.bounds.min[i].is_finite() || scene.bounds.min[i].is_infinite(), "bounds.min[{i}] must not be NaN");
+            assert!(scene.bounds.max[i].is_finite() || scene.bounds.max[i].is_infinite(), "bounds.max[{i}] must not be NaN");
+        }
+    }
+
+    #[test]
+    fn scene_skips_meshes_with_overflow_height() {
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        // Wall with huge height: z overflows f32.
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(6.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 1e300,
+            ..Default::default()
+        });
+
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.mesh_count(), 1, "build: expected 1 mesh, got {}", scene.mesh_count());
+        assert!(scene.mesh_for(&ArchId(1)).is_some(), "ordinary wall must be present");
+        assert!(scene.mesh_for(&ArchId(2)).is_none(), "tall wall must be dropped");
+    }
+
+    #[test]
+    fn build_dirty_reuses_good_wall_and_drops_overflow() {
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(6.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let full = Scene3d::build(&model);
+        assert_eq!(full.mesh_count(), 2);
+
+        // Now move wall 2 far away (overflow) and rebuild dirty.
+        let mut moved = model.clone();
+        if let Some(w) = moved.walls.iter_mut().find(|w| w.id == ArchId(2)) {
+            w.start = Vec2::new(1e300, 0.0);
+            w.end = Vec2::new(1e300 + 4.0, 0.0);
+        }
+
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(2)]);
+        let partial = Scene3d::build_dirty(&moved, &dirty, &full);
+        assert_eq!(partial.mesh_count(), 1, "expected 1 mesh after overflow, got {}", partial.mesh_count());
+        assert!(partial.mesh_for(&ArchId(1)).is_some(), "good wall must be reused");
+        assert!(partial.mesh_for(&ArchId(2)).is_none(), "overflow wall must be dropped");
     }
 
     #[test]

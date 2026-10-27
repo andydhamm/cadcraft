@@ -25,9 +25,9 @@ mod tests;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use arch::{
-    ARCH_HANDLE_BASE, ArchId, ArchModel, JoinKind, Level, MAX_ROOF_PLANES, MAX_ROOMS, MAX_WALLS, OPENING_HANDLE_OFFSET, RefSide, Roof, RoofDirective,
-    RoofEdge, RoofEdgeKind, RoofPlane, Room, RoomType, Wall, WallLayer, WallType, arch_handle, is_arch_handle, is_opening_handle, is_room_handle,
-    opening_handle, opening_label, room_handle, room_label, wall_label,
+    ARCH_HANDLE_BASE, ArchId, ArchModel, JoinKind, Level, MAX_ROOF_PLANES, MAX_ROOMS, MAX_WALLS, OPENING_HANDLE_OFFSET, Opening, RefSide, Roof,
+    RoofDirective, RoofEdge, RoofEdgeKind, RoofPlane, Room, RoomType, Wall, WallLayer, WallType, arch_handle, is_arch_handle, is_opening_handle,
+    is_room_handle, opening_handle, opening_label, room_handle, room_label, wall_label,
 };
 pub use array::*;
 pub use cadcraft_color as color;
@@ -172,15 +172,7 @@ impl Drawing {
         Drawing {
             header: Header::default(),
             foreign: std::sync::Arc::default(),
-            layers: vec![
-                Layer::default(),
-                Layer { name: "Defpoints".into(), plot: false, ..Layer::default() },
-                Layer { name: "A-WALL".into(), ..Layer::default() },
-                Layer { name: "A-DOOR".into(), ..Layer::default() },
-                Layer { name: "A-GLAZ".into(), ..Layer::default() },
-                Layer { name: "A-ROOF".into(), ..Layer::default() },
-                Layer { name: "A-STAIR".into(), ..Layer::default() },
-            ],
+            layers: vec![Layer::default(), Layer { name: "Defpoints".into(), plot: false, ..Layer::default() }],
             linetypes: vec![
                 Linetype { name: "ByBlock".into(), description: String::new(), pattern: Vec::new() },
                 Linetype { name: "ByLayer".into(), description: String::new(), pattern: Vec::new() },
@@ -215,13 +207,28 @@ impl Drawing {
     }
 
     /// Allocate a fresh handle.
+    ///
+    /// Always returns a handle below [`ARCH_HANDLE_BASE`]; that range is reserved
+    /// for synthetic arch-proxy handles and must never appear in the entity store.
     pub fn new_handle(&mut self) -> Handle {
+        // Guard: arch-proxy range [ARCH_HANDLE_BASE, u64::MAX] is reserved.
+        // This branch is unreachable in normal use (18+ quadrillion handles needed).
+        if self.handseed >= ARCH_HANDLE_BASE {
+            self.handseed = ARCH_HANDLE_BASE.saturating_sub(1);
+        }
         let h = Handle(self.handseed);
         self.handseed = self.handseed.saturating_add(1);
         h
     }
     /// Make sure future handles don't collide with `h` (after loading a file).
+    ///
+    /// Handles at or above [`ARCH_HANDLE_BASE`] are synthetic arch proxies that
+    /// never appear in real files; they are silently ignored so the handseed can
+    /// never be pushed into the reserved range.
     pub fn bump_handseed(&mut self, h: Handle) {
+        if h.0 >= ARCH_HANDLE_BASE {
+            return;
+        }
         if h.0 >= self.handseed {
             self.handseed = h.0.saturating_add(1);
         }
@@ -427,3 +434,23 @@ impl Drawing {
 
 mod anno;
 pub use anno::*;
+
+#[cfg(test)]
+mod handseed_tests {
+    use super::*;
+
+    #[test]
+    fn handseed_never_enters_the_reserved_range() {
+        let mut d = Drawing::new_imperial();
+        let before = d.handseed;
+        // A handle in the reserved range must be silently ignored.
+        d.bump_handseed(Handle(ARCH_HANDLE_BASE.saturating_add(7)));
+        assert_eq!(d.handseed, before, "bump_handseed with a reserved-range handle must leave handseed unchanged");
+        // A handle just below the reserved range must still bump the seed.
+        d.bump_handseed(Handle(ARCH_HANDLE_BASE.saturating_sub(1)));
+        assert_eq!(d.handseed, ARCH_HANDLE_BASE, "bump_handseed just below reserved range should set handseed to ARCH_HANDLE_BASE");
+        // new_handle must clamp and return a handle below the reserved range.
+        let h = d.new_handle();
+        assert!(h.0 < ARCH_HANDLE_BASE, "new_handle must not return a handle in the reserved range");
+    }
+}

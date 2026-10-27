@@ -120,6 +120,9 @@ fn run_roofauto(s: &mut Session, p: &Value) -> Result<Value> {
 
     // Apply to document
     let mut doc = s.doc_mut()?;
+    // Roofs add their save-time proxy layer on first use; a fresh drawing carries no
+    // arch layers.
+    doc.ensure_layer("A-ROOF");
     let mut rebuilt = false;
 
     // Find existing roof for this level
@@ -477,5 +480,23 @@ mod tests {
         });
         let r = s.execute("roofauto", &p).unwrap();
         assert!(r["rebuilt"].as_bool().unwrap());
+    }
+
+    /// `roofauto` creates the A-ROOF save-time proxy layer on first use (exactly once).
+    #[test]
+    fn a_roof_creates_the_roof_layer() {
+        let mut s = new_session_with_level();
+        s.execute(
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0], [0.0, 0.0]],
+                "exterior": true,
+            }),
+        )
+        .unwrap();
+        s.execute("roofauto", &json!({ "pitchRise": 6.0, "pitchRun": 12.0 })).unwrap();
+        let d = s.doc().unwrap();
+        assert!(d.layers.iter().any(|l| l.name == "A-ROOF"), "A-ROOF not created by roofauto");
+        assert_eq!(d.layers.iter().filter(|l| l.name == "A-ROOF").count(), 1, "A-ROOF created more than once");
     }
 }
