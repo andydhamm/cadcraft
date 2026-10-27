@@ -1927,7 +1927,7 @@ mod tests {
     #[test]
     fn scene_skips_all_overflow_walls() {
         let mut model = ArchModel::default();
-        for i in 0..3u32 {
+        for i in 1..4u32 {
             let x0 = i as f64 * 1e300;
             model.walls.push(Wall {
                 id: ArchId(i),
