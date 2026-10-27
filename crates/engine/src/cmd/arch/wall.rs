@@ -312,7 +312,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
 
     // Level: from param, or the first level in the model when absent
     let level = if let Some(ref name) = level_name {
-        d_read.arch.levels.iter().find(|l| l.name == *name).ok_or_else(|| bad("wall", format!("unknown level `{name}`")))?
+        Some(d_read.arch.levels.iter().find(|l| l.name == *name).ok_or_else(|| bad("wall", format!("unknown level `{name}`")))?)
     } else {
         d_read.arch.levels.first()
     };
@@ -1089,11 +1089,6 @@ mod tests {
     fn wall_command_rejects_an_unknown_level_without_an_undo_step() {
         let mut s = new_session_with_level();
         let before_walls = s.doc().unwrap().arch.walls.len();
-        let before_undo = s.undo_len(); // Assuming Session has undo_len or similar, or checking state
-
-        // We need to check that undo stack didn't grow.
-        // In CADCraft engine, Session::execute records undo if doc changes.
-        // If it fails validation, doc shouldn't change, so no undo step.
 
         let p = json!({
             "points": [[0.0, 0.0], [2.0, 0.0]],
@@ -1103,11 +1098,6 @@ mod tests {
 
         let d = s.doc().unwrap();
         assert_eq!(d.arch.walls.len(), before_walls);
-
-        // Check undo stack size if accessible, otherwise rely on wall count not changing
-        // and the fact that execute() returns Err before mutating.
-        // If s.undo() works, it should fail or do nothing if no steps.
-        // Let's assume standard behavior: failed command = no undo step.
 
         // Test unknown type too
         let p_type = json!({
