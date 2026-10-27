@@ -4,6 +4,7 @@ use crate::mesh::Mesh;
 
 use cadcraft_arch::join::WallShape;
 use cadcraft_arch::opening::ROUGH_ALLOWANCE;
+use cadcraft_doc::ArchId;
 use cadcraft_doc::ArchModel;
 use cadcraft_doc::arch::{Opening, Wall};
 use cadcraft_geom::{Vec2, point_in_polygon};
@@ -440,7 +441,7 @@ pub(crate) fn profile_prism(outer: &[Vec2], holes: &[Vec<Vec2>], wall: &Wall, ba
 
     // Reverse all triangle windings (the world map has negative determinant).
     for i in (0..mesh.indices.len()).step_by(3) {
-        mesh.indices[i + 1].swap(&mesh.indices[i + 2]);
+        std::mem::swap(&mut mesh.indices[i + 1], &mut mesh.indices[i + 2]);
     }
 
     // Accumulate and normalise per-vertex normals from world-space faces.
@@ -956,7 +957,7 @@ mod tests {
         let b = mesh.bounds();
         assert!((b.min[2] - 0.0).abs() < 1e-3, "z min = {}", b.min[2]);
         assert!((b.max[2] - 4.45).abs() < 1e-3, "z max = {}", b.max[2]);
-        assert!(b.min[0] >= -0.1 && b.max[0] <= 8.1, "x bounds out of range: {b}");
+        assert!(b.min[0] >= -0.1 && b.max[0] <= 8.1, "x bounds out of range: {b:?}");
     }
 
     /// A hole that spans the full height touches the boundary and is dropped, so the
