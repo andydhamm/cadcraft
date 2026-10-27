@@ -329,7 +329,16 @@ pub fn run_roofplane(s: &mut Session, p: &Value) -> Result<Value> {
         return edit_roof_plane(s, edit_id, pitch_rise, pitch_run, thickness, fascia, soffit);
     }
 
-    let points = points_param(p, "points").ok_or_else(|| bad("roofplane", "`points` is required"))?;
+    let points_val = p.get("points").ok_or_else(|| bad("roofplane", "`points` is required"))?;
+    let points_arr = points_val.as_array().ok_or_else(|| bad("roofplane", "`points` must be an array"))?;
+    let mut points = Vec::new();
+    for pt in points_arr {
+        let v = crate::cmd::point_value(pt).ok_or_else(|| bad("roofplane", "invalid point in `points`"))?;
+        if !v.is_finite() {
+            return Err(bad("roofplane", "points must be finite"));
+        }
+        points.push(v);
+    }
 
     let base_val = p.get("base").ok_or_else(|| bad("roofplane", "`base` is required"))?;
 
