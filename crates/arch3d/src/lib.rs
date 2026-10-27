@@ -25,7 +25,7 @@ pub use cadcraft_doc::ArchId;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::roof::roof_meshes;
-use crate::walls::{RoofClip, WallProfile, elevation_profile, extrude_wall_profile};
+use crate::walls::{RoofClip, WallProfile, elevation_profile, extrude_profile_slab, extrude_wall_profile, roof_top_polyline};
 use cadcraft_arch::join::solve_joins;
 use cadcraft_doc::arch::Opening;
 use cadcraft_doc::{ArchModel, Wall};
@@ -168,13 +168,18 @@ impl Scene3d {
 
             let openings: Vec<&Opening> = model.openings.iter().filter(|o| o.host == wall.id).collect();
 
-            // Find roof clip
+            // Find roof clip and roof-top polyline
             let clip = find_roof_clip(model, wall);
+            let roof_top = roof_top_polyline(model, wall, base, top);
 
-            let mesh = if !openings.is_empty() || clip.is_some() {
+            let mesh = if !openings.is_empty() || clip.is_some() || roof_top.is_some() {
                 if let Some(shape) = shape_by_id.get(&wall.id).and_then(|&i| shapes.get(i)) {
-                    if let Some(profile) = elevation_profile(shape, wall, base, top, clip.as_ref(), &openings) {
-                        extrude_wall_profile(shape, profile, base, "wall")
+                    if let Some(profile) = elevation_profile(shape, wall, base, top, clip.as_ref(), roof_top.as_deref(), &openings) {
+                        if roof_top.is_some() {
+                            extrude_profile_slab(shape, &profile, base, wall, "wall")
+                        } else {
+                            extrude_wall_profile(shape, profile, base, "wall")
+                        }
                     } else {
                         None
                     }
@@ -287,11 +292,16 @@ impl Scene3d {
 
             let openings: Vec<&Opening> = model.openings.iter().filter(|o| o.host == wall.id).collect();
             let clip = find_roof_clip(model, wall);
+            let roof_top = roof_top_polyline(model, wall, base, top);
 
-            let mesh = if !openings.is_empty() || clip.is_some() {
+            let mesh = if !openings.is_empty() || clip.is_some() || roof_top.is_some() {
                 if let Some(shape) = shape_by_id.get(&wall.id).and_then(|&i| shapes.get(i)) {
-                    if let Some(profile) = elevation_profile(shape, wall, base, top, clip.as_ref(), &openings) {
-                        extrude_wall_profile(shape, profile, base, "wall")
+                    if let Some(profile) = elevation_profile(shape, wall, base, top, clip.as_ref(), roof_top.as_deref(), &openings) {
+                        if roof_top.is_some() {
+                            extrude_profile_slab(shape, &profile, base, wall, "wall")
+                        } else {
+                            extrude_wall_profile(shape, profile, base, "wall")
+                        }
                     } else {
                         None
                     }
