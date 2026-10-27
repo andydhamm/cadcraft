@@ -707,9 +707,10 @@ fn a_roof_with_a_very_large_overhang_builds() {
             assert!(p.is_finite(), "large overhang roof: non-finite vertex {:?}", p);
         }
     }
-    // Projected area should be (10 + 2*2) * (8 + 2*2) = 14 * 12 = 168
+    // Outer footprint is 10.2 x 8.2 (wall thickness 0.2), so with 2.0 overhang:
+    // (10.2 + 2*2.0) * (8.2 + 2*2.0) = 14.2 * 12.2 = 173.24
     let area = projected_area_sum(&built);
-    assert!((area - 168.0).abs() < 1e-3, "large overhang roof: area {} != 168.0", area);
+    assert!((area - 173.24).abs() < 1e-3, "large overhang roof: area {} != 173.24", area);
 }
 
 #[test]
