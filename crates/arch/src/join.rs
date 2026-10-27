@@ -527,13 +527,20 @@ fn plan_end(
     // Tee: two collinear EndToEnd neighbours are one straight host; butt it
     // with a T join against one of them.
     {
-        let e2e: Vec<Neighbour> = nbrs.iter().filter(|n| matches!(n, Neighbour::EndToEnd { .. })).cloned().collect();
+        let e2e: Vec<ArchId> = nbrs
+            .iter()
+            .filter(|n| matches!(n, Neighbour::EndToEnd { .. }))
+            .filter_map(|n| match n {
+                Neighbour::EndToEnd { id, .. } => Some(*id),
+                _ => None,
+            })
+            .collect();
         for i in 0..e2e.len() {
             for j in i + 1..e2e.len() {
-                let Some(wa) = model.walls.iter().find(|w| w.id == e2e[i].id) else {
+                let Some(wa) = model.walls.iter().find(|w| w.id == e2e[i]) else {
                     continue;
                 };
-                let Some(wb) = model.walls.iter().find(|w| w.id == e2e[j].id) else {
+                let Some(wb) = model.walls.iter().find(|w| w.id == e2e[j]) else {
                     continue;
                 };
                 let Some(da) = wall_dir(wa) else {
