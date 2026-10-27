@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-27 07:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 07:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 50 of 63 segments merged · 5 of 11 acceptance checks**
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 07:15 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 5 / 11 | 22.4 h so far · expected done Oct 27 14:15–Oct 27 19:44 UTC |
+| 4 | Automatic roofs | building | 5 / 11 | 22.7 h so far · expected done Oct 27 14:44–Oct 27 20:24 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -32,7 +32,7 @@ Updated 2026-10-27 07:15 UTC. This page and the card in the README are regenerat
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p4r-join-x-crossing` | A wall crossed by another keeps its full length | escalate |  |
-| `p4r-mesh-side-normals` | Wall side faces carry horizontal outward normals | working | bonsai-a |
+| `p4r-mesh-side-normals` | Wall side faces carry horizontal outward normals | working | bonsai-ws2-b |
 | `p4r-stretch-start-keeps-openings` | Stretching a wall's start keeps its openings where they are | escalate |  |
 
 ## Recent merges
@@ -56,15 +56,15 @@ Updated 2026-10-27 07:15 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 493 |
-| bonsai-b | bonsai2-27b | agent | 441 |
+| bonsai-a | bonsai2-27b | agent | 494 |
+| bonsai-b | bonsai2-27b | agent | 443 |
 | bonsai-ws2-a | bonsai2-27b | idle | 632 |
-| bonsai-ws2-b | bonsai2-27b | idle | 596 |
+| bonsai-ws2-b | bonsai2-27b | agent | 597 |
 | claude-sonnet-a | sonnet | idle | 12 |
 | claude-sonnet-b | sonnet | idle | 10 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 276 |
 | kimi-k31 | k3.1-pro-highspeed | down | 58 |
-| ornith-a | ornith15-397b-exl3-35 | agent | 16 |
+| ornith-a | ornith15-397b-exl3-35 | idle | 18 |
 | ornith-b | ornith15-397b-exl3-35 | idle | 11 |
-| tturbo-mac | tturbo-ultraheretic | agent | 289 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 96 |
+| tturbo-mac | tturbo-ultraheretic | gate | 290 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 97 |
