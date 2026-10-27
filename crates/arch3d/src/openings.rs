@@ -16,7 +16,9 @@ use crate::mesh::Mesh;
 /// the wall normal) so that a component of depth `depth` fits inside the wall's
 /// `[-wall_t/2, +wall_t/2]` thickness band.
 fn band_offset(off: f64, depth: f64, wall_t: f64) -> f64 {
-    off.clamp(-wall_t / 2.0 + depth / 2.0, wall_t / 2.0 - depth / 2.0)
+    let min = -wall_t / 2.0 + depth / 2.0;
+    let max = wall_t / 2.0 - depth / 2.0;
+    if min > max { 0.0 } else { off.clamp(min, max) }
 }
 
 /// Build all component meshes for a single opening.
