@@ -149,7 +149,7 @@ pub fn validate_placement(
         if !other.offset.is_finite() || !other.width.is_finite() || !other.rough_width.is_finite() {
             continue;
         }
-        let b0 = other.offset - (other.rough_width - other.width) / 2.0;
+        let b0 = other.offset - other.rough_width / 2.0;
         let b1 = b0 + other.rough_width;
         let gap = (b0 - c1).max(c0 - b1);
         let need = if other.mull_group.is_some() { 0.0 } else { MIN_SEPARATION };
@@ -374,6 +374,7 @@ mod tests {
     fn an_overlap_error_names_the_other_opening_by_id() {
         let mut model = ArchModel::default();
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        model.walls.iter_mut().find(|w| w.id == host).map(|w| w.height = 2.5);
         let other = opening_on(&mut model, host, 0.5, 1.0);
         let res = validate_placement(&model, host, 1.0, 1.0, 0.0, 2.0, OpeningKind::Door, "hinged", None);
         let err = res.unwrap_err();
@@ -509,5 +510,54 @@ mod tests {
         // Rough span [off, off + rough_w] should be centred on offset 1.0
         let centre = (off + off + rough_w) / 2.0;
         assert!((centre - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn validate_placement_with_zero_width_opening() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        let res = validate_placement(&model, host, 1.0, 0.0, 0.0, 2.0, OpeningKind::Door, "hinged", None);
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(err.0.contains("positive"));
+    }
+
+    #[test]
+    fn validate_placement_with_nan_offset() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        let res = validate_placement(&model, host, f64::NAN, 0.9, 0.0, 2.0, OpeningKind::Door, "hinged", None);
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(err.0.contains("non-finite"));
+    }
+
+    #[test]
+    fn validate_placement_with_openings_too_close() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        // First opening at offset 0.5, width 1.0, rough width 1.12
+        // c0 = 0.5 - 0.56 = -0.06, c1 = -0.06 + 1.12 = 1.06
+        opening_on(&mut model, host, 0.5, 1.0);
+        // Second opening at offset 1.1, width 1.0, rough width 1.12
+        // b0 = 1.1 - 0.56 = 0.54, b1 = 0.54 + 1.12 = 1.66
+        // gap = (0.54 - 1.06).max(-0.06 - 1.66) = -0.52 (overlap)
+        let res = validate_placement(&model, host, 1.1, 1.0, 0.0, 2.0, OpeningKind::Door, "hinged", None);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn validate_placement_with_openings_far_enough_apart() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        model.walls.iter_mut().find(|w| w.id == host).map(|w| w.height = 2.5);
+        // First opening at offset 0.5, width 1.0, rough width 1.12
+        // c0 = 0.5 - 0.56 = -0.06, c1 = -0.06 + 1.12 = 1.06
+        opening_on(&mut model, host, 0.5, 1.0);
+        // Second opening at offset 1.67, width 1.0, rough width 1.12
+        // b0 = 1.67 - 0.56 = 1.11, b1 = 1.11 + 1.12 = 2.23
+        // gap = (1.11 - 1.06).max(-0.06 - 2.23) = 0.05 = MIN_SEPARATION
+        let res = validate_placement(&model, host, 1.67, 1.0, 0.0, 2.0, OpeningKind::Door, "hinged", None);
+        assert!(res.is_ok());
     }
 }

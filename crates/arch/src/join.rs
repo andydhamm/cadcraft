@@ -1723,4 +1723,43 @@ mod tests {
         // solve_joins output is identical with and without the prefilter.
         assert_eq!(solve_joins(&model), solve_joins_full(&model), "solve_joins output changed with the prefilter");
     }
+
+    #[test]
+    fn solve_joins_with_zero_thickness_wall() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 0, "zero thickness wall should produce no shape");
+    }
+
+    #[test]
+    fn solve_joins_with_nan_coordinates() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(f64::NAN, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(0.0, 0.0), Vec2::new(10.0, f64::NAN), 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 0, "walls with NaN coordinates should produce no shapes");
+    }
+
+    #[test]
+    fn solve_joins_with_negative_thickness() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), -1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 0, "negative thickness wall should produce no shape");
+    }
+
+    #[test]
+    fn stretch_wall_with_no_neighbours() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        make_wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+
+        let result = stretch_wall(&mut model, ArchId(0), End::End, Vec2::new(12.0, 3.0));
+        let ids: Vec<ArchId> = result.unwrap();
+        assert_eq!(ids, vec![ArchId(0)]);
+        assert_eq!(model.walls[0].end, Vec2::new(12.0, 3.0));
+    }
 }
