@@ -202,75 +202,79 @@ pub fn build_arch(d: &Drawing, _opts: &Options, plotting: bool) -> DisplayList {
 
     // Room labels: for each room, shape its name at the polygon centroid as 2D polyline
     // primitives tagged with the room's proxy handle on layer A-ROOM.
-    for r in &d.arch.rooms {
-        if r.polygon.len() < 3 {
-            continue;
-        }
-        if !r.polygon.iter().all(|p| p.is_finite()) {
-            continue;
-        }
-        let label_text = if r.name.is_empty() { format!("r{}", r.id.0) } else { r.name.clone() };
-        let n = r.polygon.len() as f64;
-        let cx = r.polygon.iter().map(|p| p.x).sum::<f64>() / n;
-        let cy = r.polygon.iter().map(|p| p.y).sum::<f64>() / n;
-        let label_pt = Vec2::new(cx, cy);
-        let params = TextParams::centered(label_pt, 0.24, 0.0);
-        let (sh, _) = place(&TextFont::Stroke, &label_text, &params);
-        let room_layer = d.layer("A-ROOM").map(|l| l.color).unwrap_or(Color::Index(7));
-        let room_ink = crate::ink(Color::ByLayer, room_layer, Color::Index(7));
-        for stroke in &sh.strokes {
-            if stroke.len() < 2 || !stroke.iter().all(|p| p.is_finite()) {
+    if !arch_layer_skipped(d, "A-ROOM", plotting) {
+        for r in &d.arch.rooms {
+            if r.polygon.len() < 3 {
                 continue;
             }
-            let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
-            for q in stroke {
-                list.bounds.add(*q);
-                list.verts.push(*q);
+            if !r.polygon.iter().all(|p| p.is_finite()) {
+                continue;
             }
-            list.prims.push(DPrim {
-                handle: room_handle(r.id),
-                color: room_ink.rgb,
-                aci7: room_ink.aci7,
-                lw: 0.0,
-                transparency: 0,
-                kind: Kind::Polyline,
-                start,
-                len: u32::try_from(stroke.len()).unwrap_or(u32::MAX),
-            });
+            let label_text = if r.name.is_empty() { format!("r{}", r.id.0) } else { r.name.clone() };
+            let n = r.polygon.len() as f64;
+            let cx = r.polygon.iter().map(|p| p.x).sum::<f64>() / n;
+            let cy = r.polygon.iter().map(|p| p.y).sum::<f64>() / n;
+            let label_pt = Vec2::new(cx, cy);
+            let params = TextParams::centered(label_pt, 0.24, 0.0);
+            let (sh, _) = place(&TextFont::Stroke, &label_text, &params);
+            let room_layer = d.layer("A-ROOM").map(|l| l.color).unwrap_or(Color::Index(7));
+            let room_ink = crate::ink(Color::ByLayer, room_layer, Color::Index(7));
+            for stroke in &sh.strokes {
+                if stroke.len() < 2 || !stroke.iter().all(|p| p.is_finite()) {
+                    continue;
+                }
+                let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+                for q in stroke {
+                    list.bounds.add(*q);
+                    list.verts.push(*q);
+                }
+                list.prims.push(DPrim {
+                    handle: room_handle(r.id),
+                    color: room_ink.rgb,
+                    aci7: room_ink.aci7,
+                    lw: 0.0,
+                    transparency: 0,
+                    kind: Kind::Polyline,
+                    start,
+                    len: u32::try_from(stroke.len()).unwrap_or(u32::MAX),
+                });
+            }
         }
     }
 
     // Roof plan linework: each roof's non-eave edges (ridges, hips, valleys and gable ends)
     // as polylines on A-ROOF, tagged with the roof's proxy handle so picking resolves to the
     // roof. Eave edges are skipped — the poché already shows them along the walls.
-    for roof in &d.arch.roofs {
-        if roof.edges.is_empty() {
-            continue;
-        }
-        let roof_layer = d.layer("A-ROOF").map(|l| l.color).unwrap_or(Color::Index(7));
-        let roof_ink = crate::ink(Color::ByLayer, roof_layer, Color::Index(7));
-        for edge in &roof.edges {
-            if matches!(edge.kind, RoofEdgeKind::Eave) {
+    if !arch_layer_skipped(d, "A-ROOF", plotting) {
+        for roof in &d.arch.roofs {
+            if roof.edges.is_empty() {
                 continue;
             }
-            if !edge.a.is_finite() || !edge.b.is_finite() {
-                continue;
+            let roof_layer = d.layer("A-ROOF").map(|l| l.color).unwrap_or(Color::Index(7));
+            let roof_ink = crate::ink(Color::ByLayer, roof_layer, Color::Index(7));
+            for edge in &roof.edges {
+                if matches!(edge.kind, RoofEdgeKind::Eave) {
+                    continue;
+                }
+                if !edge.a.is_finite() || !edge.b.is_finite() {
+                    continue;
+                }
+                let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+                list.bounds.add(edge.a);
+                list.bounds.add(edge.b);
+                list.verts.push(edge.a);
+                list.verts.push(edge.b);
+                list.prims.push(DPrim {
+                    handle: roof_handle(roof.id),
+                    color: roof_ink.rgb,
+                    aci7: roof_ink.aci7,
+                    lw: 0.0,
+                    transparency: 0,
+                    kind: Kind::Polyline,
+                    start,
+                    len: 2,
+                });
             }
-            let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
-            list.bounds.add(edge.a);
-            list.bounds.add(edge.b);
-            list.verts.push(edge.a);
-            list.verts.push(edge.b);
-            list.prims.push(DPrim {
-                handle: roof_handle(roof.id),
-                color: roof_ink.rgb,
-                aci7: roof_ink.aci7,
-                lw: 0.0,
-                transparency: 0,
-                kind: Kind::Polyline,
-                start,
-                len: 2,
-            });
         }
     }
 
@@ -972,5 +976,151 @@ mod tests {
         }
         let list = build_arch(&d, &Options::default(), true);
         assert!(list.prims.is_empty(), "no prims when A-WALL is no-plot during plotting");
+    }
+
+    /// Opening symbols (doors, windows) are skipped when their own layer is off or frozen.
+    #[test]
+    fn opening_symbols_respect_layer_state() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-DOOR");
+        let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+        let oid = d.arch.push_opening(Opening::new(wid, 5.0, 1.0, 2.1, OpeningKind::Door));
+        d.touch_arch();
+
+        // A-DOOR on: symbol draws.
+        let list = build_arch(&d, &Options::default(), false);
+        let handle = opening_handle(oid);
+        let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(!symbol_prims.is_empty(), "door symbol should draw when A-DOOR is on");
+
+        // A-DOOR off: symbol skipped.
+        if let Some(l) = d.layer_mut("A-DOOR") {
+            l.on = false;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(symbol_prims.is_empty(), "door symbol should be skipped when A-DOOR is off");
+
+        // A-DOOR frozen: symbol skipped.
+        if let Some(l) = d.layer_mut("A-DOOR") {
+            l.on = true;
+            l.frozen = true;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(symbol_prims.is_empty(), "door symbol should be skipped when A-DOOR is frozen");
+
+        // A-DOOR no-plot: skipped in plot build, drawn in screen build.
+        if let Some(l) = d.layer_mut("A-DOOR") {
+            l.on = true;
+            l.frozen = false;
+            l.plot = false;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(!symbol_prims.is_empty(), "door symbol should draw in screen build when A-DOOR is no-plot");
+
+        let list = build_arch(&d, &Options::default(), true);
+        let symbol_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(symbol_prims.is_empty(), "door symbol should be skipped in plot build when A-DOOR is no-plot");
+    }
+
+    /// Roof edges are skipped when the A-ROOF layer is off, frozen, or no-plot during plotting.
+    #[test]
+    fn roof_edges_respect_layer_state() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-ROOF");
+        let rid = d.arch.push_roof(Roof {
+            edges: vec![RoofEdge { kind: RoofEdgeKind::Ridge, a: Vec2::new(0.0, 0.0), b: Vec2::new(10.0, 0.0), ..RoofEdge::default() }],
+            ..Roof::default()
+        });
+        d.touch_arch();
+
+        // A-ROOF on: edges draw.
+        let list = build_arch(&d, &Options::default(), false);
+        let handle = roof_handle(rid);
+        let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(!roof_prims.is_empty(), "roof edges should draw when A-ROOF is on");
+
+        // A-ROOF off: edges skipped.
+        if let Some(l) = d.layer_mut("A-ROOF") {
+            l.on = false;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(roof_prims.is_empty(), "roof edges should be skipped when A-ROOF is off");
+
+        // A-ROOF frozen: edges skipped.
+        if let Some(l) = d.layer_mut("A-ROOF") {
+            l.on = true;
+            l.frozen = true;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(roof_prims.is_empty(), "roof edges should be skipped when A-ROOF is frozen");
+
+        // A-ROOF no-plot: skipped in plot build, drawn in screen build.
+        if let Some(l) = d.layer_mut("A-ROOF") {
+            l.on = true;
+            l.frozen = false;
+            l.plot = false;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(!roof_prims.is_empty(), "roof edges should draw in screen build when A-ROOF is no-plot");
+
+        let list = build_arch(&d, &Options::default(), true);
+        let roof_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(roof_prims.is_empty(), "roof edges should be skipped in plot build when A-ROOF is no-plot");
+    }
+
+    /// Room labels are skipped when the A-ROOM layer is off, frozen, or no-plot during plotting.
+    #[test]
+    fn room_labels_respect_layer_state() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-ROOM");
+        let rid = d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Living".into(),
+            ..Room::default()
+        });
+        d.touch_arch();
+
+        // A-ROOM on: labels draw.
+        let list = build_arch(&d, &Options::default(), false);
+        let handle = room_handle(rid);
+        let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(!label_prims.is_empty(), "room labels should draw when A-ROOM is on");
+
+        // A-ROOM off: labels skipped.
+        if let Some(l) = d.layer_mut("A-ROOM") {
+            l.on = false;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(label_prims.is_empty(), "room labels should be skipped when A-ROOM is off");
+
+        // A-ROOM frozen: labels skipped.
+        if let Some(l) = d.layer_mut("A-ROOM") {
+            l.on = true;
+            l.frozen = true;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(label_prims.is_empty(), "room labels should be skipped when A-ROOM is frozen");
+
+        // A-ROOM no-plot: skipped in plot build, drawn in screen build.
+        if let Some(l) = d.layer_mut("A-ROOM") {
+            l.on = true;
+            l.frozen = false;
+            l.plot = false;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(!label_prims.is_empty(), "room labels should draw in screen build when A-ROOM is no-plot");
+
+        let list = build_arch(&d, &Options::default(), true);
+        let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        assert!(label_prims.is_empty(), "room labels should be skipped in plot build when A-ROOM is no-plot");
     }
 }
