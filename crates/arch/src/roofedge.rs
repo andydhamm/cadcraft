@@ -143,20 +143,20 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings:
     };
 
     // Helper to get a sample point inside a face near the midpoint
-    let sample_point = |face_idx: usize, sign: f64| -> Option<Vec2> {
+    let sample_point = |face_idx: usize| -> Option<Vec2> {
         let ring = face_ring(g, face_idx);
         if ring.is_empty() {
             return None;
         }
 
-        // Try M + m * sign * 0.05
-        let mut s = m_pt + m * (0.05 * sign);
+        // Try M + m * 0.05
+        let mut s = m_pt + m * 0.05;
         if point_in_polygon(&s, &ring) {
             return Some(s);
         }
 
-        // Try M - m * sign * 0.05
-        s = m_pt - m * (0.05 * sign);
+        // Try M - m * 0.05
+        s = m_pt - m * 0.05;
         if point_in_polygon(&s, &ring) {
             return Some(s);
         }
@@ -169,14 +169,19 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings:
             return Some(s);
         }
 
+        // Try smaller steps towards centroid
+        for step in [0.01, 0.001] {
+            s = m_pt + dir * step;
+            if point_in_polygon(&s, &ring) {
+                return Some(s);
+            }
+        }
+
         None
     };
 
-    // Determine which side of the arc each face is on by testing both signs
-    // We want z0 for f0 and z1 for f1.
-
-    let s0 = sample_point(f0_idx, 1.0).or_else(|| sample_point(f0_idx, -1.0));
-    let s1 = sample_point(f1_idx, 1.0).or_else(|| sample_point(f1_idx, -1.0));
+    let s0 = sample_point(f0_idx);
+    let s1 = sample_point(f1_idx);
 
     let z0 = s0.and_then(|p| surface_height(f0_idx, p));
     let z1 = s1.and_then(|p| surface_height(f1_idx, p));
