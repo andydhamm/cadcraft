@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-27 12:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 12:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 67 of 71 segments merged · 6 of 11 acceptance checks**
 
-4,038 workspace tests passing at the last merge · 310 segments merged in all · 0 of 11 seats working
+4,045 workspace tests passing at the last merge · 311 segments merged in all · 0 of 12 seats working
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 12:15 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 6 / 11 | 27.4 h so far · expected done Oct 27 14:36–Oct 27 17:06 UTC |
+| 4 | Automatic roofs | building | 6 / 11 | 27.7 h so far · expected done Oct 27 14:51–Oct 27 17:21 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -27,17 +27,18 @@ Updated 2026-10-27 12:15 UTC. This page and the card in the README are regenerat
 
 ## Phase 4 segments
 
-67 merged, 5 replaced, 2 working, 2 queued
+67 merged, 5 replaced, 2 escalate, 2 queued
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p4f-geom-roof-invariant-tests` | geom: roof-skeleton invariant test target | working | ornith-a |
-| `p4f-gable-clip-probe` | arch3d: gable walls really reach the ridge and are probeable | working | kimi-k31 |
+| `p4f-geom-roof-invariant-tests` | geom: roof-skeleton invariant test target | escalate |  |
+| `p4f-gable-clip-probe` | arch3d: gable walls really reach the ridge and are probeable | escalate |  |
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 27 12:26 | `harden-p4r-stretch-no-collapse` | merged | 4,045 pass | tturbo-mac2 |
 | Oct 27 12:14 | `p4f-roof-rebuild-on-wall-edit` | merged | 4,038 pass | bonsai-b |
 | Oct 27 12:03 | `harden-p4f-arch-roof-property-test-names` | merged | 4,035 pass | tturbo-mac |
 | Oct 27 11:48 | `harden-p4r-mesh-side-normals` | merged | 4,030 pass | tturbo-mac |
@@ -49,20 +50,20 @@ Updated 2026-10-27 12:15 UTC. This page and the card in the README are regenerat
 | Oct 27 10:50 | `harden-p4r-glb-gltf-conformance` | merged | 4,008 pass | tturbo-mac2 |
 | Oct 27 10:44 | `harden-p4r-join-tidy` | merged | 4,003 pass | tturbo-mac |
 | Oct 27 10:36 | `harden-p4r-camera-validate` | merged | 3,995 pass | tturbo-mac2 |
-| Oct 27 10:24 | `harden-p4r-render3d-lints` | merged | 3,992 pass | tturbo-mac2 |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 511 |
+| bonsai-a | bonsai2-27b | agent | 512 |
 | bonsai-b | bonsai2-27b | idle | 452 |
-| bonsai-ws2-a | bonsai2-27b | agent | 659 |
+| bonsai-ws2-a | bonsai2-27b | gate | 661 |
 | bonsai-ws2-b | bonsai2-27b | idle | 614 |
 | claude-sonnet-a | sonnet | idle | 12 |
 | claude-sonnet-b | sonnet | idle | 13 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 298 |
-| kimi-k31 | k3.1-pro-highspeed | agent | 59 |
-| ornith-a | ornith15-397b-exl3-35 | agent | 24 |
-| tturbo-mac | tturbo-ultraheretic | agent | 308 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 117 |
+| kimi-k31 | k3.1-pro-highspeed | idle | 60 |
+| ornith-a | ornith15-397b-exl3-35 | held | 25 |
+| ornith-b | ornith15-397b-exl3-35 | held | 16 |
+| tturbo-mac | tturbo-ultraheretic | agent | 309 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 118 |
