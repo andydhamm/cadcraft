@@ -1258,6 +1258,105 @@ mod tests {
     }
 
     #[test]
+    fn a_wall_crossed_by_two_walls_keeps_its_full_length() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Main wall: (0,0) to (10,0), thickness 0.2
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+        // Crossing wall 1: (3,-3) to (3,3), thickness 0.2
+        wall(&mut model, 1, Vec2::new(3.0, -3.0), Vec2::new(3.0, 3.0), 0.2);
+        // Crossing wall 2: (7,-3) to (7,3), thickness 0.2
+        wall(&mut model, 2, Vec2::new(7.0, -3.0), Vec2::new(7.0, 3.0), 0.2);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 3);
+
+        // The main wall should span the full x range 0..10
+        let main = &shapes[0];
+        let b = main.bounds();
+        assert!((b.min.x - 0.0).abs() < 1e-9, "main wall min.x: {}", b.min.x);
+        assert!((b.max.x - 10.0).abs() < 1e-9, "main wall max.x: {}", b.max.x);
+        // Area should be 10 * 0.2 = 2.0
+        assert!((polygon_area(&main.polygon) - 2.0).abs() < 1e-9, "main wall area: {}", polygon_area(&main.polygon));
+    }
+
+    #[test]
+    fn a_crossing_near_the_end_does_not_affect_the_end_join() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // L-corner: wall 0 horizontal (0,0)-(10,0), wall 1 vertical (10,0)-(10,10)
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 0.2);
+        // A crossing wall near wall 0's start end: (1,-2) to (1,2)
+        wall(&mut model, 2, Vec2::new(1.0, -2.0), Vec2::new(1.0, 2.0), 0.1);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 3);
+
+        let w0 = &shapes[0];
+        // Wall 0's end (at x=10) should still be an L join with wall 1
+        assert!(w0.joins.iter().any(|j| matches!(j, Join::L(End::End))), "wall 0 end should be L join");
+        // Wall 0 should span the full x range 0..10 (the L mitre corner extends to 10.1)
+        let b = w0.bounds();
+        assert!((b.min.x - 0.0).abs() < 1e-9, "wall 0 min.x: {}", b.min.x);
+        assert!((b.max.x - 10.1).abs() < 1e-9, "wall 0 max.x: {}", b.max.x);
+    }
+
+    #[test]
+    fn multiple_crossings_on_one_wall() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Main wall: (0,0) to (12,0), thickness 0.2
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(12.0, 0.0), 0.2);
+        // Crossing at x=2
+        wall(&mut model, 1, Vec2::new(2.0, -2.0), Vec2::new(2.0, 2.0), 0.1);
+        // Crossing at x=6
+        wall(&mut model, 2, Vec2::new(6.0, -2.0), Vec2::new(6.0, 2.0), 0.1);
+        // Crossing at x=10
+        wall(&mut model, 3, Vec2::new(10.0, -2.0), Vec2::new(10.0, 2.0), 0.1);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 4);
+
+        let main = &shapes[0];
+        // The main wall should span the full x range 0..12
+        let b = main.bounds();
+        assert!((b.min.x - 0.0).abs() < 1e-9, "main wall min.x: {}", b.min.x);
+        assert!((b.max.x - 12.0).abs() < 1e-9, "main wall max.x: {}", b.max.x);
+        // Area should be 12 * 0.2 = 2.4
+        assert!((polygon_area(&main.polygon) - 2.4).abs() < 1e-9, "main wall area: {}", polygon_area(&main.polygon));
+    }
+
+    #[test]
+    fn a_crossing_wall_with_nan_coordinates_does_not_crash() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Main wall: (0,0) to (10,0), thickness 0.2
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+        // Crossing wall with NaN in one coordinate
+        wall(&mut model, 1, Vec2::new(5.0, f64::NAN), Vec2::new(5.0, 3.0), 0.2);
+
+        // Should not crash
+        let shapes = solve_joins(&model);
+        // The main wall should still produce a shape
+        assert!(shapes.iter().any(|s| s.id == ArchId(0)), "main wall should produce a shape");
+    }
+
+    #[test]
+    fn a_zero_length_wall_crossed_by_another() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Zero-length "wall" at (5,0)
+        wall(&mut model, 0, Vec2::new(5.0, 0.0), Vec2::new(5.0, 0.0), 0.2);
+        // Crossing wall: (0,0) to (10,0)
+        wall(&mut model, 1, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+
+        // Should not crash
+        let shapes = solve_joins(&model);
+        // The crossing wall should produce a shape and span the full length
+        let crossing = shapes.iter().find(|s| s.id == ArchId(1));
+        assert!(crossing.is_some(), "crossing wall should produce a shape");
+        let b = crossing.unwrap().bounds();
+        assert!((b.min.x - 0.0).abs() < 1e-9, "crossing wall min.x: {}", b.min.x);
+        assert!((b.max.x - 10.0).abs() < 1e-9, "crossing wall max.x: {}", b.max.x);
+    }
+
+    #[test]
     fn join_kind_butt_overrides_the_mitre() {
         let mut model = cadcraft_doc::ArchModel::default();
         wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0); // a
