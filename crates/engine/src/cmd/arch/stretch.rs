@@ -87,7 +87,7 @@ pub(crate) fn run_stretch(s: &mut Session, p: &Value) -> Result<Value> {
                     Some(w) => w.start,
                     None => *old_start,
                 };
-                if new_start == old_start {
+                if new_start == *old_start {
                     continue;
                 }
                 let old_dir = (*old_end - *old_start).normalized();
