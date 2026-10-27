@@ -102,9 +102,8 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: 
         }
     }
 
-    // If not exactly two faces, or if one is missing data, fallback to old heuristics or Eave
+    // If not exactly two faces, fallback to heuristics or Eave
     if adjacent.len() != 2 {
-        // Fallback for single-face edges (eaves) or complex cases
         if adjacent.len() == 1 {
             return RoofEdgeKind::Eave;
         }
@@ -121,8 +120,10 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: 
         return RoofEdgeKind::Eave;
     }
 
-    let f0 = &g.skel.faces[adjacent[0]];
-    let f1 = &g.skel.faces[adjacent[1]];
+    let f0_idx = adjacent[0];
+    let f1_idx = adjacent[1];
+    let f0 = &g.skel.faces[f0_idx];
+    let f1 = &g.skel.faces[f1_idx];
 
     // Get node positions
     let node_a = match g.skel.nodes.get(a) {
@@ -134,36 +135,29 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: 
         None => return RoofEdgeKind::Eave,
     };
 
-    // Calculate arc midpoint M and height z
+    // Calculate arc midpoint M
     let m_pt = (node_a.pos + node_b.pos) * 0.5;
 
     // Calculate z for the arc at midpoint
-    // We need eave_z for the faces to interpolate node heights.
-    // The prompt says: "z the lerp of the node heights (g.eave_z[face.edge] + node.time)"
-    // But node.time is relative to the eave of the face it belongs to?
-    // Actually, node.time is the distance from the skeleton edge (in 2D) or height (in 3D roof skeleton).
-    // In roof_skeleton, node.time IS the height above the eave plane of the generating edge.
-    // So z_node = eave_z[face.edge] + node.time.
-    // But a node can belong to multiple faces. The node's height is absolute.
-    // The prompt implies we calculate z for the arc. The arc connects two nodes.
-    // Let's compute z_a and z_b using one of the faces (they should agree if consistent).
-    // Then z = (z_a + z_b) / 2.
-
-    let get_z = |node_idx: usize, face_idx: usize| -> Option<f64> {
+    // z_node = eave_z[face.edge] + node.time
+    // We use the average of the two faces' calculations for the node heights to be robust
+    let get_node_z = |node_idx: usize, face_idx: usize| -> Option<f64> {
         let node = g.skel.nodes.get(node_idx)?;
         let face = g.skel.faces.get(face_idx)?;
         let eave_z = g.eave_z.get(face.edge)?;
         Some(eave_z + node.time)
     };
 
-    let za0 = get_z(a, adjacent[0])?;
-    let zb0 = get_z(b, adjacent[0])?;
-    let za1 = get_z(a, adjacent[1])?;
-    let zb1 = get_z(b, adjacent[1])?;
+    let za0 = get_node_z(a, f0_idx);
+    let zb0 = get_node_z(b, f0_idx);
+    let za1 = get_node_z(a, f1_idx);
+    let zb1 = get_node_z(b, f1_idx);
 
-    // Average the heights from both faces for stability
-    let za = (za0 + za1) * 0.5;
-    let zb = (zb0 + zb1) * 0.5;
+    let (za, zb) = match (za0, zb0, za1, zb1) {
+        (Some(a0), Some(b0), Some(a1), Some(b1)) => ((a0 + a1) * 0.5, (b0 + b1) * 0.5),
+        _ => return RoofEdgeKind::Eave, // Fallback if data missing
+    };
+
     let z_mid = (za + zb) * 0.5;
 
     // Direction of arc
@@ -175,47 +169,55 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, n_rings: 
         let face = g.skel.faces.get(face_idx)?;
         let slope = g.slopes.get(face.edge)?;
         if slope.is_infinite() {
-            return None; // Vertical face, height undefined or infinite?
+            return None;
         }
         let eave_z = g.eave_z.get(face.edge)?;
         let edge = g.fp.edges.get(face.edge)?;
 
-        // Distance from point to edge line
-        let dist = edge.dist(pt);
+        // Distance from point to edge line segment (approximate as line for roof plane)
+        // Using Vec2::dist for point to line segment is safer if available,
+        // but roof planes are infinite. The skeleton edge defines the plane.
+        // The plane is defined by the footprint edge and the slope.
+        // Distance from pt to the line containing edge.a and edge.b.
+        let v = edge.b - edge.a;
+        if v.len_sq() < 1e-12 {
+            return Some(eave_z);
+        }
+        let dist = v.cross(pt - edge.a).abs() / v.len();
         Some(eave_z + slope * dist)
     };
 
     // Sample points for each face
     // "take S_i = M + m*0.05 on that face's side"
-    // We need to determine which side is "inside" the face.
-    // The face's ring contains the arc (a,b). The interior of the face is on one side of the arc.
-    // We can check if M + m*0.05 is inside the face polygon. If not, try M - m*0.05.
 
     let mut z0_opt = None;
     let mut z1_opt = None;
 
     // Face 0
+    let ring0 = face_ring(g, f0_idx);
     let mut s0 = m_pt + m * 0.05;
-    if !point_in_polygon(&s0, &face_ring(g, adjacent[0])) {
+    if !point_in_polygon(&s0, &ring0) {
         s0 = m_pt - m * 0.05;
     }
-    // If still not inside, try nudging towards centroid
-    if !point_in_polygon(&s0, &face_ring(g, adjacent[0])) {
-        let c = face_centroid(g, adjacent[0]);
-        s0 = m_pt + (c - m_pt).normalized() * 0.05;
+    if !point_in_polygon(&s0, &ring0) {
+        let c = face_centroid(g, f0_idx);
+        let dir = (c - m_pt).normalized();
+        s0 = m_pt + dir * 0.05;
     }
-    z0_opt = surface_height(adjacent[0], s0);
+    z0_opt = surface_height(f0_idx, s0);
 
     // Face 1
+    let ring1 = face_ring(g, f1_idx);
     let mut s1 = m_pt + m * 0.05;
-    if !point_in_polygon(&s1, &face_ring(g, adjacent[1])) {
+    if !point_in_polygon(&s1, &ring1) {
         s1 = m_pt - m * 0.05;
     }
-    if !point_in_polygon(&s1, &face_ring(g, adjacent[1])) {
-        let c = face_centroid(g, adjacent[1]);
-        s1 = m_pt + (c - m_pt).normalized() * 0.05;
+    if !point_in_polygon(&s1, &ring1) {
+        let c = face_centroid(g, f1_idx);
+        let dir = (c - m_pt).normalized();
+        s1 = m_pt + dir * 0.05;
     }
-    z1_opt = surface_height(adjacent[1], s1);
+    z1_opt = surface_height(f1_idx, s1);
 
     if let (Some(z0), Some(z1)) = (z0_opt, z1_opt) {
         let eps = 1e-9;
