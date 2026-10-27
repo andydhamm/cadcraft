@@ -981,6 +981,14 @@ mod tests {
     }
 
     #[test]
+    fn roof_meshes_empty_planes_returns_empty() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+        let meshes = roof_meshes(&roof, 2.5);
+        assert!(meshes.is_empty(), "roof with no planes should produce no meshes");
+    }
+
+    #[test]
     fn roof_meshes_prefer_the_plane_eave_z() {
         let mut roof = Roof::default();
         roof.id = ArchId(1);
