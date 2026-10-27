@@ -1246,4 +1246,72 @@ mod tests {
         });
         assert!(s.execute("wall", &p).is_err());
     }
+
+    #[test]
+    fn wall_closed_with_two_points_does_not_add_segment() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [3.0, 0.0]],
+            "closed": true,
+        });
+        let r = s.execute("wall", &p).unwrap();
+        let walls = r["walls"].as_array().unwrap();
+        assert_eq!(walls.len(), 1);
+    }
+
+    #[test]
+    fn wall_closed_already_closed_does_not_duplicate() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0], [0.0, 0.0]],
+            "closed": true,
+        });
+        let r = s.execute("wall", &p).unwrap();
+        let walls = r["walls"].as_array().unwrap();
+        assert_eq!(walls.len(), 4);
+    }
+
+    #[test]
+    fn wall_divider_no_thickness_defaults_to_zero() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "divider": true,
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!(d.arch.walls[0].divider);
+        assert_eq!(d.arch.walls[0].thickness, 0.0);
+    }
+
+    #[test]
+    fn wall_rejects_non_finite_points() {
+        let mut s = new_session_with_level();
+
+        // NaN in x
+        let p = json!({
+            "points": [[f64::NAN, 0.0], [2.0, 0.0]],
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
+
+        // Infinity in y
+        let p = json!({
+            "points": [[0.0, f64::INFINITY], [2.0, 0.0]],
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
+
+        // No walls created
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
+    }
+
+    #[test]
+    fn wall_segment_length_exactly_at_minimum_succeeds() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [super::super::MIN_WALL_LENGTH, 0.0]],
+        });
+        let r = s.execute("wall", &p);
+        assert!(r.is_ok(), "segment of exactly MIN_WALL_LENGTH should succeed");
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 1);
+    }
 }
