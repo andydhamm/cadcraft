@@ -273,6 +273,7 @@ fn t_join(w: &Wall, end: End, raw: (Vec2, Vec2), host: &Wall) -> EndPlan {
 }
 
 /// A neighbour wall relevant to a join at one end.
+#[derive(Clone, Debug)]
 enum Neighbour {
     /// Another wall's end meets this wall's end at the same point.
     EndToEnd { id: ArchId, end: End },
