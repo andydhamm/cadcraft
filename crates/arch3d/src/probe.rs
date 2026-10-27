@@ -836,7 +836,7 @@ mod tests {
         plane.slope = 0.5;
         plane.thickness = 0.2;
 
-        let mesh = soffit_mesh(&plane, 2.5, ArchId(1)).unwrap();
+        let mesh = soffit_mesh(&plane, 2.5, 0.3, ArchId(1)).unwrap();
 
         // Soffit is horizontal at z = 2.5 - 0.2 = 2.3 (top), bottom at 2.28
         // Width 0.3 in +y direction from y=0

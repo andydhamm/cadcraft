@@ -306,10 +306,16 @@ pub fn fascia_mesh(plane: &RoofPlane, eave_z: f64, depth: f64, id: ArchId) -> Op
 
 /// Generate a soffit mesh for a roof plane.
 ///
-/// The soffit is a flat horizontal band from the eave edge back to the wall.
-/// It is 0.02 thick.
-pub fn soffit_mesh(plane: &RoofPlane, eave_z: f64, id: ArchId) -> Option<Mesh> {
+/// The soffit is a flat horizontal band at `eave_z`, extending `depth` inward from the
+/// eave edge (base edge), with a fixed vertical thickness of 0.02 m.
+///
+/// Returns `None` if the plane is degenerate, the base edge is zero-length,
+/// or `depth` is not a positive finite number.
+pub fn soffit_mesh(plane: &RoofPlane, eave_z: f64, depth: f64, id: ArchId) -> Option<Mesh> {
     if plane.ring.len() < 3 {
+        return None;
+    }
+    if !depth.is_finite() || depth <= 0.0 {
         return None;
     }
     let thickness = 0.02;
@@ -327,40 +333,7 @@ pub fn soffit_mesh(plane: &RoofPlane, eave_z: f64, id: ArchId) -> Option<Mesh> {
     let dir = Vec2::new(dx / len, dy / len);
     let normal_xy = Vec2::new(-dir.y, dir.x);
 
-    // Soffit is under the roof, extending from the eave (base edge) inwards.
-    // "back to the wall". We don't know the wall position exactly, but typically
-    // it's under the overhang. The overhang distance is not explicitly in RoofPlane.
-    // However, the roof plane ring defines the extent.
-    // The soffit is usually under the overhang.
-    // Let's assume the soffit extends from the base edge inwards by some amount.
-    // The prompt says "from the eave edge back to the wall".
-    // Without wall data, we might approximate or use the roof thickness?
-    // "flat horizontal band from the eave edge back to the wall, 0.02 thick".
-    // If we don't have the wall line, we can't determine the width.
-    // However, `RoofPlane` has a `ring`. The base edge is one edge.
-    // The soffit is likely under the part of the roof that overhangs.
-    // If we assume the soffit width is the same as the fascia width (thickness)? No, that's too small.
-    // Let's look at `RoofPlane`. It has `overhang`? No, `Roof` has `overhang`.
-    // `roof_meshes` takes `roof: &Roof`.
-    // So we can pass `roof.overhang` to `soffit_mesh`?
-    // The signature is `soffit_mesh(plane, eave_z, id)`. It doesn't take overhang.
-    // Maybe the soffit is just a small band?
-    // Or maybe we should use the `plane.thickness`? No.
-    // Let's assume a default soffit width or derive it.
-    // Actually, looking at the prompt: "soffit_mesh(plane, eave_z, id)".
-    // If I can't determine the width, I'll use a small default or the thickness.
-    // But "back to the wall" implies a significant width.
-    // Let's check if `RoofPlane` has more info.
-    // `RoofPlane` stores `ring`, `slope`, `projected_area`, `base_edge`.
-    // It doesn't store overhang.
-    // `Roof` stores `overhang`.
-    // I should probably change the signature or pass overhang.
-    // But I must stick to the requested signature `soffit_mesh(plane, eave_z, id)`.
-    // I will assume a standard soffit width, e.g., 0.3m, or use the roof thickness if that's what's meant.
-    // Given "back to the wall", and no wall info, I'll use a fixed width of 0.3m as a placeholder
-    // or perhaps the `plane.thickness` is meant to be the overhang? No, thickness is thickness.
-    // Let's use 0.3m as a reasonable default for a soffit band if not specified.
-    let width = 0.3;
+    let width = depth;
 
     let p0_in = Vec2::new(p0.x + normal_xy.x * width, p0.y + normal_xy.y * width);
     let p1_in = Vec2::new(p1.x + normal_xy.x * width, p1.y + normal_xy.y * width);
@@ -424,7 +397,11 @@ pub fn soffit_mesh(plane: &RoofPlane, eave_z: f64, id: ArchId) -> Option<Mesh> {
 
 /// Generate all meshes for a roof.
 ///
-/// Includes one mesh per plane, plus fascia and soffit.
+/// Emits one solid mesh per valid plane with material `"roof"`. When `roof.fascia`
+/// is true, a vertical fascia band is added per plane; when `roof.soffit` is true,
+/// a horizontal soffit panel is added. Fascia/soffit depths come from
+/// `plane.fascia_depth` / `plane.soffit_depth`, defaulting to 0.1 m when zero.
+/// Degenerate or non-finite planes are silently skipped.
 pub fn roof_meshes(roof: &Roof, eave_z: f64) -> Vec<Mesh> {
     let mut meshes = Vec::new();
 
@@ -433,12 +410,18 @@ pub fn roof_meshes(roof: &Roof, eave_z: f64) -> Vec<Mesh> {
             meshes.push(m);
         }
 
-        if let Some(m) = fascia_mesh(plane, eave_z, 0.2, roof.id) {
-            meshes.push(m);
+        if roof.fascia {
+            let fd = if plane.fascia_depth > 0.0 { plane.fascia_depth } else { 0.1 };
+            if let Some(m) = fascia_mesh(plane, eave_z, fd, roof.id) {
+                meshes.push(m);
+            }
         }
 
-        if let Some(m) = soffit_mesh(plane, eave_z, roof.id) {
-            meshes.push(m);
+        if roof.soffit {
+            let sd = if plane.soffit_depth > 0.0 { plane.soffit_depth } else { 0.1 };
+            if let Some(m) = soffit_mesh(plane, eave_z, sd, roof.id) {
+                meshes.push(m);
+            }
         }
     }
 
@@ -746,7 +729,7 @@ mod tests {
     fn soffit_mesh_is_horizontal() {
         let plane = simple_plane();
         let eave_z = 2.5;
-        let mesh = soffit_mesh(&plane, eave_z, ArchId(1)).unwrap();
+        let mesh = soffit_mesh(&plane, eave_z, 0.3, ArchId(1)).unwrap();
 
         // Soffit is horizontal, so top face normals should be (0,0,1) and bottom (0,0,-1)
         // Check that all top vertices have the same z
@@ -819,5 +802,64 @@ mod tests {
         // Top cap: 1 triangle (fan)
         // Total: 8 triangles
         assert_eq!(mesh.triangle_count(), 8, "expected 8 triangles for 3-vertex ring");
+    }
+
+    #[test]
+    fn roof_plane_is_a_probeable_solid() {
+        use crate::probe::{part_of, probe_mesh};
+
+        let plane = simple_plane();
+        // eave_z=2.5, slope=0.5; at y=2.5 bottom z = 2.5 + 0.5*2.5 = 3.75;
+        // normal nz = 1/sqrt(1+0.25) ≈ 0.894; top z ≈ 3.75 + 0.2*0.894 ≈ 3.929.
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        // Point strictly inside the roof solid.
+        assert!(probe_mesh(&mesh, cadcraft_geom::Vec3::new(5.0, 2.5, 3.8)), "probe inside roof should hit");
+        // Material "roof" maps to part "roof".
+        assert_eq!(part_of(&mesh), "roof");
+    }
+
+    #[test]
+    fn fascia_and_soffit_are_built() {
+        // roof.fascia and roof.soffit are true by default.
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+        roof.planes.push(simple_plane());
+
+        let meshes = roof_meshes(&roof, 2.5);
+        assert!(meshes.iter().any(|m| m.material == "fascia"), "fascia expected when roof.fascia is true");
+        assert!(meshes.iter().any(|m| m.material == "soffit"), "soffit expected when roof.soffit is true");
+
+        // With both flags off, neither should appear.
+        let mut roof_off = Roof { fascia: false, soffit: false, ..Roof::default() };
+        roof_off.id = ArchId(2);
+        roof_off.planes.push(simple_plane());
+
+        let meshes_off = roof_meshes(&roof_off, 2.5);
+        assert!(!meshes_off.iter().any(|m| m.material == "fascia"), "no fascia when roof.fascia is false");
+        assert!(!meshes_off.iter().any(|m| m.material == "soffit"), "no soffit when roof.soffit is false");
+    }
+
+    #[test]
+    fn degenerate_roof_plane_is_skipped() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+
+        // Degenerate: only 2 ring vertices.
+        let mut bad = simple_plane();
+        bad.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
+        roof.planes.push(bad);
+
+        // Valid plane alongside the degenerate one.
+        roof.planes.push(simple_plane());
+
+        let meshes = roof_meshes(&roof, 2.5);
+        // Degenerate plane produces no meshes; valid plane does.
+        assert!(!meshes.is_empty(), "valid plane should produce meshes");
+        assert!(meshes.iter().all(|m| m.object == ArchId(1)), "all meshes belong to the roof");
+        // No mesh comes from the degenerate plane (all meshes are non-empty).
+        for m in &meshes {
+            assert!(!m.positions.is_empty(), "every mesh must have vertices");
+        }
     }
 }
