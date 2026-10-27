@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-27 21:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 21:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 4 of 13: Automatic roofs — 79 of 79 segments merged · 8 of 11 acceptance checks**
+**Phase 4 of 13: Automatic roofs — 79 of 82 segments merged · 8 of 11 acceptance checks**
 
-4,217 workspace tests passing at the last merge · 344 segments merged in all · 0 of 11 seats working
+4,222 workspace tests passing at the last merge · 345 segments merged in all · 0 of 12 seats working
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 21:30 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 8 / 11 | 36.7 h so far · expected done Oct 27 23:45–Oct 28 04:32 UTC |
+| 4 | Automatic roofs | building | 8 / 11 | 36.9 h so far · expected done Oct 27 23:33–Oct 28 04:01 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -27,13 +27,19 @@ Updated 2026-10-27 21:30 UTC. This page and the card in the README are regenerat
 
 ## Phase 4 segments
 
-79 merged, 6 replaced
+79 merged, 6 replaced, 2 working, 1 gate
 
+| Segment | What | State | Seat |
+|---|---|---|---|
+| `p4j-build3d-reports-roofs` | build3d reports the roof count | gate | claude-sonnet-a |
+| `p4k-roof-plane-vertical-thickness` | roof planes have vertical thickness so the ridge is solid | working | bonsai-a |
+| `p4l-footprint-ring-walk` | order the roof footprint by edge connectivity, not by angle | working | darwin-ws3 |
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 27 21:40 | `harden-p4h-roof-eave-z-per-plane` | merged | 4,222 pass | tturbo-mac2 |
 | Oct 27 21:17 | `harden-p4h-probe-crease-jitter` | merged | 4,217 pass | tturbo-mac2 |
 | Oct 27 20:45 | `harden-p4h-roofplane-arg-forms` | merged | 4,210 pass | tturbo-mac2 |
 | Oct 27 19:24 | `p4h-roofplane-arg-forms` | merged | 4,205 pass | bonsai-ws2-b |
@@ -45,20 +51,20 @@ Updated 2026-10-27 21:30 UTC. This page and the card in the README are regenerat
 | Oct 27 18:33 | `harden-p4h-profile-prism-extrude` | merged | 4,182 pass | tturbo-mac |
 | Oct 27 18:16 | `harden-p4x-cli-render-draws` | merged | 4,175 pass | tturbo-mac |
 | Oct 27 18:02 | `harden-p2-arch-fit-and-sill` | merged | 4,168 pass | tturbo-mac2 |
-| Oct 27 17:39 | `p4h-opening-hole-acceptance` | merged | 4,160 pass | darwin-ws3 |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | idle | 521 |
-| bonsai-b | bonsai2-27b | idle | 461 |
-| bonsai-ws2-a | bonsai2-27b | idle | 672 |
-| bonsai-ws2-b | bonsai2-27b | idle | 647 |
-| claude-sonnet-a | sonnet | idle | 16 |
+| bonsai-a | bonsai2-27b | agent | 521 |
+| bonsai-b | bonsai2-27b | agent | 461 |
+| bonsai-ws2-a | bonsai2-27b | gate | 672 |
+| bonsai-ws2-b | bonsai2-27b | agent | 647 |
+| claude-sonnet-a | sonnet | gate | 16 |
 | claude-sonnet-b | sonnet | idle | 15 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 322 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 62 |
 | ornith-a | ornith15-397b-exl3-35 | down | 29 |
 | ornith-b | ornith15-397b-exl3-35 | down | 17 |
 | tturbo-mac | tturbo-ultraheretic | agent | 339 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 159 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 160 |
