@@ -488,7 +488,7 @@ fn zero_pitch_produces_flat_roof() {
     let pts = [(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
     let model = house(&pts, 2.4);
     let r = roof(0.0, 0.0);
-    let Ok(_built) = build_roof(&model, 0, &r) else {
+    let Ok(built) = build_roof(&model, 0, &r) else {
         return;
     };
     let Ok(geom) = roof_geometry(&model, 0, &r) else {
@@ -498,5 +498,10 @@ fn zero_pitch_produces_flat_roof() {
     let min_h = heights.iter().cloned().fold(f64::MAX, f64::min);
     let max_h = heights.iter().cloned().fold(f64::MIN, f64::max);
     assert!((max_h - min_h).abs() < 1e-4, "flat roof has height variation: min {:.6} max {:.6}", min_h, max_h);
-    assert!((min_h - 2.4).abs() < 1e-9, "flat roof height {:.6} != wall height 2.4", min_h);
+    // For a flat roof, node times are heights above the eave, which is 0.
+    assert!(min_h.abs() < 1e-9, "flat roof node times should be 0, got {:.6}", min_h);
+    // The eave should be at wall height.
+    for p in &built.planes {
+        assert!((p.eave_z - 2.4).abs() < 1e-9, "plane eave_z {:.6} != wall height 2.4", p.eave_z);
+    }
 }
