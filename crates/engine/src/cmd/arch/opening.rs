@@ -843,4 +843,70 @@ mod tests {
             assert_eq!(d.layers.iter().filter(|l| l.name == name).count(), 1, "{name} created more than once");
         }
     }
+
+    /// Style parsing is case-insensitive: "HINGED", "Hinged", "hinged" all store "hinged".
+    #[test]
+    fn door_style_is_case_insensitive() {
+        let mut s = session_with_wall();
+        s.execute("door", &json!({"wall": "w0", "offset": 1.0, "width": 0.9, "height": 2.1, "style": "HINGED"})).expect("HINGED");
+        s.execute("door", &json!({"wall": "w0", "offset": 3.0, "width": 0.9, "height": 2.1, "style": "Hinged"})).expect("Hinged");
+        s.execute("door", &json!({"wall": "w0", "offset": 5.0, "width": 0.9, "height": 2.1, "style": "hinged"})).expect("hinged");
+        let d = s.doc().expect("doc");
+        for (i, o) in d.arch.openings.iter().enumerate() {
+            assert_eq!(o.style, "hinged", "opening {i} style should be lowercase hinged");
+        }
+    }
+
+    /// An explicit window style overrides the kind default.
+    #[test]
+    fn window_with_explicit_style_stores_it() {
+        let mut s = session_with_wall();
+        s.execute("window", &json!({"wall": "w0", "offset": 2.0, "width": 1.2, "height": 1.2, "style": "casement"})).expect("window casement");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.openings[0].style, "casement", "explicit window style should be stored");
+    }
+
+    /// An explicit garage door style overrides the kind default.
+    #[test]
+    fn garagedoor_with_explicit_style_stores_it() {
+        let mut s = session_with_wall();
+        s.execute("garagedoor", &json!({"wall": "w0", "offset": 2.0, "width": 1.8, "height": 2.1, "style": "sectional"})).expect("garage sectional");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.openings[0].style, "sectional", "explicit garage door style should be stored");
+    }
+
+    /// Hinge and swing parsing is case-insensitive.
+    #[test]
+    fn door_hinge_and_swing_are_case_insensitive() {
+        let mut s = session_with_wall();
+        s.execute("door", &json!({"wall": "w0", "offset": 1.0, "width": 0.9, "height": 2.1, "hinge": "LEFT", "swing": "OUT"}))
+            .expect("door LEFT OUT");
+        let d = s.doc().expect("doc");
+        let o = &d.arch.openings[0];
+        assert_eq!(o.hinge, Hinge::Left, "LEFT should parse as Hinge::Left");
+        assert_eq!(o.swing, Swing::Out, "OUT should parse as Swing::Out");
+    }
+
+    /// A sill of exactly 0.0 is accepted (the validation is >= 0.0).
+    #[test]
+    fn zero_sill_is_accepted() {
+        let mut s = session_with_wall();
+        s.execute("window", &json!({"wall": "w0", "offset": 2.0, "width": 1.2, "height": 1.2, "sill": 0.0})).expect("window sill 0");
+        let d = s.doc().expect("doc");
+        assert!((d.arch.openings[0].sill - 0.0).abs() < 1e-9, "sill should be 0.0");
+    }
+
+    /// Multiple openings on the same wall each keep their own style defaults.
+    #[test]
+    fn multiple_openings_keep_their_own_defaults() {
+        let mut s = session_with_wall();
+        s.execute("door", &json!({"wall": "w0", "offset": 1.0, "width": 0.9, "height": 2.1})).expect("door 1");
+        s.execute("window", &json!({"wall": "w0", "offset": 3.0, "width": 1.2, "height": 1.2})).expect("window 1");
+        s.execute("door", &json!({"wall": "w0", "offset": 5.0, "width": 0.9, "height": 2.1})).expect("door 2");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.openings.len(), 3, "should have 3 openings");
+        assert_eq!(d.arch.openings[0].style, "hinged", "first door should be hinged");
+        assert_eq!(d.arch.openings[1].style, "slider", "window should be slider");
+        assert_eq!(d.arch.openings[2].style, "hinged", "second door should be hinged");
+    }
 }
