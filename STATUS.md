@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-27 05:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 05:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 36 of 63 segments merged · 5 of 11 acceptance checks**
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 05:15 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 5 / 11 | 20.4 h so far · expected done Oct 27 19:54–Oct 28 06:08 UTC |
+| 4 | Automatic roofs | building | 5 / 11 | 20.7 h so far · expected done Oct 27 20:47–Oct 28 07:28 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
