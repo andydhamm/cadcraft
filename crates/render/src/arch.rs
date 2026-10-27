@@ -17,12 +17,20 @@ pub fn arch_handle(id: ArchId) -> Handle {
     cadcraft_doc::arch_handle(id)
 }
 
-/// The poché (2D cross-section) primitives for `d.arch`, in wall order. The caller merges the
-/// returned list into the main one. `_opts` is unused for now but kept for the caller's hook.
+/// Whether `build_arch` should skip linework drawn on `layer`.
 ///
-/// Walls follow the A-WALL layer's on/frozen state, openings follow their own layer's
-/// on/frozen state, and while plotting, arch objects on no-plot layers are skipped. A
-/// missing layer behaves as before and draws.
+/// A layer that exists and is off, frozen, or — while plotting — marked no-plot is skipped.
+/// A missing layer is never skipped, so it draws as before.
+fn arch_layer_skipped(d: &Drawing, layer: &str, plotting: bool) -> bool {
+    d.layer(layer).map_or(false, |l| !l.on || l.frozen || (plotting && !l.plot))
+}
+
+/// The poché (2D cross-section) primitives for `d.arch`, in wall order. The caller merges
+/// the returned list into the main one. `_opts` is unused but kept as the caller's hook.
+///
+/// A wall's poché (fill, outline, gap edges) is skipped when `A-WALL` is off or frozen
+/// (and no-plot while plotting); an opening's symbol is skipped by its own layer's state.
+/// A missing layer draws as before.
 pub fn build_arch(d: &Drawing, _opts: &Options, plotting: bool) -> DisplayList {
     let mut list = DisplayList::default();
     let layer = d.layer("A-WALL").map(|l| l.color).unwrap_or(Color::Index(7));
@@ -35,49 +43,71 @@ pub fn build_arch(d: &Drawing, _opts: &Options, plotting: bool) -> DisplayList {
     // whole loop is skipped when the wall's layer is off or frozen (or no-plot while plotting).
     if !arch_layer_skipped(d, "A-WALL", plotting) {
         for wall in &d.arch.walls {
-        if !wall.start.is_finite() || !wall.end.is_finite() {
-            continue;
-        }
-        let len = wall.start.dist(wall.end);
-        if len < 1e-12 || !len.is_finite() {
-            continue;
-        }
-        if wall.thickness <= 0.0 || !wall.thickness.is_finite() {
-            continue;
-        }
-        let half = wall.thickness / 2.0;
-        let dir = (wall.end - wall.start).normalized();
-        let perp = dir.perp();
-        let a = wall.start - perp * half;
-        let b = wall.end - perp * half;
-        let c = wall.end + perp * half;
-        let e = wall.start + perp * half;
-
-        let ring: Vec<Vec2> = match solved.get(&wall.id) {
-            Some(r) if !r.is_empty() => r.iter().map(|p| p.clone()).collect(),
-            _ => vec![a, b, c, e],
-        };
-
-        // Poché gaps: rectangular holes from openings, in wall coordinate space.
-        let gaps = cadcraft_arch::symbol::poché_gaps(&d.arch, wall.id);
-        let mut polys: Vec<Vec<Vec2>> = vec![ring.clone()];
-        for &(gs, ge) in &gaps {
-            let p1 = wall.start + dir * gs - perp * half;
-            let p2 = wall.start + dir * gs + perp * half;
-            let p3 = wall.start + dir * ge + perp * half;
-            let p4 = wall.start + dir * ge - perp * half;
-            if p1.is_finite() && p2.is_finite() && p3.is_finite() && p4.is_finite() {
-                polys.push(vec![p1, p2, p3, p4]);
+            if !wall.start.is_finite() || !wall.end.is_finite() {
+                continue;
             }
-        }
+            let len = wall.start.dist(wall.end);
+            if len < 1e-12 || !len.is_finite() {
+                continue;
+            }
+            if wall.thickness <= 0.0 || !wall.thickness.is_finite() {
+                continue;
+            }
+            let half = wall.thickness / 2.0;
+            let dir = (wall.end - wall.start).normalized();
+            let perp = dir.perp();
+            let a = wall.start - perp * half;
+            let b = wall.end - perp * half;
+            let c = wall.end + perp * half;
+            let e = wall.start + perp * half;
 
-        // Filled poché with holes
-        let tris = crate::triangulate_evenodd(&polys);
-        if tris.len() >= 3 {
-            let start = u32::try_from(list.tris.len()).unwrap_or(u32::MAX);
-            for q in &tris {
+            let ring: Vec<Vec2> = match solved.get(&wall.id) {
+                Some(r) if !r.is_empty() => r.iter().map(|p| p.clone()).collect(),
+                _ => vec![a, b, c, e],
+            };
+
+            // Poché gaps: rectangular holes from openings, in wall coordinate space.
+            let gaps = cadcraft_arch::symbol::poché_gaps(&d.arch, wall.id);
+            let mut polys: Vec<Vec<Vec2>> = vec![ring.clone()];
+            for &(gs, ge) in &gaps {
+                let p1 = wall.start + dir * gs - perp * half;
+                let p2 = wall.start + dir * gs + perp * half;
+                let p3 = wall.start + dir * ge + perp * half;
+                let p4 = wall.start + dir * ge - perp * half;
+                if p1.is_finite() && p2.is_finite() && p3.is_finite() && p4.is_finite() {
+                    polys.push(vec![p1, p2, p3, p4]);
+                }
+            }
+
+            // Filled poché with holes
+            let tris = crate::triangulate_evenodd(&polys);
+            if tris.len() >= 3 {
+                let start = u32::try_from(list.tris.len()).unwrap_or(u32::MAX);
+                for q in &tris {
+                    list.bounds.add(*q);
+                    list.tris.push(*q);
+                }
+                list.prims.push(DPrim {
+                    handle: arch_handle(wall.id),
+                    color: ink.rgb,
+                    aci7: ink.aci7,
+                    lw: 0.0,
+                    transparency: 0,
+                    kind: Kind::Tris,
+                    start,
+                    len: u32::try_from(tris.len()).unwrap_or(u32::MAX),
+                });
+            }
+
+            // Outline
+            let mut closed = ring;
+            if !closed.is_empty() {
+                closed.push(closed[0]);
+            }
+            let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+            for q in &closed {
                 list.bounds.add(*q);
-                list.tris.push(*q);
+                list.verts.push(*q);
             }
             list.prims.push(DPrim {
                 handle: arch_handle(wall.id),
@@ -85,72 +115,51 @@ pub fn build_arch(d: &Drawing, _opts: &Options, plotting: bool) -> DisplayList {
                 aci7: ink.aci7,
                 lw: 0.0,
                 transparency: 0,
-                kind: Kind::Tris,
+                kind: Kind::Polyline,
                 start,
-                len: u32::try_from(tris.len()).unwrap_or(u32::MAX),
+                len: u32::try_from(closed.len()).unwrap_or(u32::MAX),
             });
-        }
 
-        // Outline
-        let mut closed = ring;
-        if !closed.is_empty() {
-            closed.push(closed[0]);
-        }
-        let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
-        for q in &closed {
-            list.bounds.add(*q);
-            list.verts.push(*q);
-        }
-        list.prims.push(DPrim {
-            handle: arch_handle(wall.id),
-            color: ink.rgb,
-            aci7: ink.aci7,
-            lw: 0.0,
-            transparency: 0,
-            kind: Kind::Polyline,
-            start,
-            len: u32::try_from(closed.len()).unwrap_or(u32::MAX),
-        });
-
-        // Gap edge outlines: one polyline per side of each cut.
-        for &(gs, ge) in &gaps {
-            let p1 = wall.start + dir * gs - perp * half;
-            let p2 = wall.start + dir * gs + perp * half;
-            if p1.is_finite() && p2.is_finite() {
-                let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
-                list.bounds.add(p1);
-                list.bounds.add(p2);
-                list.verts.push(p1);
-                list.verts.push(p2);
-                list.prims.push(DPrim {
-                    handle: arch_handle(wall.id),
-                    color: ink.rgb,
-                    aci7: ink.aci7,
-                    lw: 0.0,
-                    transparency: 0,
-                    kind: Kind::Polyline,
-                    start,
-                    len: 2,
-                });
-            }
-            let p3 = wall.start + dir * ge - perp * half;
-            let p4 = wall.start + dir * ge + perp * half;
-            if p3.is_finite() && p4.is_finite() {
-                let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
-                list.bounds.add(p3);
-                list.bounds.add(p4);
-                list.verts.push(p3);
-                list.verts.push(p4);
-                list.prims.push(DPrim {
-                    handle: arch_handle(wall.id),
-                    color: ink.rgb,
-                    aci7: ink.aci7,
-                    lw: 0.0,
-                    transparency: 0,
-                    kind: Kind::Polyline,
-                    start,
-                    len: 2,
-                });
+            // Gap edge outlines: one polyline per side of each cut.
+            for &(gs, ge) in &gaps {
+                let p1 = wall.start + dir * gs - perp * half;
+                let p2 = wall.start + dir * gs + perp * half;
+                if p1.is_finite() && p2.is_finite() {
+                    let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+                    list.bounds.add(p1);
+                    list.bounds.add(p2);
+                    list.verts.push(p1);
+                    list.verts.push(p2);
+                    list.prims.push(DPrim {
+                        handle: arch_handle(wall.id),
+                        color: ink.rgb,
+                        aci7: ink.aci7,
+                        lw: 0.0,
+                        transparency: 0,
+                        kind: Kind::Polyline,
+                        start,
+                        len: 2,
+                    });
+                }
+                let p3 = wall.start + dir * ge - perp * half;
+                let p4 = wall.start + dir * ge + perp * half;
+                if p3.is_finite() && p4.is_finite() {
+                    let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+                    list.bounds.add(p3);
+                    list.bounds.add(p4);
+                    list.verts.push(p3);
+                    list.verts.push(p4);
+                    list.prims.push(DPrim {
+                        handle: arch_handle(wall.id),
+                        color: ink.rgb,
+                        aci7: ink.aci7,
+                        lw: 0.0,
+                        transparency: 0,
+                        kind: Kind::Polyline,
+                        start,
+                        len: 2,
+                    });
+                }
             }
         }
     }
