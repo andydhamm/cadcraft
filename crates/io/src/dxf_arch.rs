@@ -195,8 +195,9 @@ pub(crate) fn proxy_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
                 Some(r) => r.clone(),
                 None => wall_ring(w)?,
             };
+            let n = i64::try_from(corners.len()).ok()?;
             let mut t = Vec::new();
-            t.push(Tag::i(90, 4));
+            t.push(Tag::i(90, n));
             t.push(Tag::i(70, 1));
             for c in &corners {
                 t.push(Tag::f(10, c.x));
@@ -231,8 +232,9 @@ pub(crate) fn proxy_opening_polylines(m: &ArchModel) -> Vec<(String, Vec<Tag>)> 
             if corners.is_empty() {
                 return None;
             }
+            let n = i64::try_from(corners.len()).ok()?;
             let mut t = Vec::new();
-            t.push(Tag::i(90, 4));
+            t.push(Tag::i(90, n));
             t.push(Tag::i(70, 1));
             for c in &corners {
                 t.push(Tag::f(10, c.x));
@@ -1266,6 +1268,119 @@ mod tests {
         let got = &back.arch.rooms[0];
         assert_eq!(got.id, rid, "room id changed on round trip");
         assert_eq!(got.name, "Спальня \u{1F6CF}\u{FE0F}", "room name changed on round trip");
+    }
+
+    /// Mitred join rings have the correct vertex count tag (not hardcoded to 4).
+    #[test]
+    fn proxy_polylines_use_correct_vertex_count() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 2, "expected two wall proxies");
+
+        for tags in &polys {
+            let vertex_count = tags.iter().find(|t| t.code == 90).map(|t| t.i64()).unwrap_or(0);
+            let actual_points = tags.iter().filter(|t| t.code == 10).count();
+            assert_eq!(vertex_count as usize, actual_points, "vertex count tag must match actual points");
+            assert!(vertex_count >= 4, "mitred ring should have at least 4 vertices");
+        }
+    }
+
+    /// Collinear walls each produce their own proxy with correct vertex count.
+    #[test]
+    fn proxy_polylines_collinear_walls() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(5.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 2, "both collinear walls should produce proxies");
+
+        for tags in &polys {
+            let vertex_count = tags.iter().find(|t| t.code == 90).map(|t| t.i64()).unwrap_or(0);
+            let actual_points = tags.iter().filter(|t| t.code == 10).count();
+            assert_eq!(vertex_count as usize, actual_points, "vertex count tag must match actual points");
+        }
+    }
+
+    /// Angled (non-90 degree) wall joins produce correct proxy rings.
+    #[test]
+    fn proxy_polylines_angled_walls() {
+        let mut m = ArchModel::default();
+        let angle = std::f64::consts::PI / 3.0;
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0 + 8.0 * angle.cos(), 8.0 * angle.sin()), 0.2));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 2, "both angled walls should produce proxies");
+
+        for tags in &polys {
+            let vertex_count = tags.iter().find(|t| t.code == 90).map(|t| t.i64()).unwrap_or(0);
+            let actual_points = tags.iter().filter(|t| t.code == 10).count();
+            assert_eq!(vertex_count as usize, actual_points, "vertex count tag must match actual points");
+        }
+    }
+
+    /// T-junction walls produce correct proxy rings.
+    #[test]
+    fn proxy_polylines_t_junction() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(5.0, 0.0), Vec2::new(5.0, 5.0), 0.2));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 2, "both T-junction walls should produce proxies");
+
+        for tags in &polys {
+            let vertex_count = tags.iter().find(|t| t.code == 90).map(|t| t.i64()).unwrap_or(0);
+            let actual_points = tags.iter().filter(|t| t.code == 10).count();
+            assert_eq!(vertex_count as usize, actual_points, "vertex count tag must match actual points");
+        }
+    }
+
+    /// Walls with NaN endpoints are skipped; valid walls still produce proxies.
+    #[test]
+    fn proxy_polylines_nan_coordinates() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(f64::NAN, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 1, "NaN wall should be skipped, valid wall should produce proxy");
+    }
+
+    /// Walls at huge coordinates produce finite proxy polylines.
+    #[test]
+    fn proxy_polylines_huge_coordinates() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(1e15, 1e15), Vec2::new(1e15 + 10.0, 1e15), 0.2));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 1, "wall at huge coordinates should produce a proxy");
+
+        let tags = &polys[0];
+        let xs: Vec<f64> = tags.iter().filter(|t| t.code == 10).map(|t| t.f64()).collect();
+        let ys: Vec<f64> = tags.iter().filter(|t| t.code == 20).map(|t| t.f64()).collect();
+        assert!(xs.iter().all(|v| v.is_finite()), "x coords must be finite");
+        assert!(ys.iter().all(|v| v.is_finite()), "y coords must be finite");
+    }
+
+    /// Opening proxy polylines have the correct vertex count tag.
+    #[test]
+    fn proxy_opening_polylines_use_correct_vertex_count() {
+        let mut m = ArchModel::default();
+        let wid = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
+
+        let polys = proxy_opening_polylines(&m);
+        assert_eq!(polys.len(), 1, "expected one opening proxy");
+
+        let (_, tags) = &polys[0];
+        let vertex_count = tags.iter().find(|t| t.code == 90).map(|t| t.i64()).unwrap_or(0);
+        let actual_points = tags.iter().filter(|t| t.code == 10).count();
+        assert_eq!(vertex_count as usize, actual_points, "vertex count tag must match actual points");
     }
 
     /// A version-2 payload (which predates rooms) parses with an empty rooms vector.
