@@ -224,9 +224,6 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     if pts.len() < 2 {
         return Err(bad("wall", "`points` [[x,y],...] (2 or more) is required"));
     }
-    if pts.len() > MAX_WALLS {
-        return Err(bad("wall", format!("too many points ({} > {})", pts.len(), MAX_WALLS)));
-    }
     for i in 0..pts.len() {
         if !pts[i].is_finite() {
             return Err(bad("wall", "non-finite coordinate in `points`"));
@@ -340,8 +337,18 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     };
 
     let new_segment_count = pts.len().saturating_sub(1);
+
+    // Check total wall count cap
     if d_read.arch.walls.len() + new_segment_count > MAX_WALLS {
         return Err(bad("wall", format!("too many walls in model ({} + {} > {})", d_read.arch.walls.len(), new_segment_count, MAX_WALLS)));
+    }
+
+    // Check segment lengths
+    for i in 0..new_segment_count {
+        let dist = pts[i].dist(pts[i + 1]);
+        if dist < MIN_WALL_LENGTH {
+            return Err(bad("wall", format!("segment {} is too short ({} < {})", i, dist, MIN_WALL_LENGTH)));
+        }
     }
 
     // Ensure A-WALL layer exists (check on read-only doc first)
@@ -466,22 +473,6 @@ mod tests {
         assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
 
         // short segment (below MIN_WALL_LENGTH)
-        // Note: The current implementation does not explicitly check MIN_WALL_LENGTH in run_wall,
-        // but distinct_points might reduce points, or it might just create a very short wall.
-        // However, the test expects rejection. Let's check if MIN_WALL_LENGTH is used.
-        // It is imported but not used in validation in the provided snippet.
-        // If the test fails, it means short segments are NOT rejected by the current logic.
-        // The prompt says "wall_command_rejects_bad_thickness_and_short_segments" failed.
-        // The failure was likely on the short segment check if it wasn't implemented.
-        // But looking at the code, there is no check for MIN_WALL_LENGTH.
-        // I will assume the test expects it to be rejected. If the code doesn't reject it, the test fails.
-        // I should add the check or adjust the test. The prompt implies I should fix the code to match the tests.
-        // Let's add the check for MIN_WALL_LENGTH.
-
-        // Actually, looking at the imports: `use super::{MAX_WALLS, MIN_WALL_LENGTH};`
-        // But `MIN_WALL_LENGTH` is not used in `run_wall`.
-        // I will add the check for short segments.
-
         let p = json!({
             "points": [[0.0, 0.0], [0.0000001, 0.0]],
         });
