@@ -1688,6 +1688,80 @@ mod tests {
     }
 
     #[test]
+    fn join_kind_mitre_on_wall_produces_l_join() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 1.0);
+
+        // Explicit Mitre on the wall — same as Auto for an L corner, but must not error.
+        model.walls[0].join_end = JoinKind::Mitre;
+        model.walls[1].join_start = JoinKind::Mitre;
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+        assert!(shapes[0].joins.iter().any(|j| matches!(j, Join::L(End::End))));
+        assert!(shapes[1].joins.iter().any(|j| matches!(j, Join::L(End::Start))));
+    }
+
+    #[test]
+    fn both_ends_independently_honoured() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // L-corner: wall 0 horizontal, wall 1 vertical.
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 1.0);
+
+        // Wall 0: Butt at start, Square at end.
+        model.walls[0].join_start = JoinKind::Butt;
+        model.walls[0].join_end = JoinKind::Square;
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let s0 = &shapes[0];
+        assert!(s0.joins.iter().any(|j| matches!(j, Join::Butt(End::Start))), "wall 0 start should be Butt");
+        assert!(s0.joins.iter().any(|j| matches!(j, Join::Square(End::End))), "wall 0 end should be Square");
+        // Neither end should be an L mitre.
+        assert!(!s0.joins.iter().any(|j| matches!(j, Join::L(_))), "wall 0 must not mitre");
+    }
+
+    #[test]
+    fn override_with_auto_falls_through_to_wall_kind() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 1.0);
+
+        // Wall 0 has Butt at its end.
+        model.walls[0].join_end = JoinKind::Butt;
+
+        // Override with Auto — should fall through to the wall's own Butt.
+        let mut ov = JoinOverrides::new();
+        ov.set(ArchId(0), JoinKind::Auto, JoinKind::Auto);
+
+        let shapes = solve_joins_with(&model, &ov);
+        assert_eq!(shapes.len(), 2);
+        let s0 = &shapes[0];
+        assert!(s0.joins.iter().any(|j| matches!(j, Join::Butt(End::End))), "Auto override must fall through to wall's own Butt");
+        assert!(!s0.joins.iter().any(|j| matches!(j, Join::L(End::End))), "must not mitre when wall says Butt");
+    }
+
+    #[test]
+    fn t_junction_honours_walls_own_join_kind() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(20.0, 0.0), 1.0); // host
+        wall(&mut model, 1, Vec2::new(10.0, 10.0), Vec2::new(10.0, 0.0), 1.0); // incoming
+
+        // Incoming wall says Butt instead of T.
+        model.walls[1].join_end = JoinKind::Butt;
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let incoming = &shapes[1];
+        assert!(incoming.joins.iter().any(|j| matches!(j, Join::Butt(End::End))), "incoming wall should Butt, not T");
+        assert!(!incoming.joins.iter().any(|j| matches!(j, Join::T(_))), "must not T when wall says Butt");
+    }
+
+    #[test]
     fn classify_with_prefilter_matches_the_full_scan() {
         let mut model = cadcraft_doc::ArchModel::default();
 
