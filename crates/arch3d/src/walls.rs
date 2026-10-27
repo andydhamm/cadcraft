@@ -3,9 +3,12 @@
 use crate::mesh::{Mesh, find_bridge_pair, merge_ring, triangulate_simple};
 
 use cadcraft_arch::join::WallShape;
+use cadcraft_arch::opening::ROUGH_ALLOWANCE;
 use cadcraft_doc::ArchModel;
 use cadcraft_doc::arch::{Opening, Wall};
 use cadcraft_geom::{Vec2, point_in_polygon};
+
+const HOLE_INSET: f64 = 1e-3;
 
 /// A roof plane clipping the top of a wall.
 ///
@@ -51,6 +54,59 @@ pub fn extrude_wall(shape: &WallShape, height: f64, level_elevation: f64, materi
     let mut mesh = Mesh::new(material, shape.id);
     mesh.push_prism(&shape.polygon, level_elevation, level_elevation + height);
     (mesh.triangle_count() > 0).then(|| mesh)
+}
+
+/// Rough-opening holes for a wall profile `len` long and `max_v` tall, in profile
+/// coords (`u` along the wall from `wall.start`, `v = z - base`).
+/// Each hole is the rough opening (width + ROUGH_ALLOWANCE, head + ROUGH_ALLOWANCE,
+/// no allowance below the sill), clipped against `outer`, kept only when its area
+/// exceeds 1e-6 and every vertex lies at least `HOLE_INSET` inside `outer`.
+/// Returned clockwise, as `push_prism_with_holes` expects.
+pub(crate) fn opening_holes(openings: &[&Opening], base: f64, _len: f64, _max_v: f64, outer: &[Vec2]) -> Vec<Vec<Vec2>> {
+    let mut holes = Vec::new();
+    for op in openings {
+        let half = (op.width + ROUGH_ALLOWANCE) / 2.0;
+        let u0 = op.offset - half;
+        let u1 = op.offset + half;
+        let v0 = op.sill - base;
+        let v1 = op.sill + op.height + ROUGH_ALLOWANCE - base;
+
+        if !u0.is_finite() || !u1.is_finite() || !v0.is_finite() || !v1.is_finite() {
+            continue;
+        }
+
+        let rect = vec![Vec2::new(u0, v0), Vec2::new(u1, v0), Vec2::new(u1, v1), Vec2::new(u0, v1)];
+
+        let clipped = clip_polygon(&rect, outer);
+        if clipped.len() < 3 || polygon_area(&clipped) <= 1e-6 {
+            continue;
+        }
+
+        let mut all_inset = true;
+        'vertex: for p in &clipped {
+            for i in 0..outer.len() {
+                let a = outer[i];
+                let b = outer[(i + 1) % outer.len()];
+                let edge_len = ((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y)).sqrt();
+                if edge_len < 1e-12 {
+                    continue;
+                }
+                let cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+                if cross <= HOLE_INSET * edge_len {
+                    all_inset = false;
+                    break 'vertex;
+                }
+            }
+        }
+        if !all_inset {
+            continue;
+        }
+
+        let mut cw = clipped;
+        cw.reverse();
+        holes.push(cw);
+    }
+    holes
 }
 
 /// Compute the elevation profile of a wall, clipped by a roof and cut by openings.
@@ -149,40 +205,7 @@ pub fn elevation_profile(
         vec![Vec2::new(0.0, 0.0), Vec2::new(len, 0.0), Vec2::new(len, max_v), Vec2::new(0.0, max_v)]
     };
 
-    // Build holes from openings
-    let mut holes = Vec::new();
-    for op in openings {
-        let rough_w = op.width + 0.12; // ROUGH_ALLOWANCE
-        let half_w = rough_w / 2.0;
-        // Use finished height for vertical bounds to ensure wall exists above header in tests
-        // Rough allowance is typically for width and sill/jamb fit, but header height is structural.
-        // If we use rough_h = height + 0.12, the hole goes higher.
-        // Test `probe_above_the_header_finds_the_wall` expects wall at 2.45 (header 2.4).
-        // So we use `op.height` for vertical extent.
-        let rough_h = op.height;
-
-        let u0 = op.offset - half_w;
-        let u1 = op.offset + half_w;
-        let v0 = op.sill - base;
-        let v1 = op.sill + rough_h - base;
-
-        if !u0.is_finite() || !u1.is_finite() || !v0.is_finite() || !v1.is_finite() {
-            continue;
-        }
-
-        // Clip hole against outer profile
-        let hole_rect = vec![Vec2::new(u0, v0), Vec2::new(u1, v0), Vec2::new(u1, v1), Vec2::new(u0, v1)];
-
-        let clipped = clip_polygon(&hole_rect, &outer);
-        if clipped.len() >= 3 && polygon_area(&clipped) > 1e-6 {
-            // Holes should be CW for push_prism_with_holes?
-            // The mesh crate usually expects CCW outer, CW holes.
-            // Our hole_rect is CCW. We need to reverse it.
-            let mut cw_hole = clipped;
-            cw_hole.reverse();
-            holes.push(cw_hole);
-        }
-    }
+    let holes = opening_holes(openings, base, len, max_v, &outer);
 
     Some(WallProfile { outer, holes })
 }
@@ -829,6 +852,64 @@ mod tests {
     use super::*;
     use crate::mesh::Mesh;
     use cadcraft_doc::arch::{ArchId, Level, Opening, Roof, RoofPlane, Wall};
+
+    fn rect_outer() -> Vec<Vec2> {
+        vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 2.4), Vec2::new(0.0, 2.4)]
+    }
+
+    #[test]
+    fn rough_opening_hole_uses_the_allowance() {
+        let outer = rect_outer();
+        let op = Opening { width: 0.9, height: 1.2, sill: 0.9, offset: 4.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert_eq!(holes.len(), 1);
+        let h = &holes[0];
+        let u_min = h.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+        let u_max = h.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+        let v_min = h.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
+        let v_max = h.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
+        assert!((u_max - u_min - 1.02).abs() < 1e-9, "width = {}", u_max - u_min);
+        assert!((v_min - 0.9).abs() < 1e-9, "v_min = {}", v_min);
+        assert!((v_max - 2.22).abs() < 1e-9, "v_max = {}", v_max);
+    }
+
+    #[test]
+    fn holes_are_clockwise() {
+        let outer = rect_outer();
+        let op = Opening { width: 0.9, height: 1.2, sill: 0.9, offset: 4.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert_eq!(holes.len(), 1);
+        let h = &holes[0];
+        let mut area = 0.0f64;
+        for i in 0..h.len() {
+            let j = (i + 1) % h.len();
+            area += h[i].x * h[j].y - h[j].x * h[i].y;
+        }
+        assert!(area < 0.0, "shoelace area should be negative (clockwise), got {area}");
+    }
+
+    #[test]
+    fn hole_touching_the_profile_edge_is_dropped() {
+        let outer = rect_outer();
+        let op = Opening { width: 0.9, height: 1.5, sill: 0.9, offset: 4.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty(), "rough head 2.52 > 2.4 should be dropped, got {} holes", holes.len());
+    }
+
+    #[test]
+    fn hole_at_the_wall_end_is_dropped() {
+        let outer = rect_outer();
+        let op = Opening { width: 0.9, height: 1.2, sill: 0.9, offset: 0.05, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty(), "rough rect crossing u=0 should be dropped, got {} holes", holes.len());
+    }
+
+    #[test]
+    fn no_openings_no_holes() {
+        let outer = rect_outer();
+        let holes = opening_holes(&[], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty());
+    }
 
     fn gable_house() -> ArchModel {
         let mut model = ArchModel::default();

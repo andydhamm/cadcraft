@@ -1069,7 +1069,7 @@ mod tests {
             start: Vec2::new(0.0, 0.0),
             end: Vec2::new(10.0, 0.0),
             thickness: 0.3,
-            height: 2.5,
+            height: 2.7,
             ..Default::default()
         });
 
@@ -1098,7 +1098,7 @@ mod tests {
             start: Vec2::new(0.0, 0.0),
             end: Vec2::new(10.0, 0.0),
             thickness: 0.3,
-            height: 2.5,
+            height: 2.7,
             ..Default::default()
         });
 
@@ -1128,7 +1128,7 @@ mod tests {
             start: Vec2::new(0.0, 0.0),
             end: Vec2::new(10.0, 0.0),
             thickness: 0.3,
-            height: 2.5,
+            height: 2.7,
             ..Default::default()
         });
 
@@ -1156,7 +1156,7 @@ mod tests {
             start: Vec2::new(0.0, 0.0),
             end: Vec2::new(10.0, 0.0),
             thickness: 0.3,
-            height: 2.5,
+            height: 2.7,
             ..Default::default()
         });
 
@@ -1171,9 +1171,9 @@ mod tests {
         model.openings.push(opening);
 
         let scene = Scene3d::build(&model);
-        // Header is at 0.9 + 1.5 = 2.4. Wall top is 2.5.
-        let hit = scene.probe(Vec3::new(5.0, 0.0, 2.45));
-        assert!(hit.is_some(), "Probe above header should hit wall");
+        // Finished header at 0.9 + 1.5 = 2.4; rough head at 2.4 + 0.12 = 2.52. Wall top is 2.7.
+        let hit = scene.probe(Vec3::new(5.0, 0.0, 2.6));
+        assert!(hit.is_some(), "Probe above rough header should hit wall");
         assert_eq!(hit.unwrap().id, "w0");
     }
 
