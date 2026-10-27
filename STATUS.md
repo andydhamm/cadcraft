@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-27 08:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 08:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 4 of 13: Automatic roofs — 50 of 63 segments merged · 5 of 11 acceptance checks**
+**Phase 4 of 13: Automatic roofs — 51 of 63 segments merged · 5 of 11 acceptance checks**
 
-3,887 workspace tests passing at the last merge · 274 segments merged in all · 0 of 12 seats working
+3,907 workspace tests passing at the last merge · 276 segments merged in all · 0 of 12 seats working
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 08:00 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 5 / 11 | 23.2 h so far · expected done Oct 27 15:14–Oct 27 20:54 UTC |
+| 4 | Automatic roofs | building | 5 / 11 | 23.4 h so far · expected done Oct 27 14:56–Oct 27 20:15 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -27,18 +27,19 @@ Updated 2026-10-27 08:00 UTC. This page and the card in the README are regenerat
 
 ## Phase 4 segments
 
-50 merged, 10 queued, 5 replaced, 1 escalate, 1 working, 1 merging
+51 merged, 10 queued, 5 replaced, 1 escalate, 1 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p4r-join-x-crossing` | A wall crossed by another keeps its full length | escalate |  |
 | `p4r-mesh-side-normals` | Wall side faces carry horizontal outward normals | working | bonsai-a |
-| `p4r-stretch-start-keeps-openings` | Stretching a wall's start keeps its openings where they are | merging | ornith-b |
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 27 08:06 | `harden-p4r-dxf-proxy-solved-rings` | merged | 3,907 pass | tturbo-mac |
+| Oct 27 08:04 | `p4r-stretch-start-keeps-openings` | merged | 3,891 pass | ornith-b |
 | Oct 27 07:08 | `harden-p4r-scene-finite-f32` | merged | 3,887 pass | tturbo-mac |
 | Oct 27 07:05 | `p4x-wall-mesh-winding` | merged | 3,883 pass | bonsai-a |
 | Oct 27 07:02 | `p4r-dxf-proxy-solved-rings` | merged | 3,881 pass | ornith-b |
@@ -49,8 +50,6 @@ Updated 2026-10-27 08:00 UTC. This page and the card in the README are regenerat
 | Oct 27 06:45 | `p4r-arch-layers-on-first-use` | refused | 3,872 pass | bonsai-ws2-b |
 | Oct 27 06:38 | `p4r-arch-handles-reserved-top` | refused | 3,871 pass | claude-sonnet-a |
 | Oct 27 06:34 | `p4x-wall-mesh-winding` | refused | 3,869 pass | bonsai-a |
-| Oct 27 06:29 | `harden-p4r-render-arch-layer-state` | refused | 3,870 pass | tturbo-mac |
-| Oct 27 06:15 | `p4r-scene-finite-f32` | merged | 3,867 pass | claude-sonnet-b |
 
 ## Seats active in the last hour
 
@@ -58,13 +57,13 @@ Updated 2026-10-27 08:00 UTC. This page and the card in the README are regenerat
 |---|---|---|---|
 | bonsai-a | bonsai2-27b | agent | 497 |
 | bonsai-b | bonsai2-27b | agent | 444 |
-| bonsai-ws2-a | bonsai2-27b | agent | 634 |
+| bonsai-ws2-a | bonsai2-27b | agent | 639 |
 | bonsai-ws2-b | bonsai2-27b | idle | 598 |
 | claude-sonnet-a | sonnet | idle | 12 |
 | claude-sonnet-b | sonnet | idle | 10 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 276 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 58 |
 | ornith-a | ornith15-397b-exl3-35 | idle | 19 |
-| ornith-b | ornith15-397b-exl3-35 | merging | 13 |
-| tturbo-mac | tturbo-ultraheretic | gate | 292 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 98 |
+| ornith-b | ornith15-397b-exl3-35 | idle | 13 |
+| tturbo-mac | tturbo-ultraheretic | gate | 293 |
+| tturbo-mac2 | tturbo-ultraheretic | merging | 100 |
