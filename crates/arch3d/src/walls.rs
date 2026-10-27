@@ -420,9 +420,41 @@ pub(crate) fn profile_prism(outer: &[Vec2], holes: &[Vec<Vec2>], wall: &Wall, ba
     let dir = Vec2::new(dx / len, dy / len);
     let perp = Vec2::new(-dir.y, dir.x);
 
+    // Drop holes that touch or cross the outer boundary (any vertex within
+    // HOLE_INSET of an outer edge). Such holes degenerate the prism and would
+    // add spurious triangles; a boundary-touching hole is equivalent to no hole.
+    let filtered_holes: Vec<Vec<Vec2>> = holes
+        .iter()
+        .filter_map(|h| {
+            if h.len() < 3 {
+                return None;
+            }
+            if !h.iter().all(|p| p.is_finite()) {
+                return None;
+            }
+            let mut all_inset = true;
+            'vertex: for p in h {
+                for i in 0..outer.len() {
+                    let a = &outer[i];
+                    let b = &outer[(i + 1) % outer.len()];
+                    let edge_len = ((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y)).sqrt();
+                    if edge_len < 1e-12 {
+                        continue;
+                    }
+                    let cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+                    if cross <= HOLE_INSET * edge_len {
+                        all_inset = false;
+                        break 'vertex;
+                    }
+                }
+            }
+            if all_inset { Some(h.clone()) } else { None }
+        })
+        .collect();
+
     let mut mesh = Mesh::new(material, id);
     mesh.level_elevation = base;
-    mesh.push_prism_with_holes(outer, holes, 0.0, 1.0);
+    mesh.push_prism_with_holes(&outer, &filtered_holes, 0.0, 1.0);
 
     if mesh.indices.is_empty() {
         return None;
