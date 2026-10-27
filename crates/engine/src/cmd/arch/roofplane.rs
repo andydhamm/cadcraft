@@ -111,6 +111,9 @@ fn create_roof_plane(
     let edge = RoofEdge { kind: RoofEdgeKind::Eave, a: base.0, b: base.1, ..Default::default() };
 
     let mut doc = s.doc_mut()?;
+    // Roofs add their save-time proxy layer on first use; a fresh drawing carries no
+    // arch layers.
+    doc.ensure_layer("A-ROOF");
     let arch = &mut doc.arch;
     let id = arch.next_roof_id;
     arch.next_roof_id += 1;
@@ -154,6 +157,9 @@ fn edit_roof_plane(
     let (r_idx, p_idx) = parse_roof_plane_id(id_str).ok_or_else(|| bad("roofplane", format!("invalid roof plane id: {}", id_str)))?;
 
     let mut doc = s.doc_mut()?;
+    // Roofs add their save-time proxy layer on first use; a fresh drawing carries no
+    // arch layers.
+    doc.ensure_layer("A-ROOF");
     let arch = &mut doc.arch;
 
     let roof = arch.roofs.get_mut(r_idx).ok_or_else(|| bad("roofplane", format!("roof r{} not found", r_idx)))?;

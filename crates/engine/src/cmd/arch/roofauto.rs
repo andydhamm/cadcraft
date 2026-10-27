@@ -120,6 +120,9 @@ fn run_roofauto(s: &mut Session, p: &Value) -> Result<Value> {
 
     // Apply to document
     let mut doc = s.doc_mut()?;
+    // Roofs add their save-time proxy layer on first use; a fresh drawing carries no
+    // arch layers.
+    doc.ensure_layer("A-ROOF");
     let mut rebuilt = false;
 
     // Find existing roof for this level

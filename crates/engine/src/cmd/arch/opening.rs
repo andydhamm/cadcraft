@@ -435,6 +435,15 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
 
     let placed_width = placed.width;
     let resized = (placed_width - requested_width).abs() > 1e-9;
+
+    // Ensure the save-time proxy layer for this opening kind is present before
+    // inserting; arch layers are not in a fresh drawing and are created on first
+    // use (doors/garages/cased on `A-DOOR`, windows on `A-GLAZ`).
+    d.ensure_layer(match kind {
+        OpeningKind::Door | OpeningKind::CasedOpening | OpeningKind::GarageDoor => "A-DOOR",
+        _ => "A-GLAZ",
+    });
+
     let id = d.arch.push_opening(placed);
     d.touch_arch();
 

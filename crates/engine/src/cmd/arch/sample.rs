@@ -197,6 +197,8 @@ fn central_divider(level: u32) -> cadcraft_doc::Wall {
 /// `roomdetect` → 1 room.
 fn run_house(s: &mut Session, _params: &Value) -> crate::Result<Value> {
     let mut m = cadcraft_doc::ArchModel::default();
+    let mut s_doc = s.doc_mut().unwrap_or_default();
+    _ = s_doc;
     m.levels = vec![cadcraft_doc::Level { index: 1, name: "Level 1".into(), ..cadcraft_doc::Level::default() }];
     for w in house_exterior(1) {
         m.push_wall(w);
