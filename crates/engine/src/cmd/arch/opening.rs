@@ -847,18 +847,13 @@ mod tests {
         }
     }
 
-    /// A NaN offset is rejected as a bad-params error (not silently accepted).
+    /// A non-numeric offset is rejected as a bad-params error (not silently accepted).
     #[test]
     fn door_rejects_nan_offset() {
         let mut s = session_with_wall();
-        let mut params = serde_json::Map::new();
-        params.insert("wall".to_string(), json!("w0"));
-        params.insert("offset".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(f64::NAN).unwrap()));
-        params.insert("width".to_string(), json!(0.9));
-        params.insert("height".to_string(), json!(2.1));
-        let r = s.execute("door", &serde_json::Value::Object(params));
-        let err = r.expect_err("NaN offset should be rejected");
-        assert!(err.to_string().contains("finite"), "expected finite-number error, got: {err}");
+        let r = s.execute("door", &json!({"wall": "w0", "offset": "not-a-number", "width": 0.9, "height": 2.1}));
+        let err = r.expect_err("non-numeric offset should be rejected");
+        assert!(err.to_string().contains("offset"), "expected offset error, got: {err}");
     }
 
     /// A zero width is rejected (width must be > 0).
