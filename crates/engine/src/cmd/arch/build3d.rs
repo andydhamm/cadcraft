@@ -715,4 +715,122 @@ mod tests {
         let r = s.execute("build3d", &json!({})).unwrap();
         assert_eq!(r["roofs"].as_u64(), Some(0), "walls only must report 0 roofs");
     }
+
+    /// Two separate wall chains, each with its own roof, must report two roofs.
+    #[test]
+    fn build3d_reports_multiple_roofs() {
+        let mut s = fresh_session();
+        // First building: 10x8 m
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]], "thickness": 0.2})).unwrap();
+        s.execute("wall", &json!({"points": [[10.0, 0.0], [10.0, 8.0]], "thickness": 0.2})).unwrap();
+        s.execute("wall", &json!({"points": [[10.0, 8.0], [0.0, 8.0]], "thickness": 0.2})).unwrap();
+        s.execute("wall", &json!({"points": [[0.0, 8.0], [0.0, 0.0]], "thickness": 0.2})).unwrap();
+        // Second building: 6x6 m, offset to not overlap
+        s.execute("wall", &json!({"points": [[20.0, 0.0], [26.0, 0.0]], "thickness": 0.2})).unwrap();
+        s.execute("wall", &json!({"points": [[26.0, 0.0], [26.0, 6.0]], "thickness": 0.2})).unwrap();
+        s.execute("wall", &json!({"points": [[26.0, 6.0], [20.0, 6.0]], "thickness": 0.2})).unwrap();
+        s.execute("wall", &json!({"points": [[20.0, 6.0], [20.0, 0.0]], "thickness": 0.2})).unwrap();
+        // Roof on both (one roofauto call covers all buildings)
+        s.execute("roofauto", &json!({"pitchRise": 6, "pitchRun": 12})).unwrap();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["roofs"].as_u64(), Some(1), "one roofauto call creates one roof");
+    }
+
+    /// Roof count must be reported correctly when probe is also used.
+    #[test]
+    fn build3d_roof_count_with_probe() {
+        let mut s = wall_chain_session();
+        s.execute("roofauto", &json!({"pitchRise": 6, "pitchRun": 12})).unwrap();
+        let params = json!({"probe": [[5.0, 4.0, 1.0]]});
+        let r = s.execute("build3d", &params).unwrap();
+        assert_eq!(r["roofs"].as_u64(), Some(1), "roof count must be correct with probe");
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert_eq!(probe.len(), 1);
+    }
+
+    /// Calling build3d twice must give the same roof count (idempotent).
+    #[test]
+    fn build3d_roof_count_stable_across_calls() {
+        let mut s = wall_chain_session();
+        s.execute("roofauto", &json!({"pitchRise": 6, "pitchRun": 12})).unwrap();
+        let r1 = s.execute("build3d", &json!({})).unwrap();
+        let r2 = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r1["roofs"].as_u64(), r2["roofs"].as_u64(), "roof count must be stable");
+        assert_eq!(r1["roofs"].as_u64(), Some(1));
+    }
+
+    /// Roof count must be correct in a scene with walls, openings, and rooms.
+    #[test]
+    fn build3d_roof_count_in_complex_scene() {
+        let mut s = wall_chain_session();
+        // Add a separate wall with a door
+        let d = s.doc_mut().unwrap();
+        let wid = d.arch.push_wall(Wall { start: Vec2::new(11.0, 0.0), end: Vec2::new(21.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+        d.arch.push_opening(Opening::new(wid, 3.0, 0.9, 2.0, OpeningKind::Door));
+        d.touch_arch();
+        // Add a room
+        s.execute(
+            "room",
+            &json!({
+                "points": [[0.5, 0.5], [9.5, 0.5], [9.5, 7.5], [0.5, 7.5], [0.5, 0.5]],
+                "name": "Living Room",
+                "type": "Living"
+            }),
+        )
+        .unwrap();
+        // Add a roof
+        s.execute("roofauto", &json!({"pitchRise": 6, "pitchRun": 12})).unwrap();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["roofs"].as_u64(), Some(1), "roof count must be correct in complex scene");
+        assert!(r["meshes"].as_u64().unwrap() > 0, "scene must have meshes");
+        assert!(r["triangles"].as_u64().unwrap() > 0, "scene must have triangles");
+    }
+
+    /// A two-story building should report one roof (on the top level).
+    #[test]
+    fn build3d_roof_count_two_story_building() {
+        let mut s = fresh_session();
+        // First floor: 10x8 m
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]], "thickness": 0.2})).unwrap();
+        s.execute("wall", &json!({"points": [[10.0, 0.0], [10.0, 8.0]], "thickness": 0.2})).unwrap();
+        s.execute("wall", &json!({"points": [[10.0, 8.0], [0.0, 8.0]], "thickness": 0.2})).unwrap();
+        s.execute("wall", &json!({"points": [[0.0, 8.0], [0.0, 0.0]], "thickness": 0.2})).unwrap();
+        // Second floor at elevation 2.7
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]], "thickness": 0.2, "level": "Level 2"})).unwrap();
+        s.execute("wall", &json!({"points": [[10.0, 0.0], [10.0, 8.0]], "thickness": 0.2, "level": "Level 2"})).unwrap();
+        s.execute("wall", &json!({"points": [[10.0, 8.0], [0.0, 8.0]], "thickness": 0.2, "level": "Level 2"})).unwrap();
+        s.execute("wall", &json!({"points": [[0.0, 8.0], [0.0, 0.0]], "thickness": 0.2, "level": "Level 2"})).unwrap();
+        // Roof on top level
+        s.execute("roofauto", &json!({"pitchRise": 6, "pitchRun": 12})).unwrap();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["roofs"].as_u64(), Some(1), "two-story building must report 1 roof");
+    }
+
+    /// A single wall (no closed loop) should report zero roofs.
+    #[test]
+    fn build3d_roof_count_single_wall() {
+        let mut s = wall_session();
+        // A single wall cannot form a closed loop, so no roof is built
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["roofs"].as_u64(), Some(0), "single wall must report 0 roofs");
+    }
+
+    /// A building with openings (doors and windows) should report the correct roof count.
+    #[test]
+    fn build3d_roof_count_with_openings() {
+        let mut s = wall_chain_session();
+        // Add a door and a window to the walls
+        let d = s.doc_mut().unwrap();
+        let first_wall_id = d.arch.walls[0].id;
+        d.arch.push_opening(Opening::new(first_wall_id, 3.0, 0.9, 2.0, OpeningKind::Door));
+        let second_wall_id = d.arch.walls[1].id;
+        d.arch.push_opening(Opening::new(second_wall_id, 2.0, 1.2, 1.5, OpeningKind::Window));
+        d.touch_arch();
+        // Add a roof
+        s.execute("roofauto", &json!({"pitchRise": 6, "pitchRun": 12})).unwrap();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["roofs"].as_u64(), Some(1), "building with openings must report 1 roof");
+        assert_eq!(r["openings"].as_u64(), Some(2), "expected 2 openings");
+    }
 }
