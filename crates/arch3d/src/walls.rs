@@ -1197,4 +1197,60 @@ mod tests {
             }
         }
     }
+
+    /// A profile prism with a rough hole must still be a closed manifold and have a
+    /// positive (outward) signed volume.
+    #[test]
+    fn profile_prism_with_a_hole_is_a_closed_manifold() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 2.4), Vec2::new(0.0, 2.4)];
+        // 0.9 x 1.2 rough hole, clockwise.
+        let hole = vec![Vec2::new(4.5, 0.5), Vec2::new(4.5, 1.7), Vec2::new(5.4, 1.7), Vec2::new(5.4, 0.5)];
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.4, ..Default::default() };
+        let mesh = profile_prism(&outer, &[hole.clone()], &wall, 0.0, "wall", ArchId(7)).unwrap();
+        assert!(mesh.is_manifold(), "profile prism with a hole must be a closed manifold");
+
+        // Positive signed volume from the indices (outward winding).
+        let mut vol = 0.0;
+        for tri in mesh.indices.chunks(3) {
+            let (a, b, c) = (tri[0], tri[1], tri[2]);
+            let pa = mesh.positions[a as usize].map(|v| v as f64);
+            let pb = mesh.positions[b as usize].map(|v| v as f64);
+            let pc = mesh.positions[c as usize].map(|v| v as f64);
+            vol += pa[0] * (pb[1] * pc[2] - pb[2] * pc[1]) + pa[1] * (pb[2] * pc[0] - pb[0] * pc[2]) + pa[2] * (pb[0] * pc[1] - pb[1] * pc[0]);
+        }
+        vol /= 6.0;
+        assert!(vol > 0.0, "signed volume must be > 0, got {vol}");
+    }
+
+    /// A pentagon profile must land on the wall's centre-line frame: for a horizontal
+    /// wall the x extent is the wall length and the thickness appears in y.
+    #[test]
+    fn profile_prism_maps_the_profile_onto_the_wall_frame() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0), Vec2::new(8.0, 2.4), Vec2::new(4.0, 4.45), Vec2::new(0.0, 2.4)];
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(8.0, 0.0), thickness: 0.2, height: 4.45, ..Default::default() };
+        let mesh = profile_prism(&outer, &[], &wall, 0.0, "wall", ArchId(7)).unwrap();
+        let b = mesh.bounds();
+        assert!((b.min[2] - 0.0).abs() < 1e-3, "z min = {}", b.min[2]);
+        assert!((b.max[2] - 4.45).abs() < 1e-3, "z max = {}", b.max[2]);
+        assert!(b.min[0] >= -0.1 && b.max[0] <= 8.1, "x bounds out of range: {b}");
+    }
+
+    /// A hole that spans the full height touches the boundary and is dropped, so the
+    /// triangle count matches the hole-free case.
+    #[test]
+    fn profile_prism_drops_a_hole_that_touches_the_boundary() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 2.4), Vec2::new(0.0, 2.4)];
+        // Hole spanning the full height (v = 0..2.4), touching the boundary.
+        let hole = vec![Vec2::new(4.5, 0.0), Vec2::new(4.5, 2.4), Vec2::new(5.4, 2.4), Vec2::new(5.4, 0.0)];
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.4, ..Default::default() };
+        let no_hole = profile_prism(&outer, &[], &wall, 0.0, "wall", ArchId(7)).unwrap();
+        let with_hole = profile_prism(&outer, &[hole], &wall, 0.0, "wall", ArchId(7)).unwrap();
+        assert_eq!(
+            no_hole.triangle_count(),
+            with_hole.triangle_count(),
+            "boundary-touching hole should not change triangle count: no_hole={} with_hole={}",
+            no_hole.triangle_count(),
+            with_hole.triangle_count()
+        );
+    }
 }
