@@ -161,8 +161,9 @@ impl EntityStore {
     /// the rest (rebuilding the chunk/shard state). Returns the number removed.
     pub fn retain<F: Fn(&Arc<Entity>) -> bool>(&mut self, keep: F) -> usize {
         let items: Vec<Arc<Entity>> = self.iter().cloned().collect();
+        let total = items.len();
         let kept: Vec<Arc<Entity>> = items.into_iter().filter(|e| keep(e)).collect();
-        let removed = items.len().saturating_sub(kept.len());
+        let removed = total.saturating_sub(kept.len());
         *self = EntityStore::default();
         for e in kept {
             let h = e.handle;
