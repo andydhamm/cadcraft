@@ -88,7 +88,9 @@ pub struct Hit {
 /// The ray origin is jittered slightly in X and Y to avoid degenerate
 /// cases where the point lies exactly on a mesh crease or vertex (e.g.
 /// the ridge of a gable wall), which can cause adjacent triangles to
-/// both reject the point due to half-open edge rules.
+/// both reject the point due to half-open edge rules. The jitter is
+/// biased inwards relative to the mesh bounds to ensure points on the
+/// surface are treated as inside.
 pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
     if !is_probeable(mesh) {
         return false;
@@ -100,12 +102,29 @@ pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
     if p.x < b.min[0] || p.x > b.max[0] || p.y < b.min[1] || p.y > b.max[1] || p.z < b.min[2] || p.z > b.max[2] {
         return false;
     }
-    // Nudge the point slightly upward so that points on the top face are outside.
+
     // Jitter X and Y to avoid crease/vertex degeneracies in point_in_triangle2.
-    // A small symmetric jitter avoids landing exactly on shared edges (where the
-    // half-open rule `pa.y < pb.y` might exclude both triangles) without moving
-    // the point outside the mesh bounds for typical architectural scales.
-    let p = Vec3::new(p.x + 1e-7, p.y + 1e-7, p.z + 1e-6);
+    // We bias the jitter inwards relative to the mesh bounds so that points
+    // exactly on the boundary are nudged inside, while internal points are
+    // nudged enough to break ties on shared edges.
+    let eps = 1e-7;
+    let jx = if (p.x - b.min[0]).abs() < eps {
+        eps
+    } else if (p.x - b.max[0]).abs() < eps {
+        -eps
+    } else {
+        eps
+    };
+    let jy = if (p.y - b.min[1]).abs() < eps {
+        eps
+    } else if (p.y - b.max[1]).abs() < eps {
+        -eps
+    } else {
+        1.3e-7
+    };
+
+    // Nudge the point slightly upward so that points on the top face are outside.
+    let p = Vec3::new(p.x + jx, p.y + jy, p.z + 1e-6);
     mesh_crossings_upward(p, &mesh.positions, &mesh.indices, MAX_PROBE_TRIANGLES) % 2 == 1
 }
 
