@@ -115,7 +115,7 @@ impl Orbit {
         // Distance = diagonal / (2 * sin(fov/2)) so the far diagonal just fits vertically.
         let fov = 45.0;
         let s = (fov * std::f64::consts::PI / 360.0).sin();
-        let dist = (half_diag * 3.0_f64.sqrt() / s).max(MIN_DISTANCE);
+        let dist = (half_diag * 3.0_f64.sqrt() / s).clamp(MIN_DISTANCE, MAX_DISTANCE);
         Orbit::new(c, 30.0, 30.0, dist, fov)
     }
 }
