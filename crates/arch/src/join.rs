@@ -578,7 +578,10 @@ fn plan_end(
                     continue;
                 };
                 if da.cross(db).abs() < PARALLEL_EPS {
-                    return Ok(t_join(w, end, raw, wa));
+                    // Pick the thicker host: its face is further from the centre line,
+                    // so the stem meets that face.
+                    let host = if wa.thickness >= wb.thickness { wa } else { wb };
+                    return Ok(t_join(w, end, raw, host));
                 }
             }
         }
@@ -1819,6 +1822,60 @@ mod tests {
         // The stem's end face should lie on the host's upper face (y = max(1.0, 1.5)/2 = 0.75).
         let b = stem.bounds();
         assert!((b.min.y - 0.75).abs() < 1e-9, "stem min.y should be 0.75, got {}", b.min.y);
+    }
+
+    #[test]
+    fn t_join_with_thicker_incoming_wall() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(20.0, 0.0), 1.0); // thin host
+        wall(&mut model, 1, Vec2::new(10.0, 10.0), Vec2::new(10.0, 0.0), 2.0); // thick incoming
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let incoming = &shapes[1];
+        assert!(incoming.joins.iter().any(|j| matches!(j, Join::T(End::End))));
+
+        // The incoming wall's end face should lie on y = 0.5 (the host's upper face).
+        let on_face: Vec<Vec2> = incoming.polygon.iter().filter(|p| (p.y - 0.5).abs() < 1e-9).cloned().collect();
+        assert_eq!(on_face.len(), 2, "expected 2 vertices on the host face");
+
+        // No vertex below the host face.
+        for p in &incoming.polygon {
+            assert!(p.y >= 0.5 - 1e-9, "vertex {:?} below the host face", p);
+        }
+    }
+
+    #[test]
+    fn t_join_with_zero_length_host_still_works() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Host is a point at (10,0) with thickness 1.0
+        wall(&mut model, 0, Vec2::new(10.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(10.0, 10.0), Vec2::new(10.0, 0.0), 1.0); // incoming
+
+        let shapes = solve_joins(&model);
+        // The zero-length host produces no shape; only the incoming wall should.
+        assert!(shapes.len() <= 1, "at most 1 shape");
+
+        // Should not crash regardless of how many shapes are produced.
+    }
+
+    #[test]
+    fn tee_with_three_different_thicknesses() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), 0.5); // host left, thin
+        wall(&mut model, 1, Vec2::new(5.0, 0.0), Vec2::new(10.0, 0.0), 2.0); // host right, thick
+        wall(&mut model, 2, Vec2::new(5.0, 0.0), Vec2::new(5.0, 5.0), 1.0); // stem, medium
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 3);
+
+        let stem = &shapes[2];
+        assert!(stem.joins.iter().any(|j| matches!(j, Join::T(End::Start))));
+
+        // The stem should butt against the thicker host's face (y = 2.0/2 = 1.0).
+        let b = stem.bounds();
+        assert!((b.min.y - 1.0).abs() < 1e-9, "stem min.y should be 1.0, got {}", b.min.y);
     }
 
     #[test]
