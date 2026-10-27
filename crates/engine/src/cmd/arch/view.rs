@@ -134,6 +134,31 @@ mod tests {
         assert_eq!(r2["distance"].as_f64().unwrap(), 10.0);
     }
 
+    /// The command does not mutate any stored camera state (the 3D pane owns
+    /// the orbit); it validates the request and echoes the effective orbit
+    /// back to the caller. Supplied fields are returned verbatim; omitted or
+    /// null fields fall back to the defaults (azimuth `0.0`, elevation `0.35`,
+    /// distance `10.0`, target the origin).
+    #[test]
+    fn camera_command_updates_the_orbit() {
+        let mut s = Session::new();
+
+        // Supplied fields are echoed verbatim, including a three-component target.
+        let r = s.execute("camera", &json!({ "azimuth": 0.9, "elevation": 0.5, "distance": 5.0, "target": [1.0, 2.0, 3.0] })).unwrap();
+        assert!(r["ok"].as_bool().unwrap());
+        assert_eq!(r["azimuth"].as_f64().unwrap(), 0.9);
+        assert_eq!(r["elevation"].as_f64().unwrap(), 0.5);
+        assert_eq!(r["distance"].as_f64().unwrap(), 5.0);
+        assert_eq!(r["target"], json!([1.0, 2.0, 3.0]));
+
+        // Null fields fall back to the defaults too.
+        let r2 = s.execute("camera", &json!({ "distance": null })).unwrap();
+        assert_eq!(r2["azimuth"].as_f64().unwrap(), 0.0);
+        assert_eq!(r2["elevation"].as_f64().unwrap(), 0.35);
+        assert_eq!(r2["distance"].as_f64().unwrap(), 10.0);
+        assert_eq!(r2["target"], json!([0.0, 0.0, 0.0]));
+    }
+
     /// `camera` rejects unusable values instead of defaulting: a non-positive or
     /// non-numeric `distance`, a non-numeric `azimuth`/`elevation`, and a
     /// `target` that is not an array of exactly three finite numbers each
