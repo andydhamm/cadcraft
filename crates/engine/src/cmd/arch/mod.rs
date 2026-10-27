@@ -2,8 +2,7 @@
 use crate::cmd::CommandSpec;
 
 pub use cadcraft_doc::MAX_WALLS as DOC_MAX_WALLS;
-pub use cadcraft_doc::MIN_WALL_LENGTH as DOC_MIN_WALL_LENGTH;
-pub use cadcraft_doc::arch::{MAX_WALLS, MIN_WALL_LENGTH};
+pub use cadcraft_doc::arch::MAX_WALLS;
 
 /// Default exterior wall thickness (m).
 pub const DEFAULT_EXT_THICKNESS: f64 = 0.2;
