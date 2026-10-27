@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-27 01:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 02:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 21 of 24 segments merged · 5 of 11 acceptance checks**
 
-3,764 workspace tests passing at the last merge · 235 segments merged in all · 0 of 10 seats working
+3,768 workspace tests passing at the last merge · 236 segments merged in all · 0 of 10 seats working
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 01:45 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 5 / 11 | 16.9 h so far · expected done Oct 27 09:49–Oct 27 17:33 UTC |
+| 4 | Automatic roofs | building | 5 / 11 | 17.2 h so far · expected done Oct 27 10:03–Oct 27 17:48 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -34,6 +34,7 @@ Updated 2026-10-27 01:45 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 27 01:45 | `harden-p3r-cli-projected-exit3` | merged | 3,768 pass | tturbo-mac |
 | Oct 27 01:18 | `harden-p3r-pipeline-depth` | merged | 3,764 pass | tturbo-mac |
 | Oct 27 01:15 | `harden-p3-area-rules` | merged | 3,758 pass | tturbo-mac2 |
 | Oct 27 01:04 | `harden-p3r-png-codec` | merged | 3,750 pass | tturbo-mac |
@@ -45,7 +46,6 @@ Updated 2026-10-27 01:45 UTC. This page and the card in the README are regenerat
 | Oct 26 22:39 | `p4g-arch-roof-property-tests` | merged | 3,721 pass | bonsai-b |
 | Oct 26 22:33 | `harden-p3-ui-pane3d-scene` | merged | 3,718 pass | tturbo-mac2 |
 | Oct 26 22:25 | `harden-p3-render-room-labels` | merged | 3,712 pass | tturbo-mac |
-| Oct 26 22:19 | `harden-p3-poly-basics` | merged | 3,707 pass | tturbo-mac2 |
 
 ## Seats active in the last hour
 
@@ -59,5 +59,5 @@ Updated 2026-10-27 01:45 UTC. This page and the card in the README are regenerat
 | claude-sonnet-b | sonnet | idle | 1 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | yielding | 248 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 55 |
-| tturbo-mac | tturbo-ultraheretic | merging | 274 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 78 |
+| tturbo-mac | tturbo-ultraheretic | agent | 275 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 79 |
