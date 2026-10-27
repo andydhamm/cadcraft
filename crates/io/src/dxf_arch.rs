@@ -119,7 +119,7 @@ fn wall_ring(w: &cadcraft_doc::Wall) -> Option<Vec<Vec2>> {
     if !w.start.is_finite() || !w.end.is_finite() {
         return None;
     }
-    if w.thickness <= 0.0 {
+    if !w.thickness.is_finite() || w.thickness <= 0.0 {
         return None;
     }
     let dir = w.end - w.start;
