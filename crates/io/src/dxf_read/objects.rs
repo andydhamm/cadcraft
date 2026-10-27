@@ -261,7 +261,7 @@ fn drop_arch_proxies(d: &mut cadcraft_doc::Drawing, proxies: &[cadcraft_doc::Han
     }
     for name in d.blocks.keys().cloned().collect::<Vec<_>>() {
         if let Some(b) = d.blocks.get_mut(&name) {
-            b.entities.retain(|e| !set.contains(&e.handle));
+            std::sync::Arc::make_mut(b).entities.retain(|e| !set.contains(&e.handle));
         }
     }
 }
