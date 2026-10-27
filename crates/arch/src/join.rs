@@ -578,7 +578,10 @@ fn plan_end(
                     continue;
                 };
                 if da.cross(db).abs() < PARALLEL_EPS {
-                    return Ok(t_join(w, end, raw, wa));
+                    // Pick the thicker host: its face is further from the centre line,
+                    // so the stem meets that face.
+                    let host = if wa.thickness >= wb.thickness { wa } else { wb };
+                    return Ok(t_join(w, end, raw, host));
                 }
             }
         }
@@ -1749,6 +1752,163 @@ mod tests {
         assert!((b.min.y - 0.5).abs() < 1e-9, "stem min.y: {}", b.min.y);
         assert!((b.min.x - 4.75).abs() < 1e-9, "stem min.x: {}", b.min.x);
         assert!((b.max.x - 5.25).abs() < 1e-9, "stem max.x: {}", b.max.x);
+    }
+
+    #[test]
+    fn t_join_with_different_thicknesses_meets_host_face() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(20.0, 0.0), 2.0); // thick host
+        wall(&mut model, 1, Vec2::new(5.0, 5.0), Vec2::new(10.0, 0.0), 0.5); // thin incoming at angle
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let incoming = &shapes[1];
+
+        // The incoming wall ends in a T join at its End.
+        assert!(incoming.joins.iter().any(|j| matches!(j, Join::T(End::End))));
+
+        // The host's upper face is at y = 1.0 (thickness 2.0).
+        // Exactly two polygon vertices of the incoming wall should lie on that face.
+        let on_face: Vec<Vec2> = incoming.polygon.iter().filter(|p| (p.y - 1.0).abs() < 1e-9).cloned().collect();
+        assert_eq!(on_face.len(), 2, "expected 2 vertices on the host face y=1.0, got {:?}", on_face);
+
+        // No vertex should be below the host face.
+        for p in &incoming.polygon {
+            assert!(p.y >= 1.0 - 1e-9, "vertex {:?} below the host face", p);
+        }
+    }
+
+    #[test]
+    fn t_join_falls_back_to_square_when_intersection_is_far() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Host wall is very short; the incoming wall's face lines, extended, would
+        // intersect the host face line far from the join point (beyond T_JOIN_REACH).
+        wall(&mut model, 0, Vec2::new(9.5, 0.0), Vec2::new(10.5, 0.0), 1.0); // very short host
+        wall(&mut model, 1, Vec2::new(10.0, 10.0), Vec2::new(10.0, 0.0), 1.0); // incoming
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let incoming = &shapes[1];
+
+        // Still records a T join, but the corners fall back to the square end on the face.
+        assert!(incoming.joins.iter().any(|j| matches!(j, Join::T(End::End))));
+
+        // The end face should be perpendicular to the incoming wall's direction (horizontal).
+        let end_corners: Vec<Vec2> = incoming.polygon.iter().filter(|p| (p.y - 0.5).abs() < 1e-9).cloned().collect();
+        assert_eq!(end_corners.len(), 2, "expected 2 corners on the host face");
+        // The corners should be at x = 9.5 and x = 10.5 (the incoming wall's face lines).
+        let xs: Vec<f64> = end_corners.iter().map(|p| p.x).collect();
+        assert!((xs[0] - 9.5).abs() < 1e-9 || (xs[0] - 10.5).abs() < 1e-9, "corner x: {}", xs[0]);
+        assert!((xs[1] - 9.5).abs() < 1e-9 || (xs[1] - 10.5).abs() < 1e-9, "corner x: {}", xs[1]);
+    }
+
+    #[test]
+    fn tee_with_different_thicknesses_butts_the_straight_pair() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), 1.0); // host left, thick
+        wall(&mut model, 1, Vec2::new(5.0, 0.0), Vec2::new(10.0, 0.0), 1.5); // host right, thicker
+        wall(&mut model, 2, Vec2::new(5.0, 0.0), Vec2::new(5.0, 5.0), 0.5); // stem, thin
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 3);
+
+        let stem = &shapes[2];
+
+        // The stem butts the straight pair with a T join despite different thicknesses.
+        assert!(stem.joins.iter().any(|j| matches!(j, Join::T(End::Start))));
+
+        // The stem's end face should lie on the host's upper face (y = max(1.0, 1.5)/2 = 0.75).
+        let b = stem.bounds();
+        assert!((b.min.y - 0.75).abs() < 1e-9, "stem min.y should be 0.75, got {}", b.min.y);
+    }
+
+    #[test]
+    fn t_join_with_thicker_incoming_wall() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(20.0, 0.0), 1.0); // thin host
+        wall(&mut model, 1, Vec2::new(10.0, 10.0), Vec2::new(10.0, 0.0), 2.0); // thick incoming
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let incoming = &shapes[1];
+        assert!(incoming.joins.iter().any(|j| matches!(j, Join::T(End::End))));
+
+        // The incoming wall's end face should lie on y = 0.5 (the host's upper face).
+        let on_face: Vec<Vec2> = incoming.polygon.iter().filter(|p| (p.y - 0.5).abs() < 1e-9).cloned().collect();
+        assert_eq!(on_face.len(), 2, "expected 2 vertices on the host face");
+
+        // No vertex below the host face.
+        for p in &incoming.polygon {
+            assert!(p.y >= 0.5 - 1e-9, "vertex {:?} below the host face", p);
+        }
+    }
+
+    #[test]
+    fn t_join_with_zero_length_host_still_works() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Host is a point at (10,0) with thickness 1.0
+        wall(&mut model, 0, Vec2::new(10.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(10.0, 10.0), Vec2::new(10.0, 0.0), 1.0); // incoming
+
+        let shapes = solve_joins(&model);
+        // The zero-length host produces no shape; only the incoming wall should.
+        assert!(shapes.len() <= 1, "at most 1 shape");
+
+        // Should not crash regardless of how many shapes are produced.
+    }
+
+    #[test]
+    fn tee_with_three_different_thicknesses() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), 0.5); // host left, thin
+        wall(&mut model, 1, Vec2::new(5.0, 0.0), Vec2::new(10.0, 0.0), 2.0); // host right, thick
+        wall(&mut model, 2, Vec2::new(5.0, 0.0), Vec2::new(5.0, 5.0), 1.0); // stem, medium
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 3);
+
+        let stem = &shapes[2];
+        assert!(stem.joins.iter().any(|j| matches!(j, Join::T(End::Start))));
+
+        // The stem should butt against the thicker host's face (y = 2.0/2 = 1.0).
+        let b = stem.bounds();
+        assert!((b.min.y - 1.0).abs() < 1e-9, "stem min.y should be 1.0, got {}", b.min.y);
+    }
+
+    #[test]
+    fn t_join_with_nan_coordinates_does_not_crash() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(20.0, 0.0), 1.0); // host
+        wall(&mut model, 1, Vec2::new(f64::NAN, 5.0), Vec2::new(10.0, 0.0), 1.0); // incoming with NaN start
+
+        // Should not crash; the incoming wall may or may not produce a shape.
+        let shapes = solve_joins(&model);
+        assert!(shapes.len() <= 2, "at most 2 shapes");
+
+        // The host should still produce a shape.
+        let host = shapes.iter().find(|s| s.id == ArchId(0));
+        assert!(host.is_some(), "host wall should produce a shape");
+    }
+
+    #[test]
+    fn t_join_with_large_coordinates() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        let base = 1e15;
+        wall(&mut model, 0, Vec2::new(base, 0.0), Vec2::new(base + 20.0, 0.0), 1.0); // host
+        wall(&mut model, 1, Vec2::new(base + 10.0, 10.0), Vec2::new(base + 10.0, 0.0), 1.0); // incoming
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let incoming = &shapes[1];
+        assert!(incoming.joins.iter().any(|j| matches!(j, Join::T(End::End))));
+
+        // The incoming wall's end face should lie on y = 0.5.
+        let on_face: Vec<Vec2> = incoming.polygon.iter().filter(|p| (p.y - 0.5).abs() < 1e-6).cloned().collect();
+        assert_eq!(on_face.len(), 2, "expected 2 vertices on the host face");
     }
 
     #[test]
