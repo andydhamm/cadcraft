@@ -374,6 +374,7 @@ mod tests {
     fn an_overlap_error_names_the_other_opening_by_id() {
         let mut model = ArchModel::default();
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        model.walls.iter_mut().find(|w| w.id == host).map(|w| w.height = 2.5);
         let other = opening_on(&mut model, host, 0.5, 1.0);
         let res = validate_placement(&model, host, 1.0, 1.0, 0.0, 2.0, OpeningKind::Door, "hinged", None);
         let err = res.unwrap_err();
@@ -549,6 +550,7 @@ mod tests {
     fn validate_placement_with_openings_far_enough_apart() {
         let mut model = ArchModel::default();
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        model.walls.iter_mut().find(|w| w.id == host).map(|w| w.height = 2.5);
         // First opening at offset 0.5, width 1.0, rough width 1.12
         // c0 = 0.5 - 0.56 = -0.06, c1 = -0.06 + 1.12 = 1.06
         opening_on(&mut model, host, 0.5, 1.0);
