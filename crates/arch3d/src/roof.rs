@@ -1154,4 +1154,45 @@ mod tests {
         let sb = soffit.bounds();
         assert!((sb.max[2] - 2.2).abs() < 0.01, "soffit top should be at 2.2, got {}", sb.max[2]);
     }
+
+    #[test]
+    fn probe_above_the_ridge_hits_roof() {
+        use crate::Scene3d;
+        use crate::probe::probe;
+        use cadcraft_doc::ArchModel;
+
+        let mut model = ArchModel::default();
+
+        let mut roof = Roof::default();
+        roof.id = ArchId(0);
+        roof.level = 0;
+
+        // South plane: base edge at y=0, ridge at y=4.1
+        // z at ridge = 2.4 + 0.5 * 4.1 = 4.45 (underside)
+        let mut south = RoofPlane::default();
+        south.base_edge = [0.0, 0.0, 8.2, 0.0];
+        south.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(8.2, 0.0), Vec2::new(8.2, 4.1), Vec2::new(0.0, 4.1)];
+        south.slope = 0.5;
+        south.thickness = 0.2;
+        south.eave_z = 2.4;
+
+        // North plane: base edge at y=8.2 (reversed so the slope normal points toward the ridge),
+        // ridge at y=4.1. z at ridge = 2.4 + 0.5 * 4.1 = 4.45 (underside).
+        let mut north = RoofPlane::default();
+        north.base_edge = [8.2, 8.2, 0.0, 8.2];
+        north.ring = vec![Vec2::new(8.2, 8.2), Vec2::new(0.0, 8.2), Vec2::new(0.0, 4.1), Vec2::new(8.2, 4.1)];
+        north.slope = 0.5;
+        north.thickness = 0.2;
+        north.eave_z = 2.4;
+
+        roof.planes = vec![south, north];
+        model.push_roof(roof);
+
+        let scene = Scene3d::build(&model);
+        // Ridge underside is at z = 4.45; vertical top is at 4.45 + 0.2*sqrt(1.25) ≈ 4.674.
+        // z = 4.6 is inside the roof solid.
+        let hit = probe(&scene, Vec3::new(4.1, 4.1, 4.6));
+        assert!(hit.is_some(), "probe at ridge midpoint (4.1, 4.1, 4.6) should hit the roof");
+        assert_eq!(hit.unwrap().part, "roof", "ridge probe should report part 'roof'");
+    }
 }
