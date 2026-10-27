@@ -439,4 +439,108 @@ mod tests {
         assert!((clip[0] / clip[3]).abs() < 1e-3, "centre x off");
         assert!((clip[1] / clip[3]).abs() < 1e-3, "centre y off");
     }
+
+    #[test]
+    fn orbit_azimuth_wraps_and_negative() {
+        // 360° is equivalent to 0°
+        let eye0 = Orbit::at_origin(0.0, 0.0, 10.0, 45.0).eye();
+        let eye360 = Orbit::at_origin(360.0, 0.0, 10.0, 45.0).eye();
+        assert!((eye0.x - eye360.x).abs() < 1e-9, "360° != 0° x");
+        assert!((eye0.y - eye360.y).abs() < 1e-9, "360° != 0° y");
+        assert!((eye0.z - eye360.z).abs() < 1e-9, "360° != 0° z");
+        // 720° is also 0°
+        let eye720 = Orbit::at_origin(720.0, 0.0, 10.0, 45.0).eye();
+        assert!((eye0.x - eye720.x).abs() < 1e-9, "720° != 0° x");
+        assert!((eye0.y - eye720.y).abs() < 1e-9, "720° != 0° y");
+        // Negative azimuth: -90° == 270°
+        let eye_neg90 = Orbit::at_origin(-90.0, 0.0, 10.0, 45.0).eye();
+        let eye270 = Orbit::at_origin(270.0, 0.0, 10.0, 45.0).eye();
+        assert!((eye_neg90.x - eye270.x).abs() < 1e-9, "-90° != 270° x");
+        assert!((eye_neg90.y - eye270.y).abs() < 1e-9, "-90° != 270° y");
+    }
+
+    #[test]
+    fn orbit_fit_degenerate_bounds() {
+        // Empty bounds (min == max): target at that point, distance >= MIN
+        let empty = Bounds3::new([5.0, 3.0, 1.0], [5.0, 3.0, 1.0]);
+        let o = Orbit::fit(&empty);
+        assert!((o.target.x - 5.0).abs() < 1e-9, "empty target x");
+        assert!((o.target.y - 3.0).abs() < 1e-9, "empty target y");
+        assert!((o.target.z - 1.0).abs() < 1e-9, "empty target z");
+        assert!(o.distance >= MIN_DISTANCE, "empty bounds distance too small");
+        // Flat bounds (zero height)
+        let flat = Bounds3::new([0.0, 0.0, 0.0], [10.0, 5.0, 0.0]);
+        let o2 = Orbit::fit(&flat);
+        assert!(o2.distance >= MIN_DISTANCE, "flat bounds distance too small");
+        assert!(o2.distance.is_finite(), "flat bounds distance not finite");
+        // Very large bounds
+        let huge = Bounds3::new([-1e6, -1e6, -1e6], [1e6, 1e6, 1e6]);
+        let o3 = Orbit::fit(&huge);
+        assert!(o3.distance <= MAX_DISTANCE, "huge bounds distance exceeds MAX");
+        assert!(o3.distance > 0.0, "huge bounds distance is zero");
+    }
+
+    #[test]
+    fn orbit_view_matrix_is_orthogonal() {
+        // The 3x3 rotation part of the view matrix must be orthonormal
+        let o = Orbit::new(Vec3::new(1.0, 2.0, 3.0), 45.0, 30.0, 10.0, 45.0);
+        let v = o.view();
+        // Rows of the rotation part (m[i][0..3] for i=0,1,2)
+        let r0 = [v.m[0][0], v.m[1][0], v.m[2][0]];
+        let r1 = [v.m[0][1], v.m[1][1], v.m[2][1]];
+        let r2 = [v.m[0][2], v.m[1][2], v.m[2][2]];
+        // Row lengths must be 1
+        for (i, row) in [r0, r1, r2].iter().enumerate() {
+            let len = (row[0] * row[0] + row[1] * row[1] + row[2] * row[2]).sqrt();
+            assert!((len - 1.0).abs() < 1e-9, "row {} length {}", i, len);
+        }
+        // Rows must be mutually orthogonal
+        let dot01 = r0[0] * r1[0] + r0[1] * r1[1] + r0[2] * r1[2];
+        let dot02 = r0[0] * r2[0] + r0[1] * r2[1] + r0[2] * r2[2];
+        let dot12 = r1[0] * r2[0] + r1[1] * r2[1] + r1[2] * r2[2];
+        assert!(dot01.abs() < 1e-9, "rows 0,1 not orthogonal: {}", dot01);
+        assert!(dot02.abs() < 1e-9, "rows 0,2 not orthogonal: {}", dot02);
+        assert!(dot12.abs() < 1e-9, "rows 1,2 not orthogonal: {}", dot12);
+    }
+
+    #[test]
+    fn orbit_extreme_fov() {
+        // Very narrow FOV
+        let o1 = Orbit::at_origin(0.0, 0.0, 10.0, 1.0);
+        let p1 = o1.proj(1.0);
+        for row in p1.m.iter() {
+            for &val in row {
+                assert!(val.is_finite(), "narrow FOV non-finite: {}", val);
+            }
+        }
+        // Very wide FOV (just under 180°)
+        let o2 = Orbit::at_origin(0.0, 0.0, 10.0, 179.0);
+        let p2 = o2.proj(1.0);
+        for row in p2.m.iter() {
+            for &val in row {
+                assert!(val.is_finite(), "wide FOV non-finite: {}", val);
+            }
+        }
+        // FOV = 0: tan(0) = 0, so 1/tan(0) = inf — acceptable, must not panic
+        let o3 = Orbit::at_origin(0.0, 0.0, 10.0, 0.0);
+        let p3 = o3.proj(1.0);
+        // The diagonal entries should be infinite (1.0 / 0.0)
+        assert!(p3.m[0][0].is_infinite(), "FOV=0: m[0][0] should be inf");
+        assert!(p3.m[1][1].is_infinite(), "FOV=0: m[1][1] should be inf");
+    }
+
+    #[test]
+    fn projected_bounds_huge_scene() {
+        let cam = Camera::Orbit(Orbit::at_origin(0.0, 0.0, 10.0, 45.0));
+        let huge = Bounds3::new([-1e9, -1e9, -1e9], [1e9, 1e9, 1e9]);
+        let b = projected_bounds(&cam, &huge, (800u32, 600u32));
+        for &v in b.iter() {
+            assert!(v.is_finite(), "huge bounds produced non-finite: {}", v);
+        }
+        // Clamped to viewport
+        assert!(b[0] >= 0.0 && b[0] <= 800.0, "min x out of range");
+        assert!(b[1] >= 0.0 && b[1] <= 600.0, "min y out of range");
+        assert!(b[2] >= 0.0 && b[2] <= 800.0, "max x out of range");
+        assert!(b[3] >= 0.0 && b[3] <= 600.0, "max y out of range");
+    }
 }
