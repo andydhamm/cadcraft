@@ -57,7 +57,8 @@ fn stdout_failed(e: std::io::Error) {
 
 const USAGE: &str = "usage:
   cadcraft-cli info FILE.dxf
-  cadcraft-cli convert IN.dxf OUT.(dxf|dwg|svg|png|pdf|glb) [FRAMING]
+  cadcraft-cli convert IN.dxf OUT.(dxf|dwg|svg|png|pdf|glb)
+  cadcraft-cli convert IN.dxf OUT.(png|svg|pdf) [--window x0,y0,x1,y1 | --view extents|current]
   cadcraft-cli run [FILE | --sample | --metric] [--script TEXT] [--script-file F.scr] [--cmd 'id {json}']... [--save OUT.dxf] [--export OUT.(png|svg|pdf|glb)] [FRAMING]
   cadcraft-cli render FILE OUT.png [--camera SPEC] [--size WxH]
   cadcraft-cli commands [FILTER]
@@ -272,7 +273,7 @@ fn sample(args: &[String]) -> Result<(), String> {
 /// Whether `name` is a frameable output (a 2D image: png, svg, pdf). A `.glb` is written whole
 /// (its own camera framing) and ignores `--window`/`--view`, so it is not frameable here.
 fn is_frameable_output(name: &str) -> bool {
-    cadcraft_io::is_image(name)
+    cadcraft_io::is_image(name) && !name.ends_with(".glb")
 }
 
 /// Reject an explicit framing option without a frameable output to apply it to.
@@ -281,7 +282,7 @@ fn check_framed_output(framing: Framing, out: Option<&str>) -> Result<(), String
         _ if framing == Framing::Auto => Ok(()),
         Some(o) if !is_frameable_output(o) => Err(format!("--window/--view only apply to image output (png, svg, pdf), not `{o}`")),
         Some(_) => Ok(()),
-        None => Err("--window/--view need a frameable output (--export OUT.png|svg|pdf|glb)".into()),
+        None => Err("--window/--view need a frameable output (--export OUT.png|svg|pdf)".into()),
     }
 }
 
@@ -290,7 +291,8 @@ const RENDER_DEFAULT_SIZE: (u32, u32) = (2400, 1600);
 
 /// The largest render size the CLI will honour: wgpu's default `max_texture_dimension_2d`.
 /// A larger request would be silently shrunk by `Offscreen::clamp_size`, so the `PROJECTED`
-/// line (computed for the requested size) would no longer describe the PNG — refuse it instead.
+/// line (computed for the requested size) would no longer describe the PNG, and it would ask
+/// the GPU for gigabytes of texture memory — refuse it instead.
 const RENDER_MAX_SIZE: u32 = 8192;
 
 /// Parse `WxH` into a pixel size (whole numbers in `1..=RENDER_MAX_SIZE`). A size outside that
@@ -343,7 +345,7 @@ fn parse_camera(spec: &str, base: cadcraft_render3d::camera::Orbit) -> Result<ca
             }
             "distance" => {
                 if !(0.0..=cadcraft_render3d::camera::MAX_DISTANCE).contains(&v) {
-                    return Err(format!("camera distance must be in (0, {}}], got `{val}`", cadcraft_render3d::camera::MAX_DISTANCE));
+                    return Err(format!("camera distance must be in (0, {}], got `{val}`", cadcraft_render3d::camera::MAX_DISTANCE));
                 }
                 o.distance = v;
             }
