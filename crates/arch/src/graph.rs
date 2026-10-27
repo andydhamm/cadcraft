@@ -539,7 +539,7 @@ mod tests {
         let elapsed = start.elapsed();
 
         assert!(graph.len() == MAX_WALLS);
-        assert!(elapsed < std::time::Duration::from_secs(5), "Build took {} which exceeds 5s", elapsed);
+        assert!(elapsed < std::time::Duration::from_secs(5), "Build took {elapsed:?} which exceeds 5s");
     }
 
     #[test]
