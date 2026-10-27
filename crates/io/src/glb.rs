@@ -858,6 +858,72 @@ mod tests {
         }
     }
 
+    /// Walk the GLB chunk-by-chunk from the 12-byte header to EOF, verifying
+    /// each chunk length is a multiple of 4 and that exactly 2 chunks
+    /// (JSON + BIN) are found.
+    #[test]
+    fn glb_chunks_can_be_walked_from_header() {
+        let bytes = write(&scene_with(2));
+        let total = le32(&bytes, 8) as usize;
+        assert_eq!(total, bytes.len());
+
+        let mut offset = 12;
+        let mut chunk_count = 0;
+        while offset < bytes.len() {
+            let chunk_len = le32(&bytes, offset) as usize;
+            let chunk_type = le32(&bytes, offset + 4);
+            assert_eq!(chunk_len % 4, 0, "chunk {chunk_count} length {chunk_len} not multiple of 4");
+            offset += 8 + chunk_len;
+            chunk_count += 1;
+        }
+        assert_eq!(chunk_count, 2, "expected exactly 2 chunks (JSON + BIN)");
+        assert_eq!(offset, bytes.len(), "chunk walking did not reach end of file");
+    }
+
+    /// Extract the JSON chunk using only the declared chunk length from the
+    /// header and verify it parses as valid JSON.
+    #[test]
+    fn glb_json_chunk_content_is_valid_when_extracted_by_declared_length() {
+        let bytes = write(&scene_with(3));
+        let json_len = le32(&bytes, 12) as usize;
+        let json_data = &bytes[20..20 + json_len];
+        let json_str = std::str::from_utf8(json_data).expect("JSON chunk is not valid UTF-8");
+        let value: Value = serde_json::from_str(json_str).expect("JSON chunk is not valid JSON");
+        assert!(value.get("version").is_some());
+        assert!(value.get("meshes").is_some());
+    }
+
+    /// Verify chunk structure holds for a larger scene (100 meshes).
+    #[test]
+    fn glb_large_scene_chunk_structure_is_valid() {
+        let bytes = write(&scene_with(100));
+        let total = le32(&bytes, 8) as usize;
+        assert_eq!(total, bytes.len());
+
+        let json_len = le32(&bytes, 12) as usize;
+        assert_eq!(json_len % 4, 0);
+
+        let bin_start = 12 + 8 + json_len;
+        let bin_len = le32(&bytes, bin_start) as usize;
+        assert_eq!(bin_len % 4, 0);
+        assert_eq!(bin_start + 8 + bin_len, bytes.len());
+    }
+
+    /// Verify the declared BIN chunk length matches the actual binary data
+    /// written (computed from mesh attribute sizes).
+    #[test]
+    fn glb_bin_chunk_length_matches_actual_bin_data() {
+        let n = 5;
+        let bytes = write(&scene_with(n));
+        let json_len = le32(&bytes, 12) as usize;
+        let bin_start = 12 + 8 + json_len;
+        let bin_len = le32(&bytes, bin_start) as usize;
+
+        // Each wall mesh contributes: 3*12 (pos) + 3*12 (norm) + 3*8 (uv) + 3*4 (idx) = 108 bytes
+        let expected_bin = n * 108;
+        assert_eq!(bin_len, expected_bin, "BIN chunk length {bin_len} != expected {expected_bin}");
+    }
+
     #[test]
     fn glb_roof_material_shared_across_roofs() {
         let mut scene = scene_with(0);
