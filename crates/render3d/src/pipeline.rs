@@ -56,6 +56,14 @@ pub fn material_albedo(material: &str) -> [f32; 3] {
 impl GpuUniform {
     /// Build a uniform, normalising `light_dir` and rejecting NaN in every field.
     pub fn new(view_proj: [[f32; 4]; 4], light_dir: [f32; 3], ambient: f32, albedo: [f32; 3]) -> Self {
+        let mut view_proj = view_proj;
+        for row in view_proj.iter_mut() {
+            for v in row.iter_mut() {
+                if !v.is_finite() {
+                    *v = 0.0;
+                }
+            }
+        }
         let mut ld = light_dir;
         for i in 0..3 {
             ld[i] = if ld[i].is_finite() { ld[i] } else { 0.0 };
@@ -348,5 +356,98 @@ mod tests {
         assert_eq!(material_albedo("Roof"), [0.35, 0.30, 0.28]);
         assert_eq!(material_albedo("Fascia-North"), [0.50, 0.42, 0.34]);
         assert_eq!(material_albedo("Soffit"), [0.80, 0.80, 0.76]);
+    }
+
+    #[test]
+    fn gpu_uniform_new_sanitizes_nan_in_view_proj() {
+        let mut vp = [[0.0f32; 4]; 4];
+        vp[0][0] = f32::NAN;
+        vp[1][2] = f32::INFINITY;
+        vp[3][3] = f32::NEG_INFINITY;
+        let u = GpuUniform::new(vp, [0.0, 0.0, 0.0], f32::NAN, [f32::NAN, 0.0, 0.0]);
+        assert!(u.view_proj[0][0].is_finite());
+        assert_eq!(u.view_proj[0][0], 0.0);
+        assert!(u.view_proj[1][2].is_finite());
+        assert_eq!(u.view_proj[1][2], 0.0);
+        assert!(u.view_proj[3][3].is_finite());
+        assert_eq!(u.view_proj[3][3], 0.0);
+        assert_eq!(u.ambient, 0.0);
+        assert_eq!(u.albedo, [0.0, 0.0, 0.0]);
+        // Zero light_dir falls back to [0,0,1].
+        assert_eq!(u.light_dir, [0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn upload_empty_scene_produces_placeholder_buffers() {
+        let scene = Scene3d::default();
+        let Some((device, _queue)) = crate::gputest::shared_device() else { return };
+        let meshes = upload(&device, &scene);
+        // Empty scene keeps a placeholder vertex (8 floats) and one index.
+        assert_eq!(meshes.vertex_count, 0);
+        assert_eq!(meshes.index_count, 0);
+        assert!(meshes.draws.is_empty());
+    }
+
+    #[test]
+    fn upload_multiple_meshes_offsets_vertices_correctly() {
+        let mut m1 = Mesh::new("wall", ArchId(1));
+        for i in 0..3 {
+            let x = i as f32;
+            m1.positions.push([x, 0.0, 0.0]);
+            m1.normals.push([0.0, 0.0, 1.0]);
+            m1.uvs.push([x, 0.0]);
+        }
+        m1.indices = vec![0, 1, 2];
+
+        let mut m2 = Mesh::new("floor", ArchId(2));
+        for i in 0..3 {
+            let x = i as f32;
+            m2.positions.push([x, 1.0, 0.0]);
+            m2.normals.push([0.0, 0.0, 1.0]);
+            m2.uvs.push([x, 0.0]);
+        }
+        m2.indices = vec![0, 1, 2];
+
+        let scene = Scene3d { meshes: vec![m1, m2], ..Default::default() };
+        let Some((device, _queue)) = crate::gputest::shared_device() else { return };
+        let meshes = upload(&device, &scene);
+        assert_eq!(meshes.vertex_count, 6);
+        assert_eq!(meshes.index_count, 6);
+        assert_eq!(meshes.draws.len(), 2);
+        // Second mesh's indices must be offset by the first mesh's vertex count.
+        assert_eq!(meshes.draws[1].first_index, 3);
+    }
+
+    #[test]
+    fn uniform_stride_is_at_least_uniform_size() {
+        let Some((device, _queue)) = crate::gputest::shared_device() else { return };
+        let stride = uniform_stride(&device);
+        assert!(stride >= UNIFORM_SIZE);
+        // Stride must be a multiple of the device's alignment.
+        let align = u64::from(device.limits().min_uniform_buffer_offset_alignment).max(1);
+        assert_eq!(stride % align, 0);
+    }
+
+    #[test]
+    fn gpu_pipeline_new_and_write_uniform() {
+        let Some((device, queue)) = crate::gputest::shared_device() else { return };
+        let gp = GpuPipeline::new(&device, 1);
+        let u = GpuUniform::new(
+            [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+            [0.0, 0.0, -1.0],
+            0.2,
+            [1.0, 1.0, 1.0],
+        );
+        gp.write_uniform(&queue, &u);
+        // Light dir should be normalised to [0,0,-1].
+        assert_eq!(u.light_dir, [0.0, 0.0, -1.0]);
+    }
+
+    #[test]
+    fn material_albedo_unknown_falls_back_to_grey() {
+        let albedo = material_albedo("unknown-material");
+        assert_eq!(albedo, [0.75, 0.75, 0.75]);
+        let empty = material_albedo("");
+        assert_eq!(empty, [0.75, 0.75, 0.75]);
     }
 }
