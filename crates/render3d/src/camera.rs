@@ -15,7 +15,7 @@ const MAX_ELEV: f64 = 89.0;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Orbit {
     pub target: Vec3,
-    /// Azimuth in degrees (0 = +X, 90 = +Y).
+    /// Azimuth in degrees (0 = +Y (north), 90 = +X).
     pub azimuth: f64,
     /// Elevation in degrees (0 = horizon, +90 = straight up). Clamped to ±89°.
     pub elevation: f64,
@@ -276,6 +276,17 @@ mod tests {
         assert!((eye.z - o.target.z).abs() > 1e-9);
         let target_len = (o.target.x * o.target.x + o.target.y * o.target.y + o.target.z * o.target.z).sqrt();
         assert!(o.distance > target_len - 0.1);
+    }
+
+    #[test]
+    fn orbit_azimuth_zero_looks_from_plus_y() {
+        let eye = Orbit::at_origin(0.0, 0.0, 10.0, 45.0).eye();
+        assert!((eye.x - 0.0).abs() < 1e-9, "azimuth 0 eye.x = {}", eye.x);
+        assert!((eye.y - 10.0).abs() < 1e-9, "azimuth 0 eye.y = {}", eye.y);
+        assert!((eye.z - 0.0).abs() < 1e-9, "azimuth 0 eye.z = {}", eye.z);
+        let eye90 = Orbit::at_origin(90.0, 0.0, 10.0, 45.0).eye();
+        assert!((eye90.x - 10.0).abs() < 1e-9, "azimuth 90 eye.x = {}", eye90.x);
+        assert!((eye90.y - 0.0).abs() < 1e-9, "azimuth 90 eye.y = {}", eye90.y);
     }
 
     #[test]
