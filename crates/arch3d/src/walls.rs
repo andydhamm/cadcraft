@@ -1096,4 +1096,172 @@ mod tests {
         let no_holes = profile_prism(&outer, &[], &wall, 0.0, "wall", ArchId(2)).unwrap();
         assert!(mesh.triangle_count() > no_holes.triangle_count(), "two holes should add triangles");
     }
+
+    /// An opening with NaN in any dimension field must be skipped entirely.
+    #[test]
+    fn opening_with_nan_dimensions_is_skipped() {
+        let outer = rect_outer();
+        let op = Opening { width: f64::NAN, height: 1.2, sill: 0.9, offset: 4.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty(), "NaN width should skip the opening");
+
+        let op2 = Opening { width: 0.9, height: f64::NAN, sill: 0.9, offset: 4.0, ..Default::default() };
+        let holes2 = opening_holes(&[&op2], 0.0, 10.0, 2.4, &outer);
+        assert!(holes2.is_empty(), "NaN height should skip the opening");
+
+        let op3 = Opening { width: 0.9, height: 1.2, sill: f64::NAN, offset: 4.0, ..Default::default() };
+        let holes3 = opening_holes(&[&op3], 0.0, 10.0, 2.4, &outer);
+        assert!(holes3.is_empty(), "NaN sill should skip the opening");
+
+        let op4 = Opening { width: 0.9, height: 1.2, sill: 0.9, offset: f64::NAN, ..Default::default() };
+        let holes4 = opening_holes(&[&op4], 0.0, 10.0, 2.4, &outer);
+        assert!(holes4.is_empty(), "NaN offset should skip the opening");
+    }
+
+    /// An opening with infinite dimensions must be skipped.
+    #[test]
+    fn opening_with_infinite_dimensions_is_skipped() {
+        let outer = rect_outer();
+        let op = Opening { width: f64::INFINITY, height: 1.2, sill: 0.9, offset: 4.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty(), "infinite width should skip the opening");
+
+        let op2 = Opening { width: 0.9, height: f64::INFINITY, sill: 0.9, offset: 4.0, ..Default::default() };
+        let holes2 = opening_holes(&[&op2], 0.0, 10.0, 2.4, &outer);
+        assert!(holes2.is_empty(), "infinite height should skip the opening");
+    }
+
+    /// A zero-width opening still produces a hole (rough allowance).
+    #[test]
+    fn zero_width_opening_still_produces_a_hole() {
+        let outer = rect_outer();
+        let op = Opening { width: 0.0, height: 1.2, sill: 0.9, offset: 4.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert_eq!(holes.len(), 1, "zero-width opening should still produce a hole (rough allowance)");
+    }
+
+    /// A zero-height opening still produces a hole (rough allowance).
+    #[test]
+    fn zero_height_opening_still_produces_a_hole() {
+        let outer = rect_outer();
+        let op = Opening { width: 0.9, height: 0.0, sill: 0.9, offset: 4.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert_eq!(holes.len(), 1, "zero-height opening should still produce a hole (rough allowance)");
+    }
+
+    /// Multiple openings produce multiple holes, each independently.
+    #[test]
+    fn multiple_openings_produce_multiple_holes() {
+        let outer = rect_outer();
+        let op1 = Opening { width: 0.9, height: 1.2, sill: 0.9, offset: 2.0, ..Default::default() };
+        let op2 = Opening { width: 0.9, height: 1.2, sill: 0.9, offset: 8.0, ..Default::default() };
+        let holes = opening_holes(&[&op1, &op2], 0.0, 10.0, 2.4, &outer);
+        assert_eq!(holes.len(), 2, "two openings should produce two holes");
+        // Both holes should have the correct width
+        for h in &holes {
+            let u_min = h.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+            let u_max = h.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+            assert!((u_max - u_min - 1.02).abs() < 1e-9, "hole width should be 1.02");
+        }
+    }
+
+    /// An opening larger than the wall profile is clipped and dropped.
+    #[test]
+    fn oversized_opening_is_clipped_and_dropped() {
+        let outer = rect_outer();
+        // Opening wider than the wall (width 15 on a 10m wall)
+        let op = Opening { width: 15.0, height: 1.2, sill: 0.9, offset: 5.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty(), "oversized opening clipped to all edges should be dropped");
+    }
+
+    /// An opening with a very high sill (above the wall top) produces no hole.
+    #[test]
+    fn opening_above_wall_top_produces_no_hole() {
+        let outer = rect_outer();
+        // Sill at 3.0m, wall is only 2.4m tall
+        let op = Opening { width: 0.9, height: 1.2, sill: 3.0, offset: 4.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty(), "opening above wall top should produce no hole");
+    }
+
+    /// An opening with negative sill (below the wall base) is clipped and dropped.
+    #[test]
+    fn opening_below_wall_base_is_clipped_and_dropped() {
+        let outer = rect_outer();
+        // Sill at -0.5m, wall base at 0; after clipping the bottom edge sits
+        // on the boundary and the inset check drops it.
+        let op = Opening { width: 0.9, height: 1.2, sill: -0.5, offset: 4.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty(), "opening clipped to base should be dropped");
+    }
+
+    /// A gable pentagon profile clips a hole to the sloped roofline.
+    #[test]
+    fn opening_hole_clipped_by_gable_pentagon() {
+        // Gable pentagon: bottom-left, bottom-right, right-top, peak, left-top
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 2.4), Vec2::new(5.0, 4.45), Vec2::new(0.0, 2.4)];
+        // Small opening near the peak, fully inside the pentagon with margin.
+        let op = Opening { width: 0.5, height: 0.5, sill: 3.5, offset: 5.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 4.45, &outer);
+        assert_eq!(holes.len(), 1, "small opening near peak should produce one hole");
+        let h = &holes[0];
+        // All vertices must be inside the pentagon (v <= roofline at that u)
+        for p in h {
+            // The roofline at u is: 2.4 + 0.5 * (5.0 - |u - 5.0|) for u in [0,10]
+            let roof_v = 2.4 + 0.5 * (5.0 - (p.x - 5.0).abs());
+            assert!(p.y <= roof_v + 1e-9, "hole vertex at ({}, {}) above roofline {}", p.x, p.y, roof_v);
+        }
+    }
+
+    /// A hole clipped to the wall boundary is dropped by the inset check.
+    #[test]
+    fn hole_clipped_to_wall_boundary_is_dropped() {
+        let outer = rect_outer();
+        // Opening whose rough rect crosses u=0; after clipping the left edge
+        // sits on the boundary and the inset check drops it.
+        let op = Opening { width: 0.118, height: 1.2, sill: 0.9, offset: 0.001, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty(), "hole clipped to boundary should be dropped");
+    }
+
+    /// A hole just outside the inset boundary is dropped.
+    #[test]
+    fn hole_just_outside_inset_boundary_is_dropped() {
+        let outer = rect_outer();
+        // Rough edge at u=0.0005, less than HOLE_INSET (0.001)
+        // half = 0.0005 => width = 0.12 - 0.001 = 0.119
+        // offset = 0.0005
+        let op = Opening { width: 0.119, height: 1.2, sill: 0.9, offset: 0.0005, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty(), "hole just outside inset boundary should be dropped");
+    }
+
+    /// A very small opening still produces a hole (rough allowance dominates).
+    #[test]
+    fn tiny_opening_still_produces_a_hole() {
+        let outer = rect_outer();
+        // Width 0.0005, height 0.0005; rough opening is 0.1205 x 0.1205, area ~0.0145
+        let op = Opening { width: 0.0005, height: 0.0005, sill: 0.9, offset: 4.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert_eq!(holes.len(), 1, "tiny opening should still produce a hole (rough allowance)");
+    }
+
+    /// A negative offset (opening before the wall start) is clipped and dropped.
+    #[test]
+    fn opening_with_negative_offset_is_clipped_and_dropped() {
+        let outer = rect_outer();
+        let op = Opening { width: 0.9, height: 1.2, sill: 0.9, offset: -0.5, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty(), "opening clipped to wall start should be dropped");
+    }
+
+    /// An opening past the wall end is clipped and dropped.
+    #[test]
+    fn opening_past_wall_end_is_clipped_and_dropped() {
+        let outer = rect_outer();
+        let op = Opening { width: 0.9, height: 1.2, sill: 0.9, offset: 10.5, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty(), "opening clipped to wall end should be dropped");
+    }
 }
