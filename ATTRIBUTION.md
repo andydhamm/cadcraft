@@ -48,8 +48,8 @@ Generated-in-code assets are original and have no file to list:
 | `docs/images/ui-apartment.png` | CADCraft contributors | screenshot of CADCraft itself (examples/apartment.dxf) | MIT OR Apache-2.0 | Original; no Autodesk UI |
 | `docs/images/ui-layout.png` | CADCraft contributors | screenshot of CADCraft itself (a layout of examples/apartment.dxf) | MIT OR Apache-2.0 | Original; no Autodesk UI |
 | `docs/images/ui-bracket.png` | CADCraft contributors | screenshot of CADCraft itself (sample drawing generated in code) | MIT OR Apache-2.0 | Original; no Autodesk UI |
-| `docs/readme/apartment-plan-to-3d.png` | CADCraft contributors | screenshot of CADCraft itself (examples/apartment.dxf plan and 3D view) | MIT OR Apache-2.0 | Original; no Autodesk UI |
-| `docs/readme/arch3d-render-today.png` | CADCraft contributors | screenshot of CADCraft itself (arch3d rendering) | MIT OR Apache-2.0 | Original; no Autodesk UI |
+| `docs/readme/apartment-plan-to-3d.png` | CADCraft contributors | generated composite: 2D plan (examples/apartment.dxf) alongside arch3d 3D render, both produced by CADCraft | MIT OR Apache-2.0 | Original; no Autodesk UI |
+| `docs/readme/arch3d-render-today.png` | CADCraft contributors | headless arch3d render of a simple two-room plan, produced by CADCraft | MIT OR Apache-2.0 | Original; no Autodesk UI |
 | `docs/brand/artcraft-logo-white.png` | ArtCraft Team | storytold/craftrules `assets/brand/` | ArtCraft brand terms (`docs/brand/LICENSE-brand.txt`) | Trademark, not open source |
 | `docs/brand/artcraft-logo-white.svg` | ArtCraft Team | storytold/craftrules `assets/brand/` | ArtCraft brand terms (`docs/brand/LICENSE-brand.txt`) | Trademark, not open source |
 | `docs/brand/artcraft-logo.png` | ArtCraft Team | storytold/craftrules `assets/brand/` | ArtCraft brand terms (`docs/brand/LICENSE-brand.txt`) | Trademark, not open source |
