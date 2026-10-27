@@ -1050,6 +1050,10 @@ mod tests {
             let pa = floor.positions[a as usize].map(|v| v as f64);
             let pb = floor.positions[b as usize].map(|v| v as f64);
             let pc = floor.positions[c as usize].map(|v| v as f64);
+            // Only horizontal faces (all vertices at the same z) have a ±z normal.
+            if (pa[2] - pb[2]).abs() > 1e-9 || (pa[2] - pc[2]).abs() > 1e-9 {
+                continue;
+            }
             let nx = (pb[1] - pa[1]) * (pc[2] - pa[2]) - (pb[2] - pa[2]) * (pc[1] - pa[1]);
             let nz = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0]);
             let len = (nx * nx + nz * nz).sqrt();
@@ -1073,6 +1077,10 @@ mod tests {
             let pa = ceil.positions[a as usize].map(|v| v as f64);
             let pb = ceil.positions[b as usize].map(|v| v as f64);
             let pc = ceil.positions[c as usize].map(|v| v as f64);
+            // Only horizontal faces (all vertices at the same z) have a ±z normal.
+            if (pa[2] - pb[2]).abs() > 1e-9 || (pa[2] - pc[2]).abs() > 1e-9 {
+                continue;
+            }
             let nx = (pb[1] - pa[1]) * (pc[2] - pa[2]) - (pb[2] - pa[2]) * (pc[1] - pa[1]);
             let nz = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0]);
             let len = (nx * nx + nz * nz).sqrt();
