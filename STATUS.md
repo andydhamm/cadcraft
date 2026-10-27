@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-27 23:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 23:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 81 of 82 segments merged · 10 of 11 acceptance checks**
 
-4,234 workspace tests passing at the last merge · 349 segments merged in all · 0 of 12 seats working
+4,241 workspace tests passing at the last merge · 350 segments merged in all · 0 of 12 seats working
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 23:15 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 10 / 11 | 38.4 h so far · expected done Oct 27 23:47–Oct 28 03:10 UTC |
+| 4 | Automatic roofs | building | 10 / 11 | 38.7 h so far · expected done Oct 28 00:02–Oct 28 03:25 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -34,6 +34,7 @@ Updated 2026-10-27 23:15 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 27 23:20 | `harden-p4j-build3d-reports-roofs` | merged | 4,241 pass | tturbo-mac2 |
 | Oct 27 22:36 | `harden-p4k-roof-plane-vertical-thickness` | merged | 4,234 pass | tturbo-mac2 |
 | Oct 27 22:18 | `harden-p4h-roof-invariant-tests` | merged | 4,229 pass | tturbo-mac2 |
 | Oct 27 21:59 | `p4k-roof-plane-vertical-thickness` | merged | 4,226 pass | bonsai-ws2-b |
@@ -45,7 +46,6 @@ Updated 2026-10-27 23:15 UTC. This page and the card in the README are regenerat
 | Oct 27 19:20 | `p4h-roof-eave-z-per-plane` | merged | 4,203 pass | claude-sonnet-b |
 | Oct 27 19:15 | `p4h-roof-invariant-tests` | merged | 4,202 pass | bonsai-a |
 | Oct 27 19:14 | `p4h-probe-crease-jitter` | merged | 4,200 pass | darwin-ws3 |
-| Oct 27 19:10 | `p4h-valley-convexity` | merged | 4,198 pass | claude-sonnet-a |
 
 ## Seats active in the last hour
 
@@ -61,5 +61,5 @@ Updated 2026-10-27 23:15 UTC. This page and the card in the README are regenerat
 | kimi-k31 | k3.1-pro-highspeed | idle | 65 |
 | ornith-a | ornith15-397b-exl3-35 | down | 29 |
 | ornith-b | ornith15-397b-exl3-35 | down | 17 |
-| tturbo-mac | tturbo-ultraheretic | agent | 341 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 168 |
+| tturbo-mac | tturbo-ultraheretic | gate | 341 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 169 |
