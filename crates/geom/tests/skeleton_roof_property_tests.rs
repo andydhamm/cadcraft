@@ -342,3 +342,137 @@ fn count_valley_arcs(skel: &Skeleton, reflex_indices: &[usize]) -> usize {
 
     valley_arcs.len()
 }
+
+#[test]
+fn holes_are_respected_in_the_skeleton() {
+    let outer = square(20.0);
+    let hole = square(8.0);
+    let holes = vec![hole];
+    let slopes = vec![vec![1.0; outer.len()], vec![1.0; 4]];
+
+    let skel = roof_skeleton(&outer, &holes, &slopes).expect("skeleton with hole failed");
+    assert_valid(&skel);
+
+    // There should be faces for both the outer ring and the hole ring.
+    let mut outer_face_count = 0;
+    let mut hole_face_count = 0;
+    for face in &skel.faces {
+        if face.ring == 0 {
+            outer_face_count += 1;
+        } else if face.ring == 1 {
+            hole_face_count += 1;
+        }
+    }
+
+    assert_eq!(outer_face_count, 4, "Expected 4 outer faces");
+    assert_eq!(hole_face_count, 4, "Expected 4 hole faces");
+}
+
+#[test]
+fn varying_slopes_per_edge() {
+    let outer = square(10.0);
+    let slopes = vec![vec![0.5, 1.0, 1.5, 2.0]];
+    let holes: Vec<Vec<Vec2>> = vec![];
+
+    let skel = roof_skeleton(&outer, &holes, &slopes).expect("skeleton with varying slopes failed");
+    assert_valid(&skel);
+
+    // Verify each face's slope matches its input slope.
+    for face in &skel.faces {
+        if face.ring != 0 {
+            continue;
+        }
+
+        let ring = &skel.rings[face.ring];
+        let n = ring.len();
+        let a = ring[face.edge];
+        let b = ring[(face.edge + 1) % n];
+
+        let dir = (b - a).normalized();
+        let normal = Vec2::new(-dir.y, dir.x);
+
+        let input_slope = slopes[face.ring][face.edge];
+
+        for &node_idx in &face.nodes {
+            let node = &skel.nodes[node_idx];
+            let dist = (node.pos - a).dot(normal);
+
+            if dist > 1e-9 {
+                let calculated_slope = node.time / dist;
+                assert!(
+                    (calculated_slope - input_slope).abs() < 1e-6,
+                    "Face edge {}: node {} has slope {} but expected {}",
+                    face.edge,
+                    node_idx,
+                    calculated_slope,
+                    input_slope
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn thin_rectangle_produces_valid_skeleton() {
+    let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(100.0, 0.0), Vec2::new(100.0, 1.0), Vec2::new(0.0, 1.0)];
+    let holes: Vec<Vec<Vec2>> = vec![];
+    let slopes = vec![vec![1.0; outer.len()]];
+
+    let skel = roof_skeleton(&outer, &holes, &slopes).expect("thin rectangle skeleton failed");
+    assert_valid(&skel);
+
+    // Area check
+    let expected_area = polygon_area(&outer);
+    let mut total_area = 0.0;
+    for face in &skel.faces {
+        let pts: Vec<Vec2> = face.nodes.iter().map(|&i| skel.nodes[i].pos).collect();
+        total_area += polygon_area(&pts);
+    }
+    assert!((total_area - expected_area).abs() < 1e-4, "Thin rectangle: total face area {} != polygon area {}", total_area, expected_area);
+}
+
+#[test]
+fn hostile_input_nan_in_outer_ring() {
+    let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, f64::NAN), Vec2::new(0.0, 10.0)];
+    let holes: Vec<Vec<Vec2>> = vec![];
+    let slopes = vec![vec![1.0; outer.len()]];
+
+    let result = roof_skeleton(&outer, &holes, &slopes);
+    assert!(result.is_err(), "Expected error for NaN vertex, got Ok");
+}
+
+#[test]
+fn hostile_input_empty_outer_ring() {
+    let outer: Vec<Vec2> = vec![];
+    let holes: Vec<Vec<Vec2>> = vec![];
+    let slopes: Vec<Vec<f64>> = vec![];
+
+    let result = roof_skeleton(&outer, &holes, &slopes);
+    assert!(result.is_err(), "Expected error for empty outer ring, got Ok");
+}
+
+#[test]
+fn hostile_input_coincident_vertices() {
+    let outer = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(10.0, 0.0),
+        Vec2::new(10.0, 10.0),
+        Vec2::new(10.0, 10.0), // coincident with previous
+        Vec2::new(0.0, 10.0),
+    ];
+    let holes: Vec<Vec<Vec2>> = vec![];
+    let slopes = vec![vec![1.0; outer.len()]];
+
+    let result = roof_skeleton(&outer, &holes, &slopes);
+    // Should either succeed (with a valid skeleton) or return a clear error.
+    // It must not panic or produce an invalid skeleton.
+    match result {
+        Ok(skel) => {
+            let problems = check(&skel, 1e-7);
+            assert!(problems.is_empty(), "Skeleton with coincident vertices is invalid: {problems:#?}");
+        }
+        Err(_) => {
+            // Error is acceptable for coincident vertices
+        }
+    }
+}
