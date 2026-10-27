@@ -19,7 +19,11 @@ pub fn arch_handle(id: ArchId) -> Handle {
 
 /// The poché (2D cross-section) primitives for `d.arch`, in wall order. The caller merges the
 /// returned list into the main one. `_opts` is unused for now but kept for the caller's hook.
-pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
+///
+/// Walls follow the A-WALL layer's on/frozen state, openings follow their own layer's
+/// on/frozen state, and while plotting, arch objects on no-plot layers are skipped. A
+/// missing layer behaves as before and draws.
+pub fn build_arch(d: &Drawing, _opts: &Options, plotting: bool) -> DisplayList {
     let mut list = DisplayList::default();
     let layer = d.layer("A-WALL").map(|l| l.color).unwrap_or(Color::Index(7));
     let ink = crate::ink(Color::ByLayer, layer, Color::Index(7));
@@ -27,7 +31,10 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
     let shapes = cadcraft_arch::join::solve_joins(&d.arch);
     let solved: BTreeMap<ArchId, &Vec<Vec2>> = shapes.iter().map(|s| (s.id, &s.polygon)).collect();
 
-    for wall in &d.arch.walls {
+    // Poché gaps from openings are only meaningful while the wall poché is drawn, so the
+    // whole loop is skipped when the wall's layer is off or frozen (or no-plot while plotting).
+    if !arch_layer_skipped(d, "A-WALL", plotting) {
+        for wall in &d.arch.walls {
         if !wall.start.is_finite() || !wall.end.is_finite() {
             continue;
         }
@@ -152,6 +159,9 @@ pub fn build_arch(d: &Drawing, _opts: &Options) -> DisplayList {
     // tagged with the opening's proxy handle so picking and selection work.
     for o in &d.arch.openings {
         if let Some(sym) = cadcraft_arch::symbol::opening_symbol(&d.arch, o) {
+            if arch_layer_skipped(d, &sym.layer, plotting) {
+                continue;
+            }
             let all_finite = sym.polylines.iter().all(|p| p.iter().all(|pt| pt.is_finite()));
             if !all_finite {
                 continue;
