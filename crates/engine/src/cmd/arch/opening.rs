@@ -800,4 +800,18 @@ mod tests {
         let d = s.doc().expect("doc");
         assert_eq!(d.arch.opening(ArchId(0)).map(|o| o.offset), Some(3.0), "stored offset must be unchanged");
     }
+
+    /// A wall, then a door and a window: the save-time proxy layers are created on
+    /// first use — `A-DOOR` for the door, `A-GLAZ` for the window — each exactly once.
+    #[test]
+    fn door_and_window_create_their_layers() {
+        let mut s = session_with_wall();
+        s.execute("door", &json!({ "wall": "w0", "offset": 3.0, "width": 0.9, "height": 2.1 })).unwrap();
+        s.execute("window", &json!({ "wall": "w0", "offset": 6.0, "width": 1.2, "height": 1.2 })).unwrap();
+        let d = s.doc().expect("doc");
+        assert!(d.layers.iter().any(|l| l.name == "A-DOOR"), "A-DOOR not created by the door command");
+        assert!(d.layers.iter().any(|l| l.name == "A-GLAZ"), "A-GLAZ not created by the window command");
+        assert_eq!(d.layers.iter().filter(|l| l.name == "A-DOOR").count(), 1, "A-DOOR created more than once");
+        assert_eq!(d.layers.iter().filter(|l| l.name == "A-GLAZ").count(), 1, "A-GLAZ created more than once");
+    }
 }
