@@ -11,7 +11,7 @@
 
 use cadcraft_arch3d::{Scene3d, build, build_dirty};
 use cadcraft_doc::geom::Vec2;
-use cadcraft_doc::{ArchModel, Wall};
+use cadcraft_doc::{ArchId, ArchModel, Wall};
 
 /// FNV-1a 64-bit hash (no external dependency).
 fn fnv1a_hash(data: &[u8]) -> u64 {
@@ -154,7 +154,7 @@ fn crossing_interior_walls_keep_their_full_length() {
     let mesh5 = scene.meshes.iter().find(|m| m.object == ArchId(5)).expect("no mesh for ArchId(5)");
 
     // Wall 4 (0,4)-(10,4) spans x 0..10.
-    let mut (min_x4, max_x4) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut min_x4, mut max_x4) = (f64::INFINITY, f64::NEG_INFINITY);
     for p in &mesh4.positions {
         min_x4 = min_x4.min(p[0] as f64);
         max_x4 = max_x4.max(p[0] as f64);
@@ -163,7 +163,7 @@ fn crossing_interior_walls_keep_their_full_length() {
     assert!((max_x4 - 10.0).abs() < 0.2, "wall 4 max.x: {}", max_x4);
 
     // Wall 5 (5,0)-(5,8) spans y 0..8.
-    let mut (min_y5, max_y5) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut min_y5, mut max_y5) = (f64::INFINITY, f64::NEG_INFINITY);
     for p in &mesh5.positions {
         min_y5 = min_y5.min(p[1] as f64);
         max_y5 = max_y5.max(p[1] as f64);
