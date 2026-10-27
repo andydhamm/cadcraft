@@ -332,9 +332,9 @@ pub fn run_roofplane(s: &mut Session, p: &Value) -> Result<Value> {
     if let Some(edit_id) = p.get("edit").and_then(Value::as_str) {
         let pitch_rise = p.get("pitchRise").and_then(Value::as_f64);
         let pitch_run = p.get("pitchRun").and_then(Value::as_f64);
-        let thickness = p.get("thickness").and_then(Value::as_f64);
-        let fascia = p.get("fascia").and_then(Value::as_f64);
-        let soffit = p.get("soffit").and_then(Value::as_f64);
+        let thickness = p.get("thickness").and_then(depth_param);
+        let fascia = p.get("fascia").and_then(depth_param);
+        let soffit = p.get("soffit").and_then(depth_param);
         return edit_roof_plane(s, edit_id, pitch_rise, pitch_run, thickness, fascia, soffit);
     }
 
@@ -953,5 +953,127 @@ mod tests {
         let doc = s.doc().unwrap();
         let roof = &doc.arch.roofs[0];
         assert_eq!(roof.level, 0);
+    }
+
+    /// The edit path accepts boolean `fascia`/`soffit` (the create path already did).
+    #[test]
+    fn roofplane_edit_accepts_boolean_fascia_and_soffit() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0,
+            "fascia": true,
+            "soffit": true,
+        });
+        run_roofplane(&mut s, &params).unwrap();
+
+        let edit_params = json!({
+            "edit": "r0p0",
+            "fascia": false,
+            "soffit": false,
+        });
+        let res = run_roofplane(&mut s, &edit_params);
+        assert!(res.is_ok(), "edit with boolean fascia/soffit rejected: {res:?}");
+
+        let doc = s.doc().unwrap();
+        let roof = &doc.arch.roofs[0];
+        assert!(!roof.fascia, "fascia should be false after edit");
+        assert!(!roof.soffit, "soffit should be false after edit");
+    }
+
+    /// The edit path accepts numeric `fascia` and updates the boolean accordingly.
+    #[test]
+    fn roofplane_edit_accepts_numeric_fascia() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0,
+            "fascia": 0.0,
+        });
+        run_roofplane(&mut s, &params).unwrap();
+
+        let edit_params = json!({
+            "edit": "r0p0",
+            "fascia": 0.15,
+        });
+        let res = run_roofplane(&mut s, &edit_params);
+        assert!(res.is_ok(), "edit with numeric fascia rejected: {res:?}");
+
+        let doc = s.doc().unwrap();
+        let roof = &doc.arch.roofs[0];
+        assert!(roof.fascia, "fascia should be true after edit with 0.15");
+    }
+
+    /// A flat base with a NaN element is rejected.
+    #[test]
+    fn roofplane_rejects_flat_base_with_nan() {
+        let mut s = Session::new();
+        let mut base = serde_json::Value::Array(Vec::new());
+        base.as_array_mut().unwrap().push(json!(0.0));
+        base.as_array_mut().unwrap().push(serde_json::Value::from(f64::NAN));
+        base.as_array_mut().unwrap().push(json!(6.0));
+        base.as_array_mut().unwrap().push(json!(0.0));
+
+        let mut params = serde_json::Map::new();
+        params.insert("points".to_string(), json!([[0.0, 0.0], [6.0, 0.0], [6.0, 4.0], [0.0, 4.0]]));
+        params.insert("base".to_string(), base);
+        params.insert("pitchRise".to_string(), json!(6.0));
+        params.insert("pitchRun".to_string(), json!(12.0));
+        let params = serde_json::Value::Object(params);
+        let res = run_roofplane(&mut s, &params);
+        assert!(res.is_err());
+        let err = res.as_ref().unwrap_err();
+        assert!(err.to_string().contains("must be an array of two points"));
+    }
+
+    /// A flat base with a non-number element is rejected.
+    #[test]
+    fn roofplane_rejects_flat_base_with_non_number() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [6.0, 0.0], [6.0, 4.0], [0.0, 4.0]],
+            "base": [0.0, "a", 6.0, 0.0],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0,
+        });
+        let res = run_roofplane(&mut s, &params);
+        assert!(res.is_err());
+        let err = res.as_ref().unwrap_err();
+        assert!(err.to_string().contains("must be an array of two points"));
+    }
+
+    /// `thickness` accepts a boolean like `fascia` and `soffit` (`true` => 0.1, `false` => 0.0).
+    #[test]
+    fn roofplane_accepts_boolean_thickness() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0,
+            "thickness": true,
+        });
+        let res = run_roofplane(&mut s, &params);
+        assert!(res.is_ok(), "boolean thickness rejected: {res:?}");
+        let doc = s.doc().unwrap();
+        let roof = &doc.arch.roofs[0];
+        assert!((roof.planes[0].thickness - 0.1).abs() < 1e-9, "thickness should default to 0.1");
+
+        let mut s2 = Session::new();
+        let params2 = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0,
+            "thickness": false,
+        });
+        let res2 = run_roofplane(&mut s2, &params2);
+        assert!(res2.is_ok(), "boolean thickness rejected: {res2:?}");
+        let roof2 = &s2.doc().unwrap().arch.roofs[0];
+        assert_eq!(roof2.planes[0].thickness, 0.0, "thickness should be 0.0");
     }
 }
