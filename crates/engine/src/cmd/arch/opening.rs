@@ -347,6 +347,9 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
 
     // 2. Offset: explicit number or projection of a point.
     let offset: f64 = if let Some(off) = p.get("offset").and_then(Value::as_f64) {
+        if !off.is_finite() {
+            return Err(crate::cmd::bad(cmd, "`offset` must be a finite number"));
+        }
         off
     } else if let Some(pt) = crate::cmd::point_param(p, "point") {
         project_to_wall(&d.arch, host, pt).ok_or_else(|| crate::cmd::bad(cmd, "point does not project onto the wall"))?
@@ -842,6 +845,56 @@ mod tests {
             assert!(d.layers.iter().any(|l| l.name == name), "{name} not created");
             assert_eq!(d.layers.iter().filter(|l| l.name == name).count(), 1, "{name} created more than once");
         }
+    }
+
+    /// A non-numeric offset is rejected as a bad-params error (not silently accepted).
+    #[test]
+    fn door_rejects_nan_offset() {
+        let mut s = session_with_wall();
+        let r = s.execute("door", &json!({"wall": "w0", "offset": "not-a-number", "width": 0.9, "height": 2.1}));
+        let err = r.expect_err("non-numeric offset should be rejected");
+        assert!(err.to_string().contains("offset"), "expected offset error, got: {err}");
+    }
+
+    /// A zero width is rejected (width must be > 0).
+    #[test]
+    fn door_rejects_zero_width() {
+        let mut s = session_with_wall();
+        let r = s.execute("door", &json!({"wall": "w0", "offset": 3.0, "width": 0.0, "height": 2.1}));
+        let err = r.expect_err("zero width should be rejected");
+        assert!(!err.to_string().is_empty(), "expected an error, got empty");
+    }
+
+    /// Moving an opening to its current offset succeeds and is a no-op.
+    #[test]
+    fn opening_move_to_same_position_succeeds() {
+        let mut s = session_with_door();
+        let r = s.execute("arch.opening.move", &json!({"opening": "o0", "offset": 3.0})).expect("move to same position");
+        assert_eq!(r["offset"], json!(3.0), "offset should be echoed");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.opening(ArchId(0)).map(|o| o.offset), Some(3.0), "stored offset should be unchanged");
+    }
+
+    /// Moving one opening does not affect other openings on the same wall.
+    #[test]
+    fn opening_move_with_two_openings_only_moves_one() {
+        let mut s = session_with_wall();
+        s.execute("door", &json!({"wall": "w0", "offset": 2.0, "width": 0.9, "height": 2.1})).expect("door 1");
+        s.execute("door", &json!({"wall": "w0", "offset": 6.0, "width": 0.9, "height": 2.1})).expect("door 2");
+        s.execute("arch.opening.move", &json!({"opening": "o0", "offset": 4.0})).expect("move o0");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.opening(ArchId(0)).map(|o| o.offset), Some(4.0), "o0 should be at 4.0");
+        assert_eq!(d.arch.opening(ArchId(1)).map(|o| o.offset), Some(6.0), "o1 should be unchanged at 6.0");
+    }
+
+    /// With fit=true, an oversized opening is resized to fit within the wall.
+    #[test]
+    fn door_with_fit_true_resizes_to_fit() {
+        let mut s = session_with_wall();
+        let r = s.execute("door", &json!({"wall": "w0", "offset": 3.0, "width": 10.0, "height": 2.1, "fit": true})).expect("door with fit");
+        let one = &r["openings"].as_array().expect("openings")[0];
+        assert!(one["width"].as_f64().unwrap() < 10.0, "width should be resized to fit");
+        assert_eq!(one["resized"], json!(true), "resized should be true");
     }
 
     /// Style parsing is case-insensitive: "HINGED", "Hinged", "hinged" all store "hinged".
