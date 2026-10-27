@@ -2,7 +2,9 @@
 //! move every neighbour end that shared that point (one undo step).
 
 use cadcraft_arch::join;
+use cadcraft_arch::opening::{project_to_wall, validate_placement};
 use cadcraft_doc::ArchId;
+use cadcraft_geom::Vec2;
 use serde_json::{Value, json};
 
 use crate::cmd::arch::MIN_WALL_LENGTH;
@@ -54,6 +56,10 @@ pub(crate) fn run_stretch(s: &mut Session, p: &Value) -> Result<Value> {
         }
 
         let mut arch = doc.arch.clone();
+
+        // Capture old starts and ends before the stretch so we can re-project openings.
+        let old_walls: Vec<(ArchId, Vec2, Vec2)> = arch.walls.iter().map(|w| (w.id, w.start, w.end)).collect();
+
         let moved = join::stretch_wall(&mut arch, id, end, to).map_err(|e| EngineError::Other(e.to_string()))?;
 
         // Refuse if the drag would collapse any neighbour wall.
@@ -61,6 +67,35 @@ pub(crate) fn run_stretch(s: &mut Session, p: &Value) -> Result<Value> {
             if let Some(w) = arch.wall(mid) {
                 if w.start.near(w.end, MIN_WALL_LENGTH) {
                     return Err(bad("arch.wall.stretch", format!("the drag would collapse wall w{}", mid.0)));
+                }
+            }
+        }
+
+        // Re-project openings on walls whose start moved: preserve each opening's
+        // world position by computing the old world point and projecting it onto
+        // the new wall axis. Validate the new placement; refuse on failure.
+        for oi in 0..arch.openings.len() {
+            let o = &arch.openings[oi];
+            let Some((_, old_start, old_end)) = old_walls.iter().find(|(wid, _, _)| *wid == o.host) else {
+                continue;
+            };
+            let new_start = arch.wall(o.host).map(|w| w.start).unwrap_or(old_start);
+            if new_start == old_start {
+                continue;
+            }
+            let old_dir = (old_end - old_start).normalized();
+            let old_world = old_start + old_dir * o.offset;
+            let new_offset = project_to_wall(&arch, o.host, old_world)
+                .ok_or_else(|| bad("arch.wall.stretch", format!("cannot project opening o{} onto wall w{}", o.id.0, o.host.0)))?;
+            match validate_placement(&arch, o.host, new_offset, o.width, o.sill, o.height, o.kind, &o.style, Some(o.id)) {
+                Ok(_) => {
+                    arch.openings[oi].offset = new_offset;
+                }
+                Err(e) => {
+                    return Err(bad(
+                        "arch.wall.stretch",
+                        format!("the stretch would push {} off {}", format!("o{}", o.id.0), format!("w{}", o.host.0)),
+                    ));
                 }
             }
         }
