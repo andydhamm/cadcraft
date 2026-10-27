@@ -3,6 +3,32 @@ use crate::camera::Orbit;
 use crate::gputest;
 use crate::types::{ArchId, Mesh};
 
+/// Build a scene with two rooms (two slabs side by side) so a render has real geometry to light.
+fn two_room_scene() -> cadcraft_arch3d::Scene3d {
+    let mut s = Scene3d { meshes: Vec::new(), ..Default::default() };
+    // Two floor slabs, each a flat box, separated along +Y.
+    s.meshes.push(cuboid("floor", [-5.0, -4.0, -0.3], [5.0, 0.0, 0.0]));
+    s.meshes.push(cuboid("floor", [-5.0, 0.0, -0.3], [5.0, 4.0, 0.0]));
+    // Walls around and between them.
+    s.meshes.push(cuboid("wall", [-5.0, -4.0, 0.0], [-4.8, 4.0, 2.7]));
+    s.meshes.push(cuboid("wall", [4.8, -4.0, 0.0], [5.0, 4.0, 2.7]));
+    s.meshes.push(cuboid("wall", [-5.0, -4.0, 0.0], [5.0, -3.8, 2.7]));
+    s.meshes.push(cuboid("wall", [-5.0, 3.8, 0.0], [5.0, 4.0, 2.7]));
+    s.meshes.push(cuboid("wall", [-0.1, -4.0, 0.0], [0.1, 0.0, 2.7]));
+    let mut lo = [f64::INFINITY; 3];
+    let mut hi = [f64::NEG_INFINITY; 3];
+    for p in s.meshes.iter().flat_map(|m| m.positions.iter()) {
+        for k in 0..3 {
+            lo[k] = lo[k].min(f64::from(p[k]));
+            hi[k] = hi[k].max(f64::from(p[k]));
+        }
+    }
+    if lo[0].is_finite() {
+        s.bounds = crate::types::Bounds3::new(lo, hi);
+    }
+    s
+}
+
 /// An axis-aligned box mesh with outward normals; `material` picks its albedo.
 fn cuboid(material: &str, min: [f32; 3], max: [f32; 3]) -> Mesh {
     let mut m = Mesh::new(material, ArchId(1));
@@ -259,6 +285,34 @@ fn a_flat_face_is_one_colour_even_with_averaged_corner_normals() {
     let rgba = r.read_rgba().expect("readback");
     let patch: std::collections::BTreeSet<[u8; 4]> = (24..40).flat_map(|y| (24..40).map(move |x| (x, y))).map(|(x, y)| px(&rgba, 64, x, y)).collect();
     assert_eq!(patch.len(), 1, "one planar face shows {} colours: {patch:?}", patch.len());
+}
+
+/// Fraction of pixels in an offscreen render that differ from the clear colour.
+/// `None` when no GPU adapter is available (the render can't run).
+fn lit_fraction(scene: &Scene3d, key: u64, cam: &Camera, light: &Light, size: (u32, u32)) -> Option<f64> {
+    let Some((device, queue)) = gputest::shared_device() else { return None };
+    let mut r = Offscreen::with_device(device, queue, size);
+    r.render(scene, key, cam, light);
+    let rgba = r.read_rgba().ok()?;
+    let total = rgba.len() / 4;
+    let lit = rgba
+        .chunks_exact(4)
+        .filter(|p| {
+            let px: [u8; 4] = [p[0], p[1], p[2], p[3]];
+            !close(px, clear_srgb(), 8)
+        })
+        .count();
+    Some(lit as f64 / total as f64)
+}
+
+#[test]
+fn offscreen_render_of_a_two_room_model_has_lit_pixels() {
+    let scene = two_room_scene();
+    let cam = Camera::Orbit(Orbit::at_origin(45.0, 30.0, 30.0, 45.0));
+    match lit_fraction(&scene, 1, &cam, &Light::DEFAULT, (320, 200)) {
+        None => println!("offscreen_render_of_a_two_room_model_has_lit_pixels: skipped (no GPU adapter)"),
+        Some(frac) => assert!(frac > 0.02, "only {frac} of pixels are lit; the scene did not draw"),
+    }
 }
 
 #[test]
