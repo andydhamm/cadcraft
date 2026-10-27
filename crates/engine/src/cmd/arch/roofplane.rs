@@ -70,7 +70,7 @@ fn parse_roof_plane_id(id: &str) -> Option<(usize, usize)> {
 /// Create a new roof plane from points and a base edge.
 fn create_roof_plane(
     s: &mut Session,
-    points: Vec<Vec2>,
+    mut points: Vec<Vec2>,
     base: (Vec2, Vec2),
     pitch_rise: f64,
     pitch_run: f64,
