@@ -544,4 +544,203 @@ mod tests {
         assert!((arch.levels[0].ceiling_height - 2.0).abs() < 1e-9);
         assert!((arch.levels[0].structure - 0.2).abs() < 1e-9);
     }
+
+    #[test]
+    fn level_no_args_errors() {
+        let mut s = setup_session();
+        let result = s.execute("level", &json!({}));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn level_edit_unknown_index_errors() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        let result = s.execute("level", &json!({"index": 99, "ceiling": 3.0}));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn level_edit_unknown_name_errors() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        let result = s.execute("level", &json!({"name": "Level 99", "ceiling": 3.0}));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn level_above_by_index() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+            doc.arch.levels.push(Level { index: 1, name: "Level 2".into(), elevation: 2.7, ..Default::default() });
+        }
+        s.execute("level", &json!({"above": 0})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 3);
+        // Above Level 1 (index 0), so elevation = 0.0 + 2.7 = 2.7
+        assert!((arch.levels[1].elevation - 2.7).abs() < 1e-9);
+    }
+
+    #[test]
+    fn level_below_by_index() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+            doc.arch.levels.push(Level { index: 1, name: "Level 2".into(), elevation: 2.7, ..Default::default() });
+        }
+        s.execute("level", &json!({"below": 1})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 3);
+        // Below Level 2 (index 1), so elevation = 2.7 - 2.7 = 0.0
+        assert!((arch.levels[1].elevation - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn level_rejects_infinite_ceiling() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        let mut map = serde_json::Map::new();
+        map.insert("name".to_string(), Value::from("Level 1"));
+        map.insert("ceiling".to_string(), Value::from(f64::INFINITY));
+        let result = s.execute("level", &Value::Object(map));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn level_rejects_infinite_structure() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        let mut map = serde_json::Map::new();
+        map.insert("name".to_string(), Value::from("Level 1"));
+        map.insert("structure".to_string(), Value::from(f64::INFINITY));
+        let result = s.execute("level", &Value::Object(map));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn level_edit_no_changes_succeeds() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        // Edit with just the name, no ceiling or structure — should succeed as a no-op
+        let result = s.execute("level", &json!({"name": "Level 1"}));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn level_below_multiple_times() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+        }
+        s.execute("level", &json!({"below": 0})).unwrap();
+        s.execute("level", &json!({"below": 0})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 3);
+        // Elevations: -5.4, -2.7, 0.0
+        assert!((arch.levels[0].elevation - (-5.4)).abs() < 1e-9);
+        assert!((arch.levels[1].elevation - (-2.7)).abs() < 1e-9);
+        assert!((arch.levels[2].elevation - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn level_above_custom_height_level() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            // Level with custom ceiling 3.0 and structure 0.5 -> floor_to_floor = 3.5
+            doc.arch.levels.push(Level { name: "Level 1".into(), ceiling_height: 3.0, structure: 0.5, ..Default::default() });
+        }
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        assert_eq!(arch.levels.len(), 2);
+        // New level elevation should be 0.0 + 3.5 = 3.5
+        assert!((arch.levels[1].elevation - 3.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn level_below_renumbers_multiple_walls() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+            doc.arch.levels.push(Level { name: "Level 1".into(), ..Default::default() });
+            doc.arch.levels.push(Level { index: 1, name: "Level 2".into(), elevation: 2.7, ..Default::default() });
+            // Wall on level 0
+            doc.arch.walls.push(Wall {
+                start: Vec2::new(0.0, 0.0),
+                end: Vec2::new(10.0, 0.0),
+                base_level: 0,
+                to_ceiling: true,
+                ..Default::default()
+            });
+            // Wall on level 1
+            doc.arch.walls.push(Wall {
+                start: Vec2::new(0.0, 10.0),
+                end: Vec2::new(10.0, 10.0),
+                base_level: 1,
+                to_ceiling: true,
+                ..Default::default()
+            });
+        }
+        s.execute("level", &json!({"below": 0})).unwrap();
+        let doc = s.doc().unwrap();
+        let arch = &doc.arch;
+        // Both walls should be incremented
+        assert_eq!(arch.walls[0].base_level, 1);
+        assert_eq!(arch.walls[1].base_level, 2);
+    }
+
+    #[test]
+    fn level_above_empty_levels_errors() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+        }
+        let result = s.execute("level", &json!({"above": "Level 1"}));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn level_below_empty_levels_errors() {
+        let mut s = setup_session();
+        {
+            let doc = s.doc_mut().unwrap();
+            doc.arch.levels.clear();
+        }
+        let result = s.execute("level", &json!({"below": "Level 1"}));
+        assert!(result.is_err());
+    }
 }
