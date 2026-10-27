@@ -1931,6 +1931,73 @@ mod tests {
     }
 
     #[test]
+    fn validate_reports_stale_next_room_id_counter() {
+        let mut m = ArchModel::default();
+        m.push_room(Room::default());
+        m.push_room(Room::default());
+        m.next_room_id = 1;
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("next id") && m.contains("next_room_id")), "stale next_room_id not reported: {msgs:?}");
+    }
+
+    #[test]
+    fn validate_reports_stale_next_roof_id_counter() {
+        let mut m = ArchModel::default();
+        m.push_roof(Roof::default());
+        m.push_roof(Roof::default());
+        m.next_roof_id = 1;
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("next id") && m.contains("next_roof_id")), "stale next_roof_id not reported: {msgs:?}");
+    }
+
+    #[test]
+    fn validate_accepts_very_small_positive_height() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 1e-9, ..Wall::default() });
+        let msgs = m.validate();
+        assert!(msgs.iter().all(|m| !m.contains("height")), "tiny positive height wrongly rejected: {msgs:?}");
+    }
+
+    #[test]
+    fn validate_accepts_empty_wall_type() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, wall_type: String::new(), ..Wall::default() });
+        let msgs = m.validate();
+        assert!(msgs.iter().all(|m| !m.contains("unknown wall type")), "empty wall_type wrongly rejected: {msgs:?}");
+    }
+
+    #[test]
+    fn validate_rejects_opening_width_below_minimum() {
+        let mut m = ArchModel::default();
+        let wid = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_opening(Opening { host: wid, width: 0.05, ..Opening::default() });
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("below minimum")), "opening width below minimum not reported: {msgs:?}");
+    }
+
+    #[test]
+    fn validate_reports_multiple_errors_on_same_wall() {
+        let mut m = ArchModel::default();
+        // Wall with zero thickness, zero length, unknown type, unknown level
+        m.push_wall(Wall {
+            start: Vec2::new(5.0, 5.0),
+            end: Vec2::new(5.0, 5.0),
+            thickness: 0.0,
+            height: 2.4,
+            base_level: 99,
+            exterior: true,
+            wall_type: "BogusType".into(),
+            ..Wall::default()
+        });
+        let msgs = m.validate();
+        // Should report: thickness below minimum, zero length, unknown wall type, unknown level
+        assert!(msgs.iter().any(|m| m.contains("below minimum")), "thickness error missing: {msgs:?}");
+        assert!(msgs.iter().any(|m| m.contains("zero or near-zero length")), "length error missing: {msgs:?}");
+        assert!(msgs.iter().any(|m| m.contains("unknown wall type")), "wall type error missing: {msgs:?}");
+        assert!(msgs.iter().any(|m| m.contains("unknown level")), "level error missing: {msgs:?}");
+    }
+
+    #[test]
     fn validate_accepts_the_builtin_wall_type_names() {
         for name in ["exterior", "INTERIOR", "kNeE", "Railing", "RETAINING", "Exterior", "Interior"] {
             let mut m = ArchModel::default();
