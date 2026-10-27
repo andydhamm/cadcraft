@@ -800,4 +800,105 @@ mod tests {
         assert_eq!(placed, 100);
         assert_eq!(s.doc().unwrap().arch.openings.len(), 100);
     }
+
+    /// A single wall is valid: positive finite length, positive thickness,
+    /// height 2.6.
+    #[test]
+    fn arch_sample_single_wall_is_valid() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "walls": 1 })).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 1);
+        let w = &d.arch.walls[0];
+        let len = w.start.dist(w.end);
+        assert!(len > 0.0, "wall length must be positive");
+        assert!(len.is_finite(), "wall length must be finite");
+        assert!(w.thickness > 0.0, "wall thickness must be positive");
+        assert_eq!(w.height, 2.6, "wall height must be 2.6");
+    }
+
+    /// Zero walls is clamped to one.
+    #[test]
+    fn arch_sample_zero_walls_clamped_to_one() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "walls": 0 })).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 1, "0 walls should be clamped to 1");
+    }
+
+    /// All generated wall lengths are in [3.0, 9.0) and finite.
+    #[test]
+    fn arch_sample_wall_lengths_in_range() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "walls": 64 })).unwrap();
+        let d = s.doc().unwrap();
+        for w in &d.arch.walls {
+            let len = w.start.dist(w.end);
+            assert!(len >= 3.0 && len < 9.0, "wall length {} out of range [3.0, 9.0)", len);
+            assert!(len.is_finite(), "wall length must be finite");
+        }
+    }
+
+    /// Wall thickness alternates 0.2 (odd walls) / 0.1 (even walls).
+    #[test]
+    fn arch_sample_wall_thickness_alternates() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "walls": 10 })).unwrap();
+        let d = s.doc().unwrap();
+        for (i, w) in d.arch.walls.iter().enumerate() {
+            let expected = if (i + 1) % 2 == 1 { 0.2 } else { 0.1 };
+            assert_eq!(w.thickness, expected, "wall {} thickness should be {}", i + 1, expected);
+        }
+    }
+
+    /// Walls at 1-based indices 3, 6, 9 (multiples of 3) get hinged doors.
+    #[test]
+    fn arch_sample_door_on_multiple_of_three() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "walls": 9, "openings": 9 })).unwrap();
+        let d = s.doc().unwrap();
+        for wall_id in [3, 6, 9] {
+            let openings = d.arch.openings_on(ArchId(wall_id));
+            assert_eq!(openings.len(), 1, "wall {} should have one opening", wall_id);
+            assert_eq!(openings[0].kind, OpeningKind::Door, "wall {} should have a door", wall_id);
+            assert_eq!(openings[0].style, "hinged", "wall {} door should be hinged", wall_id);
+        }
+    }
+
+    /// Walls at 1-based indices 1, 2, 4, 5, 7, 8 (not multiples of 3) get
+    /// slider windows.
+    #[test]
+    fn arch_sample_window_on_non_multiple_of_three() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "walls": 9, "openings": 9 })).unwrap();
+        let d = s.doc().unwrap();
+        for wall_id in [1, 2, 4, 5, 7, 8] {
+            let openings = d.arch.openings_on(ArchId(wall_id));
+            assert_eq!(openings.len(), 1, "wall {} should have one opening", wall_id);
+            assert_eq!(openings[0].kind, OpeningKind::Window, "wall {} should have a window", wall_id);
+            assert_eq!(openings[0].style, "slider", "wall {} window should be slider", wall_id);
+        }
+    }
+
+    /// The wall chain changes direction at least once (right-angle turns).
+    #[test]
+    fn arch_sample_wall_chain_changes_direction() {
+        let mut s = fresh_session();
+        s.execute("arch.sample", &json!({ "walls": 20 })).unwrap();
+        let d = s.doc().unwrap();
+        let walls = &d.arch.walls;
+        let mut changed = false;
+        for i in 0..walls.len().saturating_sub(2) {
+            let dx1 = walls[i + 1].start.x - walls[i].start.x;
+            let dy1 = walls[i + 1].start.y - walls[i].start.y;
+            let dx2 = walls[i + 2].start.x - walls[i + 1].start.x;
+            let dy2 = walls[i + 2].start.y - walls[i + 1].start.y;
+            let cross = dx1 * dy2 - dy1 * dx2;
+            if cross.abs() > 1e-9 {
+                changed = true;
+                break;
+            }
+        }
+        assert!(changed, "wall chain should change direction");
+    }
 }
