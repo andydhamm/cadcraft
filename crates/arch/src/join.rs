@@ -1529,6 +1529,79 @@ mod tests {
     }
 
     #[test]
+    fn a_short_wall_between_two_walls_keeps_its_raw_ring_at_both_ends() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Short horizontal wall between two vertical walls; wall 1 is thicker so the
+        // mitres at both ends cross over and the raw ring is kept.
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(0.1, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(0.0, 0.0), Vec2::new(0.0, 10.0), 1.5);
+        wall(&mut model, 2, Vec2::new(0.1, 0.0), Vec2::new(0.1, 10.0), 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 3, "all three walls should produce shapes");
+
+        // The short wall should keep its raw ring with no joins at either end.
+        let shape0 = &shapes[0];
+        assert_eq!(shape0.id, ArchId(0));
+        assert_eq!(shape0.polygon, crate::wall::wall_polygon(&model.walls[0]).unwrap());
+        assert!(shape0.joins.is_empty());
+    }
+
+    #[test]
+    fn a_thin_stub_mitred_into_thick_wall_keeps_raw_ring() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Thin stub (thickness 0.2) mitred into thick wall (thickness 2.0).
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(0.1, 0.0), 0.2);
+        wall(&mut model, 1, Vec2::new(0.1, 0.0), Vec2::new(0.1, 10.0), 2.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2, "both walls should produce shapes");
+
+        // The thin stub should keep its raw ring with no joins.
+        let shape0 = &shapes[0];
+        assert_eq!(shape0.id, ArchId(0));
+        assert_eq!(shape0.polygon, crate::wall::wall_polygon(&model.walls[0]).unwrap());
+        assert!(shape0.joins.is_empty());
+    }
+
+    #[test]
+    fn a_short_stub_at_large_coordinates_keeps_its_raw_ring() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        let base = 1e15;
+        wall(&mut model, 0, Vec2::new(base, 0.0), Vec2::new(base + 0.1, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(base + 0.1, 0.0), Vec2::new(base + 0.1, 10.0), 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2, "both walls should produce shapes");
+
+        // Large coordinates must not break the raw-ring fallback.
+        let shape0 = &shapes[0];
+        assert_eq!(shape0.id, ArchId(0));
+        assert_eq!(shape0.polygon, crate::wall::wall_polygon(&model.walls[0]).unwrap());
+        assert!(shape0.joins.is_empty());
+    }
+
+    #[test]
+    fn a_wall_with_one_crossed_end_falls_back_to_raw_ring_for_both_ends() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Short wall: the thicker wall 1 makes the mitres cross over at the start,
+        // so the whole wall falls back to the raw ring with no joins.
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(0.1, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(0.0, 0.0), Vec2::new(0.0, 10.0), 1.5);
+        wall(&mut model, 2, Vec2::new(0.1, 0.0), Vec2::new(0.1, 10.0), 1.0);
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 3, "all three walls should produce shapes");
+
+        // The short wall should have the raw ring with no joins (both ends).
+        let shape0 = &shapes[0];
+        assert_eq!(shape0.id, ArchId(0));
+        assert!(shape0.joins.is_empty());
+        // The raw ring has 4 corners for a 0.1 x 1.0 rectangle.
+        assert_eq!(shape0.polygon.len(), 4);
+    }
+
+    #[test]
     fn solve_joins_is_deterministic_and_skips_degenerate_walls() {
         let mut model = cadcraft_doc::ArchModel::default();
         wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0); // good
