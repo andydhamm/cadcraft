@@ -1023,17 +1023,21 @@ mod tests {
     #[test]
     fn wall_unknown_level_uses_first_level() {
         // Restored test: previously this fell back to the first level.
-        // Now it is rejected, so we assert the rejection.
+        // Now it is rejected (bad params). The refusal happens on the read-only
+        // doc, so it must not leave an empty undo step — assert both that no
+        // wall is created and that the undo stack is untouched.
         let mut s = Session::new();
         let d = s.doc_mut().unwrap();
         d.arch.levels.push(Level { name: "ground".to_string(), ceiling_height: 2.4, structure: 0.3, ..Default::default() });
         d.touch_arch();
+        let before_undo = s.state().unwrap().undo.len();
         let p = json!({
             "points": [[0.0, 0.0], [2.0, 0.0]],
             "level": "attic",
         });
         assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { .. })));
         assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
+        assert_eq!(s.state().unwrap().undo.len(), before_undo);
     }
 
     #[test]
