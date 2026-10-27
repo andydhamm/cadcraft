@@ -915,20 +915,17 @@ mod tests {
     }
 
     #[test]
-    fn wall_unknown_level_uses_first_level() {
+    fn wall_unknown_level_is_rejected() {
         let mut s = Session::new();
         let d = s.doc_mut().unwrap();
         d.arch.levels.push(Level { name: "only".to_string(), ceiling_height: 2.8, structure: 0.3, ..Default::default() });
         d.touch_arch();
-        // Level name "missing" does not exist; falls back to the first level
+        // Level name "missing" does not exist; must be rejected
         let p = json!({
             "points": [[0.0, 0.0], [2.0, 0.0]],
             "level": "missing",
         });
-        let _ = s.execute("wall", &p).unwrap();
-        let d = s.doc().unwrap();
-        // First level is the default (ceiling 2.4 + structure 0.3 = 2.7), not "only"
-        assert!((d.arch.walls[0].height - 2.7).abs() < 1e-9);
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { .. })));
     }
 
     #[test]
