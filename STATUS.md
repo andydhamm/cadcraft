@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-27 11:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 11:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 63 of 71 segments merged · 5 of 11 acceptance checks**
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 11:15 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 5 / 11 | 26.4 h so far · expected done Oct 27 14:44–Oct 27 18:00 UTC |
+| 4 | Automatic roofs | building | 5 / 11 | 26.7 h so far · expected done Oct 27 14:59–Oct 27 18:15 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -32,7 +32,7 @@ Updated 2026-10-27 11:15 UTC. This page and the card in the README are regenerat
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p4f-geom-roof-invariant-tests` | geom: roof-skeleton invariant test target | working | ornith-a |
-| `p4f-valley-classifier` | arch: classify hips/valleys/ridges from the surfaces | working | darwin-ws3 |
+| `p4f-valley-classifier` | arch: classify hips/valleys/ridges from the surfaces | working | kimi-k31 |
 | `p4f-roofplane-create` | engine: roofplane accepts a closed ring and numeric fascia/soffit | working | bonsai-b |
 | `p4f-gable-clip-probe` | arch3d: gable walls really reach the ridge and are probeable | working | bonsai-ws2-b |
 
@@ -57,15 +57,15 @@ Updated 2026-10-27 11:15 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 504 |
-| bonsai-b | bonsai2-27b | agent | 447 |
-| bonsai-ws2-a | bonsai2-27b | agent | 650 |
-| bonsai-ws2-b | bonsai2-27b | agent | 607 |
+| bonsai-a | bonsai2-27b | agent | 506 |
+| bonsai-b | bonsai2-27b | agent | 448 |
+| bonsai-ws2-a | bonsai2-27b | agent | 651 |
+| bonsai-ws2-b | bonsai2-27b | agent | 608 |
 | claude-sonnet-a | sonnet | idle | 12 |
 | claude-sonnet-b | sonnet | idle | 12 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 292 |
-| kimi-k31 | k3.1-pro-highspeed | idle | 58 |
-| ornith-a | ornith15-397b-exl3-35 | agent | 20 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 296 |
+| kimi-k31 | k3.1-pro-highspeed | agent | 58 |
+| ornith-a | ornith15-397b-exl3-35 | agent | 22 |
 | ornith-b | ornith15-397b-exl3-35 | agent | 15 |
-| tturbo-mac | tturbo-ultraheretic | agent | 303 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 113 |
+| tturbo-mac | tturbo-ultraheretic | merging | 304 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 114 |
