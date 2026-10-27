@@ -90,6 +90,36 @@ pub fn roof_edges_geom(g: &RoofGeom) -> Vec<RoofEdge> {
     edges
 }
 
+/// Quantise a position to 1 µm resolution for footprint vertex lookup.
+fn pt_key_1e6(x: f64, y: f64) -> (i64, i64) {
+    ((x * 1_000_000.0).round() as i64, (y * 1_000_000.0).round() as i64)
+}
+
+/// Return whether `pos` is a vertex of the footprint outer ring, and if so
+/// whether that vertex is convex (`true`) or reflex (`false`).
+///
+/// The outer ring is assumed CCW; a left turn at vertex `v` (cross > 0) is
+/// convex, a right turn (cross < 0) is reflex.  Returns `None` when `pos`
+/// does not match any footprint vertex within 1 µm.
+fn footprint_vertex_convexity(pos: Vec2, outer: &[Vec2]) -> Option<bool> {
+    let n = outer.len();
+    if n < 3 {
+        return None;
+    }
+    let key = pt_key_1e6(pos.x, pos.y);
+    for i in 0..n {
+        let v = outer[i];
+        if pt_key_1e6(v.x, v.y) != key {
+            continue;
+        }
+        let u = outer[(i + n - 1) % n];
+        let w = outer[(i + 1) % n];
+        let cross = (v - u).cross(w - v);
+        return Some(cross > 0.0);
+    }
+    None
+}
+
 fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings: usize) -> RoofEdgeKind {
     // GableEnd if any adjacent face has infinite slope
     for &f_idx in adjacent {
@@ -102,13 +132,10 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings:
         }
     }
 
-    // If not exactly two faces, it's an eave (boundary edge)
+    // If not exactly two faces, it's a boundary edge
     if adjacent.len() != 2 {
         return RoofEdgeKind::Eave;
     }
-
-    let f0_idx = adjacent[0];
-    let f1_idx = adjacent[1];
 
     let node_a = match g.skel.nodes.get(a) {
         Some(n) => n,
@@ -119,11 +146,29 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings:
         None => return RoofEdgeKind::Eave,
     };
 
+    // Primary signal: footprint vertex convexity.
+    // Skeleton nodes that originate at a footprint corner have time == 0 and their
+    // position exactly equals the corresponding `fp.outer` vertex.  A reflex corner
+    // (right turn in CCW ring) marks the top of a valley; a convex corner (left
+    // turn) marks the foot of a hip.  This is deterministic and requires no sampling.
+    let conv_a = footprint_vertex_convexity(node_a.pos, &g.fp.outer);
+    let conv_b = footprint_vertex_convexity(node_b.pos, &g.fp.outer);
+
+    // Use vertex a if it is a footprint vertex; otherwise b; if both, a takes precedence.
+    let primary = if conv_a.is_some() { conv_a } else { conv_b };
+    if let Some(is_convex) = primary {
+        return if is_convex { RoofEdgeKind::Hip } else { RoofEdgeKind::Valley };
+    }
+
+    // Neither endpoint is a footprint vertex: use the sample/height test for
+    // interior arcs (ridge, or hips on complex polygons with collinear eaves).
+    let f0_idx = adjacent[0];
+    let f1_idx = adjacent[1];
+
     let m_pt = (node_a.pos + node_b.pos) * 0.5;
     let e = (node_b.pos - node_a.pos).normalized();
     let m = e.perp();
 
-    // Helper to calculate surface height at a point for a given face
     let surface_height = |face_idx: usize, pt: Vec2| -> Option<f64> {
         let face = g.skel.faces.get(face_idx)?;
         let slope = g.slopes.get(face.edge)?;
@@ -132,8 +177,6 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings:
         }
         let eave_z = g.eave_z.get(face.edge)?;
         let edge = g.fp.edges.get(face.edge)?;
-
-        // Distance from point to edge line segment
         let v = edge.b - edge.a;
         if v.len() < 1e-12 {
             return Some(*eave_z);
@@ -142,52 +185,39 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings:
         Some(*eave_z + slope * dist)
     };
 
-    // Helper to get a sample point inside a face near the midpoint
     let sample_point = |face_idx: usize| -> Option<Vec2> {
         let ring = face_ring(g, face_idx);
         if ring.is_empty() {
             return None;
         }
-
-        // Try M + m * 0.05
         let mut s = m_pt + m * 0.05;
         if point_in_polygon(&s, &ring) {
             return Some(s);
         }
-
-        // Try M - m * 0.05
         s = m_pt - m * 0.05;
         if point_in_polygon(&s, &ring) {
             return Some(s);
         }
-
-        // Nudge towards centroid
         let c = face_centroid(g, face_idx);
         let dir = (c - m_pt).normalized();
         s = m_pt + dir * 0.05;
         if point_in_polygon(&s, &ring) {
             return Some(s);
         }
-
-        // Try smaller steps towards centroid
         for step in [0.01, 0.001] {
             s = m_pt + dir * step;
             if point_in_polygon(&s, &ring) {
                 return Some(s);
             }
         }
-
         None
     };
 
     let s0 = sample_point(f0_idx);
     let s1 = sample_point(f1_idx);
-
     let z0 = s0.and_then(|p| surface_height(f0_idx, p));
     let z1 = s1.and_then(|p| surface_height(f1_idx, p));
 
-    // Calculate expected z at midpoint from node times (interpolated)
-    // We use the average of the two faces' node heights to be robust
     let get_node_z = |node_idx: usize, face_idx: usize| -> Option<f64> {
         let node = g.skel.nodes.get(node_idx)?;
         let face = g.skel.faces.get(face_idx)?;
@@ -200,23 +230,24 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings:
     let za1 = get_node_z(a, f1_idx);
     let zb1 = get_node_z(b, f1_idx);
 
+    let eps = 1e-9;
+
     let (za, zb) = match (za0, zb0, za1, zb1) {
         (Some(a0), Some(b0), Some(a1), Some(b1)) => ((a0 + a1) * 0.5, (b0 + b1) * 0.5),
-        _ => return RoofEdgeKind::Eave,
+        _ => {
+            // Cannot get node heights; fall back on raw node times.
+            return if (node_a.time - node_b.time).abs() <= eps { RoofEdgeKind::Ridge } else { RoofEdgeKind::Hip };
+        }
     };
 
     let z_mid = (za + zb) * 0.5;
 
     if let (Some(z0), Some(z1)) = (z0, z1) {
-        let eps = 1e-9;
         let above0 = z0 > z_mid + eps;
         let above1 = z1 > z_mid + eps;
         let below0 = z0 < z_mid - eps;
         let below1 = z1 < z_mid - eps;
 
-        // Moving into either face rises away from a valley, but falls away
-        // from a convex roof edge. Level convex edges are ridges; sloping
-        // convex edges are hips.
         if above0 && above1 {
             return RoofEdgeKind::Valley;
         }
@@ -231,7 +262,8 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings:
         }
     }
 
-    RoofEdgeKind::Eave
+    // Final fallback: ridge if both ends are at equal height, hip otherwise.
+    if (node_a.time - node_b.time).abs() <= eps { RoofEdgeKind::Ridge } else { RoofEdgeKind::Hip }
 }
 
 /// Helper to get the ring of vertices for a face.
@@ -458,6 +490,47 @@ mod tests {
 
         assert!(found_v1, "Valley 1 not found");
         assert!(found_v2, "Valley 2 not found");
+    }
+
+    #[test]
+    fn hip_roof_valleys_follow_reflex_vertices() {
+        let mut m = ArchModel::default();
+        l_house(&mut m);
+        let g = geom(&m);
+        let edges = roof_edges_geom(&g);
+
+        let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        assert_eq!(valleys.len(), 1, "L footprint should have exactly one valley");
+
+        // The reflex outer-face vertex of the L footprint sits at (6.1, 8.1).
+        let reflex = Vec2::new(6.1, 8.1);
+        let valley = &valleys[0];
+        let anchored = (valley.a - reflex).len() < 1e-6 || (valley.b - reflex).len() < 1e-6;
+        assert!(anchored, "Valley must start at the reflex vertex (6.1,8.1): a={:?} b={:?}", valley.a, valley.b);
+    }
+
+    #[test]
+    fn convex_footprint_vertices_start_a_hip() {
+        let mut m = ArchModel::default();
+        house_10_8(&mut m);
+        let g = geom(&m);
+        let edges = roof_edges_geom(&g);
+
+        let corners = [Vec2::new(-0.1, -0.1), Vec2::new(10.1, -0.1), Vec2::new(10.1, 8.1), Vec2::new(-0.1, 8.1)];
+
+        let hips: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Hip).collect();
+
+        // Every hip must have one endpoint at a convex footprint corner.
+        for hip in &hips {
+            let at_corner = corners.iter().any(|c| (hip.a - *c).len() < 1e-6 || (hip.b - *c).len() < 1e-6);
+            assert!(at_corner, "Hip not anchored at a corner: a={:?} b={:?}", hip.a, hip.b);
+        }
+
+        // Every convex corner must have a hip starting from it.
+        for corner in &corners {
+            let has_hip = hips.iter().any(|h| (h.a - *corner).len() < 1e-6 || (h.b - *corner).len() < 1e-6);
+            assert!(has_hip, "Convex corner {:?} has no hip edge", corner);
+        }
     }
 
     #[test]
