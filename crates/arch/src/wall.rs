@@ -83,7 +83,15 @@ pub fn wall_layer_polygons(w: &Wall) -> Vec<(String, Vec<Vec2>)> {
     let mut out: Vec<(String, Vec<Vec2>)> = Vec::new();
     let mut consumed = 0.0;
     for (name, t) in &w.layers {
-        let t = t.clamp(0.0, w.thickness - consumed);
+        // Skip bands whose thickness is not a finite number (NaN/inf) rather than feeding
+        // them to arithmetic that could produce a NaN offset.
+        if !t.is_finite() {
+            continue;
+        }
+        // Remaining budget is floored at zero: rounding can leave `thickness - consumed`
+        // one ulp below zero, and `f64::clamp` panics when its bounds cross.
+        let remaining = (w.thickness - consumed).max(0.0);
+        let t = t.min(remaining).max(0.0);
         if t < 1e-12 {
             continue;
         }
@@ -172,6 +180,60 @@ mod tests {
         // Sum of band thicknesses = wall thickness.
         let sum: f64 = w.layers.iter().map(|(_, t)| t).sum();
         assert!((sum - w.thickness).abs() < 1e-9);
+    }
+
+    #[test]
+    fn layer_bands_thicker_than_the_wall_are_clipped_without_panicking() {
+        for &thickness in &[0.1, 0.103, 0.0999, 0.3 - 0.2, 1e-4] {
+            let w = Wall {
+                start: Vec2::new(0.0, 0.0),
+                end: Vec2::new(10.0, 0.0),
+                thickness,
+                height: 3.0,
+                layers: vec![("outer".into(), 0.013), ("core".into(), 0.09), ("inner".into(), 0.013)],
+                ..Wall::default()
+            };
+            let polys = wall_layer_polygons(&w);
+            let dir = (w.end - w.start).normalized();
+            let perp = dir.perp();
+            // Summed band widths never exceed the wall thickness (within tolerance).
+            let mut total = 0.0;
+            for (_, pts) in &polys {
+                let width = (pts[0] - pts[3]).dot(perp).abs();
+                assert!(width.is_finite());
+                total += width;
+            }
+            assert!(total <= thickness + 1e-12, "total {total} exceeds thickness {thickness}");
+        }
+        // The exact rounding case from the report: thickness one ulp below the band sum.
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.937076180931465,
+            height: 3.0,
+            layers: vec![("a".into(), 0.395546415468281), ("b".into(), 5.0), ("c".into(), 0.01)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        assert_eq!(polys.len(), 2, "band b (5.0) is clipped away, leaving a and c");
+    }
+
+    #[test]
+    fn hostile_layer_band_thicknesses_are_skipped() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            height: 3.0,
+            layers: vec![("nan".into(), f64::NAN), ("neg".into(), -1.0), ("inf".into(), f64::INFINITY), ("ok".into(), 0.05)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        assert_eq!(polys.len(), 1, "only the finite band survives");
+        assert_eq!(polys[0].0, "ok");
+        for (_, pts) in &polys {
+            assert!(pts.iter().all(|p| p.is_finite()));
+        }
     }
 
     #[test]
