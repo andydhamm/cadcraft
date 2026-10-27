@@ -19,7 +19,7 @@
 //! Returns JSON: `{"walls": [{"id": "w1", "handle": "a0000001"}, ...], "joins": 0}`
 
 use cadcraft_arch::{Level, Wall};
-use cadcraft_doc::{Handle, Layer, arch::MIN_WALL_THICKNESS};
+use cadcraft_doc::{Handle, Layer, MAX_WALLS, MIN_WALL_LENGTH, arch::MIN_WALL_THICKNESS};
 use cadcraft_geom::Vec2;
 use serde_json::{Value, json};
 
@@ -222,8 +222,8 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     if pts.len() < 2 {
         return Err(bad("wall", "`points` [[x,y],...] (2 or more) is required"));
     }
-    if pts.len() > super::MAX_WALLS {
-        return Err(bad("wall", format!("too many points ({} > {})", pts.len(), super::MAX_WALLS)));
+    if pts.len() > MAX_WALLS {
+        return Err(bad("wall", format!("too many points ({} > {})", pts.len(), MAX_WALLS)));
     }
     for i in 0..pts.len() {
         if !pts[i].is_finite() {
@@ -232,7 +232,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     }
     for i in 0..pts.len() - 1 {
         let d = pts[i + 1] - pts[i];
-        if d.len() < super::MIN_WALL_LENGTH {
+        if d.len() < MIN_WALL_LENGTH {
             return Err(bad("wall", "a segment is shorter than the minimum length"));
         }
     }
@@ -311,10 +311,10 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let wall_type = type_str.clone().unwrap_or_else(|| if exterior { "exterior".to_string() } else { "interior".to_string() });
 
     // Level: from param, or the first level in the model when absent
-    let level = if let Some(ref name) = level_name {
-        Some(d_read.arch.levels.iter().find(|l| l.name == *name).ok_or_else(|| bad("wall", format!("unknown level `{name}`")))?)
+    let level_idx = if let Some(ref name) = level_name {
+        d_read.arch.levels.iter().position(|l| l.name == *name).ok_or_else(|| bad("wall", format!("unknown level `{name}`")))?
     } else {
-        d_read.arch.levels.first()
+        0
     };
 
     // Height: explicit or the level's derived floor-to-floor (ceiling + structure)
@@ -322,7 +322,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let height = if has_height {
         size_param("wall", p, "height", false)?.unwrap_or(f64::NAN)
     } else {
-        level.map(|l| l.ceiling_height + l.structure).unwrap_or(super::DEFAULT_WALL_HEIGHT)
+        d_read.arch.levels.get(level_idx).map(|l| l.ceiling_height + l.structure).unwrap_or(super::DEFAULT_WALL_HEIGHT)
     };
     if !height.is_finite() || height <= 0.0 {
         return Err(bad("wall", "`height` must be a positive finite number"));
@@ -344,8 +344,8 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     };
 
     let new_segment_count = pts.len().saturating_sub(1);
-    if d_read.arch.walls.len() + new_segment_count > super::MAX_WALLS {
-        return Err(bad("wall", format!("too many walls in model ({} + {} > {})", d_read.arch.walls.len(), new_segment_count, super::MAX_WALLS)));
+    if d_read.arch.walls.len() + new_segment_count > MAX_WALLS {
+        return Err(bad("wall", format!("too many walls in model ({} + {} > {})", d_read.arch.walls.len(), new_segment_count, MAX_WALLS)));
     }
 
     // --- Now mutate ---
@@ -357,7 +357,7 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     }
 
     // --- Build wall objects ---
-    let base_level_idx = level.and_then(|l| d.arch.levels.iter().position(|lv| lv.name == l.name)).unwrap_or(0) as u32;
+    let base_level_idx = level_idx as u32;
     let layers = super::wall_layers(exterior);
     let mut new_walls: Vec<Wall> = Vec::with_capacity(new_segment_count);
     for i in 0..new_segment_count {
