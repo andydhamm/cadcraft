@@ -98,7 +98,7 @@ pub(crate) fn run_stretch(s: &mut Session, p: &Value) -> Result<Value> {
                     .ok_or_else(|| bad("arch.wall.stretch", format!("cannot project opening o{} onto wall w{}", o.id.0, o.host.0)))?;
                 reoffsets.push((oi, new_offset));
             }
-            for (oi, new_offset) in reoffsets {
+            for (oi, new_offset) in &reoffsets {
                 arch.openings[oi].offset = new_offset;
             }
             reoffsets.iter().map(|(oi, _)| *oi).collect()
