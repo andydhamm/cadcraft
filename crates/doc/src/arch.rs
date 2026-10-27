@@ -56,7 +56,7 @@ pub fn arch_handle(id: ArchId) -> Handle {
 
 /// Whether `h` falls in the synthetic arch-handle range (walls, openings, rooms).
 pub fn is_arch_handle(h: Handle) -> bool {
-    h.0 >= ARCH_HANDLE_BASE && h.0 < ARCH_HANDLE_BASE.saturating_add(1u64 << 32)
+    h.0 >= ARCH_HANDLE_BASE && h.0 <= ARCH_HANDLE_BASE.saturating_add(1u64 << 32)
 }
 
 /// The synthetic proxy handle for an architectural room.
@@ -1942,5 +1942,61 @@ mod tests {
         let mut m = ArchModel::default();
         m.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, wall_type: "bogus".into(), ..Wall::default() });
         assert!(m.validate().iter().any(|m| m.contains("unknown wall type")), "unknown wall type `bogus` was not reported");
+    }
+
+    #[test]
+    fn handle_just_below_base_is_not_arch() {
+        assert!(!is_arch_handle(Handle(ARCH_HANDLE_BASE - 1)));
+        assert!(is_arch_handle(Handle(ARCH_HANDLE_BASE)));
+    }
+
+    #[test]
+    fn arch_handle_at_max_id_is_within_range() {
+        let h = arch_handle(ArchId(u32::MAX));
+        assert!(is_arch_handle(h));
+        assert!(!is_opening_handle(h));
+        assert!(!is_room_handle(h));
+        assert!(!is_roof_handle(h));
+    }
+
+    #[test]
+    fn opening_handle_at_max_id_is_within_range() {
+        let h = opening_handle(ArchId(32767));
+        assert!(is_opening_handle(h));
+        assert!(is_arch_handle(h));
+        assert!(!is_room_handle(h));
+        assert!(!is_roof_handle(h));
+    }
+
+    #[test]
+    fn room_handle_at_max_id_is_within_range() {
+        let h = room_handle(ArchId(32767));
+        assert!(is_room_handle(h));
+        assert!(is_arch_handle(h));
+        assert!(!is_opening_handle(h));
+        assert!(!is_roof_handle(h));
+    }
+
+    #[test]
+    fn roof_handle_at_max_id_is_within_range() {
+        let h = roof_handle(ArchId(32767));
+        assert!(is_roof_handle(h));
+        assert!(is_arch_handle(h));
+        assert!(!is_opening_handle(h));
+        assert!(!is_room_handle(h));
+    }
+
+    #[test]
+    fn all_proxy_handle_ranges_are_disjoint() {
+        let wall = arch_handle(ArchId(100));
+        let opening = opening_handle(ArchId(100));
+        let room = room_handle(ArchId(100));
+        let roof = roof_handle(ArchId(100));
+        assert_ne!(wall, opening);
+        assert_ne!(wall, room);
+        assert_ne!(wall, roof);
+        assert_ne!(opening, room);
+        assert_ne!(opening, roof);
+        assert_ne!(room, roof);
     }
 }
