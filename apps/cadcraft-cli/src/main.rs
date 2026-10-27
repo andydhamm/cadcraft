@@ -414,7 +414,9 @@ fn render(args: &[String]) -> Result<(), String> {
         Ok(png) => {
             std::fs::write(&out, &png).map_err(|e| format!("{out}: {e}"))?;
             eprintln!("wrote {out} ({} bytes)", png.len());
-            eprintln!("{}", format_projected(pb));
+            let projected = format_projected(pb);
+            println!("{projected}");
+            eprintln!("{projected}");
         }
         Err(e) => {
             let code = render_error_exit(&e);
@@ -1449,6 +1451,44 @@ mod tests {
         assert!(parse_camera("orbit,,azimuth=1.5,,", base).is_ok());
         // Whitespace around fields
         assert!(parse_camera("orbit , azimuth = 1.5 , elevation = 0.5", base).is_ok());
+    }
+
+    #[test]
+    fn format_projected_rounds_half_up_at_seventh_decimal() {
+        // Use 0.8 in the 7th decimal so f32 representation error can't push it below the midpoint.
+        assert_eq!(format_projected([1.0000008, 2.0000008, 3.0000008, 4.0000008]), "PROJECTED 1.000001,2.000001,3.000001,4.000001");
+    }
+
+    #[test]
+    fn format_projected_very_small_values_round_to_zero() {
+        assert_eq!(format_projected([1e-10, 2e-10, 3e-10, 4e-10]), "PROJECTED 0.000000,0.000000,0.000000,0.000000");
+    }
+
+    #[test]
+    fn format_projected_f32_max_is_finite() {
+        let max = f32::MAX;
+        let s = format_projected([max, max, max, max]);
+        assert!(s.starts_with("PROJECTED "));
+        let rest = s.strip_prefix("PROJECTED ").unwrap();
+        let parts: Vec<&str> = rest.split(',').collect();
+        assert_eq!(parts.len(), 4);
+        for p in parts {
+            let v: f64 = p.parse().unwrap();
+            assert!(v.is_finite());
+        }
+    }
+
+    #[test]
+    fn projected_output_round_trips() {
+        let pb = [1.234567, -2.345678, 3.456789, -4.567890];
+        let s = format_projected(pb);
+        let rest = s.strip_prefix("PROJECTED ").unwrap();
+        let parts: Vec<&str> = rest.split(',').collect();
+        assert_eq!(parts.len(), 4);
+        for (i, p) in parts.iter().enumerate() {
+            let v: f64 = p.parse().unwrap();
+            assert!((v - pb[i] as f64).abs() < 1e-6, "round-trip failed for index {i}: {v} vs {}", pb[i]);
+        }
     }
 
     #[test]
