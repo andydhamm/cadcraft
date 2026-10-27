@@ -1,6 +1,6 @@
 //! Wall extrusion: turns a solved 2D `WallShape` into a 3D extruded mesh.
 
-use crate::mesh::{Mesh, find_bridge_pair, merge_ring, triangulate_simple};
+use crate::mesh::Mesh;
 
 use cadcraft_arch::join::WallShape;
 use cadcraft_arch::opening::ROUGH_ALLOWANCE;
@@ -216,26 +216,39 @@ pub fn extrude_wall_profile(shape: &WallShape, profile: WallProfile, base: f64, 
         return None;
     }
 
+    // Derive the wall frame from the shape: centre line from `shape.centre`,
+    // thickness from the solved polygon.
+    let dx = shape.centre.1.x - shape.centre.0.x;
+    let dy = shape.centre.1.y - shape.centre.0.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1e-9 {
+        return None;
+    }
+    let nx = -dy / len;
+    let ny = dx / len;
+    let thickness = ((shape.polygon[3].x - shape.polygon[0].x) * nx + (shape.polygon[3].y - shape.polygon[0].y) * ny).abs();
+    if thickness < 1e-12 {
+        return None;
+    }
+    let wall = Wall { start: shape.centre.0, end: shape.centre.1, thickness: thickness, ..Default::default() };
+
     // Fast path only for a true axis-aligned rectangle: 4 points, both bottom vertices at
     // v = 0, and both top vertices at the same v.  Any other shape (sloped quad, pentagon,
-    // …) goes through the general `extrude_profile_manual` path.
+    // …) goes through the general `profile_prism` path.
     let is_rect = profile.outer.len() == 4
         && profile.outer[0].y.abs() < 1e-9
         && profile.outer[1].y.abs() < 1e-9
         && (profile.outer[2].y - profile.outer[3].y).abs() < 1e-9;
 
-    let mut mesh = Mesh::new(material, shape.id);
-    mesh.level_elevation = base;
-
     if is_rect && profile.holes.is_empty() {
-        // Fast path: rectangle profile with no holes uses a simple prism.
         let height = profile.outer[1].y;
+        let mut mesh = Mesh::new(material, shape.id);
+        mesh.level_elevation = base;
         mesh.push_prism(&shape.polygon, base, base + height);
+        (mesh.triangle_count() > 0).then(|| mesh)
     } else {
-        return extrude_profile_manual(shape, profile, base, material);
+        profile_prism(&profile.outer, &profile.holes, &wall, base, material, shape.id)
     }
-
-    (mesh.triangle_count() > 0).then(|| mesh)
 }
 
 /// The wall's top polyline in wall-local coords `(u, v)`, `u` from `wall.start`
@@ -382,133 +395,90 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
     if result.iter().any(|p| (p.y - top_v).abs() > 1e-9) { Some(result) } else { None }
 }
 
-/// Manual extrusion of a profile with holes and/or slopes.
-///
-/// Builds the wall as a closed 2-manifold by bridging each hole into the
-/// outer ring, triangulating the merged ring, and emitting the two end
-/// caps (one per wall face) plus the side faces along each non-bridge edge.
-/// The winding mirrors [`Mesh::push_prism_with_holes`], which is the
-/// reference for outward-facing glTF windings: the "back" cap is reversed
-/// and the "front" cap is forward, and each side face is split into two
-/// triangles. This guarantees every emitted triangle winds outward.
-fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, material: &str) -> Option<Mesh> {
-    let mut mesh = Mesh::new(material, shape.id);
-    mesh.level_elevation = base;
-
-    let poly = &shape.polygon;
-    if poly.len() != 4 {
-        return None;
-    }
-
-    // Wall direction vector
-    let dx = poly[1].x - poly[0].x;
-    let dy = poly[1].y - poly[0].y;
+/// Extrude a profile into a closed solid: build the prism in profile space
+/// (`u`, `v`, thickness axis `t` in {0,1}) with `Mesh::push_prism_with_holes`,
+/// then map each vertex to world: `p = wall.start + u*dir + (t-0.5)*thickness*perp`,
+/// `z = base + v`. The map has determinant -1, so every triangle's winding is
+/// reversed after the remap. Normals are accumulated per vertex from the world
+/// face normals and normalised (zero -> [0,0,1]); UVs are world box mapping
+/// `[x, z]`. Returns `None` when the prism has no triangles.
+pub(crate) fn profile_prism(outer: &[Vec2], holes: &[Vec<Vec2>], wall: &Wall, base: f64, material: &str, id: ArchId) -> Option<Mesh> {
+    let dx = wall.end.x - wall.start.x;
+    let dy = wall.end.y - wall.start.y;
     let len = (dx * dx + dy * dy).sqrt();
-    if len < 1e-9 {
+    if len < 1e-9 || !len.is_finite() {
+        return None;
+    }
+    if !wall.thickness.is_finite() || wall.thickness <= 0.0 {
+        return None;
+    }
+    if !base.is_finite() {
         return None;
     }
 
-    // Normal vector (perpendicular to wall)
-    let nx = -dy / len;
-    let ny = dx / len;
+    let dir = Vec2::new(dx / len, dy / len);
+    let perp = Vec2::new(-dir.y, dir.x);
 
-    // Thickness
-    let thickness = ((poly[3].x - poly[0].x) * nx + (poly[3].y - poly[0].y) * ny).abs();
-    if thickness < 1e-12 {
+    let mut mesh = Mesh::new(material, id);
+    mesh.level_elevation = base;
+    mesh.push_prism_with_holes(outer, holes, 0.0, 1.0);
+
+    if mesh.indices.is_empty() {
         return None;
     }
 
-    // Bridge each hole into the outer ring (same logic as push_prism_with_holes).
-    let mut ring = profile.outer;
-    for hole in &profile.holes {
-        if let Some((p, q)) = find_bridge_pair(&ring, hole) {
-            ring = merge_ring(ring, p, hole, q);
+    // Transform positions to world space.
+    for i in 0..mesh.positions.len() {
+        let u = mesh.positions[i][0] as f64;
+        let v = mesh.positions[i][1] as f64;
+        let t = mesh.positions[i][2] as f64;
+        let x = wall.start.x + u * dir.x + (t - 0.5) * wall.thickness * perp.x;
+        let y = wall.start.y + u * dir.y + (t - 0.5) * wall.thickness * perp.y;
+        let z = base + v;
+        mesh.positions[i] = [x as f32, y as f32, z as f32];
+    }
+
+    // Reverse all triangle windings (the world map has negative determinant).
+    for i in (0..mesh.indices.len()).step_by(3) {
+        mesh.indices[i + 1].swap(&mesh.indices[i + 2]);
+    }
+
+    // Accumulate and normalise per-vertex normals from world-space faces.
+    let n = mesh.positions.len();
+    let mut normals: Vec<[f32; 3]> = vec![[0.0, 0.0, 0.0]; n];
+    for i in (0..mesh.indices.len()).step_by(3) {
+        let a = mesh.indices[i] as usize;
+        let b = mesh.indices[i + 1] as usize;
+        let c = mesh.indices[i + 2] as usize;
+        let pa = mesh.positions[a];
+        let pb = mesh.positions[b];
+        let pc = mesh.positions[c];
+        let nx = (pb[1] - pa[1]) * (pc[2] - pa[2]) - (pb[2] - pa[2]) * (pc[1] - pa[1]);
+        let ny = (pb[2] - pa[2]) * (pc[0] - pa[0]) - (pb[0] - pa[0]) * (pc[2] - pa[2]);
+        let nz = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0]);
+        normals[a][0] += nx;
+        normals[a][1] += ny;
+        normals[a][2] += nz;
+        normals[b][0] += nx;
+        normals[b][1] += ny;
+        normals[b][2] += nz;
+        normals[c][0] += nx;
+        normals[c][1] += ny;
+        normals[c][2] += nz;
+    }
+    for i in 0..n {
+        let l = (normals[i][0].powi(2) + normals[i][1].powi(2) + normals[i][2].powi(2)).sqrt();
+        if l > 1e-12 {
+            normals[i] = [normals[i][0] / l, normals[i][1] / l, normals[i][2] / l];
+        } else {
+            normals[i] = [0.0, 0.0, 1.0];
         }
     }
-    if ring.len() < 3 {
-        return None;
-    }
+    mesh.normals = normals;
 
-    // Triangulate the merged ring once; both caps share it.
-    let tris = triangulate_simple(&ring);
-    if tris.is_empty() {
-        return None;
-    }
-    let m = ring.len() as u32;
-    let b_base = mesh.positions.len() as u32;
-
-    // Map a profile vertex (u, v) to world space on each wall face.
-    // face 0 = inner (t=0), face 1 = outer (t=1).
-    let face0 = |p: &Vec2| -> [f32; 3] {
-        let x = poly[0].x + p.x * (dx / len);
-        let y = poly[0].y + p.x * (dy / len);
-        [x as f32, y as f32, (base + p.y) as f32]
-    };
-    let face1 = |p: &Vec2| -> [f32; 3] {
-        let x = poly[0].x + p.x * (dx / len) + thickness * nx;
-        let y = poly[0].y + p.x * (dy / len) + thickness * ny;
-        [x as f32, y as f32, (base + p.y) as f32]
-    };
-
-    // Back cap vertices (inner face).
-    for &p in &ring {
-        let v = face0(&p);
-        if !v.iter().all(|c| c.is_finite()) {
-            return None;
-        }
-        mesh.positions.push(v);
-        mesh.uvs.push([0.0, 0.0]);
-        mesh.normals.push([0.0, 0.0, 0.0]);
-    }
-    // Front cap vertices (outer face).
-    for &p in &ring {
-        let v = face1(&p);
-        if !v.iter().all(|c| c.is_finite()) {
-            return None;
-        }
-        mesh.positions.push(v);
-        mesh.uvs.push([0.0, 0.0]);
-        mesh.normals.push([0.0, 0.0, 0.0]);
-    }
-
-    // Back cap triangles: forward winding (outward normal on inner face).
-    for tri in &tris {
-        mesh.indices.extend([b_base + tri[0], b_base + tri[1], b_base + tri[2]]);
-    }
-    // Front cap triangles: reversed winding (outward normal on outer face).
-    for tri in &tris {
-        mesh.indices.extend([b_base + m + tri[0], b_base + m + tri[2], b_base + m + tri[1]]);
-    }
-
-    // Detect bridge edges by index (same as push_prism_with_holes).
-    let mut edge_count: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
-    for i in 0..m {
-        let j = (i + 1) % m;
-        let key = if i < j { (i, j) } else { (j, i) };
-        *edge_count.entry(key).or_insert(0) += 1;
-    }
-    let mut is_bridge = vec![false; m as usize];
-    for i in 0..m {
-        let j = (i + 1) % m;
-        let key = if i < j { (i, j) } else { (j, i) };
-        if let Some(&count) = edge_count.get(&key) {
-            if count >= 2 {
-                is_bridge[i as usize] = true;
-            }
-        }
-    }
-
-    // Side faces, skipping bridge edges; vertices are shared with the caps
-    // so the mesh is a closed 2-manifold.
-    for i in 0..m {
-        if is_bridge[i as usize] {
-            continue;
-        }
-        let j = (i + 1) % m;
-        // Triangle: front_j, back_j, back_i
-        mesh.indices.extend([b_base + m + j, b_base + j, b_base + i]);
-        // Triangle: front_j, back_i, front_i
-        mesh.indices.extend([b_base + m + j, b_base + i, b_base + m + i]);
+    // World box UVs: [x, z].
+    for i in 0..n {
+        mesh.uvs[i] = [mesh.positions[i][0], mesh.positions[i][2]];
     }
 
     (mesh.triangle_count() > 0).then(|| mesh)
@@ -516,257 +486,11 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
 
 /// Extrude a profile along the wall's centre-line frame (used when the top follows a roof).
 ///
-/// Unlike [`extrude_profile_manual`], which uses the solved polygon, this maps each profile
-/// vertex directly onto the wall's own centre line, making it suitable for walls whose top
-/// follows a roof plane with more than four profile points.
-///
-/// Returns `None` when the profile has fewer than 3 outer vertices, the wall thickness is
-/// non-positive, the wall has zero length, or the triangulation produces no triangles.
-/// Non-finite input coordinates are silently filtered out rather than causing a panic.
+/// Maps each profile vertex directly onto the wall's own centre line via
+/// [`profile_prism`], making it suitable for walls whose top follows a roof plane
+/// with more than four profile points.
 pub fn extrude_profile_slab(shape: &WallShape, profile: &WallProfile, base: f64, wall: &Wall, material: &str) -> Option<Mesh> {
-    if profile.outer.len() < 3 {
-        return None;
-    }
-    if !wall.thickness.is_finite() || wall.thickness <= 0.0 {
-        return None;
-    }
-
-    let dx = wall.end.x - wall.start.x;
-    let dy = wall.end.y - wall.start.y;
-    let len = (dx * dx + dy * dy).sqrt();
-    if len < 1e-9 {
-        return None;
-    }
-
-    let dir_x = dx / len;
-    let dir_y = dy / len;
-    // Perpendicular: (-dir.y, dir.x)
-    let perp_x = -dir_y;
-    let perp_y = dir_x;
-    let half = wall.thickness / 2.0;
-
-    let tris = triangulate_profile(&profile.outer, &profile.holes);
-
-    let mut mesh = Mesh::new(material, shape.id);
-    mesh.level_elevation = base;
-
-    for tri in tris {
-        // Skip triangles with non-finite profile coordinates.
-        if tri.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
-            continue;
-        }
-
-        // Build 6 vertices: 3 at s = -1 (one face), 3 at s = +1 (other face).
-        let mut verts: Vec<[f32; 3]> = Vec::with_capacity(6);
-        let mut all_finite = true;
-        for &s in &[-1.0_f64, 1.0_f64] {
-            for p in &tri {
-                let x = wall.start.x + p.x * dir_x + s * half * perp_x;
-                let y = wall.start.y + p.x * dir_y + s * half * perp_y;
-                let z = base + p.y;
-                if !x.is_finite() || !y.is_finite() || !z.is_finite() {
-                    all_finite = false;
-                    break;
-                }
-                verts.push([x as f32, y as f32, z as f32]);
-            }
-            if !all_finite {
-                break;
-            }
-        }
-        if !all_finite {
-            continue;
-        }
-
-        // Emit the 6-vertex / 8-triangle prism layout. Vertices 0-2 are at
-        // s = -1; vertices 3-5 at s = +1. The (u, v) plane's positive normal
-        // points along -s (u × v = -s), so the standard prism winding points
-        // every face into the solid; we reverse each face so all wind outward
-        // (glTF front faces are CCW, normal out).
-        let base_idx = mesh.positions.len() as u32;
-        for v in &verts {
-            mesh.positions.push(*v);
-            mesh.normals.push([0.0, 0.0, 1.0]);
-            mesh.uvs.push([0.0, 0.0]);
-        }
-        mesh.indices.extend_from_slice(&[
-            // Side 0-1
-            base_idx,
-            base_idx + 4,
-            base_idx + 1,
-            base_idx,
-            base_idx + 3,
-            base_idx + 4,
-            // Side 1-2
-            base_idx + 1,
-            base_idx + 5,
-            base_idx + 2,
-            base_idx + 1,
-            base_idx + 4,
-            base_idx + 5,
-            // Side 2-0
-            base_idx + 2,
-            base_idx + 3,
-            base_idx,
-            base_idx + 2,
-            base_idx + 5,
-            base_idx + 3,
-            // Bottom face (s = -1)
-            base_idx,
-            base_idx + 1,
-            base_idx + 2,
-            // Top face (s = +1)
-            base_idx + 3,
-            base_idx + 5,
-            base_idx + 4,
-        ]);
-    }
-
-    (mesh.triangle_count() > 0).then(|| mesh)
-}
-
-/// Simple ear-clipping triangulation for a polygon with holes.
-fn triangulate_profile(outer: &[Vec2], holes: &[Vec<Vec2>]) -> Vec<[Vec2; 3]> {
-    if outer.len() < 3 {
-        return Vec::new();
-    }
-
-    // If no holes, simple fan triangulation
-    if holes.is_empty() {
-        let mut tris = Vec::new();
-        for i in 1..outer.len() - 1 {
-            tris.push([outer[0], outer[i], outer[i + 1]]);
-        }
-        return tris;
-    }
-
-    // If holes exist, we need to merge them into the outer polygon.
-    // We'll use a simple approach: connect each hole to the outer polygon with a bridge.
-    // This creates a single polygon with "slits" that can be fan-triangulated.
-
-    let mut merged = outer.to_vec();
-
-    for hole in holes {
-        if hole.len() < 3 {
-            continue;
-        }
-
-        // Find the closest pair of vertices between merged polygon and hole
-        let mut min_dist_sq = f64::MAX;
-        let mut i_idx = 0;
-        let mut j_idx = 0;
-
-        for (i, p1) in merged.iter().enumerate() {
-            for (j, p2) in hole.iter().enumerate() {
-                let dx = p1.x - p2.x;
-                let dy = p1.y - p2.y;
-                let d_sq = dx * dx + dy * dy;
-                if d_sq < min_dist_sq {
-                    min_dist_sq = d_sq;
-                    i_idx = i;
-                    j_idx = j;
-                }
-            }
-        }
-
-        // Insert hole vertices into merged polygon after i_idx
-        // We insert hole[j_idx], hole[j_idx+1], ..., hole[j_idx-1], hole[j_idx]
-        // And then duplicate hole[j_idx] to create the bridge
-
-        let mut new_merged = Vec::new();
-        new_merged.extend_from_slice(&merged[..=i_idx]);
-
-        // Add hole vertices starting from j_idx
-        for k in 0..hole.len() {
-            let idx = (j_idx + k) % hole.len();
-            new_merged.push(hole[idx]);
-        }
-        // Close the hole by repeating the start vertex
-        new_merged.push(hole[j_idx]);
-
-        // Continue with the rest of the merged polygon
-        new_merged.extend_from_slice(&merged[i_idx..]);
-
-        merged = new_merged;
-    }
-
-    // Now triangulate the merged polygon using fan triangulation
-    // Note: Fan triangulation works on convex polygons. For non-convex, it might produce
-    // triangles outside the polygon. A proper ear-clipping algorithm is needed for robustness.
-    // However, for simple rectangular holes in rectangular walls, this might work if we
-    // are careful. But fan triangulation is generally unsafe for non-convex.
-
-    // Let's implement a basic ear clipping for the merged polygon.
-    let mut tris = Vec::new();
-    let mut remaining: Vec<Vec2> = merged;
-
-    // Simple ear clipping
-    while remaining.len() > 3 {
-        let mut ear_found = false;
-        for i in 0..remaining.len() {
-            let prev = (i + remaining.len() - 1) % remaining.len();
-            let next = (i + 1) % remaining.len();
-
-            let a = remaining[prev];
-            let b = remaining[i];
-            let c = remaining[next];
-
-            // Check if ear is convex
-            let cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-            if cross <= 0.0 {
-                continue; // Not convex (assuming CCW)
-            }
-
-            // Check if any other vertex is inside the triangle
-            let mut contains = false;
-            for j in 0..remaining.len() {
-                if j == prev || j == i || j == next {
-                    continue;
-                }
-                let p = remaining[j];
-                if point_in_triangle(p, a, b, c) {
-                    contains = true;
-                    break;
-                }
-            }
-
-            if !contains {
-                tris.push([a, b, c]);
-                remaining.remove(i);
-                ear_found = true;
-                break;
-            }
-        }
-
-        if !ear_found {
-            // Fallback: fan triangulate the rest
-            for i in 1..remaining.len() - 1 {
-                tris.push([remaining[0], remaining[i], remaining[i + 1]]);
-            }
-            break;
-        }
-    }
-
-    if remaining.len() == 3 {
-        tris.push([remaining[0], remaining[1], remaining[2]]);
-    }
-
-    tris
-}
-
-fn point_in_triangle(p: Vec2, a: Vec2, b: Vec2, c: Vec2) -> bool {
-    let d1 = sign(p, a, b);
-    let d2 = sign(p, b, c);
-    let d3 = sign(p, c, a);
-
-    let has_neg = (d1 < 0.0) || (d2 < 0.0) || (d3 < 0.0);
-    let has_pos = (d1 > 0.0) || (d2 > 0.0) || (d3 > 0.0);
-
-    !(has_neg && has_pos)
-}
-
-fn sign(p1: Vec2, p2: Vec2, p3: Vec2) -> f64 {
-    (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y)
+    profile_prism(&profile.outer, &profile.holes, wall, base, material, shape.id)
 }
 
 fn point_to_line_dist(p: Vec2, a: Vec2, b: Vec2) -> f64 {
