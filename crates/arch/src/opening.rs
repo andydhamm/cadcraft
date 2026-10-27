@@ -154,7 +154,8 @@ pub fn validate_placement(
         let gap = (b0 - c1).max(c0 - b1);
         let need = if other.mull_group.is_some() { 0.0 } else { MIN_SEPARATION };
         if gap < need - EPS {
-            return Err(PlacementError(format!("opening overlaps or is too close to opening {other:?}")));
+            let other_id = other.id;
+            return Err(PlacementError(format!("opening overlaps or is too close to opening {other_id}")));
         }
     }
 
@@ -367,6 +368,16 @@ mod tests {
         opening_on(&mut model, host, 0.5, 1.0);
         let res = validate_placement(&model, host, 1.0, 1.0, 0.0, 2.0, OpeningKind::Door, "hinged", None);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn an_overlap_error_names_the_other_opening_by_id() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        let other = opening_on(&mut model, host, 0.5, 1.0);
+        let res = validate_placement(&model, host, 1.0, 1.0, 0.0, 2.0, OpeningKind::Door, "hinged", None);
+        let err = res.unwrap_err();
+        assert_eq!(err.0, format!("opening overlaps or is too close to opening {other}"));
     }
 
     #[test]
