@@ -355,5 +355,51 @@ pub async fn headless_png(scene: &Scene3d, camera: &Camera, size: (u32, u32)) ->
 }
 
 #[cfg(test)]
+mod codec_tests {
+    use super::*;
+
+    #[test]
+    fn png_roundtrip_keeps_pixels() {
+        let mut px = Vec::new();
+        for y in 0..4u8 {
+            for x in 0..4u8 {
+                px.extend_from_slice(&[x * 60, y * 60, 128, 255]);
+            }
+        }
+        let png = encode_png(4, 4, &px).expect("encode");
+        assert_eq!(png_rgba(&png).expect("decode"), px);
+        assert!(!pixels_are_uniform(&px));
+    }
+
+    #[test]
+    fn uniform_pixels_are_detected() {
+        let px = vec![26u8; 8 * 8 * 4];
+        assert!(pixels_are_uniform(&px));
+        let mut px2 = px.clone();
+        px2[100] = 200;
+        assert!(!pixels_are_uniform(&px2));
+    }
+
+    #[test]
+    fn pixels_are_uniform_empty_is_true() {
+        assert!(pixels_are_uniform(&[]));
+    }
+
+    #[test]
+    fn png_rgba_invalid_data_errors() {
+        let result = png_rgba(&[0, 1, 2, 3]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn png_roundtrip_single_pixel() {
+        let px = vec![10u8, 20, 30, 255];
+        let png = encode_png(1, 1, &px).expect("encode");
+        assert_eq!(png_rgba(&png).expect("decode"), px);
+        assert!(pixels_are_uniform(&px));
+    }
+}
+
+#[cfg(test)]
 #[path = "offscreen_tests.rs"]
 mod tests;
