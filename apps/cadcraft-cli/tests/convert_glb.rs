@@ -43,6 +43,14 @@ fn temp_dir(test_name: &str) -> PathBuf {
 
 /// Build a DXF with 5 arch walls (a closed rectangle of 4 walls + 1 interior partition)
 /// by running `cadcraft-cli run --metric --cmd 'wall ...' --save walls.dxf`.
+/// Build an empty DXF (no walls, no linework) by running `cadcraft-cli run --save`.
+fn empty_plan(dir: &Path) -> PathBuf {
+    let out_dxf = dir.join("empty.dxf");
+    let out = run_cli(&["run".into(), "--metric".into(), "--save".into(), out_dxf.to_string_lossy().into()]);
+    assert!(out.status.success(), "empty_plan failed: {}", String::from_utf8_lossy(&out.stderr));
+    out_dxf
+}
+
 fn wall_plan(dir: &Path) -> PathBuf {
     let out_dxf = dir.join("walls.dxf");
     let out = run_cli(&[
@@ -134,4 +142,66 @@ fn glb_conversion_works_on_a_dxf_reopened_from_disk() {
     // The round-tripped file is non-empty and still a GLB.
     let bytes = fs::read(out_glb).unwrap();
     assert!(bytes.len() > 16, "GLB is too small to hold a scene: {} bytes", bytes.len());
+}
+
+#[test]
+fn convert_empty_plan_produces_valid_glb() {
+    let dir = temp_dir("convert_empty_plan_produces_valid_glb");
+    let in_dxf = empty_plan(&dir);
+    let out_glb = dir.join("empty.glb");
+
+    assert!(run_cli(&["convert".into(), in_dxf.to_string_lossy().into(), out_glb.to_string_lossy().into()]).status.success());
+    assert!(is_glb(&out_glb), "convert did not write a valid GLB for empty plan");
+
+    let json = glb_json(&out_glb);
+    let names = wall_mesh_names(&json);
+    assert_eq!(names.len(), 0, "expected 0 wall meshes for empty plan, got {}", names.len());
+}
+
+#[test]
+fn convert_single_wall_produces_one_mesh() {
+    let dir = temp_dir("convert_single_wall_produces_one_mesh");
+    let out_dxf = dir.join("single.dxf");
+    let out = run_cli(&[
+        "run".into(),
+        "--metric".into(),
+        "--cmd".into(),
+        r#"wall {"points":[[0,0],[10,0]],"thickness":0.2,"height":2.4}"#.into(),
+        "--save".into(),
+        out_dxf.to_string_lossy().into(),
+    ]);
+    assert!(out.status.success(), "single wall plan failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let out_glb = dir.join("single.glb");
+    assert!(run_cli(&["convert".into(), out_dxf.to_string_lossy().into(), out_glb.to_string_lossy().into()]).status.success());
+    assert!(is_glb(&out_glb), "convert did not write a valid GLB for single wall");
+
+    let json = glb_json(&out_glb);
+    let names = wall_mesh_names(&json);
+    assert_eq!(names.len(), 1, "expected 1 wall mesh, got {}", names.len());
+}
+
+#[test]
+fn convert_rejects_missing_input() {
+    let dir = temp_dir("convert_rejects_missing_input");
+    let missing = dir.join("does_not_exist.dxf");
+    let out_glb = dir.join("out.glb");
+
+    let out = run_cli(&["convert".into(), missing.to_string_lossy().into(), out_glb.to_string_lossy().into()]);
+    assert!(!out.status.success(), "convert should fail for missing input");
+    assert!(!out_glb.exists(), "no output should be written for missing input");
+}
+
+#[test]
+fn wall_mesh_names_are_unique() {
+    let dir = temp_dir("wall_mesh_names_are_unique");
+    let in_dxf = wall_plan(&dir);
+    let out_glb = dir.join("house.glb");
+
+    assert!(run_cli(&["convert".into(), in_dxf.to_string_lossy().into(), out_glb.to_string_lossy().into()]).status.success());
+
+    let json = glb_json(&out_glb);
+    let names = wall_mesh_names(&json);
+    let unique: std::collections::HashSet<_> = names.iter().collect();
+    assert_eq!(unique.len(), names.len(), "wall mesh names must be unique: {:?}", names);
 }

@@ -41,6 +41,14 @@ fn temp_dir(test_name: &str) -> PathBuf {
 
 /// Build a DXF with 5 arch walls (a closed rectangle of 4 walls + 1 interior partition)
 /// by running `cadcraft-cli run --metric --cmd 'wall ...' --save walls.dxf`.
+/// Build an empty DXF (no walls, no linework) by running `cadcraft-cli run --save`.
+fn empty_plan(dir: &Path) -> PathBuf {
+    let out_dxf = dir.join("empty.dxf");
+    let out = run_cli(&["run".into(), "--metric".into(), "--save".into(), out_dxf.to_string_lossy().into()]);
+    assert!(out.status.success(), "empty_plan failed: {}", String::from_utf8_lossy(&out.stderr));
+    out_dxf
+}
+
 fn wall_plan(dir: &Path) -> PathBuf {
     let out_dxf = dir.join("walls.dxf");
     let out = run_cli(&[
@@ -115,5 +123,55 @@ fn render_rejects_a_malformed_camera() {
             run_cli(&["render".into(), in_dxf.to_string_lossy().into(), out_png.to_string_lossy().into(), "--camera".into(), camera.to_string()]);
         assert!(!out.status.success(), "malformed camera `{camera}` should be rejected: stderr={}", String::from_utf8_lossy(&out.stderr));
         assert!(!out_png.exists(), "nothing should be written for malformed camera `{camera}`");
+    }
+}
+
+#[test]
+fn render_rejects_missing_input() {
+    let dir = temp_dir("render_rejects_missing_input");
+    let missing = dir.join("does_not_exist.dxf");
+    let out_png = dir.join("view.png");
+
+    let out = run_cli(&["render".into(), missing.to_string_lossy().into(), out_png.to_string_lossy().into(), "--camera".into(), "orbit".into()]);
+    assert!(!out.status.success(), "render should fail for missing input");
+    assert!(!out_png.exists(), "no output should be written for missing input");
+}
+
+#[test]
+fn render_empty_plan_succeeds_or_skips() {
+    let dir = temp_dir("render_empty_plan_succeeds_or_skips");
+    let in_dxf = empty_plan(&dir);
+    let out_png = dir.join("empty.png");
+
+    let out = run_cli(&["render".into(), in_dxf.to_string_lossy().into(), out_png.to_string_lossy().into(), "--camera".into(), "orbit".into()]);
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+    if out.status.success() {
+        assert!(is_png(&out_png), "render did not write a valid PNG for empty plan");
+    } else {
+        assert_eq!(out.status.code(), Some(3), "no-adapter must exit 3");
+        assert!(stderr.contains("NO_ADAPTER"));
+    }
+}
+
+#[test]
+fn render_projected_bounds_are_finite() {
+    let dir = temp_dir("render_projected_bounds_are_finite");
+    let in_dxf = wall_plan(&dir);
+    let out_png = dir.join("view.png");
+
+    let out = run_cli(&["render".into(), in_dxf.to_string_lossy().into(), out_png.to_string_lossy().into(), "--camera".into(), "orbit".into()]);
+    if !out.status.success() {
+        // No adapter; nothing to check.
+        return;
+    }
+
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    let line = stderr.lines().find(|l| l.starts_with("PROJECTED ")).expect("PROJECTED line");
+    let parts: Vec<&str> = line.strip_prefix("PROJECTED ").unwrap().trim().split(',').collect();
+    assert_eq!(parts.len(), 4, "PROJECTED must have 4 components: {}", line);
+    for p in parts {
+        let v: f64 = p.trim().parse().expect("PROJECTED component must be a number");
+        assert!(v.is_finite(), "PROJECTED component must be finite: {}", v);
     }
 }
