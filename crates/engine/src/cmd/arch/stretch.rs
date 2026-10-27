@@ -382,4 +382,74 @@ mod tests {
         assert!(w0.start.x.abs() < 1e-6 && w0.start.y.abs() < 1e-6, "w0.start should still be (0, 0)");
         assert!((d.arch.opening(ArchId(0)).expect("window").offset - 1.0).abs() < 1e-6, "offset should still be 1.0");
     }
+
+    #[test]
+    fn arch_wall_stretch_isolated_wall() {
+        let mut s = Session::new();
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]]})).expect("wall command");
+
+        let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [15.0, 0.0]}));
+        assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
+
+        let d = s.doc().expect("doc");
+        let w0 = d.arch.wall(ArchId(0)).expect("w0");
+        assert!((w0.end.x - 15.0).abs() < 1e-6, "w0.end.x should be 15: {}", w0.end.x);
+    }
+
+    #[test]
+    fn arch_wall_stretch_collinear_walls() {
+        let mut s = Session::new();
+        // w0 = (0,0)-(10,0), w1 = (10,0)-(20,0): collinear
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]]})).expect("wall command");
+
+        // Stretch w0's end to (12, 0): w1's start should move to (12, 0)
+        let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [12.0, 0.0]}));
+        assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
+
+        let d = s.doc().expect("doc");
+        let w0 = d.arch.wall(ArchId(0)).expect("w0");
+        let w1 = d.arch.wall(ArchId(1)).expect("w1");
+        assert!((w0.end.x - 12.0).abs() < 1e-6, "w0.end.x should be 12: {}", w0.end.x);
+        assert!((w1.start.x - 12.0).abs() < 1e-6, "w1.start.x should be 12: {}", w1.start.x);
+    }
+
+    #[test]
+    fn arch_wall_stretch_with_door_at_shared_point() {
+        let mut s = Session::new();
+        // w0 = (0,0)-(10,0), w1 = (10,0)-(10,10)
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]})).expect("wall command");
+        // Door at the shared point (10,0) on w1, offset 0
+        s.execute("door", &json!({"wall": "w1", "offset": 0.0, "width": 1.0, "height": 2.1})).expect("door on w1");
+
+        // Stretch w0's end to (12, 0): w1's start moves to (12, 0), door should stay at (12, 0)
+        let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [12.0, 0.0]}));
+        assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
+
+        let d = s.doc().expect("doc");
+        let w1 = d.arch.wall(ArchId(1)).expect("w1");
+        let door = d.arch.opening(ArchId(0)).expect("door");
+        // Door's world position should be w1.start + dir * offset = (12, 0) + (0, 1) * 0 = (12, 0)
+        let door_world = w1.start + (w1.end - w1.start).normalized() * door.offset;
+        assert!((door_world - Vec2::new(12.0, 0.0)).len() < 1e-6, "door world start should be (12, 0): ({}, {})", door_world.x, door_world.y);
+    }
+
+    #[test]
+    fn arch_wall_stretch_with_door_far_from_shared_point() {
+        let mut s = Session::new();
+        // w0 = (0,0)-(10,0), w1 = (10,0)-(10,10)
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]})).expect("wall command");
+        // Door at offset 5 on w1 (middle of the wall)
+        s.execute("door", &json!({"wall": "w1", "offset": 5.0, "width": 1.0, "height": 2.1})).expect("door on w1");
+
+        // Stretch w0's end to (12, 0): w1's start moves to (12, 0), door should stay at (12, 5)
+        let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [12.0, 0.0]}));
+        assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
+
+        let d = s.doc().expect("doc");
+        let w1 = d.arch.wall(ArchId(1)).expect("w1");
+        let door = d.arch.opening(ArchId(0)).expect("door");
+        // Door's world position should be w1.start + dir * offset = (12, 0) + (0, 1) * 5 = (12, 5)
+        let door_world = w1.start + (w1.end - w1.start).normalized() * door.offset;
+        assert!((door_world - Vec2::new(12.0, 5.0)).len() < 1e-6, "door world start should be (12, 5): ({}, {})", door_world.x, door_world.y);
+    }
 }
