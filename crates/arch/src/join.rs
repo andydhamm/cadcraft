@@ -277,7 +277,7 @@ fn t_join(w: &Wall, end: End, raw: (Vec2, Vec2), host: &Wall) -> EndPlan {
 }
 
 /// A neighbour wall relevant to a join at one end.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum Neighbour {
     /// Another wall's end meets this wall's end at the same point.
     EndToEnd { id: ArchId, end: End },
@@ -295,6 +295,14 @@ enum Neighbour {
 }
 
 /// Classify the neighbours at one end of a wall.
+///
+/// The Mid, X and Parallel scans are prefilted: only walls whose centre-line
+/// bounding box overlaps this wall's centre-line bounding box grown by
+/// `reach = w.thickness.max(0) + nw.thickness.max(0) + ENDPOINT_TOL` are
+/// considered. A Mid neighbour's end point lies on its centre line, an X
+/// neighbour's crossing lies inside both centre-line boxes, and a Parallel
+/// neighbour's end is within the thickness sum of this end, so no true
+/// neighbour can be lost.
 fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End) -> Vec<Neighbour> {
     let Some(w) = model.walls.iter().find(|w| w.id == id) else {
         return Vec::new();
@@ -341,11 +349,22 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
         }
     }
 
-    // Check all walls for Mid (centre line passes through this point)
-    for nw in &model.walls {
-        if nw.id == id {
-            continue;
-        }
+    // Prefilter for the Mid, X and Parallel scans: only walls whose centre-line
+    // bounding box overlaps this wall's centre-line bounding box grown by
+    // `reach = w.thickness.max(0) + nw.thickness.max(0) + ENDPOINT_TOL` can be
+    // a neighbour. A Mid neighbour's end point lies on its centre line, an X
+    // neighbour's crossing lies inside both centre-line boxes, and a Parallel
+    // neighbour's end is within the thickness sum of this end, so no true
+    // neighbour is lost.
+    let candidates: Vec<&Wall> = model
+        .walls
+        .iter()
+        .filter(|nw| nw.id != id)
+        .filter(|nw| centreline_box_overlaps(w, nw, w.thickness.max(0.0) + nw.thickness.max(0.0) + ENDPOINT_TOL))
+        .collect();
+
+    // Check candidates for Mid (centre line passes through this point)
+    for nw in &candidates {
         // Skip if already found as EndToEnd or Collinear in the cluster
         if neighbours.iter().any(|n| matches!(n, Neighbour::EndToEnd { id: nid, .. } | Neighbour::Collinear { id: nid, .. } if *nid == nw.id)) {
             continue;
@@ -364,10 +383,7 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
 
     // X: this wall's centre line is crossed by another wall's centre line at a point
     // interior to both, and this end is the nearest to the crossing.
-    for nw in &model.walls {
-        if nw.id == id {
-            continue;
-        }
+    for nw in &candidates {
         if neighbours.iter().any(|n| matches!(n, Neighbour::EndToEnd { id: nid, .. } | Neighbour::Collinear { id: nid, .. } | Neighbour::Mid { id: nid, .. } | Neighbour::Parallel { id: nid, .. } if *nid == nw.id)) {
             continue;
         }
@@ -398,10 +414,7 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
 
     // Parallel: parallel (not collinear) neighbour whose end is aligned with this end
     // along the wall direction and close in the perpendicular direction.
-    for nw in &model.walls {
-        if nw.id == id {
-            continue;
-        }
+    for nw in &candidates {
         if neighbours.iter().any(|n| matches!(n, Neighbour::EndToEnd { id: nid, .. } | Neighbour::Collinear { id: nid, .. } | Neighbour::Mid { id: nid, .. } | Neighbour::Parallel { id: nid, .. } if *nid == nw.id)) {
             continue;
         }
@@ -428,7 +441,25 @@ fn classify(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End
     neighbours
 }
 
+/// Does `nw`'s centre-line bounding box overlap `w`'s centre-line bounding box
+/// grown by `reach` (world units)? Non-finite corners compare false, so such
+/// walls are never candidates.
+fn centreline_box_overlaps(w: &Wall, nw: &Wall, reach: f64) -> bool {
+    let wx0 = w.start.x.min(w.end.x) - reach;
+    let wx1 = w.start.x.max(w.end.x) + reach;
+    let wy0 = w.start.y.min(w.end.y) - reach;
+    let wy1 = w.start.y.max(w.end.y) + reach;
+    let nx0 = nw.start.x.min(nw.end.x);
+    let nx1 = nw.start.x.max(nw.end.x);
+    let ny0 = nw.start.y.min(nw.end.y);
+    let ny1 = nw.start.y.max(nw.end.y);
+    nx0 <= wx1 && nx1 >= wx0 && ny0 <= wy1 && ny1 >= wy0
+}
+
 /// Plan the corners and join at one end of a wall.
+///
+/// `classify` is injected so the test-only full-scan variant can be run
+/// against the same planning code.
 fn plan_end(
     w: &Wall,
     end: End,
@@ -437,6 +468,7 @@ fn plan_end(
     model: &cadcraft_doc::ArchModel,
     id: ArchId,
     ov: &JoinOverrides,
+    classify: &dyn Fn(&cadcraft_doc::ArchModel, &WallGraph, ArchId, End) -> Vec<Neighbour>,
 ) -> Result<EndPlan, ArchError> {
     let nbrs = classify(model, g, id, end);
     let kind = match ov.kind(id, end) {
@@ -648,6 +680,8 @@ pub fn solve_joins_with(model: &cadcraft_doc::ArchModel, ov: &JoinOverrides) -> 
     let graph = WallGraph::build(model);
     let mut out: Vec<WallShape> = Vec::with_capacity(model.walls.len());
 
+    let classify = |m: &cadcraft_doc::ArchModel, g: &WallGraph, i: ArchId, e: End| classify(m, g, i, e);
+
     for w in &model.walls {
         if wall_polygon(w).is_none() {
             continue;
@@ -659,12 +693,12 @@ pub fn solve_joins_with(model: &cadcraft_doc::ArchModel, ov: &JoinOverrides) -> 
         let (rs, re) = face[1];
 
         // Start end.
-        let plan_s = match plan_end(w, End::Start, (ls, rs), &graph, model, w.id, ov) {
+        let plan_s = match plan_end(w, End::Start, (ls, rs), &graph, model, w.id, ov, &classify) {
             Ok(p) => p,
             Err(_) => continue,
         };
         // End end.
-        let plan_e = match plan_end(w, End::End, (le, re), &graph, model, w.id, ov) {
+        let plan_e = match plan_end(w, End::End, (le, re), &graph, model, w.id, ov, &classify) {
             Ok(p) => p,
             Err(_) => continue,
         };
@@ -1299,6 +1333,192 @@ mod tests {
         }
     }
 
+    // The pre-change full-model scan, kept test-only to verify the centre-line
+    // box prefilter in `classify` loses no neighbour.
+    #[cfg(test)]
+    fn classify_full(model: &cadcraft_doc::ArchModel, g: &WallGraph, id: ArchId, end: End) -> Vec<Neighbour> {
+        let Some(w) = model.walls.iter().find(|w| w.id == id) else {
+            return Vec::new();
+        };
+        let pt = end.point(w);
+        let Some(dir) = wall_dir(w) else {
+            return Vec::new();
+        };
+
+        let mut neighbours = Vec::new();
+
+        // Check cluster for EndToEnd, Collinear, and Fan
+        if let Some(cluster_idx) = g.cluster_of(id, end) {
+            let cluster = g.cluster(cluster_idx);
+            if cluster.len() > MAX_JOIN_FAN {
+                return vec![Neighbour::Fan { count: cluster.len() }];
+            }
+            for (nid, nend) in cluster {
+                if *nid == id {
+                    continue;
+                }
+                let Some(nw) = model.walls.iter().find(|w| w.id == *nid) else {
+                    continue;
+                };
+                let Some(ndir) = wall_dir(nw) else {
+                    continue;
+                };
+                let cross = dir.cross(ndir);
+
+                // Collinear: parallel and on the same line.
+                if cross.abs() < PARALLEL_EPS {
+                    let d = (pt - nw.start).cross(ndir);
+                    if d.abs() < ENDPOINT_TOL {
+                        let nend_at_pt = if nw.start.dist(pt) < ENDPOINT_TOL { End::Start } else { End::End };
+                        neighbours.push(Neighbour::Collinear { id: *nid, end: nend_at_pt });
+                    }
+                    continue;
+                }
+
+                // EndToEnd: the neighbour's end is also at this point.
+                if nend.point(nw).dist(pt) < ENDPOINT_TOL {
+                    neighbours.push(Neighbour::EndToEnd { id: *nid, end: *nend });
+                }
+            }
+        }
+
+        // Check all walls for Mid (centre line passes through this point)
+        for nw in &model.walls {
+            if nw.id == id {
+                continue;
+            }
+            // Skip if already found as EndToEnd or Collinear in the cluster
+            if neighbours.iter().any(|n| matches!(n, Neighbour::EndToEnd { id: nid, .. } | Neighbour::Collinear { id: nid, .. } if *nid == nw.id)) {
+                continue;
+            }
+            let Some(ndir) = wall_dir(nw) else {
+                continue;
+            };
+            let d = (pt - nw.start).cross(ndir);
+            let t = (pt - nw.start).dot(ndir);
+            let nw_len = nw.start.dist(nw.end);
+            if d.abs() < ENDPOINT_TOL && t > ENDPOINT_TOL && t < nw_len - ENDPOINT_TOL {
+                let nend = if nw.start.dist(pt) < nw.end.dist(pt) { End::Start } else { End::End };
+                neighbours.push(Neighbour::Mid { id: nw.id, end: nend });
+            }
+        }
+
+        // X: this wall's centre line is crossed by another wall's centre line at a point
+        // interior to both, and this end is the nearest to the crossing.
+        for nw in &model.walls {
+            if nw.id == id {
+                continue;
+            }
+            if neighbours.iter().any(|n| matches!(n, Neighbour::EndToEnd { id: nid, .. } | Neighbour::Collinear { id: nid, .. } | Neighbour::Mid { id: nid, .. } | Neighbour::Parallel { id: nid, .. } if *nid == nw.id)) {
+                continue;
+            }
+            let Some(ndir) = wall_dir(nw) else {
+                continue;
+            };
+            let Some(cross_pt) = line_line_infinite(w.start, w.end, nw.start, nw.end) else {
+                continue;
+            };
+            let cross_pt = cross_pt.0;
+            // Crossing must be interior (strictly between endpoints) on both centre lines.
+            let t1 = (cross_pt - w.start).dot(dir);
+            let t2 = (cross_pt - nw.start).dot(ndir);
+            let w_len = w.start.dist(w.end);
+            let nw_len = nw.start.dist(nw.end);
+            if t1 <= ENDPOINT_TOL || t1 >= w_len - ENDPOINT_TOL {
+                continue;
+            }
+            if t2 <= ENDPOINT_TOL || t2 >= nw_len - ENDPOINT_TOL {
+                continue;
+            }
+            // This end is the nearest to the crossing (End wins the tie when equidistant).
+            let this_is_nearest =
+                if end == End::Start { pt.dist(cross_pt) < w.end.dist(cross_pt) } else { pt.dist(cross_pt) <= w.start.dist(cross_pt) };
+            if this_is_nearest {
+                neighbours.push(Neighbour::X);
+            }
+        }
+
+        // Parallel: parallel (not collinear) neighbour whose end is aligned with this end
+        // along the wall direction and close in the perpendicular direction.
+        for nw in &model.walls {
+            if nw.id == id {
+                continue;
+            }
+            if neighbours.iter().any(|n| matches!(n, Neighbour::EndToEnd { id: nid, .. } | Neighbour::Collinear { id: nid, .. } | Neighbour::Mid { id: nid, .. } | Neighbour::Parallel { id: nid, .. } if *nid == nw.id)) {
+                continue;
+            }
+            let Some(ndir) = wall_dir(nw) else {
+                continue;
+            };
+            let cross = dir.cross(ndir);
+            if cross.abs() < PARALLEL_EPS {
+                let d = (pt - nw.start).cross(ndir);
+                if d.abs() < ENDPOINT_TOL {
+                    continue; // collinear, handled in the cluster
+                }
+                // parallel but not collinear
+                let nend_pt = if nw.start.dist(pt) < nw.end.dist(pt) { nw.start } else { nw.end };
+                let nend = if nw.start.dist(pt) < nw.end.dist(pt) { End::Start } else { End::End };
+                let aligned = (nend_pt - pt).dot(dir).abs() < ENDPOINT_TOL;
+                let close = pt.dist(nend_pt) < w.thickness + nw.thickness + ENDPOINT_TOL;
+                if aligned && close {
+                    neighbours.push(Neighbour::Parallel { id: nw.id, end: nend });
+                }
+            }
+        }
+
+        neighbours
+    }
+
+    // The pre-change `solve_joins`, driven by the full-model scan, kept test-only
+    // to verify the prefilted output is identical.
+    #[cfg(test)]
+    fn solve_joins_full(model: &cadcraft_doc::ArchModel) -> Vec<WallShape> {
+        let graph = WallGraph::build(model);
+        let mut out: Vec<WallShape> = Vec::with_capacity(model.walls.len());
+
+        let classify = |m: &cadcraft_doc::ArchModel, g: &WallGraph, i: ArchId, e: End| classify_full(m, g, i, e);
+
+        for w in &model.walls {
+            if wall_polygon(w).is_none() {
+                continue;
+            }
+            let Some(face) = face_lines(w) else {
+                continue;
+            };
+            let (ls, le) = face[0];
+            let (rs, re) = face[1];
+
+            // Start end.
+            let plan_s = match plan_end(w, End::Start, (ls, rs), &graph, model, w.id, &JoinOverrides::default(), &classify) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            // End end.
+            let plan_e = match plan_end(w, End::End, (le, re), &graph, model, w.id, &JoinOverrides::default(), &classify) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+
+            let corners = ring_from_corners(plan_s.left, plan_s.right, plan_e.left, plan_e.right);
+            let (ring, joins) = match corners {
+                Some(r) => (r, vec![plan_s.join, plan_e.join].into_iter().filter_map(|j| j).collect()),
+                None => {
+                    // Rule 6: crossed/degenerate → fall back to the raw (untrimmed)
+                    // corners. The wall still exists; it simply records no joins.
+                    match ring_from_corners(ls, rs, le, re) {
+                        Some(r) => (r, Vec::new()),
+                        None => continue,
+                    }
+                }
+            };
+
+            out.push(WallShape { id: w.id, polygon: ring, centre: (w.start, w.end), joins });
+        }
+
+        out
+    }
+
     #[test]
     fn a_wall_shorter_than_its_neighbours_mitre_keeps_its_raw_ring() {
         let mut model = cadcraft_doc::ArchModel::default();
@@ -1478,5 +1698,45 @@ mod tests {
         let s0_ov = &shapes_ov[0];
         // Wall 0 should now have a Square join at its End, because the override wins.
         assert!(s0_ov.joins.iter().any(|j| matches!(j, Join::Square(End::End))), "Wall 0 should have Join::Square(End::End) due to override");
+    }
+
+    #[test]
+    fn classify_with_prefilter_matches_the_full_scan() {
+        let mut model = cadcraft_doc::ArchModel::default();
+
+        // L join pair.
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 1.0);
+        // T join (stem into a straight host).
+        wall(&mut model, 10, Vec2::new(0.0, 5.0), Vec2::new(20.0, 5.0), 1.0);
+        wall(&mut model, 11, Vec2::new(10.0, 10.0), Vec2::new(10.0, 5.0), 1.0);
+        // X crossing.
+        wall(&mut model, 20, Vec2::new(30.0, 0.0), Vec2::new(40.0, 0.0), 1.0);
+        wall(&mut model, 21, Vec2::new(35.0, -3.0), Vec2::new(35.0, 3.0), 1.0);
+        // Parallel pair.
+        wall(&mut model, 30, Vec2::new(50.0, 0.0), Vec2::new(60.0, 0.0), 1.0);
+        wall(&mut model, 31, Vec2::new(50.0, 1.0), Vec2::new(60.0, 1.0), 1.0);
+        // Collinear pair.
+        wall(&mut model, 40, Vec2::new(70.0, 0.0), Vec2::new(75.0, 0.0), 1.0);
+        wall(&mut model, 41, Vec2::new(75.0, 0.0), Vec2::new(80.0, 0.0), 1.0);
+        // 200 far-away walls that no join scan should ever touch.
+        for i in 0..200 {
+            let x = 1000.0 + (i as f64) * 2.0;
+            wall(&mut model, 100 + i, Vec2::new(x, 2000.0), Vec2::new(x + 2.0, 2000.0), 1.0);
+        }
+
+        let graph = WallGraph::build(&model);
+
+        // Every end: prefilted scan must match the full-model scan.
+        for w in &model.walls {
+            for end in [End::Start, End::End] {
+                let pref = classify(&model, &graph, w.id, end);
+                let full = classify_full(&model, &graph, w.id, end);
+                assert_eq!(pref, full, "prefilter lost a neighbour for wall {:?} end {:?}", w.id, end);
+            }
+        }
+
+        // solve_joins output is identical with and without the prefilter.
+        assert_eq!(solve_joins(&model), solve_joins_full(&model), "solve_joins output changed with the prefilter");
     }
 }
