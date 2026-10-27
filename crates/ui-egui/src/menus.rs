@@ -900,6 +900,87 @@ mod tests {
         assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(true));
         assert!(app.ui.show_three_d);
     }
+
+    /// Explicit `{"on": false}` turns the pane off even when it is already off (idempotent).
+    #[test]
+    fn show3d_on_false_turns_off_and_is_idempotent() {
+        let (mut app, _asked) = app_with_picker(None);
+        assert!(!app.ui.show_three_d);
+
+        // Turn it on first.
+        app.run("ui.show3d", json!({"on": true})).unwrap();
+        assert!(app.ui.show_three_d);
+
+        // Explicit off clears it.
+        let r = app.run("ui.show3d", json!({"on": false})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(false));
+        assert!(!app.ui.show_three_d);
+
+        // Off when already off stays off.
+        let r = app.run("ui.show3d", json!({"on": false})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(false));
+        assert!(!app.ui.show_three_d);
+    }
+
+    /// Hostile input: unknown params (no "on" key) cause a flip, same as null params.
+    #[test]
+    fn show3d_unknown_params_flip() {
+        let (mut app, _asked) = app_with_picker(None);
+        assert!(!app.ui.show_three_d);
+
+        // Unknown key: flips on.
+        let r = app.run("ui.show3d", json!({"foo": "bar"})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(true));
+        assert!(app.ui.show_three_d);
+
+        // Unknown key again: flips off.
+        let r = app.run("ui.show3d", json!({"baz": 42})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(false));
+        assert!(!app.ui.show_three_d);
+    }
+
+    /// Non-bool "on" value is treated as absent (flips), per Value::as_bool semantics.
+    #[test]
+    fn show3d_non_bool_on_flips() {
+        let (mut app, _asked) = app_with_picker(None);
+        assert!(!app.ui.show_three_d);
+
+        // {"on": 42} is not a bool, so it flips.
+        let r = app.run("ui.show3d", json!({"on": 42})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(true));
+        assert!(app.ui.show_three_d);
+
+        // {"on": "yes"} also flips.
+        let r = app.run("ui.show3d", json!({"on": "yes"})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(false));
+        assert!(!app.ui.show_three_d);
+    }
+
+    /// The return value always reflects the actual state after the command runs.
+    #[test]
+    fn show3d_return_value_matches_state() {
+        let (mut app, _asked) = app_with_picker(None);
+
+        // Start off, flip on.
+        let r = app.run("ui.show3d", json!({})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(true));
+        assert_eq!(app.ui.show_three_d, true);
+
+        // Set off explicitly.
+        let r = app.run("ui.show3d", json!({"on": false})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(false));
+        assert_eq!(app.ui.show_three_d, false);
+
+        // Set on explicitly.
+        let r = app.run("ui.show3d", json!({"on": true})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(true));
+        assert_eq!(app.ui.show_three_d, true);
+
+        // Flip off.
+        let r = app.run("ui.show3d", json!({})).unwrap();
+        assert_eq!(r.get("showThreeD").and_then(Value::as_bool), Some(false));
+        assert_eq!(app.ui.show_three_d, false);
+    }
 }
 
 #[cfg(test)]
