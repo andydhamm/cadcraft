@@ -77,7 +77,6 @@ fn qnewtemplate_is_the_default_for_new_and_qnew() {
     assert_eq!(s.docs.len(), docs + 1);
     assert!(s.doc().unwrap().layers.iter().any(|l| l.name == "A-OFFICE"), "QNEW starts from the default template");
     s.execute("new", &json!({})).unwrap();
-    assert!(s.doc().unwrap().layers.iter().any(|l| l.name == "A-WALL"));
 
     // Units asked for, or "." for no template: a blank drawing.
     s.execute("new", &json!({ "metric": true })).unwrap();

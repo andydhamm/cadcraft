@@ -172,15 +172,7 @@ impl Drawing {
         Drawing {
             header: Header::default(),
             foreign: std::sync::Arc::default(),
-            layers: vec![
-                Layer::default(),
-                Layer { name: "Defpoints".into(), plot: false, ..Layer::default() },
-                Layer { name: "A-WALL".into(), ..Layer::default() },
-                Layer { name: "A-DOOR".into(), ..Layer::default() },
-                Layer { name: "A-GLAZ".into(), ..Layer::default() },
-                Layer { name: "A-ROOF".into(), ..Layer::default() },
-                Layer { name: "A-STAIR".into(), ..Layer::default() },
-            ],
+            layers: vec![Layer::default(), Layer { name: "Defpoints".into(), plot: false, ..Layer::default() }],
             linetypes: vec![
                 Linetype { name: "ByBlock".into(), description: String::new(), pattern: Vec::new() },
                 Linetype { name: "ByLayer".into(), description: String::new(), pattern: Vec::new() },
