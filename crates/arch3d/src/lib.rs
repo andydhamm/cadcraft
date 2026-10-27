@@ -1894,6 +1894,125 @@ mod tests {
     }
 
     #[test]
+    fn scene_skips_meshes_with_nan_coordinates() {
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        // Wall with NaN in end coordinate: finite check passes, but NaN as f32 is still NaN.
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(f64::NAN, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.mesh_count(), 1, "build: expected 1 mesh, got {}", scene.mesh_count());
+        assert!(scene.mesh_for(&ArchId(1)).is_some(), "ordinary wall must be present");
+        assert!(scene.mesh_for(&ArchId(2)).is_none(), "NaN wall must be dropped");
+        for i in 0..3 {
+            assert!(scene.bounds.min[i].is_finite(), "bounds.min[{i}] must be finite");
+            assert!(scene.bounds.max[i].is_finite(), "bounds.max[{i}] must be finite");
+        }
+    }
+
+    #[test]
+    fn scene_skips_all_overflow_walls() {
+        let mut model = ArchModel::default();
+        for i in 0..3u32 {
+            let x0 = i as f64 * 1e300;
+            model.walls.push(Wall {
+                id: ArchId(i),
+                start: Vec2::new(x0, 0.0),
+                end: Vec2::new(x0 + 2.0, 0.0),
+                thickness: 0.3,
+                height: 2.5,
+                ..Default::default()
+            });
+        }
+
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.mesh_count(), 0, "expected 0 meshes, got {}", scene.mesh_count());
+        // Empty bounds should still be finite (or at least not NaN).
+        for i in 0..3 {
+            assert!(scene.bounds.min[i].is_finite() || scene.bounds.min[i].is_infinite(), "bounds.min[{i}] must not be NaN");
+            assert!(scene.bounds.max[i].is_finite() || scene.bounds.max[i].is_infinite(), "bounds.max[{i}] must not be NaN");
+        }
+    }
+
+    #[test]
+    fn scene_skips_meshes_with_overflow_height() {
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        // Wall with huge height: z overflows f32.
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(6.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 1e300,
+            ..Default::default()
+        });
+
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.mesh_count(), 1, "build: expected 1 mesh, got {}", scene.mesh_count());
+        assert!(scene.mesh_for(&ArchId(1)).is_some(), "ordinary wall must be present");
+        assert!(scene.mesh_for(&ArchId(2)).is_none(), "tall wall must be dropped");
+    }
+
+    #[test]
+    fn build_dirty_reuses_good_wall_and_drops_overflow() {
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(6.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let full = Scene3d::build(&model);
+        assert_eq!(full.mesh_count(), 2);
+
+        // Now move wall 2 far away (overflow) and rebuild dirty.
+        let mut moved = model.clone();
+        if let Some(w) = moved.walls.iter_mut().find(|w| w.id == ArchId(2)) {
+            w.start = Vec2::new(1e300, 0.0);
+            w.end = Vec2::new(1e300 + 4.0, 0.0);
+        }
+
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(2)]);
+        let partial = Scene3d::build_dirty(&moved, &dirty, &full);
+        assert_eq!(partial.mesh_count(), 1, "expected 1 mesh after overflow, got {}", partial.mesh_count());
+        assert!(partial.mesh_for(&ArchId(1)).is_some(), "good wall must be reused");
+        assert!(partial.mesh_for(&ArchId(2)).is_none(), "overflow wall must be dropped");
+    }
+
+    #[test]
     fn roof_meshes_are_all_probeable() {
         use cadcraft_doc::arch::{Roof, RoofPlane};
 
