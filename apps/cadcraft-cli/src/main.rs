@@ -273,14 +273,16 @@ fn sample(args: &[String]) -> Result<(), String> {
 /// Whether `name` is a frameable output (a 2D image: png, svg, pdf). A `.glb` is written whole
 /// (its own camera framing) and ignores `--window`/`--view`, so it is not frameable here.
 fn is_frameable_output(name: &str) -> bool {
-    cadcraft_io::is_image(name) && !name.ends_with(".glb")
+    cadcraft_io::is_image(name)
 }
 
 /// Reject an explicit framing option without a frameable output to apply it to.
 fn check_framed_output(framing: Framing, out: Option<&str>) -> Result<(), String> {
     match out {
         _ if framing == Framing::Auto => Ok(()),
-        Some(o) if !is_frameable_output(o) => Err(format!("--window/--view only apply to image output (png, svg, pdf), not `{o}`")),
+        Some(o) if !is_frameable_output(o) => {
+            Err(format!("--window/--view only apply to image output (png, svg, pdf), not `{o}` (a .glb is written whole, with its own camera)"))
+        }
         Some(_) => Ok(()),
         None => Err("--window/--view need a frameable output (--export OUT.png|svg|pdf)".into()),
     }
@@ -297,22 +299,18 @@ const RENDER_MAX_SIZE: u32 = 8192;
 
 /// Parse `WxH` into a pixel size (whole numbers in `1..=RENDER_MAX_SIZE`). A size outside that
 /// range is an error, never a value `Offscreen::clamp_size` would silently shrink — which would
-/// make the `PROJECTED` line describe a different image than the PNG that was written.
+/// make the `PROJECTED` line describe a different image than the PNG that was written, and a huge
+/// request would ask for gigabytes of texture memory.
 fn parse_size(v: &str) -> Result<(u32, u32), String> {
     let parts: Vec<&str> = v.split(['x', 'X']).map(str::trim).collect();
     let [w, h] = parts.as_slice() else { return Err(format!("--size needs WxH, got `{v}`")) };
     let num = |name: &str, t: &str| -> Result<u32, String> {
         match t.parse::<u32>() {
-            Ok(n) if n > 0 => Ok(n),
-            _ => return Err(format!("--size {name} must be a positive whole number, got `{t}`")),
+            Ok(n) if (1..=RENDER_MAX_SIZE).contains(&n) => Ok(n),
+            _ => return Err(format!("--size {name} must be a whole number in 1..={RENDER_MAX_SIZE}, got `{t}`")),
         }
     };
     let (w, h) = (num("width", w)?, num("height", h)?);
-    for (name, n) in [("width", w), ("height", h)] {
-        if n > RENDER_MAX_SIZE {
-            return Err(format!("--size {name} must be at most {RENDER_MAX_SIZE}, got {n}"));
-        }
-    }
     Ok((w, h))
 }
 
@@ -344,13 +342,13 @@ fn parse_camera(spec: &str, base: cadcraft_render3d::camera::Orbit) -> Result<ca
                 o.elevation = v;
             }
             "distance" => {
-                if !(0.0..=cadcraft_render3d::camera::MAX_DISTANCE).contains(&v) {
+                if !(0.0 < v && v <= cadcraft_render3d::camera::MAX_DISTANCE) {
                     return Err(format!("camera distance must be in (0, {}], got `{val}`", cadcraft_render3d::camera::MAX_DISTANCE));
                 }
                 o.distance = v;
             }
             "fov" => {
-                if !(0.0..180.0).contains(&v) {
+                if !(0.0 < v && v < 180.0) {
                     return Err(format!("camera fov must be in (0, 180) degrees, got `{val}`"));
                 }
                 o.fov_deg = v;
@@ -1439,6 +1437,9 @@ mod tests {
         assert_eq!(parse_size("100X200"), Ok((100, 200)));
         // Largest size the CLI honours (wgpu's default max_texture_dimension_2d).
         assert_eq!(parse_size("8192x8192"), Ok((8192, 8192)));
+        // Over the wgpu texture limit is refused, not silently shrunk.
+        assert!(parse_size("8193x8193").is_err());
+        assert!(parse_size("4294967295x4294967295").is_err());
     }
 
     #[test]
