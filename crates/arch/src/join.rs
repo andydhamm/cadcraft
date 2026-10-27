@@ -1294,10 +1294,10 @@ mod tests {
         let w0 = &shapes[0];
         // Wall 0's end (at x=10) should still be an L join with wall 1
         assert!(w0.joins.iter().any(|j| matches!(j, Join::L(End::End))), "wall 0 end should be L join");
-        // Wall 0 should span the full x range 0..10
+        // Wall 0 should span the full x range 0..10 (the L mitre corner extends to 10.1)
         let b = w0.bounds();
         assert!((b.min.x - 0.0).abs() < 1e-9, "wall 0 min.x: {}", b.min.x);
-        assert!((b.max.x - 10.0).abs() < 1e-9, "wall 0 max.x: {}", b.max.x);
+        assert!((b.max.x - 10.1).abs() < 1e-9, "wall 0 max.x: {}", b.max.x);
     }
 
     #[test]
