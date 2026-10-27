@@ -5,25 +5,29 @@
 //! (which runs `cargo test --release`) can enforce the budget while
 //! `cargo test` (debug) stays fast.
 
-use std::time::Instant;
+use std::collections::BTreeSet;
+use std::time::{Duration, Instant};
 
+use cadcraft_arch::join::{Join, solve_joins};
 use cadcraft_doc::arch::Opening;
 use cadcraft_doc::geom::Vec2;
 use cadcraft_doc::{ArchId, ArchModel, Wall};
 
-/// Build a deterministic 300-wall grid: 20 rows × 15 columns of small rooms.
+/// Build a deterministic 300-wall grid: 10 rows x 15 columns.
+/// Horizontal walls: 10 * 15 = 150.
+/// Vertical walls: 10 * 15 = 150.
+/// Total: 300 walls.
 fn build_300_wall_grid() -> ArchModel {
     let cols = 15u32;
-    let rows = 20u32;
-    let cell_w = 1.0; // 1 m cells
+    let rows = 10u32;
+    let cell_w = 1.0;
     let cell_h = 1.0;
     let thickness = 0.15f64;
     let height = 2.7f64;
 
     let mut model = ArchModel::default();
-    let mut count = 0u32;
 
-    // Horizontal walls: one per row (cols walls).
+    // Horizontal walls: 10 rows, 15 columns each
     for r in 0..rows {
         for c in 0..cols {
             let x0 = (c as f64) * cell_w;
@@ -39,34 +43,54 @@ fn build_300_wall_grid() -> ArchModel {
                 wall_type: "Default".to_string(),
                 ..Default::default()
             });
-            count += 1;
-        }
-        if count >= 300 {
-            break;
         }
     }
 
-    // If we're short, add vertical walls to hit 300.
-    while count < 300 {
-        let c = count % cols as u32;
-        let r = count / cols as u32;
-        let x = (c as f64) * cell_w;
-        let y0 = (r as f64) * cell_h;
-        let y1 = (r + 1) as f64 * cell_h;
-        model.add_wall(Wall {
-            start: Vec2::new(x, y0),
-            end: Vec2::new(x, y1),
-            thickness,
-            height,
-            to_ceiling: true,
-            exterior: false,
-            wall_type: "Default".to_string(),
-            ..Default::default()
-        });
-        count += 1;
+    // Vertical walls: 10 rows, 15 columns each
+    for r in 0..rows {
+        for c in 0..cols {
+            let x = (c as f64) * cell_w;
+            let y0 = (r as f64) * cell_h;
+            let y1 = (r + 1) as f64 * cell_h;
+            model.add_wall(Wall {
+                start: Vec2::new(x, y0),
+                end: Vec2::new(x, y1),
+                thickness,
+                height,
+                to_ceiling: true,
+                exterior: r == 0 || r == rows - 1 || c == 0 || c == cols - 1,
+                wall_type: "Default".to_string(),
+                ..Default::default()
+            });
+        }
     }
 
     model
+}
+
+#[test]
+fn elapsed_is_measured_in_milliseconds() {
+    let d = Duration::from_millis(1500);
+    let ms = d.as_secs_f64() * 1000.0;
+    assert_eq!(ms, 1500.0);
+}
+
+#[test]
+fn benchmark_grid_has_real_junctions() {
+    let model = build_300_wall_grid();
+    assert_eq!(model.walls.len(), 300, "expected 300 walls");
+
+    let joins = solve_joins(&model);
+    assert_eq!(joins.len(), 300, "expected 300 join shapes");
+
+    let has_l = joins.iter().any(|j| j.joins.iter().any(|k| matches!(k, Join::L(_))));
+    let has_t = joins.iter().any(|j| j.joins.iter().any(|k| matches!(k, Join::T(_))));
+
+    assert!(has_l, "expected at least one L join");
+    assert!(has_t, "expected at least one T join");
+
+    let scene = cadcraft_arch3d::build(&model);
+    assert_eq!(scene.meshes.len(), 300, "expected 300 meshes");
 }
 
 /// 300-wall full `build` must be < 50 ms; single-wall `build_dirty` < 5 ms.
@@ -75,7 +99,7 @@ fn build_300_wall_grid() -> ArchModel {
 /// so it is safe to run in any build mode without flaking.
 #[test]
 fn three_hundred_walls_rebuild_under_50ms() {
-    if cfg!(debug) {
+    if cfg!(debug_assertions) {
         println!("three_hundred_walls_rebuild_under_50ms: skipped in debug");
         return;
     }
@@ -86,7 +110,7 @@ fn three_hundred_walls_rebuild_under_50ms() {
     // --- full build ---
     let t0 = Instant::now();
     let scene = cadcraft_arch3d::build(&model);
-    let full_ms = t0.elapsed().as_millis() as f64 / 1_000.0;
+    let full_ms = t0.elapsed().as_secs_f64() * 1000.0;
     println!(
         "full build (300 walls): {:.1} ms, meshes: {}, tris: {}",
         full_ms,
@@ -98,12 +122,12 @@ fn three_hundred_walls_rebuild_under_50ms() {
 
     // --- single-wall dirty rebuild ---
     let first_id = scene.meshes.first().map(|m| m.object).expect("no meshes");
-    let mut dirty: std::collections::BTreeSet<cadcraft_arch::ArchId> = std::collections::BTreeSet::new();
+    let mut dirty: BTreeSet<ArchId> = BTreeSet::new();
     dirty.insert(first_id);
 
     let t1 = Instant::now();
     let _ = cadcraft_arch3d::build_dirty(&model, &dirty, &scene);
-    let dirty_ms = t1.elapsed().as_millis() as f64 / 1_000.0;
+    let dirty_ms = t1.elapsed().as_secs_f64() * 1000.0;
     println!("build_dirty (1 wall):  {:.1} ms", dirty_ms);
 
     assert!(dirty_ms < 5.0, "build_dirty took {dirty_ms:.1} ms (budget 5 ms)");
@@ -113,7 +137,7 @@ fn three_hundred_walls_rebuild_under_50ms() {
 /// and identical to a full build of the edited model.
 #[test]
 fn three_hundred_walls_150_openings_rebuild() {
-    if cfg!(debug) {
+    if cfg!(debug_assertions) {
         println!("three_hundred_walls_150_openings_rebuild: skipped in debug");
         return;
     }
@@ -137,7 +161,7 @@ fn three_hundred_walls_150_openings_rebuild() {
     // Full build
     let t0 = Instant::now();
     let scene = cadcraft_arch3d::build(&model);
-    let ms = t0.elapsed().as_millis() as f64 / 1_000.0;
+    let ms = t0.elapsed().as_secs_f64() * 1000.0;
     println!("full build (300 walls, 150 openings): {:.1} ms, meshes: {}, openings: {}", ms, scene.meshes.len(), scene.openings_built);
     assert!(ms < 50.0, "full build took {ms:.1} ms (budget 50 ms)");
     assert!(scene.meshes.len() >= 300, "expected >=300 meshes, got {}", scene.meshes.len());
@@ -148,12 +172,12 @@ fn three_hundred_walls_150_openings_rebuild() {
     let mut edited = model.clone();
     edited.openings[0].width = 1.0;
 
-    let mut dirty: std::collections::BTreeSet<ArchId> = std::collections::BTreeSet::new();
+    let mut dirty: BTreeSet<ArchId> = BTreeSet::new();
     dirty.insert(open_id);
 
     let t1 = Instant::now();
     let partial = cadcraft_arch3d::build_dirty(&edited, &dirty, &scene);
-    let dirty_ms = t1.elapsed().as_millis() as f64 / 1_000.0;
+    let dirty_ms = t1.elapsed().as_secs_f64() * 1000.0;
     println!("build_dirty (1 opening): {:.1} ms", dirty_ms);
     assert!(dirty_ms < 5.0, "build_dirty took {dirty_ms:.1} ms (budget 5 ms)");
 
