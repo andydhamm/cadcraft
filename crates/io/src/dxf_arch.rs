@@ -176,17 +176,25 @@ fn opening_ring(w: &cadcraft_doc::Wall, o: &cadcraft_doc::arch::Opening) -> Opti
 
 /// The DXF groups (after the common entity groups) of one closed LWPOLYLINE per wall poche
 /// ring, on layer [`ARCH_PROXY_LAYER`], each tagged with the [`ARCH_PROXY_MARKER`] xdata and
-/// the wall's id. Returns `Vec::new()` for an empty model; the output is capped at
-/// [`cadcraft_doc::MAX_WALLS`] polylines.
+/// the wall's id. Rings come from [`cadcraft_arch::join::solve_joins`] so joined corners are
+/// mitred rather than drawn as overlapping rectangles; a wall with no solved shape (degenerate)
+/// falls back to its own centre-line rectangle. Returns `Vec::new()` for an empty model; the
+/// output is capped at [`cadcraft_doc::MAX_WALLS`] polylines.
 pub(crate) fn proxy_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
     if m.is_empty() {
         return Vec::new();
     }
+    let shapes = cadcraft_arch::join::solve_joins(m);
+    let rings: std::collections::HashMap<cadcraft_doc::ArchId, Vec<Vec2>> = shapes.into_iter().map(|s| (s.id, s.polygon)).collect();
+
     m.walls
         .iter()
         .take(cadcraft_doc::MAX_WALLS)
-        .filter_map(|w| wall_ring(w).map(|corners| (w, corners)))
-        .map(|(w, corners)| {
+        .filter_map(|w| {
+            let corners = match rings.get(&w.id) {
+                Some(r) => r.clone(),
+                None => wall_ring(w)?,
+            };
             let mut t = Vec::new();
             t.push(Tag::i(90, 4));
             t.push(Tag::i(70, 1));
@@ -197,7 +205,7 @@ pub(crate) fn proxy_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
             t.push(Tag::s(1001, crate::dxf_ext::APP));
             t.push(Tag::s(1000, ARCH_PROXY_MARKER));
             t.push(Tag::s(1000, &w.id.to_string()));
-            t
+            Some(t)
         })
         .collect()
 }
@@ -428,6 +436,73 @@ mod tests {
     }
 
     #[test]
+    fn proxy_polylines_use_the_solved_mitred_ring() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 2, "expected two wall proxies");
+
+        // Collect all corners of each ring.
+        let corners_of = |tags: &[Tag]| -> Vec<(f64, f64)> {
+            let mut out = Vec::new();
+            let mut i = 0;
+            while i + 1 < tags.len() {
+                if tags[i].code == 10 && tags[i + 1].code == 20 {
+                    out.push((tags[i].f64(), tags[i + 1].f64()));
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            out
+        };
+
+        // Both rings contain the shared mitre points (10.1,-0.1) and (9.9,0.1).
+        for tags in &polys {
+            let corners = corners_of(tags);
+            assert!(corners.iter().any(|(x, y)| (x - 10.1).abs() < 1e-9 && (y + 0.1).abs() < 1e-9), "ring missing mitre (10.1,-0.1)");
+            assert!(corners.iter().any(|(x, y)| (x - 9.9).abs() < 1e-9 && (y - 0.1).abs() < 1e-9), "ring missing mitre (9.9,0.1)");
+        }
+
+        // The first wall (horizontal) keeps none of the bare-rectangle corners (10,-0.1)/(10,0.1).
+        let c0 = corners_of(&polys[0]);
+        assert!(!c0.iter().any(|(x, y)| (x - 10.0).abs() < 1e-9 && (y + 0.1).abs() < 1e-9), "wall 0 still has rectangle corner (10,-0.1)");
+        assert!(!c0.iter().any(|(x, y)| (x - 10.0).abs() < 1e-9 && (y - 0.1).abs() < 1e-9), "wall 0 still has rectangle corner (10,0.1)");
+
+        // The second wall (vertical) keeps none of (9.9,0)/(10.1,0).
+        let c1 = corners_of(&polys[1]);
+        assert!(!c1.iter().any(|(x, y)| (x - 9.9).abs() < 1e-9 && y.abs() < 1e-9), "wall 1 still has rectangle corner (9.9,0)");
+        assert!(!c1.iter().any(|(x, y)| (x - 10.1).abs() < 1e-9 && y.abs() < 1e-9), "wall 1 still has rectangle corner (10.1,0)");
+    }
+
+    #[test]
+    fn proxy_for_an_unsolved_wall_falls_back_to_the_rectangle() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+
+        let polys = proxy_polylines(&m);
+        assert_eq!(polys.len(), 1, "expected one wall proxy");
+
+        let tags = &polys[0];
+        let mut corners: Vec<(f64, f64)> = Vec::new();
+        let mut i = 0;
+        while i + 1 < tags.len() {
+            if tags[i].code == 10 && tags[i + 1].code == 20 {
+                corners.push((tags[i].f64(), tags[i + 1].f64()));
+                i += 2;
+            } else {
+                i += 1;
+            }
+        }
+        assert_eq!(corners.len(), 4, "a single wall gets a four-vertex rectangle");
+        for want in [(0.0, 0.1), (10.0, 0.1), (10.0, -0.1), (0.0, -0.1)] {
+            assert!(corners.iter().any(|c| (c.0 - want.0).abs() < 1e-9 && (c.1 - want.1).abs() < 1e-9), "missing rectangle corner {:?}", want);
+        }
+    }
+
+    #[test]
     fn proxy_rings_match_the_wall_poché() {
         let mut m = ArchModel::default();
         m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
@@ -445,10 +520,10 @@ mod tests {
             }
         }
         assert_eq!(corners.len(), 4, "expected four corners");
-        let expected = vec![(0.0, 0.1), (10.0, 0.1), (10.0, -0.1), (0.0, -0.1)];
-        for (got, want) in corners.iter().zip(expected.iter()) {
-            assert!((got.0 - want.0).abs() < 1e-9, "x: {} != {}", got.0, want.0);
-            assert!((got.1 - want.1).abs() < 1e-9, "y: {} != {}", got.1, want.1);
+        // The ring now comes from the join solver, so its winding/starting vertex may differ from
+        // a bare rectangle; assert the four poché corners are all present.
+        for want in [(0.0, 0.1), (10.0, 0.1), (10.0, -0.1), (0.0, -0.1)] {
+            assert!(corners.iter().any(|c| (c.0 - want.0).abs() < 1e-9 && (c.1 - want.1).abs() < 1e-9), "missing poché corner {:?}", want);
         }
     }
 
