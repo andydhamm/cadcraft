@@ -439,7 +439,13 @@ fn plan_end(
     ov: &JoinOverrides,
 ) -> Result<EndPlan, ArchError> {
     let nbrs = classify(model, g, id, end);
-    let kind = ov.kind(id, end);
+    let kind = match ov.kind(id, end) {
+        JoinKind::Auto => match end {
+            End::Start => w.join_start,
+            End::End => w.join_end,
+        },
+        k => k,
+    };
 
     // Overrides win over L/T/X.
     match kind {
@@ -635,6 +641,9 @@ fn plan_end(
 /// Solve every wall's poché ring with explicit join overrides. Output order ==
 /// `model.walls` order; degenerate walls (`wall::wall_polygon` is `None`) are
 /// skipped and produce no shape.
+///
+/// Join kinds are resolved per wall end: an explicit `JoinOverrides` entry wins;
+/// otherwise the wall's own `join_start` / `join_end` fields are used.
 pub fn solve_joins_with(model: &cadcraft_doc::ArchModel, ov: &JoinOverrides) -> Vec<WallShape> {
     let graph = WallGraph::build(model);
     let mut out: Vec<WallShape> = Vec::with_capacity(model.walls.len());
@@ -682,6 +691,7 @@ pub fn solve_joins_with(model: &cadcraft_doc::ArchModel, ov: &JoinOverrides) -> 
 /// Solve every wall's poché ring (no overrides).
 ///
 /// `solve_joins(m)` == `solve_joins_with(m, &JoinOverrides::default())`.
+/// Each wall's own `join_start` / `join_end` fields are honoured.
 pub fn solve_joins(model: &cadcraft_doc::ArchModel) -> Vec<WallShape> {
     solve_joins_with(model, &JoinOverrides::default())
 }
@@ -1437,5 +1447,36 @@ mod tests {
         assert!((b.min.y - 0.5).abs() < 1e-9, "stem min.y: {}", b.min.y);
         assert!((b.min.x - 4.75).abs() < 1e-9, "stem min.x: {}", b.min.x);
         assert!((b.max.x - 5.25).abs() < 1e-9, "stem max.x: {}", b.max.x);
+    }
+
+    #[test]
+    fn a_walls_own_join_kind_is_honoured_without_overrides() {
+        let mut model = cadcraft_doc::ArchModel::default();
+        // Wall 0: (0,0)-(10,0), Wall 1: (10,0)-(10,10)
+        // Default join kinds are Auto, which usually results in an L join (mitre).
+        wall(&mut model, 0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 1.0);
+        wall(&mut model, 1, Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 1.0);
+
+        // Set Wall 0's end join to Butt explicitly on the wall itself.
+        model.walls[0].join_end = JoinKind::Butt;
+
+        let shapes = solve_joins(&model);
+        assert_eq!(shapes.len(), 2);
+
+        let s0 = &shapes[0];
+        // Wall 0 should have a Butt join at its End, overriding the default L join logic.
+        assert!(s0.joins.iter().any(|j| matches!(j, Join::Butt(End::End))), "Wall 0 should have Join::Butt(End::End)");
+
+        // Now test that an explicit override in JoinOverrides wins over the wall's own setting.
+        let mut ov = JoinOverrides::new();
+        // Override Wall 0's End to Square.
+        ov.set(ArchId(0), JoinKind::Auto, JoinKind::Square);
+
+        let shapes_ov = solve_joins_with(&model, &ov);
+        assert_eq!(shapes_ov.len(), 2);
+
+        let s0_ov = &shapes_ov[0];
+        // Wall 0 should now have a Square join at its End, because the override wins.
+        assert!(s0_ov.joins.iter().any(|j| matches!(j, Join::Square(End::End))), "Wall 0 should have Join::Square(End::End) due to override");
     }
 }
