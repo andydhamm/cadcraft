@@ -254,6 +254,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
                 p_obj.insert("ring".to_string(), json_points(&plane.ring));
                 p_obj.insert("slope".to_string(), json!(plane.slope));
                 p_obj.insert("projectedArea".to_string(), json!(plane.projected_area));
+                p_obj.insert("thickness".to_string(), json!(plane.thickness));
 
                 let eave_wall_str = plane.eave_wall.map(|wid| wall_label(wid));
                 p_obj.insert("eaveWall".to_string(), json!(eave_wall_str));

@@ -58,6 +58,15 @@ fn wall_height_under(base_a: Vec2, base_b: Vec2, model: &ArchModel) -> Option<f6
     best.map(|(_, h)| h)
 }
 
+/// A depth from a JSON parameter: a boolean (`true` => the default 0.1,
+/// `false` => 0.0) or a finite number (as is). `None` for anything else.
+fn depth_param(v: &Value) -> Option<f64> {
+    match v {
+        Value::Bool(on) => Some(if *on { 0.1 } else { 0.0 }),
+        _ => v.as_f64().filter(|x| x.is_finite()),
+    }
+}
+
 /// Parse a roof plane ID like "r0p1" into (roof_index, plane_index).
 fn parse_roof_plane_id(id: &str) -> Option<(usize, usize)> {
     let rest = id.strip_prefix('r')?;
@@ -344,12 +353,21 @@ pub fn run_roofplane(s: &mut Session, p: &Value) -> Result<Value> {
 
     let base_arr = base_val.as_array().ok_or_else(|| bad("roofplane", "`base` must be an array of two points"))?;
 
-    if base_arr.len() != 2 {
-        return Err(bad("roofplane", "`base` must have exactly two points"));
-    }
-
-    let base_0 = crate::cmd::point_value(&base_arr[0]).ok_or_else(|| bad("roofplane", "invalid base point 0"))?;
-    let base_1 = crate::cmd::point_value(&base_arr[1]).ok_or_else(|| bad("roofplane", "invalid base point 1"))?;
+    // Accept the flat four-number form `[x0, y0, x1, y1]` as well as the
+    // two-point form `[[x0, y0], [x1, y1]]`; anything else is rejected.
+    let (base_0, base_1) = match base_arr.len() {
+        4 if base_arr.iter().all(|v| v.as_f64().is_some_and(|x| x.is_finite())) => {
+            let vals: Vec<f64> = base_arr.iter().map(|v| v.as_f64().filter(|x| x.is_finite()).unwrap_or(f64::NAN)).collect();
+            (Vec2::new(vals[0], vals[1]), Vec2::new(vals[2], vals[3]))
+        }
+        2 => (
+            crate::cmd::point_value(&base_arr[0]).ok_or_else(|| bad("roofplane", "invalid base point 0"))?,
+            crate::cmd::point_value(&base_arr[1]).ok_or_else(|| bad("roofplane", "invalid base point 1"))?,
+        ),
+        _ => {
+            return Err(bad("roofplane", "`base` must be an array of two points"));
+        }
+    };
 
     let pitch_rise = match p.get("pitchRise") {
         None => 6.0,
@@ -361,15 +379,15 @@ pub fn run_roofplane(s: &mut Session, p: &Value) -> Result<Value> {
     };
     let thickness = match p.get("thickness") {
         None => 0.1,
-        Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("roofplane", "`thickness` must be a finite number"))?,
+        Some(v) => depth_param(v).ok_or_else(|| bad("roofplane", "`thickness` must be a finite number"))?,
     };
     let fascia = match p.get("fascia") {
         None => 0.1,
-        Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("roofplane", "`fascia` must be a finite number"))?,
+        Some(v) => depth_param(v).ok_or_else(|| bad("roofplane", "`fascia` must be a finite number"))?,
     };
     let soffit = match p.get("soffit") {
         None => 0.1,
-        Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("roofplane", "`soffit` must be a finite number"))?,
+        Some(v) => depth_param(v).ok_or_else(|| bad("roofplane", "`soffit` must be a finite number"))?,
     };
     let level = p.get("level").and_then(Value::as_u64).map(|v| v as usize);
 
@@ -863,6 +881,61 @@ mod tests {
         let area = res["projectedArea"].as_f64().unwrap();
         assert!(area.is_finite());
         assert!((area - 1e12).abs() < 1e6);
+    }
+
+    /// The flat base form `[x0, y0, x1, y1]` and boolean `fascia`/`soffit` are
+    /// accepted (as invoked by the acceptance check): a 6 m × 4 m plane at 6/12
+    /// reports `projectedArea` 24.0, and `arch.inspect` shows the manual roof's
+    /// slope, thickness, fascia and soffit.
+    #[test]
+    fn roofplane_accepts_a_flat_base_array() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0, 0], [6, 0], [6, 4], [0, 4], [0, 0]],
+            "base": [0, 0, 6, 0],
+            "pitchRise": 6,
+            "pitchRun": 12,
+            "thickness": 0.25,
+            "fascia": true,
+            "soffit": true,
+        });
+        let res = run_roofplane(&mut s, &params);
+        assert!(res.is_ok(), "flat-base roofplane rejected: {res:?}");
+        let res = res.unwrap();
+        assert_eq!(res["handles"][0], "r0");
+        assert_eq!(res["plane"], 0);
+        assert!((res["projectedArea"].as_f64().unwrap() - 24.0).abs() < 1e-6);
+
+        let inspect = s.execute("arch.inspect", &json!({ "roofs": true }));
+        assert!(inspect.is_ok(), "arch.inspect rejected: {inspect:?}");
+        let v = inspect.unwrap();
+        let roofs = v["roofs"].as_array().expect("arch.inspect should report `roofs`");
+        assert_eq!(roofs.len(), 1, "expected exactly one roof");
+        let r = &roofs[0];
+        assert_eq!(r["id"].as_str().unwrap(), "r0");
+        assert!(r["manual"].as_bool().unwrap(), "manual roof should report manual:true");
+        assert!(r["fascia"].as_bool().unwrap(), "fascia should report true");
+        assert!(r["soffit"].as_bool().unwrap(), "soffit should report true");
+        let p = &r["planes"][0];
+        assert!((p["slope"].as_f64().unwrap() - 0.5).abs() < 1e-9, "slope {}", p["slope"]);
+        assert!((p["thickness"].as_f64().unwrap() - 0.25).abs() < 1e-9, "thickness {}", p["thickness"]);
+    }
+
+    /// A base that is neither an array of two points nor an array of four finite
+    /// numbers (three numbers here) is rejected.
+    #[test]
+    fn roofplane_rejects_a_base_that_is_not_two_points_or_four_numbers() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0, 0], [6, 0], [6, 4], [0, 4]],
+            "base": [0.0, 0.0, 6.0],
+            "pitchRise": 6,
+            "pitchRun": 12,
+        });
+        let res = run_roofplane(&mut s, &params);
+        assert!(res.is_err());
+        let err = res.as_ref().unwrap_err();
+        assert!(err.to_string().contains("must be an array of two points"));
     }
 
     /// An unknown level index falls back to the top level (level 0 in a new drawing).
