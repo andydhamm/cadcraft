@@ -60,7 +60,7 @@ fn roof(rise: f64, overhang: f64) -> Roof {
 /// Set per-wall directives on the phase-1 house and attach the resulting roof.
 fn with_roof(model: &mut ArchModel, directives: &[(usize, RoofDirective)], r: &Roof) {
     for (i, d) in directives {
-        model.walls[i].roof_directive = d.clone();
+        model.walls[*i].roof_directive = d.clone();
     }
     let built = cadcraft_arch::roof::build_roof(model, 0, r).expect("roof builds");
     model.push_roof(built);
@@ -69,7 +69,7 @@ fn with_roof(model: &mut ArchModel, directives: &[(usize, RoofDirective)], r: &R
 /// Highest z of the wall/roof mesh tagged with `id`.
 fn mesh_max_z(scene: &cadcraft_arch3d::Scene3d, id: ArchId) -> f32 {
     let m = scene.meshes.iter().find(|m| m.object == id).expect("mesh for id missing");
-    m.positions.iter().map(|p| p[2]).copied().max().expect("wall mesh has no vertices")
+    m.positions.iter().map(|p| p[2]).max().expect("wall mesh has no vertices")
 }
 
 /// Vertices of the mesh tagged with `id` whose z is within 1e-3 of `z`.
@@ -104,7 +104,7 @@ fn golden_hip_gable_mixed() {
         let e = r.edges.iter().find(|e| e.kind == RoofEdgeKind::Ridge).expect("hip roof has a ridge edge");
         assert!((e.za - 4.45).abs() <= 1e-6, "hip ridge za");
         assert!((e.zb - 4.45).abs() <= 1e-6, "hip ridge zb");
-        assert!(edge_endpoints_match(&e.start, &e.end, Vec2::new(4.0, 4.0), Vec2::new(6.0, 4.0), 1e-6), "hip ridge endpoints");
+        assert!(edge_endpoints_match(&e.a, &e.b, Vec2::new(4.0, 4.0), Vec2::new(6.0, 4.0), 1e-6), "hip ridge endpoints");
 
         let scene = cadcraft_arch3d::build(&model);
         for i in 0..4 {
@@ -124,7 +124,7 @@ fn golden_hip_gable_mixed() {
         let e = r.edges.iter().find(|e| e.kind == RoofEdgeKind::Ridge).expect("gable roof has a ridge edge");
         assert!((e.za - 4.45).abs() <= 1e-6, "gable ridge za");
         assert!((e.zb - 4.45).abs() <= 1e-6, "gable ridge zb");
-        assert!(edge_endpoints_match(&e.start, &e.end, Vec2::new(-0.1, 4.0), Vec2::new(10.1, 4.0), 1e-6), "gable ridge endpoints");
+        assert!(edge_endpoints_match(&e.a, &e.b, Vec2::new(-0.1, 4.0), Vec2::new(10.1, 4.0), 1e-6), "gable ridge endpoints");
 
         let scene = cadcraft_arch3d::build(&model);
         for i in [1, 3] {
@@ -148,7 +148,7 @@ fn golden_hip_gable_mixed() {
         let e = r.edges.iter().find(|e| e.kind == RoofEdgeKind::Ridge).expect("mixed roof has a ridge edge");
         assert!((e.za - 4.45).abs() <= 1e-6, "mixed ridge za");
         assert!((e.zb - 4.45).abs() <= 1e-6, "mixed ridge zb");
-        assert!(edge_endpoints_match(&e.start, &e.end, Vec2::new(4.0, 4.0), Vec2::new(10.1, 4.0), 1e-6), "mixed ridge endpoints");
+        assert!(edge_endpoints_match(&e.a, &e.b, Vec2::new(4.0, 4.0), Vec2::new(10.1, 4.0), 1e-6), "mixed ridge endpoints");
     }
 
     // Hip at 4/12 and 12/12, and overhang 0.5.
