@@ -50,6 +50,30 @@ fn shoelace(pts: &[Vec2]) -> f64 {
 }
 
 #[test]
+fn a_t_footprint_has_two_valleys() {
+    let t_shape = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (7.0, 8.0), (7.0, 12.0), (3.0, 12.0), (3.0, 8.0), (0.0, 8.0)];
+    let model = house(&t_shape, 2.4);
+    let r = roof(6.0, 0.0);
+    let built = build_roof(&model, 0, &r).expect("T-shape roof should build");
+    let edges = roof_edges(&model, 0, &built).expect("roof edges should be generated");
+
+    let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+    assert_eq!(valleys.len(), 2, "Expected exactly two valleys in T-shape footprint");
+}
+
+#[test]
+fn an_l_footprint_has_one_valley() {
+    let l_shape = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (6.0, 8.0), (6.0, 12.0), (0.0, 12.0)];
+    let model = house(&l_shape, 2.4);
+    let r = roof(6.0, 0.0);
+    let built = build_roof(&model, 0, &r).expect("L-shape roof should build");
+    let edges = roof_edges(&model, 0, &built).expect("roof edges should be generated");
+
+    let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+    assert_eq!(valleys.len(), 1, "Expected exactly one valley in L-shape footprint");
+}
+
+#[test]
 fn all_hip_orthogonal_footprints_have_one_sloped_edge_per_vertex() {
     let rect = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
     let l_shape = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (6.0, 8.0), (6.0, 12.0), (0.0, 12.0)];
