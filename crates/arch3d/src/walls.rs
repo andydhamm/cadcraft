@@ -56,7 +56,15 @@ pub fn extrude_wall(shape: &WallShape, height: f64, level_elevation: f64, materi
 /// Compute the elevation profile of a wall, clipped by a roof and cut by openings.
 ///
 /// Returns `None` if the profile is degenerate.
-pub fn elevation_profile(shape: &WallShape, wall: &Wall, base: f64, top: f64, clip: Option<&RoofClip>, openings: &[&Opening]) -> Option<WallProfile> {
+pub fn elevation_profile(
+    shape: &WallShape,
+    wall: &Wall,
+    base: f64,
+    top: f64,
+    clip: Option<&RoofClip>,
+    roof_top: Option<&[Vec2]>,
+    openings: &[&Opening],
+) -> Option<WallProfile> {
     if !base.is_finite() || !top.is_finite() || top <= base {
         return None;
     }
@@ -130,12 +138,14 @@ pub fn elevation_profile(shape: &WallShape, wall: &Wall, base: f64, top: f64, cl
     }
 
     // Build outer profile
-    let outer = if has_slope {
-        // Pentagon: (0,0), (len,0), (len, v1), (0, v0), (0,0) ... wait, CCW
-        // (0,0) -> (len,0) -> (len, v1) -> (0, v0) -> (0,0)
+    let outer = if let Some(pts) = roof_top.filter(|pts| pts.len() >= 2 && pts.iter().all(|p| p.x.is_finite() && p.y.is_finite())) {
+        // Gable wall: bottom left→right, then roof-top vertices right→left (CCW ring).
+        let mut o = vec![Vec2::new(0.0, 0.0), Vec2::new(len, 0.0)];
+        o.extend(pts.iter().rev().cloned());
+        o
+    } else if has_slope {
         vec![Vec2::new(0.0, 0.0), Vec2::new(len, 0.0), Vec2::new(len, v1), Vec2::new(0.0, v0)]
     } else {
-        // Rectangle
         vec![Vec2::new(0.0, 0.0), Vec2::new(len, 0.0), Vec2::new(len, max_v), Vec2::new(0.0, max_v)]
     };
 
@@ -208,6 +218,9 @@ pub fn extrude_wall_profile(shape: &WallShape, profile: WallProfile, base: f64, 
 /// The wall's top polyline in wall-local coords `(u, v)`, `u` from `wall.start`
 /// along `wall.end - wall.start`, `v = z - base`. `None` when no roof plane covers it.
 pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) -> Option<Vec<Vec2>> {
+    if model.roofs.is_empty() {
+        return None;
+    }
     let fp = cadcraft_arch::roof::outer_footprint(model, wall.base_level)?;
     let edges: Vec<_> = fp.edges.iter().filter(|e| e.wall == wall.id).collect();
     if edges.is_empty() {
