@@ -159,6 +159,145 @@ fn all_hip_orthogonal_footprints_have_one_sloped_edge_per_vertex() {
 }
 
 #[test]
+fn a_gable_roof_has_ridge_and_gable_end_edges() {
+    let rect = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let mut model = house(&rect, 2.4);
+    // Walls 1 (east) and 3 (west) are gable ends
+    if let Some(w) = model.walls.get_mut(1) {
+        w.roof_directive = RoofDirective::Gable;
+    }
+    if let Some(w) = model.walls.get_mut(3) {
+        w.roof_directive = RoofDirective::Gable;
+    }
+    let r = roof(6.0, 0.0);
+    let edges = roof_edges(&model, 0, &r).expect("gable roof edges should build");
+
+    let ridges: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Ridge).collect();
+    assert_eq!(ridges.len(), 1, "gable roof should have exactly one ridge");
+
+    let gable_ends: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::GableEnd).collect();
+    assert!(!gable_ends.is_empty(), "gable roof should have gable end edges");
+
+    // No hips or valleys on a pure gable roof over a rectangle
+    let hips: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Hip).collect();
+    assert_eq!(hips.len(), 0, "pure gable roof should have no hips");
+    let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+    assert_eq!(valleys.len(), 0, "pure gable roof should have no valleys");
+}
+
+#[test]
+fn edge_z_values_are_consistent_at_shared_nodes() {
+    let rect = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&rect, 2.4);
+    let r = roof(6.0, 0.0);
+    let edges = roof_edges(&model, 0, &r).expect("roof edges should build");
+
+    // For each pair of edges sharing a node (within tolerance), their z values must match
+    let tol = 1e-6;
+    for i in 0..edges.len() {
+        for j in (i + 1)..edges.len() {
+            let e1 = &edges[i];
+            let e2 = &edges[j];
+            if (e1.a - e2.a).len() < tol {
+                assert!((e1.za - e2.za).abs() < tol, "z mismatch at shared node a: {} vs {}", e1.za, e2.za);
+            }
+            if (e1.a - e2.b).len() < tol {
+                assert!((e1.za - e2.zb).abs() < tol, "z mismatch at shared node a-b: {} vs {}", e1.za, e2.zb);
+            }
+            if (e1.b - e2.a).len() < tol {
+                assert!((e1.zb - e2.za).abs() < tol, "z mismatch at shared node b-a: {} vs {}", e1.zb, e2.za);
+            }
+            if (e1.b - e2.b).len() < tol {
+                assert!((e1.zb - e2.zb).abs() < tol, "z mismatch at shared node b: {} vs {}", e1.zb, e2.zb);
+            }
+        }
+    }
+}
+
+#[test]
+fn edge_classification_is_stable_under_translation() {
+    let rect = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model1 = house(&rect, 2.4);
+    let r = roof(6.0, 0.0);
+    let edges1 = roof_edges(&model1, 0, &r).expect("roof edges should build");
+
+    // Translate by (100, 200)
+    let translated: Vec<(f64, f64)> = rect.iter().map(|p| (p.0 + 100.0, p.1 + 200.0)).collect();
+    let model2 = house(&translated, 2.4);
+    let edges2 = roof_edges(&model2, 0, &r).expect("roof edges should build");
+
+    assert_eq!(edges1.len(), edges2.len(), "edge count should be the same after translation");
+    for (e1, e2) in edges1.iter().zip(edges2.iter()) {
+        assert_eq!(e1.kind, e2.kind, "edge kind should be the same after translation");
+    }
+}
+
+#[test]
+fn a_mixed_gable_hip_roof_has_correct_edge_kinds() {
+    let rect = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let mut model = house(&rect, 2.4);
+    // Only wall 1 (east, x=10) is gable
+    if let Some(w) = model.walls.get_mut(1) {
+        w.roof_directive = RoofDirective::Gable;
+    }
+    let r = roof(6.0, 0.0);
+    let edges = roof_edges(&model, 0, &r).expect("mixed roof edges should build");
+
+    let ridges: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Ridge).collect();
+    assert_eq!(ridges.len(), 1, "mixed gable+hip should have one ridge");
+
+    let gable_ends: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::GableEnd).collect();
+    assert!(!gable_ends.is_empty(), "mixed roof should have gable end edges");
+
+    let hips: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Hip).collect();
+    assert!(!hips.is_empty(), "mixed roof should have hip edges");
+
+    // No valleys on a rectangular footprint
+    let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+    assert_eq!(valleys.len(), 0, "rectangular footprint should have no valleys");
+}
+
+#[test]
+fn edge_classification_on_pentagonal_footprint() {
+    let mut pts = Vec::new();
+    for i in 0..5 {
+        let angle = (i as f64) * std::f64::consts::PI * 2.0 / 5.0 - std::f64::consts::PI / 2.0;
+        pts.push((5.0 * angle.cos(), 5.0 * angle.sin()));
+    }
+    let model = house(&pts, 2.4);
+    let r = roof(6.0, 0.0);
+    let edges = roof_edges(&model, 0, &r).expect("pentagonal roof edges should build");
+
+    // All 5 vertices are convex, so all sloped edges should be hips
+    let hips: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Hip).collect();
+    assert_eq!(hips.len(), 5, "pentagonal hip roof should have 5 hip edges");
+
+    // No valleys (all vertices are convex)
+    let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+    assert_eq!(valleys.len(), 0, "pentagonal hip roof should have no valleys");
+
+    // No ridge (apex is a point, not a line)
+    let ridges: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Ridge).collect();
+    assert_eq!(ridges.len(), 0, "pentagonal hip roof should have no ridge");
+}
+
+#[test]
+fn edge_classification_on_tiny_footprint() {
+    // Very small 2x2 footprint to exercise the fixed-offset sampling
+    let rect = vec![(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)];
+    let model = house(&rect, 2.4);
+    let r = roof(6.0, 0.0);
+    let edges = roof_edges(&model, 0, &r).expect("tiny roof edges should build");
+
+    let ridges: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Ridge).collect();
+    assert_eq!(ridges.len(), 1, "tiny hip roof should have one ridge");
+    let hips: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Hip).collect();
+    assert_eq!(hips.len(), 4, "tiny hip roof should have 4 hips");
+    let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+    assert_eq!(valleys.len(), 0, "tiny hip roof should have no valleys");
+}
+
+#[test]
 fn interior_roof_edges_are_shared_by_two_planes() {
     let rect = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
     let l_shape = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (6.0, 8.0), (6.0, 12.0), (0.0, 12.0)];
