@@ -118,16 +118,17 @@ fn gable_wall_is_a_probeable_solid() {
     let model = gable_house();
     let scene = Scene3d::build(&model);
 
-    // (0, 4, 3) is inside the west gable wall (wall from (0,8) to (0,0))
-    // The ridge is at y=4, z=4.45. At y=4 the wall goes up to 4.45.
+    // (0, 3, 3) is inside the west gable wall (wall from (0,8) to (0,0)),
+    // on the sloped portion below the ridge (ridge at y=4, z=4.45).
     let west_id = find_wall_id(&model, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)).expect("west gable wall not found");
     let west_mesh = scene.mesh_for(&west_id).expect("west gable mesh");
-    assert!(ray_crossings(&west_mesh, 0.0, 4.0, 3.0) % 2 == 1, "probe (0,4,3) must find wall inside west gable");
+    assert!(ray_crossings(&west_mesh, 0.0, 3.0, 3.0) % 2 == 1, "probe (0,3,3) must find wall inside west gable");
 
-    // (10, 4, 3) is inside the east gable wall (wall from (10,0) to (10,8))
+    // (10, 3, 3) is inside the east gable wall (wall from (10,0) to (10,8)),
+    // on the sloped portion below the ridge (ridge at y=4, z=4.45).
     let east_id = find_wall_id(&model, Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0)).expect("east gable wall not found");
     let east_mesh = scene.mesh_for(&east_id).expect("east gable mesh");
-    assert!(ray_crossings(&east_mesh, 10.0, 4.0, 3.0) % 2 == 1, "probe (10,4,3) must find wall inside east gable");
+    assert!(ray_crossings(&east_mesh, 10.0, 3.0, 3.0) % 2 == 1, "probe (10,3,3) must find wall inside east gable");
 
     // (10, 0.5, 3.0) is above the eave at y=0.5 (wall height there is ~2.45)
     // so it should find nothing in any wall.
