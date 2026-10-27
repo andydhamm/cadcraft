@@ -4,7 +4,7 @@
 //! seeded orthogonal rings, including hostile shapes that self-cross or
 //! exceed the 256-edge cap.
 
-use cadcraft_arch::roof::{build_roof, outer_footprint, projected_area_sum, roof_geometry};
+use cadcraft_arch::roof::{build_roof, outer_footprint, plane_apex_z, projected_area_sum, roof_geometry};
 use cadcraft_arch::roofedge::{interior_edge_pairs, roof_edges};
 use cadcraft_doc::{ArchModel, Level, Roof, RoofDirective, RoofEdgeKind, Wall};
 use cadcraft_geom::Vec2;
@@ -353,7 +353,7 @@ fn different_pitches_produce_different_roof_heights() {
 }
 
 /// Whether `ring` has a vertex within `tol` of `p` (plan space).
-fn ring_has(&ring: &[Vec2], p: &Vec2, tol: f64) -> bool {
+fn ring_has(ring: &[Vec2], p: &Vec2, tol: f64) -> bool {
     ring.iter().any(|v| (v.x - p.x).abs() <= tol && (v.y - p.y).abs() <= tol)
 }
 
@@ -390,14 +390,14 @@ fn every_plane_slope_equals_its_pitch() {
             };
             for p in &built.planes {
                 // Skip planes whose base edge is degenerate.
-                let (a, b) = &p.base_edge;
-                let base_len = ((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)).sqrt();
+                let [ax, ay, bx, by] = &p.base_edge;
+                let base_len = ((ax - bx) * (ax - bx) + (ay - by) * (ay - by)).sqrt();
                 if base_len < 1e-9 {
                     continue;
                 }
-                let base = Vec2::new(b.x - a.x, b.y - a.y);
+                let base = Vec2::new(bx - ax, by - ay);
                 let dist = p.ring.iter().fold(0.0_f64, |m, pt| {
-                    let v = Vec2::new(pt.x - a.x, pt.y - a.y);
+                    let v = Vec2::new(pt.x - ax, pt.y - ay);
                     let cross = v.x * base.y - v.y * base.x;
                     m.max(cross.abs() / base_len)
                 });
