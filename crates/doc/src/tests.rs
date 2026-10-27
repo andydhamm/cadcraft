@@ -582,23 +582,64 @@ fn space_names_its_tab() {
     assert_eq!(p.tab_name(), "Sheet A");
 }
 
-/// A new drawing provides the `A-WALL` architectural layer for proxy graphics.
+/// A new drawing carries only the two standard layers (`0` and `Defpoints`): arch
+/// proxy layers (`A-WALL`, `A-DOOR`, `A-GLAZ`, `A-ROOF`, `A-STAIR`) are additive to a
+/// blank AutoCAD-parity drawing (DESIGN decision 9) and are created on first use by the
+/// arch commands, not by `Drawing::bare()`.
 #[test]
-fn a_wall_layer_exists_in_a_new_drawing() {
-    let d = Drawing::new_metric();
-    assert!(d.layers.iter().any(|l| l.name == "A-WALL"));
+fn a_new_drawing_has_no_arch_layers() {
+    let arch_names = ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
+    for d in [Drawing::new_imperial(), Drawing::new_metric()] {
+        assert_eq!(d.layers.len(), 2, "a new drawing should carry only 0 and Defpoints");
+        assert!(d.layers.iter().any(|l| l.name == "Defpoints"), "Defpoints missing from a new drawing");
+        for name in arch_names {
+            assert!(d.layer(name).is_none(), "{name} must not be present in a new drawing");
+        }
+    }
 }
 
-/// The five AIA/NCS arch layers are present in a new drawing in the standard order,
-/// after `0` and `Defpoints`.
+/// Restored (gate follow-up; was deleted by the I12 fix). It originally verified that
+/// `A-WALL` sits in every new drawing; decision 9 (arch3d is additive) inverts that, so
+/// the assertion is now: a fresh drawing carries no wall layer, and `A-WALL` appears
+/// only after it is created on first arch use (via `ensure_layer`, not `Drawing::bare()`).
+#[test]
+fn a_wall_layer_exists_in_a_new_drawing() {
+    for d in [Drawing::new_imperial(), Drawing::new_metric()] {
+        assert!(d.layer("A-WALL").is_none(), "A-WALL must not be present in a new drawing (it is created on first arch use)");
+    }
+    // After first use the layer exists and is not duplicated on a second ensure.
+    let mut d = Drawing::new_imperial();
+    assert!(d.layer("A-WALL").is_none(), "A-WALL should start absent");
+    assert!(d.ensure_layer("A-WALL"), "first `ensure_layer` call must add `A-WALL`");
+    assert!(d.layer("A-WALL").is_some(), "A-WALL must be present after being ensured");
+    assert!(!d.ensure_layer("A-WALL"), "second `ensure_layer` call must be a no-op");
+    assert_eq!(d.layers.iter().filter(|l| l.name == "A-WALL").count(), 1, "A-WALL must be created exactly once");
+}
+
+/// Restored (gate follow-up; was deleted by the I12 fix). It originally pinned the arch
+/// proxy layers in a new drawing to the order `A-WALL`, `A-DOOR`, `A-GLAZ`, `A-ROOF`,
+/// `A-STAIR`. Those layers no longer exist in a new drawing at all (decision 9), so the
+/// check is adjusted to pin the whole layer table to exactly `0`, `Defpoints` — in that
+/// order — for both constructors.
 #[test]
 fn arch_layers_are_in_a_new_drawing_in_order() {
-    let d = Drawing::new_imperial();
-    let arch = ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
-    for (i, name) in arch.iter().enumerate() {
-        let idx = 2 + i;
-        assert_eq!(d.layers[idx].name, *name, "layer at index {idx}");
+    for d in [Drawing::new_imperial(), Drawing::new_metric()] {
+        let names: Vec<_> = d.layers.iter().map(|l| l.name.clone()).collect();
+        assert_eq!(names, vec!["0".to_string(), "Defpoints".to_string()], "a new drawing's layer table must be exactly `0`, `Defpoints`, in order",);
     }
+}
+
+/// `ensure_layer` adds a missing layer exactly once; a second call is a no-op that
+/// reports `false` without duplicating the layer.
+#[test]
+fn ensure_layer_adds_a_missing_layer_once() {
+    let mut d = Drawing::new_imperial();
+    assert!(d.layer("A-WALL").is_none(), "A-WALL should start absent");
+    let first = d.ensure_layer("A-WALL");
+    let second = d.ensure_layer("A-WALL");
+    assert!(first, "the first `ensure_layer` call must report that it added the layer");
+    assert!(!second, "the second `ensure_layer` call must report false (no-op)");
+    assert_eq!(d.layers.iter().filter(|l| l.name == "A-WALL").count(), 1, "A-WALL must not be duplicated by `ensure_layer`");
 }
 
 /// `RoofEdge` and `RoofEdgeKind` are re-exported at the crate root so downstream

@@ -345,6 +345,7 @@ mod tests {
     #[test]
     fn arch_poché_respects_the_layer_colour() {
         let mut d = Drawing::new_metric();
+        d.ensure_layer("A-WALL");
         if let Some(l) = d.layer_mut("A-WALL") {
             l.color = Color::Index(3);
         }
@@ -487,6 +488,7 @@ mod tests {
         d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
         d.arch.push_opening(Opening::new(ArchId(0), 5.0, 1.0, 2.1, OpeningKind::Door));
 
+        d.ensure_layer("A-DOOR");
         if let Some(l) = d.layer_mut("A-DOOR") {
             l.color = Color::True(Rgb::from_u32(0xff0000));
         }
@@ -507,6 +509,7 @@ mod tests {
         d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
         d.arch.push_opening(Opening::new(ArchId(0), 5.0, 1.0, 2.1, OpeningKind::Window));
 
+        d.ensure_layer("A-GLAZ");
         if let Some(l) = d.layer_mut("A-GLAZ") {
             l.color = Color::True(Rgb::from_u32(0x0000ff));
         }
@@ -612,6 +615,7 @@ mod tests {
             ],
             ..Roof::default()
         });
+        d.ensure_layer("A-ROOF");
         if let Some(l) = d.layer_mut("A-ROOF") {
             l.color = Color::True(Rgb::from_u32(0xff00ff));
         }
