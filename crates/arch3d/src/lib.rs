@@ -27,9 +27,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::roof::roof_meshes;
 use crate::walls::{RoofClip, WallProfile, elevation_profile, extrude_profile_slab, extrude_wall_profile, roof_top_polyline};
 use cadcraft_arch::join::solve_joins;
+use cadcraft_arch::wall::wall_bounds as arch_wall_bounds;
 use cadcraft_doc::arch::Opening;
 use cadcraft_doc::{ArchModel, Wall};
-use cadcraft_geom::{Vec2, Vec3};
+use cadcraft_geom::{Bounds2, Vec2, Vec3};
 
 /// Build a simple extruded-rectangle mesh from a wall's raw start/end/thickness.
 ///
@@ -272,10 +273,40 @@ impl Scene3d {
         // Determine which walls need rebuilding:
         // 1. Walls explicitly in dirty set.
         // 2. Walls hosting any opening in the dirty set.
+        // 3. Walls whose physical XY box overlaps a dirty wall's previous mesh box
+        //    or its new box — those walls' join geometry may have changed even when
+        //    their own data did not (e.g. a T-stem whose host wall moved).
         let mut walls_to_rebuild: BTreeSet<ArchId> = dirty.clone();
         for opening in &model.openings {
             if dirty.contains(&opening.id) {
                 walls_to_rebuild.insert(opening.host);
+            }
+        }
+
+        {
+            let mut dirty_boxes: Vec<Bounds2> = Vec::new();
+            for &id in dirty.iter() {
+                if let Some(prev_mesh) = prev.mesh_for(&id) {
+                    let b = mesh_xy_bounds(prev_mesh);
+                    if !b.is_empty() {
+                        dirty_boxes.push(b);
+                    }
+                }
+                if let Some(wall) = model.walls.iter().find(|w| w.id == id) {
+                    let b = arch_wall_bounds(wall);
+                    if !b.is_empty() {
+                        dirty_boxes.push(b);
+                    }
+                }
+            }
+            for wall in &model.walls {
+                if walls_to_rebuild.contains(&wall.id) {
+                    continue;
+                }
+                let wbox = arch_wall_bounds(wall);
+                if !wbox.is_empty() && dirty_boxes.iter().any(|db| wbox.intersects(db)) {
+                    walls_to_rebuild.insert(wall.id);
+                }
             }
         }
 
@@ -480,6 +511,17 @@ fn point_to_line_dist(p: Vec2, a: Vec2, b: Vec2) -> f64 {
     let proj_x = a.x + t * dx;
     let proj_y = a.y + t * dy;
     ((p.x - proj_x) * (p.x - proj_x) + (p.y - proj_y) * (p.y - proj_y)).sqrt()
+}
+
+/// XY bounding box of a mesh, derived from its f32 vertex positions.
+///
+/// Returns [`Bounds2::EMPTY`] for an empty mesh.
+fn mesh_xy_bounds(mesh: &Mesh) -> Bounds2 {
+    let mut b = Bounds2::EMPTY;
+    for p in &mesh.positions {
+        b.add(Vec2::new(p[0] as f64, p[1] as f64));
+    }
+    b
 }
 
 /// Build the full 3D scene from an arch model.
@@ -1689,6 +1731,105 @@ mod tests {
         let hit = scene.probe(Vec3::new(5.0, 0.0, 1.0));
         assert!(hit.is_some(), "probe at wall should hit");
         assert_eq!(hit.unwrap().part, "wall", "probe at wall should hit wall part");
+    }
+
+    /// When the host of a T-join moves, the stem's join geometry changes even though
+    /// the stem's own data didn't change.  `build_dirty` must rebuild the stem.
+    #[test]
+    fn build_dirty_rebuilds_a_t_stem_when_its_host_moves() {
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(5.0, 0.0),
+            end: Vec2::new(5.0, 5.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let prev = Scene3d::build(&model);
+
+        // Move the host wall; the stem stays.
+        let mut moved = model.clone();
+        if let Some(w) = moved.walls.iter_mut().find(|w| w.id == ArchId(1)) {
+            w.start = Vec2::new(0.0, 2.0);
+            w.end = Vec2::new(10.0, 2.0);
+        }
+
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(1)]);
+        let incremental = Scene3d::build_dirty(&moved, &dirty, &prev);
+        let full = Scene3d::build(&moved);
+
+        assert_eq!(incremental.mesh_count(), full.mesh_count(), "mesh count: incremental={} full={}", incremental.mesh_count(), full.mesh_count());
+        for id in [ArchId(1), ArchId(2)] {
+            match (incremental.mesh_for(&id), full.mesh_for(&id)) {
+                (Some(a), Some(b)) => {
+                    assert_eq!(a.positions, b.positions, "positions mismatch for wall {}", id.0);
+                    assert_eq!(a.normals, b.normals, "normals mismatch for wall {}", id.0);
+                    assert_eq!(a.uvs, b.uvs, "uvs mismatch for wall {}", id.0);
+                    assert_eq!(a.indices, b.indices, "indices mismatch for wall {}", id.0);
+                }
+                (None, None) => {}
+                (a, b) => panic!("mesh presence mismatch for wall {}: incremental={} full={}", id.0, a.is_some(), b.is_some()),
+            }
+        }
+    }
+
+    /// Stretching an L-corner via `stretch_wall` returns both wall ids; after the
+    /// stretch `build_dirty` must produce byte-identical output to a full build.
+    #[test]
+    fn build_dirty_equals_full_build_after_stretching_a_corner() {
+        use cadcraft_arch::join::{End, stretch_wall};
+
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(10.0, 0.0),
+            end: Vec2::new(10.0, 8.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let full_before = Scene3d::build(&model);
+
+        let dirty_ids = stretch_wall(&mut model, ArchId(1), End::End, Vec2::new(11.0, 0.0)).expect("stretch_wall must succeed");
+        let dirty: BTreeSet<ArchId> = dirty_ids.into_iter().collect();
+
+        let incremental = Scene3d::build_dirty(&model, &dirty, &full_before);
+        let full_after = Scene3d::build(&model);
+
+        assert_eq!(
+            incremental.mesh_count(),
+            full_after.mesh_count(),
+            "mesh count: incremental={} full={}",
+            incremental.mesh_count(),
+            full_after.mesh_count()
+        );
+        for (a, b) in incremental.meshes.iter().zip(full_after.meshes.iter()) {
+            assert_eq!(a.object, b.object, "object mismatch: {} vs {}", a.object.0, b.object.0);
+            assert_eq!(a.positions, b.positions, "positions mismatch for wall {}", a.object.0);
+            assert_eq!(a.normals, b.normals, "normals mismatch for wall {}", a.object.0);
+            assert_eq!(a.uvs, b.uvs, "uvs mismatch for wall {}", a.object.0);
+            assert_eq!(a.indices, b.indices, "indices mismatch for wall {}", a.object.0);
+            assert_eq!(a.material, b.material, "material mismatch for wall {}", a.object.0);
+        }
     }
 
     #[test]
