@@ -823,4 +823,24 @@ mod tests {
         assert_eq!(d.layers.iter().filter(|l| l.name == "A-DOOR").count(), 1, "A-DOOR created more than once");
         assert_eq!(d.layers.iter().filter(|l| l.name == "A-GLAZ").count(), 1, "A-GLAZ created more than once");
     }
+
+    /// A wall, door, window and roof together create four distinct arch layers,
+    /// each exactly once, with no duplication across commands.
+    #[test]
+    fn multiple_arch_commands_create_distinct_layers() {
+        let mut s = Session::new();
+        s.execute("wall", &json!({ "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0], [0.0, 0.0]], "exterior": true })).unwrap();
+        s.execute("door", &json!({ "wall": "w0", "offset": 3.0, "width": 0.9, "height": 2.1 })).unwrap();
+        s.execute("window", &json!({ "wall": "w1", "offset": 3.0, "width": 1.2, "height": 1.2 })).unwrap();
+        let d = s.doc_mut().expect("doc");
+        d.arch.levels.push(cadcraft_doc::Level { index: 1, name: "Level 1".into(), ..cadcraft_doc::Level::default() });
+        d.touch_arch();
+        s.execute("roofauto", &json!({ "pitchRise": 6.0, "pitchRun": 12.0 })).unwrap();
+
+        let d = s.doc().expect("doc");
+        for name in ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF"] {
+            assert!(d.layers.iter().any(|l| l.name == name), "{name} not created");
+            assert_eq!(d.layers.iter().filter(|l| l.name == name).count(), 1, "{name} created more than once");
+        }
+    }
 }
