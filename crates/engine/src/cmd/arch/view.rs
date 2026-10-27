@@ -184,4 +184,60 @@ mod tests {
         assert!(r["ok"].as_bool().unwrap());
         assert_eq!(r["target"], json!([1.0, 2.0, 3.0]));
     }
+
+    /// Empty or oversized target arrays and non-numeric scalars (booleans,
+    /// objects, string numbers) are rejected for every field.
+    #[test]
+    fn camera_command_rejects_malformed_targets_and_scalars() {
+        let mut s = Session::new();
+
+        for p in [
+            json!({ "target": [] }),
+            json!({ "target": [1.0, 2.0, 3.0, 4.0] }),
+            json!({ "azimuth": true }),
+            json!({ "elevation": false }),
+            json!({ "distance": {} }),
+            json!({ "azimuth": "1.5" }),
+        ] {
+            let r = s.execute("camera", &p);
+            assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })), "camera({p:?}) should be rejected, got {r:?}");
+        }
+    }
+
+    /// Zero is valid for azimuth and elevation (but not distance); very large
+    /// finite values are accepted and echoed back.
+    #[test]
+    fn camera_command_accepts_zero_and_large_values() {
+        let mut s = Session::new();
+
+        let r = s.execute("camera", &json!({ "azimuth": 0.0, "elevation": 0.0, "distance": 5.0 })).unwrap();
+        assert!(r["ok"].as_bool().unwrap());
+        assert_eq!(r["azimuth"].as_f64().unwrap(), 0.0);
+        assert_eq!(r["elevation"].as_f64().unwrap(), 0.0);
+
+        let r2 = s.execute("camera", &json!({ "azimuth": 1e308, "elevation": 1e308, "distance": 1e308 })).unwrap();
+        assert!(r2["ok"].as_bool().unwrap());
+        assert_eq!(r2["azimuth"].as_f64().unwrap(), 1e308);
+        assert_eq!(r2["distance"].as_f64().unwrap(), 1e308);
+    }
+
+    /// When any field is bad the whole call is rejected, even if the other
+    /// fields are valid; a fully valid call with all four fields succeeds.
+    #[test]
+    fn camera_command_rejects_when_any_field_is_bad() {
+        let mut s = Session::new();
+
+        let r = s.execute("camera", &json!({ "azimuth": 0.5, "distance": -1.0 }));
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+
+        let r2 = s.execute("camera", &json!({ "distance": 5.0, "target": [1.0] }));
+        assert!(matches!(r2, Err(EngineError::BadParams { cmd: _, msg: _ })));
+
+        let r3 = s.execute("camera", &json!({ "azimuth": 0.5, "elevation": 0.3, "distance": 5.0, "target": [1.0, 2.0, 3.0] })).unwrap();
+        assert!(r3["ok"].as_bool().unwrap());
+        assert_eq!(r3["azimuth"].as_f64().unwrap(), 0.5);
+        assert_eq!(r3["elevation"].as_f64().unwrap(), 0.3);
+        assert_eq!(r3["distance"].as_f64().unwrap(), 5.0);
+        assert_eq!(r3["target"], json!([1.0, 2.0, 3.0]));
+    }
 }
