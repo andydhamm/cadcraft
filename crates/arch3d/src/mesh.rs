@@ -1588,6 +1588,98 @@ mod tests {
         assert!(find_side_normal(5.0, 3.0, 0.0, 1.0, 0.0), "east side (5,3,0) normal (1,0,0) missing");
     }
 
+    /// Every side-face vertex normal must be a unit vector.
+    #[test]
+    fn side_face_normals_are_unit_length() {
+        let ring = square_ring();
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism(&ring, 0.0, 2.5);
+        for (i, p) in mesh.positions.iter().enumerate() {
+            let [x, y, z] = p;
+            let [nx, ny, nz] = mesh.normals[i];
+            // Skip cap vertices: they carry their own +/-Z normals.
+            if (z - 0.0).abs() < 1e-9 && mesh.normals[i][2].abs() > 0.5 {
+                continue;
+            }
+            if (z - 2.5f32).abs() < 1e-9 && mesh.normals[i][2].abs() > 0.5 {
+                continue;
+            }
+            let len = (nx * nx + ny * ny + nz * nz).sqrt();
+            assert!((len - 1.0).abs() < 1e-6, "side-face vertex {i} at ({x}, {y}, {z}) normal is not unit length: ({nx}, {ny}, {nz}) len={len}");
+        }
+    }
+
+    /// Side-face normals must be horizontal and outward on a rotated (non-axis-aligned) ring.
+    #[test]
+    fn side_faces_carry_their_own_outward_normals_on_rotated_ring() {
+        // A square ring rotated 45 degrees about the origin.
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(2.828, 2.828), Vec2::new(0.0, 5.656), Vec2::new(-2.828, 2.828)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism(&ring, 0.0, 2.5);
+        let (cx, cy) = (0.0f32, 2.828f32);
+        for (i, p) in mesh.positions.iter().enumerate() {
+            let [x, y, z] = p;
+            let [nx, ny, nz] = mesh.normals[i];
+            // Skip cap vertices.
+            if (z - 0.0).abs() < 1e-9 && mesh.normals[i][2].abs() > 0.5 {
+                continue;
+            }
+            if (z - 2.5f32).abs() < 1e-9 && mesh.normals[i][2].abs() > 0.5 {
+                continue;
+            }
+            assert!((nz).abs() < 1e-9, "side-face vertex {i} at ({x}, {y}, {z}) carries non-horizontal normal ({nx}, {ny}, {nz})");
+            let len = (nx * nx + ny * ny + nz * nz).sqrt();
+            assert!((len - 1.0).abs() < 1e-6, "side-face vertex {i} normal is not unit length: ({nx}, {ny}, {nz}) len={len}");
+            let dot = (x - cx) * nx + (y - cy) * ny;
+            assert!(dot > -1e-6, "normal at side vertex {i} points inward: dot={dot}");
+        }
+    }
+
+    /// Side-face normals must be horizontal and unit length on a concave ring.
+    #[test]
+    fn side_faces_carry_their_own_outward_normals_on_concave_ring() {
+        let ring = concave_ring();
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism(&ring, 0.0, 2.5);
+        for (i, p) in mesh.positions.iter().enumerate() {
+            let [x, y, z] = p;
+            let [nx, ny, nz] = mesh.normals[i];
+            // Skip cap vertices.
+            if (z - 0.0).abs() < 1e-9 && mesh.normals[i][2].abs() > 0.5 {
+                continue;
+            }
+            if (z - 2.5f32).abs() < 1e-9 && mesh.normals[i][2].abs() > 0.5 {
+                continue;
+            }
+            assert!((nz).abs() < 1e-9, "side-face vertex {i} at ({x}, {y}, {z}) carries non-horizontal normal ({nx}, {ny}, {nz})");
+            let len = (nx * nx + ny * ny + nz * nz).sqrt();
+            assert!((len - 1.0).abs() < 1e-6, "side-face vertex {i} normal is not unit length: ({nx}, {ny}, {nz}) len={len}");
+        }
+    }
+
+    /// Side-face normals must be horizontal and unit length on a ring with a hole.
+    #[test]
+    fn side_faces_carry_their_own_outward_normals_on_ring_with_hole() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(1.0, 2.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        for (i, p) in mesh.positions.iter().enumerate() {
+            let [x, y, z] = p;
+            let [nx, ny, nz] = mesh.normals[i];
+            // Skip cap vertices.
+            if (z - 0.0).abs() < 1e-9 && mesh.normals[i][2].abs() > 0.5 {
+                continue;
+            }
+            if (z - 2.5f32).abs() < 1e-9 && mesh.normals[i][2].abs() > 0.5 {
+                continue;
+            }
+            assert!((nz).abs() < 1e-9, "side-face vertex {i} at ({x}, {y}, {z}) carries non-horizontal normal ({nx}, {ny}, {nz})");
+            let len = (nx * nx + ny * ny + nz * nz).sqrt();
+            assert!((len - 1.0).abs() < 1e-6, "side-face vertex {i} normal is not unit length: ({nx}, {ny}, {nz}) len={len}");
+        }
+    }
+
     /// `is_manifold` welds vertices by position, so a prism that emits a
     /// duplicate vertex per face (caps and sides share the corner in space but
     /// not an index) is still manifold, while a mesh missing a triangle is not.

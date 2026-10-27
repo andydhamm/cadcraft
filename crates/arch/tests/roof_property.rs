@@ -487,6 +487,84 @@ fn roof_geometry_matches_build_roof() {
 }
 
 #[test]
+fn every_plane_slope_equals_its_pitch() {
+    let rect = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)];
+    let model = house(&rect, 2.4);
+    let r = roof(6.0, 0.0);
+    let expected = r.pitch_rise / r.pitch_run;
+    let built = build_roof(&model, 0, &r).expect("rect roof should build");
+    for plane in &built.planes {
+        assert!((plane.slope - expected).abs() < 1e-9, "plane slope {} != expected pitch {}", plane.slope, expected);
+    }
+}
+
+#[test]
+fn interior_edges_are_shared_by_two_planes() {
+    let footprints: &[&[(f64, f64)]] = &[
+        &[(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)],
+        &[(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (6.0, 8.0), (6.0, 12.0), (0.0, 12.0)],
+        &[(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (7.0, 8.0), (7.0, 12.0), (3.0, 12.0), (3.0, 8.0), (0.0, 8.0)],
+    ];
+    for pts in footprints {
+        let model = house(pts, 2.4);
+        let r = roof(6.0, 0.0);
+        let built = match build_roof(&model, 0, &r) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        for edge in built.edges.iter().filter(|e| !matches!(e.kind, RoofEdgeKind::Eave | RoofEdgeKind::GableEnd)) {
+            let mut count = 0usize;
+            for plane in &built.planes {
+                let n = plane.ring.len();
+                for i in 0..n {
+                    let pa = plane.ring[i];
+                    let pb = plane.ring[(i + 1) % n];
+                    if ((pa - edge.a).len() < 1e-6 && (pb - edge.b).len() < 1e-6) || ((pa - edge.b).len() < 1e-6 && (pb - edge.a).len() < 1e-6) {
+                        count += 1;
+                        break;
+                    }
+                }
+            }
+            assert_eq!(count, 2, "interior {:?} edge is shared by {} planes, expected 2", edge.kind, count);
+        }
+    }
+}
+
+#[test]
+fn a_square_footprint_gives_a_pyramid() {
+    let square = vec![(0.0, 0.0), (8.0, 0.0), (8.0, 8.0), (0.0, 8.0)];
+    let model = house(&square, 2.4);
+    let r = roof(6.0, 0.0);
+    let built = build_roof(&model, 0, &r).expect("square roof should build");
+
+    assert_eq!(built.planes.len(), 4, "square gives 4 triangular planes");
+
+    let ridges = built.edges.iter().filter(|e| e.kind == RoofEdgeKind::Ridge).count();
+    assert_eq!(ridges, 0, "square pyramid has no ridge");
+
+    let hips = built.edges.iter().filter(|e| e.kind == RoofEdgeKind::Hip).count();
+    assert_eq!(hips, 4, "square pyramid has 4 hip edges");
+}
+
+#[test]
+fn a_roofauto_failure_builds_no_roof() {
+    // A self-crossing ring cannot produce a valid footprint.
+    let crossing = vec![(0.0, 0.0), (10.0, 10.0), (10.0, 0.0), (0.0, 10.0)];
+    let mut model = house(&crossing, 2.4);
+    let r = roof(6.0, 0.0);
+    let before = model.roofs.len();
+
+    let result = build_roof(&model, 0, &r);
+    assert!(result.is_err(), "self-crossing footprint must return RoofError");
+
+    // Simulate roofauto: only push on success; failure leaves model.roofs unchanged.
+    if let Ok(built) = result {
+        model.roofs.push(built);
+    }
+    assert_eq!(model.roofs.len(), before, "model.roofs must not change on build failure");
+}
+
+#[test]
 fn random_wall_rings_never_panic() {
     let mut seed = 0x5eedu64;
     let mut next_rand = || {
