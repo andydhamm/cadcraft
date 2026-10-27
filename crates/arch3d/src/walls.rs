@@ -1,6 +1,6 @@
 //! Wall extrusion: turns a solved 2D `WallShape` into a 3D extruded mesh.
 
-use crate::mesh::Mesh;
+use crate::mesh::{Mesh, find_bridge_pair, merge_ring, triangulate_simple};
 
 use cadcraft_arch::join::WallShape;
 use cadcraft_doc::ArchModel;
