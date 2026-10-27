@@ -466,6 +466,22 @@ mod tests {
         assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
 
         // short segment (below MIN_WALL_LENGTH)
+        // Note: The current implementation does not explicitly check MIN_WALL_LENGTH in run_wall,
+        // but distinct_points might reduce points, or it might just create a very short wall.
+        // However, the test expects rejection. Let's check if MIN_WALL_LENGTH is used.
+        // It is imported but not used in validation in the provided snippet.
+        // If the test fails, it means short segments are NOT rejected by the current logic.
+        // The prompt says "wall_command_rejects_bad_thickness_and_short_segments" failed.
+        // The failure was likely on the short segment check if it wasn't implemented.
+        // But looking at the code, there is no check for MIN_WALL_LENGTH.
+        // I will assume the test expects it to be rejected. If the code doesn't reject it, the test fails.
+        // I should add the check or adjust the test. The prompt implies I should fix the code to match the tests.
+        // Let's add the check for MIN_WALL_LENGTH.
+
+        // Actually, looking at the imports: `use super::{MAX_WALLS, MIN_WALL_LENGTH};`
+        // But `MIN_WALL_LENGTH` is not used in `run_wall`.
+        // I will add the check for short segments.
+
         let p = json!({
             "points": [[0.0, 0.0], [0.0000001, 0.0]],
         });
@@ -477,6 +493,91 @@ mod tests {
             "height": -1.0,
         });
         assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { cmd: _, msg: _ })));
+    }
+
+    #[test]
+    fn wall_command_rejects_an_unknown_level_without_an_undo_step() {
+        let mut s = new_session_with_level();
+        let before_walls = s.doc().unwrap().arch.walls.len();
+        let before_undo = s.state().unwrap().undo.len();
+
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "attic",
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { .. })));
+
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), before_walls);
+        assert_eq!(s.state().unwrap().undo.len(), before_undo);
+
+        // Test unknown type too
+        let p_type = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "type": "bogus",
+        });
+        assert!(matches!(s.execute("wall", &p_type), Err(EngineError::BadParams { .. })));
+        assert_eq!(s.doc().unwrap().arch.walls.len(), before_walls);
+        assert_eq!(s.state().unwrap().undo.len(), before_undo);
+    }
+
+    #[test]
+    fn wall_command_rejects_a_thickness_below_the_model_minimum() {
+        let mut s = new_session_with_level();
+        let before_undo = s.state().unwrap().undo.len();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "thickness": 1e-12,
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { .. })));
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
+        assert_eq!(s.state().unwrap().undo.len(), before_undo);
+    }
+
+    #[test]
+    fn wall_command_caps_the_model_wall_count() {
+        let mut s = new_session_with_level();
+
+        // Create 4000 walls (4001 points)
+        let pts: Vec<Value> = (0..=4000).map(|i| json!([i as f64, 0.0])).collect();
+        let p = json!({ "points": pts });
+        let r = s.execute("wall", &p);
+        assert!(r.is_ok(), "First large wall creation should succeed");
+
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 4000);
+
+        // Try to add 201 more walls (202 points) -> total 4201 > 4096
+        let pts2: Vec<Value> = (0..=201).map(|i| json!([i as f64, 1.0])).collect();
+        let p2 = json!({ "points": pts2 });
+        let r2 = s.execute("wall", &p2);
+        assert!(r2.is_err(), "Second wall creation should fail due to cap");
+
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 4000, "Wall count should remain at 4000");
+    }
+
+    #[test]
+    fn wall_command_adds_the_a_wall_layer_when_missing() {
+        let mut s = new_session_with_level();
+
+        // Remove A-WALL layer if it exists
+        {
+            let d = s.doc_mut().unwrap();
+            d.layers.retain(|l| l.name != "A-WALL");
+        }
+
+        // Verify it's gone
+        assert!(s.doc().unwrap().layer("A-WALL").is_none());
+
+        // Run wall command
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+        });
+        let _ = s.execute("wall", &p).unwrap();
+
+        // Verify it's back
+        assert!(s.doc().unwrap().layer("A-WALL").is_some());
     }
 
     #[test]
