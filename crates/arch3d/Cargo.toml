@@ -1,7 +1,7 @@
 [package]
 name = "cadcraft-arch3d"
 version.workspace = true
-edition = "2024"
+edition.workspace = true
 license.workspace = true
 
 [dependencies]
@@ -11,3 +11,6 @@ cadcraft-doc = { workspace = true }
 cadcraft-geom = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+
+[lints]
+workspace = true

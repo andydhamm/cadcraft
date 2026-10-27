@@ -5,6 +5,9 @@
 //! - [`pipeline`]: GPU mesh upload and render pipeline setup.
 //! - [`offscreen`]: offscreen wgpu renderer for headless PNG export.
 
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+#![forbid(unsafe_code)]
+
 pub mod camera;
 pub mod light;
 pub mod offscreen;
@@ -13,6 +16,16 @@ pub mod types;
 
 #[cfg(test)]
 pub(crate) mod gputest;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn crate_root_denies_unwrap_and_panic() {
+        let src = include_str!("lib.rs");
+        assert!(src.contains("deny(clippy::unwrap_used"), "missing deny(clippy::unwrap_used)");
+        assert!(src.contains("forbid(unsafe_code)"), "missing forbid(unsafe_code)");
+    }
+}
 
 pub use camera::{Camera, Orbit, projected_bounds, projected_scene_bounds};
 pub use light::Light;
