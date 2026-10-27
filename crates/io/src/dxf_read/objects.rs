@@ -187,10 +187,17 @@ impl Objects {
             d.constraints = c;
             d.parametric = p;
         }
-        // The architectural object model (CADCraft arch objects).
+        // The architectural object model (CADCraft arch objects). When it parses we own the arch
+        // id space: raise each counter past every id in use (a hand-edited or foreign payload
+        // leaves the counters at or below live ids and the next push would duplicate one), and
+        // drop the save-time proxy linework, which is redundant. With an absent or corrupt record
+        // the proxies stay as ordinary A-WALL/A-DOOR/A-GLAZ/A-ROOM linework (they were kept in
+        // `rx.arch_proxies` while reading and are dropped only here).
         if let Some(m) = self.xrecord_text(crate::dxf_arch::ARCH_KEY).and_then(|t| crate::dxf_arch::parse_arch(&t)) {
             d.arch = m;
             d.arch_revision = 1;
+            repair_arch_counters(&mut d.arch);
+            drop_arch_proxies(d, &rx.arch_proxies);
         }
         // The annotation scale list (a metric drawing without one gets the metric defaults),
         // then CADCraft's annotative scaling record.
@@ -221,6 +228,40 @@ impl Objects {
         // Standard associativity, for dimensions without CADCraft's exact links.
         for tags in &self.dimassocs {
             dimassoc(d, tags);
+        }
+    }
+}
+
+/// Raise each arch id counter to one past every id already in use, so a hand-edited or foreign
+/// payload (counters at or below live ids) still hands out fresh proxy handles on the next
+/// push instead of reusing an id.
+fn repair_arch_counters(arch: &mut cadcraft_doc::ArchModel) {
+    if let Some(m) = arch.walls.iter().map(|w| w.id.0).max() {
+        arch.next_id = m.saturating_add(1);
+    }
+    if let Some(m) = arch.openings.iter().map(|o| o.id.0).max() {
+        arch.next_opening_id = m.saturating_add(1);
+    }
+    if let Some(m) = arch.rooms.iter().map(|r| r.id.0).max() {
+        arch.next_room_id = m.saturating_add(1);
+    }
+    if let Some(m) = arch.roofs.iter().map(|r| r.id.0).max() {
+        arch.next_roof_id = m.saturating_add(1);
+    }
+}
+
+/// Drop the remembered arch proxy handles from the model, every layout and every block. Called
+/// only after the arch model parsed, so the proxies are redundant and the drawing is the one
+/// source of truth.
+fn drop_arch_proxies(d: &mut cadcraft_doc::Drawing, proxies: &[cadcraft_doc::Handle]) {
+    let set: std::collections::HashSet<cadcraft_doc::Handle> = proxies.iter().copied().collect();
+    d.model.retain(|e| !set.contains(&e.handle));
+    for l in d.layouts.iter_mut() {
+        l.entities.retain(|e| !set.contains(&e.handle));
+    }
+    for name in d.blocks.keys().cloned().collect::<Vec<_>>() {
+        if let Some(b) = d.blocks.get_mut(&name) {
+            std::sync::Arc::make_mut(b).entities.retain(|e| !set.contains(&e.handle));
         }
     }
 }
