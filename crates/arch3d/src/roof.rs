@@ -1096,9 +1096,10 @@ mod tests {
         let roof_mesh = meshes.iter().find(|m| m.material == "roof").expect("roof mesh");
         let b = roof_mesh.bounds();
 
-        // Base edge at z=0.0, far edge at z = 0.0 + 0.5*5 = 2.5, plus thickness.
+        // Base edge at z=0.0, far edge bottom at z = 0.0 + 0.5*5 = 2.5, top adds
+        // thickness/sqrt(1+slope^2) = 0.2/sqrt(1.25) ≈ 0.179, so max z ≈ 2.679.
         assert!(b.min[2] < 0.01, "min z should be near 0.0, got {}", b.min[2]);
-        assert!(b.max[2] < 2.6, "max z should be below 2.6, got {}", b.max[2]);
+        assert!(b.max[2] < 2.7, "max z should be below 2.7, got {}", b.max[2]);
     }
 
     #[test]
