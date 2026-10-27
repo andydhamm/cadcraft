@@ -1,12 +1,62 @@
 //! The `roofplane` command: create or edit a single manual roof plane.
 
 use cadcraft_arch::poly::is_simple;
-use cadcraft_doc::arch::{Level, Roof, RoofEdge, RoofEdgeKind, RoofPlane, Wall};
+use cadcraft_doc::arch::{ArchModel, Level, Roof, RoofEdge, RoofEdgeKind, RoofPlane, Wall};
 use cadcraft_geom::Vec2;
 use serde_json::Value;
 
 use crate::Session;
 use crate::cmd::{Result, bad, f64_or, points_param};
+
+/// Height of the wall sitting under the eave `base` segment.
+///
+/// A wall matches when its centre line is parallel to the base segment (cosine within
+/// 0.99) and its infinite line is within half the wall thickness plus a small tolerance
+/// of the base midpoint. Returns the matching wall's height (closest wins); `None` when
+/// no wall is under the base.
+fn wall_height_under(base_a: Vec2, base_b: Vec2, model: &ArchModel) -> Option<f64> {
+    let base = base_b - base_a;
+    let base_len = base.len();
+    if base_len <= 1e-9 || !base_len.is_finite() {
+        return None;
+    }
+    let base_dir = base * (1.0 / base_len);
+    let base_mid = base_a + base * 0.5;
+    let mut best: Option<(f64, f64)> = None; // (distance, height)
+    for w in &model.walls {
+        if !w.start.is_finite() || !w.end.is_finite() {
+            continue;
+        }
+        let wl = w.start.dist(w.end);
+        if wl <= 1e-12 || !wl.is_finite() {
+            continue;
+        }
+        if w.height <= 0.0 || !w.height.is_finite() {
+            continue;
+        }
+        if !w.thickness.is_finite() || w.thickness < 0.0 {
+            continue;
+        }
+        let w_dir = (w.end - w.start) * (1.0 / wl);
+        let dot = base_dir.dot(w_dir);
+        if dot.abs() < 0.99 {
+            continue;
+        }
+        let ap = base_mid - w.start;
+        let t = ap.dot(w_dir);
+        let closest = w.start + w_dir * t;
+        let d = base_mid.dist(closest);
+        let max_d = w.thickness * 0.5 + 0.05;
+        if d <= max_d {
+            let cand = (d, w.height);
+            match &best {
+                Some(b) if b.0 <= cand.0 => {}
+                _ => best = Some(cand),
+            }
+        }
+    }
+    best.map(|(_, h)| h)
+}
 
 /// Parse a roof plane ID like "r0p1" into (roof_index, plane_index).
 fn parse_roof_plane_id(id: &str) -> Option<(usize, usize)> {
@@ -34,6 +84,14 @@ fn create_roof_plane(
     }
     if !points.iter().all(|p| p.is_finite()) {
         return Err(bad("roofplane", "points must be finite"));
+    }
+    // Closed rings commonly repeat the first vertex as the last; drop the redundant
+    // trailing point before any simplicity or edge check so the ring is well formed.
+    if points.len() >= 2 && points.last().near(points.first(), 1e-6) {
+        points.pop();
+    }
+    if points.len() < 3 {
+        return Err(bad("roofplane", "points must be between 3 and 256"));
     }
     if !is_simple(&points) {
         return Err(bad("roofplane", "polygon is self-crossing"));
@@ -106,21 +164,39 @@ fn create_roof_plane(
     }
 
     let base_edge = [base.0.x, base.0.y, base.1.x, base.1.y];
-    let plane = RoofPlane { ring, slope, projected_area, base_edge, thickness, ..Default::default() };
-
-    let edge = RoofEdge { kind: RoofEdgeKind::Eave, a: base.0, b: base.1, ..Default::default() };
 
     let mut doc = s.doc_mut()?;
     // Roofs add their save-time proxy layer on first use; a fresh drawing carries no
     // arch layers.
     doc.ensure_layer("A-ROOF");
     let arch = &mut doc.arch;
+
+    // Resolve the roof level: the requested index when it exists, otherwise the top level.
+    let top = arch.levels.iter().map(|l| l.index).max().unwrap_or(0);
+    let level_idx = match level {
+        Some(l) if arch.level(l as u32).is_some() => l as u32,
+        Some(_) | None => top,
+    };
+    let lev = arch.level(level_idx).cloned().unwrap_or_else(Level::default);
+
+    // Eave height: level elevation + the wall height under the base edge, falling back
+    // to the level's ceiling height when no wall lies under the base.
+    let eave_z = match wall_height_under(base.0, base.1, &arch) {
+        Some(h) => lev.elevation + h,
+        None => lev.elevation + lev.ceiling_height,
+    };
+
+    let plane =
+        RoofPlane { ring, slope, projected_area, base_edge, thickness, eave_z, fascia_depth: fascia, soffit_depth: soffit, ..Default::default() };
+
+    let edge = RoofEdge { kind: RoofEdgeKind::Eave, a: base.0, b: base.1, ..Default::default() };
+
     let id = arch.next_roof_id;
     arch.next_roof_id += 1;
 
     let roof = Roof {
         id: cadcraft_doc::ArchId(id),
-        level: level.unwrap_or(0) as u32,
+        level: level_idx,
         pitch_rise,
         pitch_run,
         thickness,
@@ -562,5 +638,100 @@ mod tests {
         let res = run_roofplane(&mut s, &params);
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("non-negative"));
+    }
+
+    /// A closed ring that repeats its first vertex as the last is accepted and the
+    /// stored ring has the redundant point dropped.
+    #[test]
+    fn roofplane_accepts_a_closed_ring() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[-0.1, -0.1], [10.1, -0.1], [10.1, 4.0], [-0.1, 4.0], [-0.1, -0.1]],
+            "base": [[-0.1, -0.1], [10.1, -0.1]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0,
+        });
+        let res = run_roofplane(&mut s, &params);
+        assert!(res.is_ok(), "closed ring rejected: {res:?}");
+        let v = res.unwrap();
+        assert_eq!(v["handles"][0], "r0");
+        assert_eq!(v["plane"], 0);
+        let area = v["projectedArea"].as_f64().unwrap();
+        assert!((area - 41.82).abs() < 1e-6, "projectedArea {area} != 41.82");
+        let doc = s.doc().unwrap();
+        assert_eq!(doc.arch.roofs.len(), 1);
+        let plane = &doc.arch.roofs[0].planes[0];
+        assert_eq!(plane.ring.len(), 4, "ring should drop the repeated closing point");
+        assert_eq!(plane.base_edge, [-0.1, -0.1, 10.1, -0.1]);
+        assert!((plane.slope - 0.5).abs() < 1e-9);
+    }
+
+    /// Numeric `fascia`/`soffit` depths become the roof booleans and are stored as
+    /// `fascia_depth`/`soffit_depth` on the plane.
+    #[test]
+    fn roofplane_numeric_fascia_and_soffit() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0,
+            "fascia": 0.2,
+            "soffit": 0.15,
+        });
+        let res = run_roofplane(&mut s, &params);
+        assert!(res.is_ok(), "numeric fascia/soffit rejected: {res:?}");
+        let roof = &s.doc().unwrap().arch.roofs[0];
+        assert!(roof.fascia, "fascia bool should be true for fascia 0.2");
+        assert!(roof.soffit, "soffit bool should be true for soffit 0.15");
+        let p = &roof.planes[0];
+        assert!((p.fascia_depth - 0.2).abs() < 1e-9, "fascia_depth {}", p.fascia_depth);
+        assert!((p.soffit_depth - 0.15).abs() < 1e-9, "soffit_depth {}", p.soffit_depth);
+
+        let mut s2 = Session::new();
+        let res2 = run_roofplane(
+            &mut s2,
+            &json!({
+                "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+                "base": [[0.0, 0.0], [10.0, 0.0]],
+                "fascia": 0.0,
+                "soffit": 0.0,
+            }),
+        );
+        assert!(res2.is_ok(), "zero fascia/soffit rejected: {res2:?}");
+        let roof2 = &s2.doc().unwrap().arch.roofs[0];
+        assert!(!roof2.fascia, "fascia bool should be false for fascia 0.0");
+        assert!(!roof2.soffit, "soffit bool should be false for soffit 0.0");
+        let p2 = &roof2.planes[0];
+        assert_eq!(p2.fascia_depth, 0.0, "fascia_depth should be 0.0");
+        assert_eq!(p2.soffit_depth, 0.0, "soffit_depth should be 0.0");
+    }
+
+    /// A roof created via `roofplane` is reported by `arch.inspect` under `roofs`.
+    #[test]
+    fn roofplane_reports_the_roof_in_inspect() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0,
+            "fascia": 0.2,
+            "soffit": 0.15,
+        });
+        let res = run_roofplane(&mut s, &params);
+        assert!(res.is_ok(), "roofplane rejected: {res:?}");
+
+        let inspect = s.execute("arch.inspect", &json!({ "roofs": true }));
+        assert!(inspect.is_ok(), "arch.inspect rejected: {inspect:?}");
+        let v = inspect.unwrap();
+        let roofs = v["roofs"].as_array().expect("arch.inspect should report `roofs`");
+        assert_eq!(roofs.len(), 1, "expected exactly one roof");
+        let r = &roofs[0];
+        assert_eq!(r["id"].as_str().unwrap(), "r0");
+        assert!(r["planes"].as_array().unwrap().len() == 1, "roof should have one plane");
+        assert!(r["manual"].as_bool().unwrap(), "manual roof should report manual:true");
+        assert_eq!(r["planes"][0].as_object().unwrap()["fasciaDepth"], json!(0.2));
+        assert_eq!(r["planes"][0].as_object().unwrap()["soffitDepth"], json!(0.15));
     }
 }

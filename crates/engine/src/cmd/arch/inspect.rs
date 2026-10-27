@@ -262,6 +262,8 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
                 // If it's [f64; 4], we can just serialize it directly or map it.
                 // Let's assume it's [f64; 4] representing [x0, y0, x1, y1].
                 p_obj.insert("baseEdge".to_string(), json!(plane.base_edge));
+                p_obj.insert("fasciaDepth".to_string(), json!(plane.fascia_depth));
+                p_obj.insert("soffitDepth".to_string(), json!(plane.soffit_depth));
 
                 planes_json.push(Value::Object(p_obj));
             }
