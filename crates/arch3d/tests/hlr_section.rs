@@ -300,11 +300,8 @@ fn a_smooth_column_shows_its_silhouette_and_no_facet_edges() {
     assert!(!v.iter().any(|l| (l.a[0] - l.b[0]).abs() < TOL && l.a[0].abs() < 0.99), "a facet edge shows: {v:?}");
 }
 
-/// Seen from inside, a window shows through its wall. Ignored while `Scene3d::build` extrudes each wall's plan shape
-/// whole: phase 2's "boolean-cut 3D openings" never cut the wall, so the window's parts sit inside a solid wall and its
-/// inner face hides them (2026-10-25; see "Walls are not cut by openings" in docs/arch3d/DESIGN.md).
+/// The window's rough opening is a hole in the wall profile, so its jambs show through the section.
 #[test]
-#[ignore = "walls are not cut by openings yet: the wall's inner face hides the window"]
 fn a_window_beyond_a_section_shows_through_its_wall() {
     let (m, [_, _, n, _]) = house();
     let mut d = m.clone();
