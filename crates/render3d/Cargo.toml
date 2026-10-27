@@ -1,19 +1,22 @@
 [package]
 name = "cadcraft-render3d"
 version.workspace = true
-edition = "2024"
+edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-cadcraft-geom = { path = "../geom" }
-cadcraft-color = { path = "../color" }
-cadcraft-arch3d = { path = "../arch3d" }
+cadcraft-geom = { workspace = true }
+cadcraft-color = { workspace = true }
+cadcraft-arch3d = { workspace = true }
 wgpu = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png"] }
-thiserror = "2"
+thiserror = { workspace = true }
 futures = "0.3"
 bytemuck = { version = "1.24", features = ["derive"] }
+
+[lints]
+workspace = true
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt"] }
