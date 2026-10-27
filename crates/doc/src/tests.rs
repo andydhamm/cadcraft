@@ -593,7 +593,7 @@ fn a_new_drawing_has_no_arch_layers() {
         assert_eq!(d.layers.len(), 2, "a new drawing should carry only 0 and Defpoints");
         assert!(d.layers.iter().any(|l| l.name == "Defpoints"), "Defpoints missing from a new drawing");
         for name in arch_names {
-            assert!(d.layers.iter().none(|l| l.name == name), "{name} must not be present in a new drawing");
+            assert!(d.layer(name).is_none(), "{name} must not be present in a new drawing");
         }
     }
 }
