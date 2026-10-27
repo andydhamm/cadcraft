@@ -1106,9 +1106,9 @@ mod tests {
         let b = roof_mesh.bounds();
 
         // Base edge at z=0.0, far edge bottom at z = 0.0 + 0.5*5 = 2.5, top adds
-        // thickness/sqrt(1+slope^2) = 0.2/sqrt(1.25) ≈ 0.179, so max z ≈ 2.679.
+        // thickness * sqrt(1+slope^2) = 0.2 * sqrt(1.25) ≈ 0.224, so max z ≈ 2.724.
         assert!(b.min[2] < 0.01, "min z should be near 0.0, got {}", b.min[2]);
-        assert!(b.max[2] < 2.7, "max z should be below 2.7, got {}", b.max[2]);
+        assert!(b.max[2] < 2.75, "max z should be below 2.75, got {}", b.max[2]);
     }
 
     #[test]
