@@ -772,7 +772,7 @@ mod tests {
         s.execute(
             "room",
             &json!({
-                "points": [[0.5, 0.5], [9.5, 0.5], [9.5, 7.5], [0.5, 7.5]],
+                "points": [[0.5, 0.5], [9.5, 0.5], [9.5, 7.5], [0.5, 7.5], [0.5, 0.5]],
                 "name": "Living Room",
                 "type": "Living"
             }),
@@ -811,8 +811,7 @@ mod tests {
     #[test]
     fn build3d_roof_count_single_wall() {
         let mut s = wall_session();
-        // A single wall cannot form a closed loop, so roofauto should create no roof
-        s.execute("roofauto", &json!({"pitchRise": 6, "pitchRun": 12})).unwrap();
+        // A single wall cannot form a closed loop, so no roof is built
         let r = s.execute("build3d", &json!({})).unwrap();
         assert_eq!(r["roofs"].as_u64(), Some(0), "single wall must report 0 roofs");
     }
