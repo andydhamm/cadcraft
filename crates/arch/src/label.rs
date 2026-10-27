@@ -253,4 +253,49 @@ mod tests {
         assert_eq!(p1.x, p2.x);
         assert_eq!(p1.y, p2.y);
     }
+
+    #[test]
+    fn label_point_triangle() {
+        let tri = vec![pt(0.0, 0.0), pt(4.0, 0.0), pt(2.0, 3.0)];
+        let p = label_point(&tri, &[]).expect("triangle should yield a label point");
+        assert!(point_in_polygon(&tri, p));
+        // Vertex-average centroid of (0,0),(4,0),(2,3) is (2,1).
+        assert!((p.x - 2.0).abs() < 1e-9);
+        assert!((p.y - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn label_point_multiple_holes() {
+        let outer = vec![pt(0.0, 0.0), pt(10.0, 0.0), pt(10.0, 10.0), pt(0.0, 10.0)];
+        let hole1 = vec![pt(1.0, 1.0), pt(3.0, 1.0), pt(3.0, 3.0), pt(1.0, 3.0)];
+        let hole2 = vec![pt(7.0, 7.0), pt(9.0, 7.0), pt(9.0, 9.0), pt(7.0, 9.0)];
+        let p = label_point(&outer, &[hole1.clone(), hole2.clone()]).expect("should yield a point");
+        assert!(point_in_polygon(&outer, p));
+        assert!(!point_in_polygon(&hole1, p));
+        assert!(!point_in_polygon(&hole2, p));
+    }
+
+    #[test]
+    fn label_point_hole_nan_vertex() {
+        let outer = vec![pt(0.0, 0.0), pt(10.0, 0.0), pt(10.0, 10.0), pt(0.0, 10.0)];
+        let hole = vec![pt(4.0, 4.0), pt(f64::NAN, 5.0), pt(6.0, 6.0), pt(4.0, 6.0)];
+        assert!(label_point(&outer, &[hole]).is_none());
+    }
+
+    #[test]
+    fn label_point_coincident_vertices() {
+        // Square with one vertex repeated; should still find a valid point.
+        let outer = vec![pt(0.0, 0.0), pt(4.0, 0.0), pt(4.0, 4.0), pt(4.0, 4.0), pt(0.0, 4.0)];
+        let p = label_point(&outer, &[]).expect("should yield a point");
+        assert!(point_in_polygon(&outer, p));
+    }
+
+    #[test]
+    fn label_point_large_coordinates() {
+        let scale = 1e6;
+        let outer = vec![pt(0.0 * scale, 0.0 * scale), pt(4.0 * scale, 0.0 * scale), pt(4.0 * scale, 4.0 * scale), pt(0.0 * scale, 4.0 * scale)];
+        let p = label_point(&outer, &[]).expect("should yield a point");
+        assert!(p.is_finite());
+        assert!(point_in_polygon(&outer, p));
+    }
 }
