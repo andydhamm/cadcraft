@@ -329,7 +329,16 @@ pub fn run_roofplane(s: &mut Session, p: &Value) -> Result<Value> {
         return edit_roof_plane(s, edit_id, pitch_rise, pitch_run, thickness, fascia, soffit);
     }
 
-    let points = points_param(p, "points").ok_or_else(|| bad("roofplane", "`points` is required"))?;
+    let points_val = p.get("points").ok_or_else(|| bad("roofplane", "`points` is required"))?;
+    let points_arr = points_val.as_array().ok_or_else(|| bad("roofplane", "`points` must be an array"))?;
+    let mut points = Vec::new();
+    for pt in points_arr {
+        let v = crate::cmd::point_value(pt).ok_or_else(|| bad("roofplane", "points must be finite"))?;
+        if !v.is_finite() {
+            return Err(bad("roofplane", "points must be finite"));
+        }
+        points.push(v);
+    }
 
     let base_val = p.get("base").ok_or_else(|| bad("roofplane", "`base` is required"))?;
 
@@ -733,5 +742,143 @@ mod tests {
         assert!(r["manual"].as_bool().unwrap(), "manual roof should report manual:true");
         assert_eq!(r["planes"][0].as_object().unwrap()["fasciaDepth"], json!(0.2));
         assert_eq!(r["planes"][0].as_object().unwrap()["soffitDepth"], json!(0.15));
+    }
+
+    /// NaN in any point coordinate is rejected as non-finite input.
+    #[test]
+    fn roofplane_rejects_nan_points() {
+        let mut s = Session::new();
+        let mut points = serde_json::Value::Array(Vec::new());
+        points.as_array_mut().unwrap().push(json!([0.0, 0.0]));
+        let mut p2 = serde_json::Value::Array(Vec::new());
+        p2.as_array_mut().unwrap().push(json!(10.0));
+        p2.as_array_mut().unwrap().push(serde_json::Value::from(f64::NAN));
+        points.as_array_mut().unwrap().push(p2);
+        points.as_array_mut().unwrap().push(json!([10.0, 10.0]));
+        points.as_array_mut().unwrap().push(json!([0.0, 10.0]));
+
+        let mut params = serde_json::Map::new();
+        params.insert("points".to_string(), points);
+        params.insert("base".to_string(), json!([[0.0, 0.0], [10.0, 0.0]]));
+        params.insert("pitchRise".to_string(), json!(6.0));
+        params.insert("pitchRun".to_string(), json!(12.0));
+        let params = serde_json::Value::Object(params);
+        let res = run_roofplane(&mut s, &params);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("finite"));
+    }
+
+    /// Creating two roofs assigns sequential IDs r0 and r1.
+    #[test]
+    fn roofplane_two_roofs_get_sequential_ids() {
+        let mut s = Session::new();
+        let params1 = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0
+        });
+        let res1 = run_roofplane(&mut s, &params1).unwrap();
+        assert_eq!(res1["handles"][0], "r0");
+
+        let params2 = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[10.0, 0.0], [10.0, 10.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0
+        });
+        let res2 = run_roofplane(&mut s, &params2).unwrap();
+        assert_eq!(res2["handles"][0], "r1");
+    }
+
+    /// A negative pitch rise produces a negative slope (downward plane).
+    #[test]
+    fn roofplane_negative_pitch_rise() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": -6.0,
+            "pitchRun": 12.0
+        });
+        let res = run_roofplane(&mut s, &params).unwrap();
+        let doc = s.doc().unwrap();
+        let roof = &doc.arch.roofs[0];
+        assert!((roof.planes[0].slope - (-0.5)).abs() < 1e-9);
+        assert!((roof.pitch_rise - (-6.0)).abs() < 1e-9);
+    }
+
+    /// Editing only the thickness updates both the plane and the roof record.
+    #[test]
+    fn roofplane_edit_thickness_only() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0
+        });
+        run_roofplane(&mut s, &params).unwrap();
+
+        let edit_params = json!({
+            "edit": "r0p0",
+            "thickness": 0.25
+        });
+        run_roofplane(&mut s, &edit_params).unwrap();
+
+        let doc = s.doc().unwrap();
+        let roof = &doc.arch.roofs[0];
+        assert!((roof.planes[0].thickness - 0.25).abs() < 1e-9);
+        assert!((roof.thickness - 0.25).abs() < 1e-9);
+    }
+
+    /// A closed ring with the minimum 3 points (triangle) is accepted.
+    #[test]
+    fn roofplane_closed_ring_three_points() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [0.0, 0.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0
+        });
+        let res = run_roofplane(&mut s, &params).unwrap();
+        let doc = s.doc().unwrap();
+        let plane = &doc.arch.roofs[0].planes[0];
+        assert_eq!(plane.ring.len(), 3);
+        assert!((res["projectedArea"].as_f64().unwrap() - 50.0).abs() < 1e-6);
+    }
+
+    /// Very large coordinates stay finite and produce a correct projected area.
+    #[test]
+    fn roofplane_huge_coordinates() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [1e6, 0.0], [1e6, 1e6], [0.0, 1e6]],
+            "base": [[0.0, 0.0], [1e6, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0
+        });
+        let res = run_roofplane(&mut s, &params).unwrap();
+        let area = res["projectedArea"].as_f64().unwrap();
+        assert!(area.is_finite());
+        assert!((area - 1e12).abs() < 1e6);
+    }
+
+    /// An unknown level index falls back to the top level (level 0 in a new drawing).
+    #[test]
+    fn roofplane_unknown_level_falls_back_to_top() {
+        let mut s = Session::new();
+        let params = json!({
+            "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            "base": [[0.0, 0.0], [10.0, 0.0]],
+            "pitchRise": 6.0,
+            "pitchRun": 12.0,
+            "level": 99
+        });
+        let res = run_roofplane(&mut s, &params).unwrap();
+        let doc = s.doc().unwrap();
+        let roof = &doc.arch.roofs[0];
+        assert_eq!(roof.level, 0);
     }
 }
