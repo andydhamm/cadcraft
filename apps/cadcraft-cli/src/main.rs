@@ -1646,10 +1646,10 @@ mod render_harden_tests {
         let rgba = cadcraft_render3d::offscreen::png_rgba(&png).expect("decode");
 
         let clear = [5u8, 6, 9, 255];
-        let different = rgba.chunks_exact(4).filter(|p| p.iter().zip(clear.iter()).any(|(a, b)| (a as i32 - b as i32).abs() > 10)).count();
+        let different = rgba.chunks_exact(4).filter(|p| p.iter().zip(clear.iter()).any(|(a, b)| (*a as i32 - *b as i32).abs() > 10)).count();
         let total = rgba.len() / 4;
         let fraction = different as f64 / total as f64;
-        assert!(fraction > 0.02, "only {fraction:.2%} of pixels differ from clear color (need > 2%)");
+        assert!(fraction > 0.02, "only {}% of pixels differ from clear color (need > 2%)", fraction * 100.0);
     }
 
     #[test]
