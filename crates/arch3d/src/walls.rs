@@ -183,21 +183,22 @@ pub fn extrude_wall_profile(shape: &WallShape, profile: WallProfile, base: f64, 
         return None;
     }
 
-    // Check if the top is sloped (not a simple rectangle)
-    // A simple rectangle has 4 points. A pentagon has 4 points but different heights.
-    // We detect slope by checking if the top two points have different v values.
-    // Assuming outer is (0,0), (len,0), (len,v1), (0,v0)
-    let is_sloped = profile.outer.len() == 4 && (profile.outer[2].y - profile.outer[3].y).abs() > 1e-6;
+    // Fast path only for a true axis-aligned rectangle: 4 points, both bottom vertices at
+    // v = 0, and both top vertices at the same v.  Any other shape (sloped quad, pentagon,
+    // …) goes through the general `extrude_profile_manual` path.
+    let is_rect = profile.outer.len() == 4
+        && profile.outer[0].y.abs() < 1e-9
+        && profile.outer[1].y.abs() < 1e-9
+        && (profile.outer[2].y - profile.outer[3].y).abs() < 1e-9;
 
     let mut mesh = Mesh::new(material, shape.id);
     mesh.level_elevation = base;
 
-    if !is_sloped && profile.holes.is_empty() {
-        // Fast path: simple prism
+    if is_rect && profile.holes.is_empty() {
+        // Fast path: rectangle profile with no holes uses a simple prism.
         let height = profile.outer[1].y;
         mesh.push_prism(&shape.polygon, base, base + height);
     } else {
-        // Manual extrusion for holes or slopes
         return extrude_profile_manual(shape, profile, base, material);
     }
 
@@ -451,6 +452,114 @@ fn extrude_profile_manual(shape: &WallShape, profile: WallProfile, base: f64, ma
         for i in &indices {
             mesh.indices.push(base_idx + i);
         }
+    }
+
+    (mesh.triangle_count() > 0).then(|| mesh)
+}
+
+/// Extrude a profile along the wall's centre-line frame (used when the top follows a roof).
+///
+/// Unlike [`extrude_profile_manual`], which uses the solved polygon, this maps each profile
+/// vertex directly onto the wall's own centre line, making it suitable for walls whose top
+/// follows a roof plane with more than four profile points.
+///
+/// Returns `None` when the profile has fewer than 3 outer vertices, the wall thickness is
+/// non-positive, the wall has zero length, or the triangulation produces no triangles.
+/// Non-finite input coordinates are silently filtered out rather than causing a panic.
+pub fn extrude_profile_slab(shape: &WallShape, profile: &WallProfile, base: f64, wall: &Wall, material: &str) -> Option<Mesh> {
+    if profile.outer.len() < 3 {
+        return None;
+    }
+    if !wall.thickness.is_finite() || wall.thickness <= 0.0 {
+        return None;
+    }
+
+    let dx = wall.end.x - wall.start.x;
+    let dy = wall.end.y - wall.start.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1e-9 {
+        return None;
+    }
+
+    let dir_x = dx / len;
+    let dir_y = dy / len;
+    // Perpendicular: (-dir.y, dir.x)
+    let perp_x = -dir_y;
+    let perp_y = dir_x;
+    let half = wall.thickness / 2.0;
+
+    let tris = triangulate_profile(&profile.outer, &profile.holes);
+
+    let mut mesh = Mesh::new(material, shape.id);
+    mesh.level_elevation = base;
+
+    for tri in tris {
+        // Skip triangles with non-finite profile coordinates.
+        if tri.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
+            continue;
+        }
+
+        // Build 6 vertices: 3 at s = -1 (one face), 3 at s = +1 (other face).
+        let mut verts: Vec<[f32; 3]> = Vec::with_capacity(6);
+        let mut all_finite = true;
+        for &s in &[-1.0_f64, 1.0_f64] {
+            for p in &tri {
+                let x = wall.start.x + p.x * dir_x + s * half * perp_x;
+                let y = wall.start.y + p.x * dir_y + s * half * perp_y;
+                let z = base + p.y;
+                if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+                    all_finite = false;
+                    break;
+                }
+                verts.push([x as f32, y as f32, z as f32]);
+            }
+            if !all_finite {
+                break;
+            }
+        }
+        if !all_finite {
+            continue;
+        }
+
+        // Emit the same 6-vertex / 8-triangle prism layout as extrude_profile_manual.
+        // Vertices 0-2 are at s = -1; vertices 3-5 are at s = +1.
+        let base_idx = mesh.positions.len() as u32;
+        for v in &verts {
+            mesh.positions.push(*v);
+            mesh.normals.push([0.0, 0.0, 1.0]);
+            mesh.uvs.push([0.0, 0.0]);
+        }
+        mesh.indices.extend_from_slice(&[
+            // Side 0-1
+            base_idx,
+            base_idx + 1,
+            base_idx + 4,
+            base_idx,
+            base_idx + 4,
+            base_idx + 3,
+            // Side 1-2
+            base_idx + 1,
+            base_idx + 2,
+            base_idx + 5,
+            base_idx + 1,
+            base_idx + 5,
+            base_idx + 4,
+            // Side 2-0
+            base_idx + 2,
+            base_idx,
+            base_idx + 3,
+            base_idx + 2,
+            base_idx + 3,
+            base_idx + 5,
+            // Bottom face (s = -1)
+            base_idx,
+            base_idx + 2,
+            base_idx + 1,
+            // Top face (s = +1)
+            base_idx + 3,
+            base_idx + 4,
+            base_idx + 5,
+        ]);
     }
 
     (mesh.triangle_count() > 0).then(|| mesh)
@@ -775,5 +884,78 @@ mod tests {
         for wall in &model.walls {
             assert!(roof_top_polyline(&model, wall, 0.0, 2.4).is_none());
         }
+    }
+
+    /// A pentagon profile (5 outer vertices) must go through `extrude_profile_manual`,
+    /// not the fast `push_prism` path, and produce geometry that spans the correct z range.
+    #[test]
+    fn extrude_wall_profile_extrudes_a_pentagon_profile() {
+        let id = ArchId(42);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(8.0, -0.1), Vec2::new(8.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+
+        let profile = WallProfile {
+            outer: vec![Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0), Vec2::new(8.0, 2.4), Vec2::new(4.0, 4.45), Vec2::new(0.0, 2.4)],
+            holes: vec![],
+        };
+
+        let mesh = extrude_wall_profile(&shape, profile, 0.0, "wall");
+        assert!(mesh.is_some(), "pentagon profile should produce a mesh");
+        let mesh = mesh.unwrap();
+        assert!(mesh.triangle_count() > 0, "pentagon mesh must have triangles");
+
+        let b = mesh.bounds();
+        assert!((b.max[2] - 4.45).abs() < 1e-3, "max z should be ≈ 4.45, got {}", b.max[2]);
+        assert!(b.min[2].abs() < 1e-3, "min z should be ≈ 0.0, got {}", b.min[2]);
+    }
+
+    /// `extrude_profile_slab` maps vertices onto the wall centre-line frame;
+    /// a vertex at u = 0 on a horizontal wall must land at x ≈ 0.
+    #[test]
+    fn extrude_profile_slab_extrudes_a_pentagon() {
+        let id = ArchId(42);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(8.0, -0.1), Vec2::new(8.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+
+        let profile = WallProfile {
+            outer: vec![Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0), Vec2::new(8.0, 2.4), Vec2::new(4.0, 4.45), Vec2::new(0.0, 2.4)],
+            holes: vec![],
+        };
+
+        // Horizontal wall from (0,0) to (8,0): dir=(1,0), perp=(0,1).
+        // For u = 0 vertices: x = wall.start.x + 0*1 + s*0.1*0 = 0.0.
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(8.0, 0.0), thickness: 0.2, height: 4.45, ..Default::default() };
+
+        let mesh = extrude_profile_slab(&shape, &profile, 0.0, &wall, "wall");
+        assert!(mesh.is_some(), "pentagon slab should produce a mesh");
+        let mesh = mesh.unwrap();
+        assert!(mesh.triangle_count() > 0, "pentagon slab mesh must have triangles");
+
+        let b = mesh.bounds();
+        assert!((b.max[2] - 4.45).abs() < 1e-3, "max z should be ≈ 4.45, got {}", b.max[2]);
+        assert!(b.min[2].abs() < 1e-3, "min z should be ≈ 0.0, got {}", b.min[2]);
+
+        // A vertex at u = 0 on a horizontal wall must be at x ≈ 0 (centre-line frame).
+        let has_x_near_zero = mesh.positions.iter().any(|p| (p[0] as f64).abs() < 1e-3);
+        assert!(has_x_near_zero, "slab mesh must have a vertex at |x - 0.0| < 1e-3");
+    }
+
+    /// A 4-point rectangle profile with no holes must take the fast `push_prism` path,
+    /// yielding exactly 12 triangles (the closed-box count for a 4-vertex ring).
+    #[test]
+    fn rectangle_profile_still_uses_the_prism_path() {
+        let id = ArchId(42);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(8.0, -0.1), Vec2::new(8.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+
+        let profile = WallProfile { outer: vec![Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0), Vec2::new(8.0, 2.4), Vec2::new(0.0, 2.4)], holes: vec![] };
+
+        let mesh = extrude_wall_profile(&shape, profile, 0.0, "wall");
+        assert!(mesh.is_some(), "rectangle profile should produce a mesh");
+        let mesh = mesh.unwrap();
+        assert_eq!(mesh.triangle_count(), 12, "rectangle fast path (push_prism on 4-vertex ring) must yield exactly 12 triangles");
     }
 }
