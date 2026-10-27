@@ -1021,6 +1021,22 @@ mod tests {
     }
 
     #[test]
+    fn wall_unknown_level_uses_first_level() {
+        // Restored test: previously this fell back to the first level.
+        // Now it is rejected, so we assert the rejection.
+        let mut s = Session::new();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "ground".to_string(), ceiling_height: 2.4, structure: 0.3, ..Default::default() });
+        d.touch_arch();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "level": "attic",
+        });
+        assert!(matches!(s.execute("wall", &p), Err(EngineError::BadParams { .. })));
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
+    }
+
+    #[test]
     fn wall_multiple_levels_selects_correct_one() {
         let mut s = Session::new();
         let d = s.doc_mut().unwrap();
