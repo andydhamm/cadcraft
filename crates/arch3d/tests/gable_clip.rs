@@ -298,3 +298,26 @@ fn probe_above_the_gable_top_is_empty() {
     let hit = scene.probe(cadcraft_geom::Vec3::new(5.0, 0.0, 3.0));
     assert!(hit.is_none(), "probe above south eave wall (5,0,3) should be None");
 }
+
+#[test]
+fn probe_on_eave_wall_top_face_is_outside() {
+    let model = gable_house();
+    let scene = Scene3d::build(&model);
+
+    // The south eave wall top face is at z=2.4. The z nudge (1e-6) pushes
+    // a point on the top face above the wall, so it reads as outside.
+    let hit = scene.probe(cadcraft_geom::Vec3::new(5.0, 0.0, 2.4));
+    assert!(hit.is_none(), "probe at eave wall top face (5,0,2.4) should be None");
+}
+
+#[test]
+fn probe_on_wall_corner_edge_is_inside() {
+    let model = gable_house();
+    let scene = Scene3d::build(&model);
+
+    // The south and west walls meet at (0,0). A point on their shared
+    // vertical edge at (0,0,1.2) should hit one of the walls after jitter.
+    let hit = scene.probe(cadcraft_geom::Vec3::new(0.0, 0.0, 1.2));
+    assert!(hit.is_some(), "probe at wall corner edge (0,0,1.2) should hit a wall");
+    assert_eq!(hit.unwrap().part, "wall", "wall corner edge probe should be wall");
+}
