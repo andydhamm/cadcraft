@@ -551,6 +551,13 @@ fn plan_end(
         let left = beyond(left, raw.0);
         let right = beyond(right, raw.1);
 
+        // An X crossing at this end records the crossing and keeps the raw
+        // corners; it must not be overwritten by the L mitre above, so only
+        // record the mitre when the end is not an X crossing.
+        if nbrs.iter().any(|n| matches!(n, Neighbour::X)) {
+            return Ok(EndPlan { left: raw.0, right: raw.1, join: Some(Join::X(end)) });
+        }
+
         return Ok(EndPlan { left, right, join: Some(Join::L(end)) });
     }
 
