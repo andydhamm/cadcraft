@@ -273,4 +273,80 @@ mod tests {
         // wall_bounds on degenerate wall.
         assert!(wall_bounds(&w).is_empty());
     }
+
+    #[test]
+    fn wall_layer_polygons_with_no_layers_returns_empty() {
+        let w = wall(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 2.0);
+        assert!(wall_layer_polygons(&w).is_empty());
+    }
+
+    #[test]
+    fn layer_bands_with_zero_and_tiny_thickness_are_skipped() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 2.0,
+            height: 3.0,
+            layers: vec![("zero".into(), 0.0), ("tiny".into(), 1e-15), ("ok".into(), 0.5)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        assert_eq!(polys.len(), 1, "only the 0.5 band should survive");
+        assert_eq!(polys[0].0, "ok");
+    }
+
+    #[test]
+    fn layer_bands_fill_wall_exactly() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 2.0,
+            height: 3.0,
+            layers: vec![("a".into(), 0.5), ("b".into(), 1.0), ("c".into(), 0.5)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        assert_eq!(polys.len(), 3);
+        // The outermost band should start at the outer face (y = -1.0).
+        let a0 = polys[0].1[0];
+        assert!((a0.y - (-1.0)).abs() < 1e-9, "first band starts at outer face");
+        // The innermost band should end at the inner face (y = 1.0).
+        let c2 = polys[2].1[2];
+        assert!((c2.y - 1.0).abs() < 1e-9, "last band ends at inner face");
+    }
+
+    #[test]
+    fn layer_bands_with_empty_and_duplicate_names() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 3.0,
+            height: 3.0,
+            layers: vec![("".into(), 0.5), ("dup".into(), 1.0), ("dup".into(), 0.5), ("last".into(), 1.0)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        assert_eq!(polys.len(), 4, "all bands including empty and duplicate names survive");
+        assert_eq!(polys[0].0, "");
+        assert_eq!(polys[1].0, "dup");
+        assert_eq!(polys[2].0, "dup");
+        assert_eq!(polys[3].0, "last");
+    }
+
+    #[test]
+    fn wall_layer_polygons_on_very_thin_wall() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 1e-10,
+            height: 3.0,
+            layers: vec![("a".into(), 0.5), ("b".into(), 0.5)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        // Both bands are thicker than the wall, so the first is clamped to the wall
+        // thickness and the second is skipped (no remaining budget).
+        assert_eq!(polys.len(), 1, "only one band fits in a 1e-10 wall");
+        assert_eq!(polys[0].0, "a");
+    }
 }
