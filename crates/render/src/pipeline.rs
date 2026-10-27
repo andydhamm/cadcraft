@@ -105,7 +105,7 @@ fn build_space(d: &Drawing, space: &Space, opts: &Options, plotting: bool) -> Di
         #[cfg(not(target_arch = "wasm32"))]
         if !paper && !plotting && b.styles.is_none() && store.len() >= 2 * PARALLEL_CHUNK {
             build_parallel(&mut b, d, store);
-            append_arch(&mut b.list, d, opts);
+            append_arch(&mut b.list, d, opts, plotting);
             return b.list;
         }
         let mut viewports = 0usize;
@@ -124,9 +124,9 @@ fn build_space(d: &Drawing, space: &Space, opts: &Options, plotting: bool) -> Di
         }
     }
     // Arch poché is model-space only; plotting picks it up via build_plot -> build_space.
-    // Do-not-plot layers do not apply to arch objects in this phase.
+    // Arch objects follow their layer state: no-plot (and off/frozen) layers are skipped.
     if !matches!(space, Space::Paper(_)) {
-        append_arch(&mut b.list, d, opts);
+        append_arch(&mut b.list, d, opts, plotting);
     }
     // A layout is drawn in paper units, so its pens become geometry now.
     if let Some(sheet) = b.list.sheet {
@@ -136,10 +136,10 @@ fn build_space(d: &Drawing, space: &Space, opts: &Options, plotting: bool) -> Di
 }
 
 /// Merge the arch poché display list into `list`. Model-space only; plotting picks it up
-/// via `build_plot` -> `build_space`. Do-not-plot layers do not apply to arch objects
-/// in this phase.
-fn append_arch(list: &mut DisplayList, d: &Drawing, opts: &Options) {
-    let src = crate::arch::build_arch(d, opts);
+/// via `build_plot` -> `build_space`. Arch objects follow their layer state: no-plot
+/// (and off/frozen) layers are skipped, per their layer state.
+fn append_arch(list: &mut DisplayList, d: &Drawing, opts: &Options, plotting: bool) {
+    let src = crate::arch::build_arch(d, opts, plotting);
     let (verts, tris) = (list.verts.len() as u32, list.tris.len() as u32);
     list.prims.extend(src.prims.into_iter().map(|mut p| {
         p.start += if matches!(p.kind, Kind::Tris | Kind::Mask) { tris } else { verts };
