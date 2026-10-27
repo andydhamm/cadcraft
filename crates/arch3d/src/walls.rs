@@ -330,8 +330,8 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
     let mut result = Vec::new();
     for p in &points {
         if result.len() >= 2 {
-            let a = result[result.len() - 2];
-            let b = result[result.len() - 1];
+            let a: Vec2 = result[result.len() - 2];
+            let b: Vec2 = result[result.len() - 1];
             let cross = (b.x - a.x) * (p.y - b.y) - (b.y - a.y) * (p.x - b.x);
             if cross.abs() < 1e-9 {
                 continue;
