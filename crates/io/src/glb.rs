@@ -1025,4 +1025,96 @@ mod tests {
         let materials: Vec<String> = json["materials"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
         assert_eq!(materials, vec!["roof"]);
     }
+
+    /// An empty scene has no root node and no scene node references.
+    #[test]
+    fn glb_empty_scene_has_empty_node_list() {
+        let scene = Scene3d::default();
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let nodes = json["nodes"].as_array().unwrap();
+        assert_eq!(nodes.len(), 0, "empty scene should have no nodes");
+        let scene_nodes = json["scenes"][0]["nodes"].as_array().unwrap();
+        assert_eq!(scene_nodes.len(), 0, "empty scene should have no scene node references");
+    }
+
+    /// The root node carries only name, rotation and children — no mesh or
+    /// translation fields (identity translations were dropped per spec).
+    #[test]
+    fn glb_root_node_has_no_mesh_or_translation() {
+        let bytes = write(&scene_with(1));
+        let json = glb_json_chunk(&bytes);
+        let root = root_node(&json).expect("root node");
+        assert!(root.get("mesh").is_none(), "root node should not have a mesh field");
+        assert!(root.get("translation").is_none(), "root node should not have a translation field");
+        assert!(root.get("name").is_some(), "root node should have a name");
+        assert!(root.get("rotation").is_some(), "root node should have a rotation");
+        assert!(root.get("children").is_some(), "root node should have children");
+    }
+
+    /// No node in the scene carries an identity translation field; the spec
+    /// requires all identity translations to be dropped.
+    #[test]
+    fn glb_all_nodes_lack_identity_translation() {
+        let bytes = write(&scene_with(3));
+        let json = glb_json_chunk(&bytes);
+        let nodes = json["nodes"].as_array().unwrap();
+        for node in nodes {
+            let name = node["name"].as_str().unwrap_or("<unnamed>");
+            assert!(node.get("translation").is_none(), "node {name} should not have a translation field");
+        }
+    }
+
+    /// Every primitive of every mesh type (wall, roof, glass, frame, etc.) uses
+    /// only valid glTF 2.0 attribute semantics.
+    #[test]
+    fn glb_attribute_names_valid_across_mesh_types() {
+        let mut scene = scene_with(1);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "roof".into();
+            m.object = ArchId(0);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "glass".into();
+            m.object = ArchId(5);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "frame".into();
+            m.object = ArchId(6);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let meshes = json["meshes"].as_array().unwrap();
+        for mesh in meshes {
+            let mesh_name = mesh["name"].as_str().unwrap_or("<unnamed>");
+            let prims = mesh["primitives"].as_array().unwrap();
+            for prim in prims {
+                let attrs = prim["attributes"].as_object().unwrap();
+                for key in attrs.keys() {
+                    let builtin = matches!(
+                        key.as_str(),
+                        "POSITION" | "NORMAL" | "TANGENT" | "TEXCOORD_0" | "TEXCOORD_1" | "COLOR_0" | "JOINTS_0" | "WEIGHTS_0"
+                    );
+                    assert!(builtin || key.starts_with('_'), "non-gltf attribute {key} on mesh {mesh_name}");
+                }
+            }
+        }
+    }
+
+    /// For any non-empty scene, scenes[0].nodes references only the root node
+    /// at index 0; per-mesh nodes are children of the root, not scene-level.
+    #[test]
+    fn glb_scenes_nodes_always_references_root_only() {
+        let bytes = write(&scene_with(5));
+        let json = glb_json_chunk(&bytes);
+        let scene_nodes = json["scenes"][0]["nodes"].as_array().unwrap();
+        assert_eq!(scene_nodes.len(), 1, "scene should reference only the root node");
+        assert_eq!(scene_nodes[0].as_u64().unwrap(), 0, "scene should reference root node at index 0");
+    }
 }
