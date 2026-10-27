@@ -406,20 +406,24 @@ pub fn roof_meshes(roof: &Roof, eave_z: f64) -> Vec<Mesh> {
     let mut meshes = Vec::new();
 
     for plane in &roof.planes {
-        if let Some(m) = roof_plane_mesh(plane, eave_z, "roof", roof.id) {
+        // A plane carries its own eave height (set by the command for manual roofs); fall back to
+        // the level-derived `eave_z` only when it is not finite.
+        let ez = if plane.eave_z.is_finite() { plane.eave_z } else { eave_z };
+
+        if let Some(m) = roof_plane_mesh(plane, ez, "roof", roof.id) {
             meshes.push(m);
         }
 
         if roof.fascia {
             let fd = if plane.fascia_depth > 0.0 { plane.fascia_depth } else { 0.1 };
-            if let Some(m) = fascia_mesh(plane, eave_z, fd, roof.id) {
+            if let Some(m) = fascia_mesh(plane, ez, fd, roof.id) {
                 meshes.push(m);
             }
         }
 
         if roof.soffit {
             let sd = if plane.soffit_depth > 0.0 { plane.soffit_depth } else { 0.1 };
-            if let Some(m) = soffit_mesh(plane, eave_z, sd, roof.id) {
+            if let Some(m) = soffit_mesh(plane, ez, sd, roof.id) {
                 meshes.push(m);
             }
         }
@@ -982,6 +986,29 @@ mod tests {
         roof.id = ArchId(1);
         let meshes = roof_meshes(&roof, 2.5);
         assert!(meshes.is_empty(), "roof with no planes should produce no meshes");
+    }
+
+    #[test]
+    fn roof_meshes_prefer_the_plane_eave_z() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+        let mut plane = simple_plane();
+        plane.eave_z = 2.4;
+        plane.slope = 0.5;
+        plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(6.0, 0.0), Vec2::new(6.0, 4.0), Vec2::new(0.0, 4.0)];
+        plane.base_edge = [0.0, 0.0, 6.0, 0.0];
+        plane.thickness = 0.25;
+        roof.planes.push(plane);
+
+        // The fallback passed to roof_meshes is 0.0; the plane's own eave_z (2.4) must win.
+        let meshes = roof_meshes(&roof, 0.0);
+        let roof_mesh = meshes.iter().find(|m| m.material == "roof").expect("roof mesh");
+        let b = roof_mesh.bounds();
+
+        // Bottom at the far edge (y=4): z = 2.4 + 0.5*4 = 4.4; the top adds ~thickness*cos-ish.
+        assert!(b.max[2] > 4.0, "max z should exceed 4.0, got {}", b.max[2]);
+        // The lowest point is the underside at the eave (z = 2.4), well above 2.0.
+        assert!(b.min[2] > 2.0, "min z should exceed 2.0, got {}", b.min[2]);
     }
 
     #[test]
