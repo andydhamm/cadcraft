@@ -209,13 +209,24 @@ fn classify_kind(g: &RoofGeom, adjacent: &[usize], a: usize, b: usize, _n_rings:
 
     if let (Some(z0), Some(z1)) = (z0, z1) {
         let eps = 1e-9;
-        if z0 > z_mid + eps && z1 > z_mid + eps {
-            return RoofEdgeKind::Ridge;
-        }
-        if z0 < z_mid - eps && z1 < z_mid - eps {
+        let above0 = z0 > z_mid + eps;
+        let above1 = z1 > z_mid + eps;
+        let below0 = z0 < z_mid - eps;
+        let below1 = z1 < z_mid - eps;
+
+        // Moving into either face rises away from a valley, but falls away
+        // from a convex roof edge. Level convex edges are ridges; sloping
+        // convex edges are hips.
+        if above0 && above1 {
             return RoofEdgeKind::Valley;
         }
-        if (z0 > z_mid + eps && z1 < z_mid - eps) || (z0 < z_mid - eps && z1 > z_mid + eps) {
+        if below0 && below1 {
+            if (za - zb).abs() <= eps {
+                return RoofEdgeKind::Ridge;
+            }
+            return RoofEdgeKind::Hip;
+        }
+        if (above0 && below1) || (below0 && above1) {
             return RoofEdgeKind::Hip;
         }
     }
