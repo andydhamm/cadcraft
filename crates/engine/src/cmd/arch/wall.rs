@@ -1305,6 +1305,52 @@ mod tests {
     }
 
     #[test]
+    fn wall_divider_zero_thickness_has_no_bands() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "divider": true,
+            "thickness": 0.0,
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert!(d.arch.walls[0].divider);
+        assert_eq!(d.arch.walls[0].thickness, 0.0);
+        assert!(d.arch.walls[0].layers.is_empty(), "divider with zero thickness must have no bands");
+    }
+
+    #[test]
+    fn wall_divider_with_explicit_thickness_scales_bands() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "divider": true,
+            "thickness": 0.05,
+        });
+        let _ = s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        let w = &d.arch.walls[0];
+        assert!(w.divider);
+        assert_eq!(w.thickness, 0.05);
+        assert!(!w.layers.is_empty(), "divider with non-zero thickness must have bands");
+        let sum: f64 = w.layers.iter().map(|(_, t)| t).sum();
+        assert!((sum - w.thickness).abs() < 1e-12, "divider bands sum {sum} != thickness {}", w.thickness);
+    }
+
+    #[test]
+    fn wall_command_reports_joins_for_closed_loop() {
+        let mut s = new_session_with_level();
+        // Closed rectangle: 4 corners, each an L-junction with 2 joins → 8 total.
+        let p = json!({
+            "points": [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [0.0, 3.0]],
+            "closed": true,
+        });
+        let r = s.execute("wall", &p).unwrap();
+        let joins = r["joins"].as_u64().unwrap_or(u64::MAX);
+        assert_eq!(joins, 8, "closed loop of 4 walls should produce 8 joins, got {joins}");
+    }
+
+    #[test]
     fn wall_segment_length_exactly_at_minimum_succeeds() {
         let mut s = new_session_with_level();
         let p = json!({

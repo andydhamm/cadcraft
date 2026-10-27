@@ -1565,6 +1565,26 @@ mod tests {
         assert!((slope - 0.5).abs() < 1e-9, "slope should be pitch_rise/pitch_run = 0.5, got {slope}");
     }
 
+    /// A closed loop of 4 walls has 4 shapes but 8 joined ends (2 per corner).
+    #[test]
+    fn arch_inspect_counts_joins_for_closed_loop() {
+        let mut s = Session::new();
+        exec(
+            &mut s,
+            "wall",
+            &json!({
+                "points": [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [0.0, 3.0]],
+                "closed": true,
+                "thickness": 0.2,
+            }),
+        );
+        let v = exec(&mut s, "arch.inspect", &json!({}));
+        let wall_count = v["walls"].as_array().map(|a| a.len()).unwrap_or(0);
+        assert_eq!(wall_count, 4, "expected 4 walls in closed loop");
+        let joins = v["joins"].as_u64().unwrap_or(u64::MAX);
+        assert_eq!(joins, 8, "closed loop of 4 walls has 8 joined ends, got {joins}");
+    }
+
     /// The roof projected area is the sum of its planes' projected areas.
     #[test]
     fn inspect_roof_projected_area_is_sum_of_planes() {
