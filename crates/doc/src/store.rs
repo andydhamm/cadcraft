@@ -157,6 +157,29 @@ impl EntityStore {
         self.len = self.len.saturating_sub(1);
         Some(e)
     }
+    /// Remove every entity for which `keep` returns `false`, preserving the draw order of
+    /// the rest (rebuilding the chunk/shard state). Returns the number removed.
+    pub fn retain<F: Fn(&Arc<Entity>) -> bool>(&mut self, keep: F) -> usize {
+        let items: Vec<Arc<Entity>> = self.iter().cloned().collect();
+        let kept: Vec<Arc<Entity>> = items.into_iter().filter(|e| keep(e)).collect();
+        let removed = items.len().saturating_sub(kept.len());
+        *self = EntityStore::default();
+        for e in kept {
+            let h = e.handle;
+            let needs_new = self.chunks.last().is_none_or(|c| c.items.len() >= CHUNK_MAX);
+            if needs_new {
+                let c = self.new_chunk();
+                self.chunks.push(c);
+            }
+            let Some(last) = self.chunks.last_mut() else { return removed };
+            let chunk = Arc::make_mut(last);
+            chunk.items.push(e);
+            let id = chunk.id;
+            self.set_index(h, Some(id));
+            self.len += 1;
+        }
+        removed
+    }
     /// Modify an entity in place through a closure (copy-on-write).
     pub fn modify<F: FnOnce(&mut Entity)>(&mut self, h: Handle, f: F) -> bool {
         let Some(id) = self.chunk_id(h) else { return false };
