@@ -849,4 +849,101 @@ mod tests {
         // Below the soffit
         assert!(!probe_mesh(&mesh, Vec3::new(5.0, 0.15, 2.2)), "point below soffit should not hit");
     }
+
+    #[test]
+    fn probe_empty_scene_returns_none() {
+        let scene = Scene3d::default();
+        assert!(probe(&scene, Vec3::new(0.0, 0.0, 0.0)).is_none(), "empty scene should never hit");
+    }
+
+    #[test]
+    fn probe_first_match_wins_in_build_order() {
+        // Two walls at the same location; the first one built wins.
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(4.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        let scene = Scene3d::build(&model);
+        let hit = probe(&scene, Vec3::new(2.0, 0.0, 1.0));
+        assert!(hit.is_some(), "probe should hit one of the overlapping walls");
+        // Wall 1 is built first, so it should be the hit.
+        assert_eq!(hit.unwrap().id, "w1", "first wall in build order should win");
+    }
+
+    #[test]
+    fn probe_at_building_corner_hits_wall() {
+        let scene = house_scene();
+        assert_scene_has_meshes(&scene);
+        // The corner at (0,0) is shared by the south and west walls.
+        // The probe should hit one of them (first in build order).
+        let hit = probe(&scene, Vec3::new(0.0, 0.0, 1.0));
+        assert!(hit.is_some(), "probe at corner should hit a wall");
+        assert_eq!(hit.unwrap().part, "wall");
+    }
+
+    #[test]
+    fn probe_with_nan_in_mesh_positions() {
+        // A mesh with a NaN position should not crash the probe.
+        let mut m = Mesh::new("wall", ArchId(1));
+        m.positions.push([0.0, 0.0, 0.0]);
+        m.positions.push([1.0, 0.0, 0.0]);
+        m.positions.push([1.0, 1.0, 0.0]);
+        m.positions.push([0.0, 1.0, 0.0]);
+        m.positions.push([f64::NAN as f32, 0.0, 0.0]);
+        m.positions.push([1.0, 0.0, 3.0]);
+        m.positions.push([1.0, 1.0, 3.0]);
+        m.positions.push([0.0, 1.0, 3.0]);
+        m.indices.extend_from_slice(&[0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+        let scene = Scene3d { meshes: vec![m], ..Default::default() };
+        // Should not panic; may or may not hit depending on the NaN.
+        let _ = probe(&scene, Vec3::new(0.5, 0.5, 1.0));
+    }
+
+    #[test]
+    fn probe_scene_with_only_openings() {
+        // A scene with only opening meshes (no walls) should still work.
+        use cadcraft_doc::arch::{Opening, OpeningKind};
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(0),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        let mut opening = Opening::default();
+        opening.id = ArchId(1);
+        opening.host = ArchId(0);
+        opening.offset = 5.0;
+        opening.width = 1.0;
+        opening.height = 1.5;
+        opening.sill = 0.9;
+        opening.style = "window".to_string();
+        opening.kind = OpeningKind::Window;
+        model.openings.push(opening);
+        let scene = Scene3d::build(&model);
+        // Probe inside the window glass (if any) or frame.
+        // At x=5, y=0, z=1.5 (inside window height).
+        let hit = probe(&scene, Vec3::new(5.0, 0.0, 1.5));
+        // May hit wall (if glass is not solid) or an opening component.
+        // The key is that it doesn't panic and returns a valid result.
+        if let Some(h) = hit {
+            assert!(!h.id.is_empty());
+            assert!(!h.part.is_empty());
+        }
+    }
 }
