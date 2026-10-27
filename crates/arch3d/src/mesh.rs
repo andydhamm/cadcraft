@@ -337,7 +337,7 @@ impl Default for Mesh {
 /// `ring[p]..hole[q]` must cross no ring edge (except the edges incident to `p`)
 /// or hole edge (except those incident to `q`), and its midpoint must lie
 /// inside `ring` (even-odd test).
-fn find_bridge_pair(ring: &[Vec2], hole: &[Vec2]) -> Option<(u32, u32)> {
+pub(crate) fn find_bridge_pair(ring: &[Vec2], hole: &[Vec2]) -> Option<(u32, u32)> {
     let m = ring.len() as u32;
     let h = hole.len() as u32;
     if m < 3 || h < 3 {
@@ -400,7 +400,7 @@ fn find_bridge_pair(ring: &[Vec2], hole: &[Vec2]) -> Option<(u32, u32)> {
 ///
 /// `ring[p]` and `hole[q]` each appear twice in the result, which creates the
 /// two bridge edges that `push_prism_with_holes` skips in the side loop.
-fn merge_ring(ring: Vec<Vec2>, p: u32, hole: &[Vec2], q: u32) -> Vec<Vec2> {
+pub(crate) fn merge_ring(ring: Vec<Vec2>, p: u32, hole: &[Vec2], q: u32) -> Vec<Vec2> {
     let mut merged = Vec::with_capacity(ring.len() + hole.len() + 2);
     merged.extend(&ring[..=p as usize]);
     merged.extend(&hole[q as usize..]);
@@ -541,7 +541,7 @@ fn triangulate(ring: &[Vec2]) -> Vec<[u32; 3]> {
 
 /// Ear clipping that tolerates duplicate *positions* in `ring` (a bridged
 /// ring repeats the two bridge endpoints). Returns empty on <3 finite verts.
-fn triangulate_simple(ring: &[Vec2]) -> Vec<[u32; 3]> {
+pub(crate) fn triangulate_simple(ring: &[Vec2]) -> Vec<[u32; 3]> {
     let n = ring.len();
     if n < 3 {
         return Vec::new();
