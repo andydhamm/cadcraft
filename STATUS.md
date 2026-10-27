@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-27 10:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 10:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 63 of 63 segments merged · 5 of 11 acceptance checks**
 
-3,992 workspace tests passing at the last merge · 299 segments merged in all · 0 of 11 seats working
+4,003 workspace tests passing at the last merge · 301 segments merged in all · 0 of 11 seats working
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 10:30 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 5 / 11 | 25.7 h so far · expected done Oct 27 12:38–Oct 27 14:58 UTC |
+| 4 | Automatic roofs | building | 5 / 11 | 25.9 h so far · expected done Oct 27 12:56–Oct 27 15:19 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -34,6 +34,8 @@ Updated 2026-10-27 10:30 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 27 10:44 | `harden-p4r-join-tidy` | merged | 4,003 pass | tturbo-mac |
+| Oct 27 10:36 | `harden-p4r-camera-validate` | merged | 3,995 pass | tturbo-mac2 |
 | Oct 27 10:24 | `harden-p4r-render3d-lints` | merged | 3,992 pass | tturbo-mac2 |
 | Oct 27 10:02 | `harden-p4r-wall-cmd-validate` | merged | 3,987 pass | tturbo-mac2 |
 | Oct 27 09:44 | `harden-p4r-property-walls-generator` | merged | 3,982 pass | tturbo-mac2 |
@@ -44,8 +46,6 @@ Updated 2026-10-27 10:30 UTC. This page and the card in the README are regenerat
 | Oct 27 09:13 | `p4r-wall-cmd-bands-joins` | merged | 3,964 pass | claude-sonnet-b |
 | Oct 27 09:07 | `p4r-bench-rebuild-honest` | merged | 3,961 pass | darwin-ws3 |
 | Oct 27 09:02 | `p4r-join-box-prefilter` | merged | 3,959 pass | bonsai-ws2-a |
-| Oct 27 08:58 | `p4r-property-walls-generator` | merged | 3,958 pass | bonsai-b |
-| Oct 27 08:57 | `p4r-mesh-side-normals` | merged | 3,957 pass | bonsai-a |
 
 ## Seats active in the last hour
 
@@ -60,5 +60,5 @@ Updated 2026-10-27 10:30 UTC. This page and the card in the README are regenerat
 | kimi-k31 | k3.1-pro-highspeed | idle | 58 |
 | ornith-a | ornith15-397b-exl3-35 | idle | 19 |
 | ornith-b | ornith15-397b-exl3-35 | idle | 14 |
-| tturbo-mac | tturbo-ultraheretic | agent | 299 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 110 |
+| tturbo-mac | tturbo-ultraheretic | agent | 301 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 111 |
