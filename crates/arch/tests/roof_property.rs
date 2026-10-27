@@ -290,7 +290,7 @@ fn edge_classification_on_tiny_footprint() {
     let edges = roof_edges(&model, 0, &r).expect("tiny roof edges should build");
 
     let ridges: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Ridge).collect();
-    assert_eq!(ridges.len(), 1, "tiny hip roof should have one ridge");
+    assert_eq!(ridges.len(), 0, "tiny square hip roof is a pyramid with no ridge");
     let hips: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Hip).collect();
     assert_eq!(hips.len(), 4, "tiny hip roof should have 4 hips");
     let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
