@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-27 21:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-27 21:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 79 of 79 segments merged · 8 of 11 acceptance checks**
 
-4,210 workspace tests passing at the last merge · 343 segments merged in all · 0 of 11 seats working
+4,217 workspace tests passing at the last merge · 344 segments merged in all · 0 of 11 seats working
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-27 21:15 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 8 / 11 | 36.4 h so far · expected done Oct 27 23:22–Oct 28 03:52 UTC |
+| 4 | Automatic roofs | building | 8 / 11 | 36.7 h so far · expected done Oct 27 23:45–Oct 28 04:32 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -34,6 +34,7 @@ Updated 2026-10-27 21:15 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 27 21:17 | `harden-p4h-probe-crease-jitter` | merged | 4,217 pass | tturbo-mac2 |
 | Oct 27 20:45 | `harden-p4h-roofplane-arg-forms` | merged | 4,210 pass | tturbo-mac2 |
 | Oct 27 19:24 | `p4h-roofplane-arg-forms` | merged | 4,205 pass | bonsai-ws2-b |
 | Oct 27 19:20 | `p4h-roof-eave-z-per-plane` | merged | 4,203 pass | claude-sonnet-b |
@@ -45,7 +46,6 @@ Updated 2026-10-27 21:15 UTC. This page and the card in the README are regenerat
 | Oct 27 18:16 | `harden-p4x-cli-render-draws` | merged | 4,175 pass | tturbo-mac |
 | Oct 27 18:02 | `harden-p2-arch-fit-and-sill` | merged | 4,168 pass | tturbo-mac2 |
 | Oct 27 17:39 | `p4h-opening-hole-acceptance` | merged | 4,160 pass | darwin-ws3 |
-| Oct 27 17:34 | `p4h-profile-prism-extrude` | merged | 4,156 pass | bonsai-ws2-b |
 
 ## Seats active in the last hour
 
@@ -60,5 +60,5 @@ Updated 2026-10-27 21:15 UTC. This page and the card in the README are regenerat
 | kimi-k31 | k3.1-pro-highspeed | idle | 62 |
 | ornith-a | ornith15-397b-exl3-35 | down | 29 |
 | ornith-b | ornith15-397b-exl3-35 | down | 17 |
-| tturbo-mac | tturbo-ultraheretic | agent | 338 |
-| tturbo-mac2 | tturbo-ultraheretic | merging | 158 |
+| tturbo-mac | tturbo-ultraheretic | agent | 339 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 159 |
