@@ -105,6 +105,7 @@ fn build_space(d: &Drawing, space: &Space, opts: &Options, plotting: bool) -> Di
         #[cfg(not(target_arch = "wasm32"))]
         if !paper && !plotting && b.styles.is_none() && store.len() >= 2 * PARALLEL_CHUNK {
             build_parallel(&mut b, d, store);
+            append_arch(&mut b.list, d, opts);
             return b.list;
         }
         let mut viewports = 0usize;
@@ -122,11 +123,31 @@ fn build_space(d: &Drawing, space: &Space, opts: &Options, plotting: bool) -> Di
             entity(&mut b, &top_ctx(d, Mat3::IDENTITY, e.handle, &[], &[]), e);
         }
     }
+    // Arch poché is model-space only; plotting picks it up via build_plot -> build_space.
+    // Do-not-plot layers do not apply to arch objects in this phase.
+    if !matches!(space, Space::Paper(_)) {
+        append_arch(&mut b.list, d, opts);
+    }
     // A layout is drawn in paper units, so its pens become geometry now.
     if let Some(sheet) = b.list.sheet {
         pen::apply(&mut b.list, sheet.unit_mm);
     }
     b.list
+}
+
+/// Merge the arch poché display list into `list`. Model-space only; plotting picks it up
+/// via `build_plot` -> `build_space`. Do-not-plot layers do not apply to arch objects
+/// in this phase.
+fn append_arch(list: &mut DisplayList, d: &Drawing, opts: &Options) {
+    let src = crate::arch::build_arch(d, opts);
+    let (verts, tris) = (list.verts.len() as u32, list.tris.len() as u32);
+    list.prims.extend(src.prims.into_iter().map(|mut p| {
+        p.start += if matches!(p.kind, Kind::Tris | Kind::Mask) { tris } else { verts };
+        p
+    }));
+    list.verts.extend(src.verts);
+    list.tris.extend(src.tris);
+    list.bounds = list.bounds.union(&src.bounds);
 }
 
 /// Top-level entities per task when a display list is built on all cores.

@@ -185,6 +185,9 @@ pub(super) fn tags_for(d: &Drawing, version: Version, target: Version) -> Vec<Ta
     if let Some(chunks) = dxf_ext::constraint_chunks(&d.constraints, &d.parametric) {
         xrecords.push((dxf_ext::CONSTRAINTS_KEY, w.h(), chunks));
     }
+    if let Some(chunks) = crate::dxf_arch::arch_chunks(&d.arch) {
+        xrecords.push((crate::dxf_arch::ARCH_KEY, w.h(), chunks));
+    }
     if let Some(chunks) = dxf_ext::layer_state_chunks(&d.layer_states) {
         xrecords.push((dxf_ext::LAYER_STATES_KEY, w.h(), chunks));
     }
@@ -320,9 +323,20 @@ pub(super) fn tags_for(d: &Drawing, version: Version, target: Version) -> Vec<Ta
         }
     }
     w.s(0, "ENDTAB");
-    // LAYER
-    let th = table_head(&mut w, "LAYER", d.layers.len());
-    for l in &d.layers {
+    // LAYER. Rooms and roofs get their proxy layer even when no command registered it explicitly.
+    let extra_room_layer = if !d.arch.rooms.is_empty() && !d.layers.iter().any(|l| l.name.eq_ignore_ascii_case(crate::dxf_arch::ARCH_ROOM_LAYER)) {
+        Some(Layer { name: crate::dxf_arch::ARCH_ROOM_LAYER.into(), ..Layer::default() })
+    } else {
+        None
+    };
+    let extra_roof_layer = if !d.arch.roofs.is_empty() && !d.layers.iter().any(|l| l.name.eq_ignore_ascii_case(crate::dxf_arch::ARCH_ROOF_LAYER)) {
+        Some(Layer { name: crate::dxf_arch::ARCH_ROOF_LAYER.into(), ..Layer::default() })
+    } else {
+        None
+    };
+    let layer_count = d.layers.len() + usize::from(extra_room_layer.is_some()) + usize::from(extra_roof_layer.is_some());
+    let th = table_head(&mut w, "LAYER", layer_count);
+    for l in d.layers.iter().chain(extra_room_layer.iter()).chain(extra_roof_layer.iter()) {
         let lh = record_head(&mut w, "LAYER", &th, "AcDbLayerTableRecord");
         w.layers.insert(l.name.to_ascii_uppercase(), lh);
         w.s(2, &l.name);
@@ -639,6 +653,48 @@ pub(super) fn tags_for(d: &Drawing, version: Version, target: Version) -> Vec<Ta
     if let Some((_, h, l)) = ps_brs.first() {
         for e in sheet_first(l) {
             entity(&mut w, d, e, h, true, &cx);
+        }
+    }
+    if !d.arch.is_empty() || !d.arch.rooms.is_empty() || !d.arch.roofs.is_empty() {
+        for tags in crate::dxf_arch::proxy_polylines(&d.arch) {
+            w.s(0, "LWPOLYLINE");
+            let h = w.h();
+            w.s(5, h);
+            w.s(330, &ms_br);
+            w.s(100, "AcDbEntity");
+            w.s(8, crate::dxf_arch::ARCH_PROXY_LAYER);
+            w.s(100, "AcDbPolyline");
+            w.t.extend(tags);
+        }
+        for (layer, tags) in crate::dxf_arch::proxy_opening_polylines(&d.arch) {
+            w.s(0, "LWPOLYLINE");
+            let h = w.h();
+            w.s(5, h);
+            w.s(330, &ms_br);
+            w.s(100, "AcDbEntity");
+            w.s(8, &layer);
+            w.s(100, "AcDbPolyline");
+            w.t.extend(tags);
+        }
+        for tags in crate::dxf_arch::proxy_room_polylines(&d.arch) {
+            w.s(0, "LWPOLYLINE");
+            let h = w.h();
+            w.s(5, h);
+            w.s(330, &ms_br);
+            w.s(100, "AcDbEntity");
+            w.s(8, crate::dxf_arch::ARCH_ROOM_LAYER);
+            w.s(100, "AcDbPolyline");
+            w.t.extend(tags);
+        }
+        for tags in crate::dxf_arch::proxy_roof_polylines(&d.arch) {
+            w.s(0, "LWPOLYLINE");
+            let h = w.h();
+            w.s(5, h);
+            w.s(330, &ms_br);
+            w.s(100, "AcDbEntity");
+            w.s(8, crate::dxf_arch::ARCH_ROOF_LAYER);
+            w.s(100, "AcDbPolyline");
+            w.t.extend(tags);
         }
     }
     w.s(0, "ENDSEC");

@@ -5,7 +5,7 @@ use super::*;
 
 /// Parse one entity record. POLYLINE/INSERT followers are handled by the caller.
 pub(super) fn entity(kind: &str, tags: &[Tag]) -> Option<(Common, EntityKind)> {
-    entity_with_table_budget(kind, tags, &mut 4_000_000)
+    entity_with_table_budget(kind, tags, &mut 4_000_000, false)
 }
 
 /// Parse one entity while charging materialized table cells to the caller's shared import budget.
@@ -111,7 +111,12 @@ fn spline(t: &T) -> Spline {
     sp
 }
 
-pub(super) fn entity_with_table_budget(kind: &str, tags: &[Tag], table_cells_left: &mut usize) -> Option<(Common, EntityKind)> {
+pub(super) fn entity_with_table_budget(
+    kind: &str,
+    tags: &[Tag],
+    table_cells_left: &mut usize,
+    drop_room_proxies: bool,
+) -> Option<(Common, EntityKind)> {
     // The paper-space viewport our writer adds (dxf_write::paper_view) stays implicit.
     if kind == "VIEWPORT" && crate::dxf_ext::is_paper_view(tags) {
         return None;
@@ -124,7 +129,14 @@ pub(super) fn entity_with_table_budget(kind: &str, tags: &[Tag], table_cells_lef
         "CIRCLE" => EntityKind::Circle(Circle { center: ocs(&c, t.p(10)), radius: t.fd(40, 1.0).abs() }),
         "ARC" => EntityKind::Arc(arc(&c, &t)),
         "ELLIPSE" => EntityKind::Ellipse(ellipse(&c, &t)),
-        "LWPOLYLINE" => lwpolyline(tags, &c, &t)?,
+        "LWPOLYLINE" => {
+            if crate::dxf_arch::is_arch_proxy(tags)
+                || (drop_room_proxies && (crate::dxf_arch::is_room_proxy(tags) || crate::dxf_arch::is_roof_proxy(tags)))
+            {
+                return None;
+            }
+            lwpolyline(tags, &c, &t)?
+        }
         "SPLINE" => EntityKind::Spline(spline(&t)),
         "HELIX" => EntityKind::Helix(helix(tags)),
         "RAY" => EntityKind::Ray(RayLine { base: t.p(10), dir: t.p(11) }),

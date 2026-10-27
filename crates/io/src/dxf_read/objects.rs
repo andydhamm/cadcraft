@@ -187,6 +187,11 @@ impl Objects {
             d.constraints = c;
             d.parametric = p;
         }
+        // The architectural object model (CADCraft arch objects).
+        if let Some(m) = self.xrecord_text(crate::dxf_arch::ARCH_KEY).and_then(|t| crate::dxf_arch::parse_arch(&t)) {
+            d.arch = m;
+            d.arch_revision = 1;
+        }
         // The annotation scale list (a metric drawing without one gets the metric defaults),
         // then CADCraft's annotative scaling record.
         if !self.scales.is_empty() {
