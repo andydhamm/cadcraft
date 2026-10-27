@@ -990,6 +990,78 @@ mod tests {
     }
 
     #[test]
+    fn roof_plane_zero_thickness_produces_flat_mesh() {
+        let mut plane = simple_plane();
+        plane.thickness = 0.0;
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        // With zero thickness, top and bottom rings are at the same z.
+        let n_verts = plane.ring.len();
+        for i in 0..n_verts {
+            let b = mesh.positions[i];
+            let t = mesh.positions[n_verts + i];
+            assert!((b[2] - t[2]).abs() < 1e-6, "top and bottom z should match at vertex {}", i);
+        }
+        // Mesh should still be valid (non-empty).
+        assert!(mesh.triangle_count() > 0);
+    }
+
+    #[test]
+    fn roof_plane_nan_fascia_depth_uses_default() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+        let mut plane = simple_plane();
+        plane.fascia_depth = f64::NAN;
+        roof.planes.push(plane);
+
+        let meshes = roof_meshes(&roof, 2.5);
+        let fascia = meshes.iter().find(|m| m.material == "fascia").expect("fascia mesh");
+        let b = fascia.bounds();
+        // Default depth is 0.1
+        assert!((b.max[2] - b.min[2] - 0.1).abs() < 1e-4, "fascia depth should default to 0.1 when NaN");
+    }
+
+    #[test]
+    fn roof_plane_nan_soffit_depth_uses_default() {
+        let mut roof = Roof::default();
+        roof.id = ArchId(1);
+        let mut plane = simple_plane();
+        plane.soffit_depth = f64::NAN;
+        roof.planes.push(plane);
+
+        let meshes = roof_meshes(&roof, 2.5);
+        let soffit = meshes.iter().find(|m| m.material == "soffit").expect("soffit mesh");
+        let b = soffit.bounds();
+        // Default depth is 0.1
+        assert!((b.max[1] - b.min[1] - 0.1).abs() < 1e-4, "soffit depth should default to 0.1 when NaN");
+    }
+
+    #[test]
+    fn roof_plane_very_large_thickness_is_finite() {
+        let mut plane = simple_plane();
+        plane.thickness = 1000.0;
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        for p in &mesh.positions {
+            assert!(p[0].is_finite() && p[1].is_finite() && p[2].is_finite(), "position not finite: {:?}", p);
+        }
+    }
+
+    #[test]
+    fn roof_plane_coincident_ring_vertices_produce_valid_mesh() {
+        let mut plane = simple_plane();
+        // All vertices at the same point
+        plane.ring = vec![Vec2::new(5.0, 2.5), Vec2::new(5.0, 2.5), Vec2::new(5.0, 2.5)];
+        let mesh = roof_plane_mesh(&plane, 2.5, "roof", ArchId(1)).unwrap();
+
+        // Mesh should be valid (non-empty) even though degenerate.
+        assert!(mesh.triangle_count() > 0);
+        for p in &mesh.positions {
+            assert!(p[0].is_finite() && p[1].is_finite() && p[2].is_finite());
+        }
+    }
+
+    #[test]
     fn roof_meshes_empty_planes_returns_empty() {
         let mut roof = Roof::default();
         roof.id = ArchId(1);
