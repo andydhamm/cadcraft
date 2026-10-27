@@ -102,7 +102,10 @@ pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
     }
     // Nudge the point slightly upward so that points on the top face are outside.
     // Jitter X and Y to avoid crease/vertex degeneracies in point_in_triangle2.
-    let p = Vec3::new(p.x + 1e-7, p.y + 1.3e-7, p.z + 1e-6);
+    // A small symmetric jitter avoids landing exactly on shared edges (where the
+    // half-open rule `pa.y < pb.y` might exclude both triangles) without moving
+    // the point outside the mesh bounds for typical architectural scales.
+    let p = Vec3::new(p.x + 1e-7, p.y + 1e-7, p.z + 1e-6);
     mesh_crossings_upward(p, &mesh.positions, &mesh.indices, MAX_PROBE_TRIANGLES) % 2 == 1
 }
 
