@@ -76,9 +76,11 @@ pub(crate) fn run_stretch(s: &mut Session, p: &Value) -> Result<Value> {
         // First pass: for every wall whose start point changed (the stretched
         // wall when `start` was moved, plus any neighbour in `moved`), re-project
         // each opening it hosts onto the new wall axis so the opening's world
-        // start point stays put.
+        // start point stays put. The loop holds an immutable borrow of
+        // `arch.openings`, so the new offsets are collected first and applied
+        // once that borrow has ended.
         let adjustments: Vec<usize> = {
-            let mut acc = Vec::new();
+            let mut reoffsets: Vec<(usize, f64)> = Vec::new();
             for (oi, o) in arch.openings.iter().enumerate() {
                 let Some((_, old_start, old_end)) = old_walls.iter().find(|(wid, _, _)| *wid == o.host) else {
                     continue;
@@ -94,10 +96,12 @@ pub(crate) fn run_stretch(s: &mut Session, p: &Value) -> Result<Value> {
                 let old_world = *old_start + old_dir * o.offset;
                 let new_offset = project_to_wall(&arch, o.host, old_world)
                     .ok_or_else(|| bad("arch.wall.stretch", format!("cannot project opening o{} onto wall w{}", o.id.0, o.host.0)))?;
-                arch.openings[oi].offset = new_offset;
-                acc.push(oi);
+                reoffsets.push((oi, new_offset));
             }
-            acc
+            for (oi, new_offset) in reoffsets {
+                arch.openings[oi].offset = new_offset;
+            }
+            reoffsets.iter().map(|(oi, _)| *oi).collect()
         };
 
         // Second pass: validate every adjusted opening against the fully
