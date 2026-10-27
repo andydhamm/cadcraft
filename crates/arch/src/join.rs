@@ -539,25 +539,6 @@ fn plan_end(
             (None, None) => raw.1,
         };
 
-        // A mitre must never extend this wall past its own raw end: if the picked
-        // corner projects beyond the raw end along the wall direction (which happens
-        // when the neighbour is thicker than this wall), fall back to the raw corner
-        // so the ring stays inside the wall's envelope.
-        let beyond = |c: Vec2, raw: Vec2| -> Vec2 {
-            let s = (c - pt).dot(wdir);
-            let r = (raw - pt).dot(wdir);
-            if s > r + ENDPOINT_TOL { raw } else { c }
-        };
-        let left = beyond(left, raw.0);
-        let right = beyond(right, raw.1);
-
-        // An X crossing at this end records the crossing and keeps the raw
-        // corners; it must not be overwritten by the L mitre above, so only
-        // record the mitre when the end is not an X crossing.
-        if nbrs.iter().any(|n| matches!(n, Neighbour::X)) {
-            return Ok(EndPlan { left: raw.0, right: raw.1, join: Some(Join::X(end)) });
-        }
-
         return Ok(EndPlan { left, right, join: Some(Join::L(end)) });
     }
 
