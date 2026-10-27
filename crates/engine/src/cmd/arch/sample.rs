@@ -739,4 +739,65 @@ mod tests {
         s.execute("arch.sample", &json!({ "house2": true })).unwrap();
         assert!(s.doc().unwrap().arch_revision > 0);
     }
+
+    /// When `openings` exceeds `floor(walls/2)`, wave 1 must run and seed the
+    /// odd 1-based walls so that every wall gets an opening.
+    #[test]
+    fn arch_sample_both_waves_run_when_max_exceeds_half() {
+        let mut s = fresh_session();
+        let r = s.execute("arch.sample", &json!({ "walls": 4, "openings": 4 })).unwrap();
+        assert_eq!(r["openings"].as_u64(), Some(4));
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.openings.len(), 4);
+        // One opening on each of the 4 walls (wave 0: walls 2,4; wave 1: walls 1,3).
+        for i in 1..=4 {
+            assert_eq!(d.arch.openings_on(ArchId(i)).len(), 1, "wall {} should have exactly one opening", i);
+        }
+    }
+
+    /// The wall chain must be bit-identical whether or not openings are seeded
+    /// (other tests and goldens depend on `generate_walls` being deterministic
+    /// and independent of the openings pass).
+    #[test]
+    fn arch_sample_walls_identical_with_and_without_openings() {
+        let mut s1 = fresh_session();
+        let mut s2 = fresh_session();
+        s1.execute("arch.sample", &json!({ "walls": 32 })).unwrap();
+        s2.execute("arch.sample", &json!({ "walls": 32, "openings": 16 })).unwrap();
+        let w1 = s1.doc().unwrap().arch.walls.clone();
+        let w2 = s2.doc().unwrap().arch.walls.clone();
+        assert_eq!(w1, w2);
+    }
+
+    /// Hostile `openings` values (null, string, float, negative) must all be
+    /// treated as 0 and never fail the command.
+    #[test]
+    fn arch_sample_hostile_openings_params() {
+        let mut s1 = fresh_session();
+        s1.execute("arch.sample", &json!({ "walls": 8, "openings": null })).unwrap();
+        assert!(s1.doc().unwrap().arch.openings.is_empty());
+
+        let mut s2 = fresh_session();
+        s2.execute("arch.sample", &json!({ "walls": 8, "openings": "abc" })).unwrap();
+        assert!(s2.doc().unwrap().arch.openings.is_empty());
+
+        let mut s3 = fresh_session();
+        s3.execute("arch.sample", &json!({ "walls": 8, "openings": 3.5 })).unwrap();
+        assert!(s3.doc().unwrap().arch.openings.is_empty());
+
+        let mut s4 = fresh_session();
+        s4.execute("arch.sample", &json!({ "walls": 8, "openings": -5 })).unwrap();
+        assert!(s4.doc().unwrap().arch.openings.is_empty());
+    }
+
+    /// Requesting more openings than there are walls places at most one per
+    /// wall (the capacity limit), clamped by `MAX_OPENINGS`.
+    #[test]
+    fn arch_sample_openings_clamped_to_wall_capacity() {
+        let mut s = fresh_session();
+        let r = s.execute("arch.sample", &json!({ "walls": 100, "openings": 999999 })).unwrap();
+        let placed = r["openings"].as_u64().unwrap();
+        assert_eq!(placed, 100);
+        assert_eq!(s.doc().unwrap().arch.openings.len(), 100);
+    }
 }
