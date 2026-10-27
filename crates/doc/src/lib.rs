@@ -453,4 +453,20 @@ mod handseed_tests {
         let h = d.new_handle();
         assert!(h.0 < ARCH_HANDLE_BASE, "new_handle must not return a handle in the reserved range");
     }
+
+    #[test]
+    fn new_handle_after_bump_to_base_returns_base_minus_one() {
+        let mut d = Drawing::new_imperial();
+        d.bump_handseed(Handle(ARCH_HANDLE_BASE.saturating_sub(1)));
+        let h = d.new_handle();
+        assert_eq!(h.0, ARCH_HANDLE_BASE - 1);
+    }
+
+    #[test]
+    fn bump_handseed_with_u64_max_is_ignored() {
+        let mut d = Drawing::new_imperial();
+        let before = d.handseed;
+        d.bump_handseed(Handle(u64::MAX));
+        assert_eq!(d.handseed, before, "bump_handseed with u64::MAX must leave handseed unchanged");
+    }
 }
