@@ -255,7 +255,7 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
                     "attributes": {
                         "POSITION": acc_pos,
                         "NORMAL": acc_norm,
-                        "TEXTURE_COORDS_0": acc_uv
+                        "TEXCOORD_0": acc_uv
                     },
                     "indices": acc_idx,
                     "material": mat_idx
@@ -278,7 +278,9 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
     let root = if written_meshes.is_empty() {
         Vec::new()
     } else {
-        let children: Vec<u32> = (0..written_meshes.len() as u32).collect();
+        // Per-mesh nodes are the children; the root is node 0, so mesh nodes are
+        // renumbered 1..=n to sit after it in the node list.
+        let children: Vec<u32> = (1..=written_meshes.len() as u32).collect();
         vec![json!({
             "name": "arch3d-root",
             "rotation": [ROOT_ROTATION[0], ROOT_ROTATION[1], ROOT_ROTATION[2], ROOT_ROTATION[3]],
@@ -918,7 +920,7 @@ mod tests {
         let json_data = &bytes[20..20 + json_len];
         let json_str = std::str::from_utf8(json_data).expect("JSON chunk is not valid UTF-8");
         let value: Value = serde_json::from_str(json_str).expect("JSON chunk is not valid JSON");
-        assert!(value.get("version").is_some());
+        assert_eq!(value["asset"]["version"], "2.0");
         assert!(value.get("meshes").is_some());
     }
 
