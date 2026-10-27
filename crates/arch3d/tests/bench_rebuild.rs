@@ -187,3 +187,102 @@ fn three_hundred_walls_150_openings_rebuild() {
     assert_eq!(partial.openings_built, full_edited.openings_built);
     assert_eq!(partial.bounds, full_edited.bounds);
 }
+
+#[test]
+fn empty_model_builds_cleanly() {
+    let model = ArchModel::default();
+    let scene = cadcraft_arch3d::build(&model);
+    assert_eq!(scene.meshes.len(), 0, "empty model should produce no meshes");
+    assert_eq!(scene.openings_built, 0, "empty model should produce no openings");
+}
+
+#[test]
+fn degenerate_walls_do_not_crash() {
+    let mut model = ArchModel::default();
+
+    // Zero-length wall (start == end)
+    model.add_wall(Wall {
+        start: Vec2::new(0.0, 0.0),
+        end: Vec2::new(0.0, 0.0),
+        thickness: 0.15,
+        height: 2.7,
+        to_ceiling: true,
+        exterior: false,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    });
+
+    // Zero-thickness wall
+    model.add_wall(Wall {
+        start: Vec2::new(0.0, 0.0),
+        end: Vec2::new(1.0, 0.0),
+        thickness: 0.0,
+        height: 2.7,
+        to_ceiling: true,
+        exterior: false,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    });
+
+    // Zero-height wall
+    model.add_wall(Wall {
+        start: Vec2::new(0.0, 1.0),
+        end: Vec2::new(1.0, 1.0),
+        thickness: 0.15,
+        height: 0.0,
+        to_ceiling: true,
+        exterior: false,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    });
+
+    // NaN coordinates
+    model.add_wall(Wall {
+        start: Vec2::new(f64::NAN, 0.0),
+        end: Vec2::new(1.0, f64::NAN),
+        thickness: 0.15,
+        height: 2.7,
+        to_ceiling: true,
+        exterior: false,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    });
+
+    // Huge coordinates
+    model.add_wall(Wall {
+        start: Vec2::new(-1e12, -1e12),
+        end: Vec2::new(1e12, 1e12),
+        thickness: 0.15,
+        height: 2.7,
+        to_ceiling: true,
+        exterior: false,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    });
+
+    let scene = cadcraft_arch3d::build(&model);
+    assert!(scene.meshes.len() >= 1, "at least some walls should build");
+}
+
+#[test]
+fn build_dirty_empty_set_is_noop() {
+    let model = build_300_wall_grid();
+    let scene = cadcraft_arch3d::build(&model);
+
+    let empty_dirty: BTreeSet<ArchId> = BTreeSet::new();
+    let rebuilt = cadcraft_arch3d::build_dirty(&model, &empty_dirty, &scene);
+
+    assert_eq!(rebuilt.meshes.len(), scene.meshes.len(), "empty dirty set should not change mesh count");
+}
+
+#[test]
+fn build_dirty_unknown_id_is_noop() {
+    let model = build_300_wall_grid();
+    let scene = cadcraft_arch3d::build(&model);
+
+    let mut dirty = BTreeSet::new();
+    dirty.insert(ArchId(99999)); // not a real wall ID
+
+    let rebuilt = cadcraft_arch3d::build_dirty(&model, &dirty, &scene);
+    assert_eq!(rebuilt.meshes.len(), scene.meshes.len(), "unknown dirty ID should not change mesh count");
+}
