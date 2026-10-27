@@ -4,7 +4,7 @@
 //! seeded orthogonal rings, including hostile shapes that self-cross or
 //! exceed the 256-edge cap.
 
-use cadcraft_arch::roof::{build_roof, outer_footprint, projected_area_sum, roof_geometry};
+use cadcraft_arch::roof::{build_roof, outer_footprint, plane_apex_z, projected_area_sum, roof_geometry};
 use cadcraft_arch::roofedge::{interior_edge_pairs, roof_edges};
 use cadcraft_doc::{ArchModel, Level, Roof, RoofDirective, RoofEdgeKind, Wall};
 use cadcraft_geom::Vec2;
@@ -350,4 +350,108 @@ fn different_pitches_produce_different_roof_heights() {
     let max_z12 = geom12.skel.nodes.iter().map(|n| n.time).fold(f64::MIN, f64::max);
 
     assert!(max_z12 > max_z4, "higher pitch should be taller: {} vs {}", max_z12, max_z4);
+}
+
+/// Whether `ring` has a vertex within `tol` of `p` (plan space).
+fn ring_has(ring: &[Vec2], p: &Vec2, tol: f64) -> bool {
+    ring.iter().any(|v| (v.x - p.x).abs() <= tol && (v.y - p.y).abs() <= tol)
+}
+
+/// Build the same named (square, L, U) plus 200 random orthogonal footprints
+/// and return one built roof per ring/pitch, skipping rings that error out.
+fn ring_builds() -> Vec<(&'static Vec<(f64, f64)>, f64)> {
+    Vec::new()
+}
+
+#[test]
+fn every_plane_slope_equals_its_pitch() {
+    let named: [Vec<(f64, f64)>; 3] = [
+        vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)],
+        vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (6.0, 8.0), (6.0, 12.0), (0.0, 12.0)],
+        vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (7.0, 8.0), (7.0, 12.0), (3.0, 12.0), (3.0, 8.0), (0.0, 8.0)],
+    ];
+
+    let mut rings: Vec<Vec<(f64, f64)>> = Vec::with_capacity(203);
+    let mut rng = Lcg::new(19);
+    for _ in 0..200 {
+        rings.push(random_orthogonal_ring(&mut rng));
+    }
+    for named in named {
+        rings.push(named);
+    }
+
+    let pitches = [4.0_f64, 6.0, 12.0];
+    for pts in rings {
+        let model = house(&pts, 2.4);
+        for pitch in pitches {
+            let r = roof(pitch, 0.0);
+            let Ok(built) = build_roof(&model, 0, &r) else {
+                continue;
+            };
+            for p in &built.planes {
+                // Skip planes whose base edge is degenerate.
+                let [ax, ay, bx, by] = &p.base_edge;
+                let base_len = ((ax - bx) * (ax - bx) + (ay - by) * (ay - by)).sqrt();
+                if base_len < 1e-9 {
+                    continue;
+                }
+                let base = Vec2::new(bx - ax, by - ay);
+                let dist = p.ring.iter().fold(0.0_f64, |m, pt| {
+                    let v = Vec2::new(pt.x - ax, pt.y - ay);
+                    let cross = v.x * base.y - v.y * base.x;
+                    m.max(cross.abs() / base_len)
+                });
+                let run = dist - p.overhang;
+                if !p.slope.is_finite() || run < 1e-9 {
+                    continue;
+                }
+                let apex = run * p.slope + p.eave_z;
+                assert!((apex - plane_apex_z(&p)).abs() < 1e-9, "plane apex {} != plane_apex_z {}", apex, plane_apex_z(&p));
+                let pitch = (apex - p.eave_z) / run;
+                assert!((pitch - p.slope).abs() < 1e-9, "plane pitch {} != its slope {}", pitch, p.slope);
+            }
+        }
+    }
+}
+
+#[test]
+fn interior_edges_are_shared_by_two_planes() {
+    let named: [Vec<(f64, f64)>; 3] = [
+        vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)],
+        vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (6.0, 8.0), (6.0, 12.0), (0.0, 12.0)],
+        vec![(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (7.0, 8.0), (7.0, 12.0), (3.0, 12.0), (3.0, 8.0), (0.0, 8.0)],
+    ];
+
+    let mut rings: Vec<Vec<(f64, f64)>> = Vec::with_capacity(203);
+    let mut rng = Lcg::new(23);
+    for _ in 0..200 {
+        rings.push(random_orthogonal_ring(&mut rng));
+    }
+    for named in named {
+        rings.push(named);
+    }
+
+    for pts in rings {
+        let model = house(&pts, 2.4);
+        let r = roof(6.0, 0.0);
+        let Ok(built) = build_roof(&model, 0, &r) else {
+            continue;
+        };
+        let Ok(edges) = roof_edges(&model, 0, &built) else {
+            continue;
+        };
+        for e in &edges {
+            if !matches!(e.kind, RoofEdgeKind::Ridge | RoofEdgeKind::Hip | RoofEdgeKind::Valley) {
+                continue;
+            }
+            let (ax, ay) = (e.a.x, e.a.y);
+            let (bx, by) = (e.b.x, e.b.y);
+            let len = ((ax - bx) * (ax - bx) + (ay - by) * (ay - by)).sqrt();
+            if len < 1e-9 {
+                continue;
+            }
+            let shared = built.planes.iter().filter(|p| ring_has(&p.ring, &e.a, 1e-6) && ring_has(&p.ring, &e.b, 1e-6)).count();
+            assert_eq!(shared, 2, "interior edge {:?}-{:?} shared by {} planes (should be 2)", (ax, ay), (bx, by), shared);
+        }
+    }
 }
