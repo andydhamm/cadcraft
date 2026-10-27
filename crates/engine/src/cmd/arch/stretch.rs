@@ -300,4 +300,86 @@ mod tests {
         assert!((w0.start.x).abs() < 1e-6, "w0.start must stay at (0, 0)");
         assert!((d.arch.opening(ArchId(0)).expect("window").offset - 2000.0).abs() < 1e-6, "offset should still be 2000");
     }
+
+    #[test]
+    fn stretching_start_with_multiple_openings() {
+        let mut s = Session::new();
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [100.0, 0.0]]})).expect("wall command");
+        s.execute("window", &json!({"wall": "w0", "offset": 10.0, "width": 2.0, "height": 1.5, "sill": 0.9})).expect("window 1");
+        s.execute("door", &json!({"wall": "w0", "offset": 50.0, "width": 1.0, "height": 2.1})).expect("door");
+        s.execute("window", &json!({"wall": "w0", "offset": 80.0, "width": 2.0, "height": 1.5, "sill": 0.9})).expect("window 2");
+
+        let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "start", "to": [-5.0, 0.0]}));
+        assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
+
+        let d = s.doc().expect("doc");
+        let w0 = d.arch.wall(ArchId(0)).expect("w0");
+        assert!((w0.start.x + 5.0).abs() < 1e-6, "w0.start.x should be -5: {}", w0.start.x);
+
+        let w1 = d.arch.opening(ArchId(0)).expect("window 1");
+        assert!((w1.offset - 15.0).abs() < 1e-6, "window 1 offset should be 15: {}", w1.offset);
+        let door = d.arch.opening(ArchId(1)).expect("door");
+        assert!((door.offset - 55.0).abs() < 1e-6, "door offset should be 55: {}", door.offset);
+        let w2 = d.arch.opening(ArchId(2)).expect("window 2");
+        assert!((w2.offset - 85.0).abs() < 1e-6, "window 2 offset should be 85: {}", w2.offset);
+    }
+
+    #[test]
+    fn stretching_start_with_nan_to_is_an_error() {
+        let mut s = Session::new();
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]]})).expect("wall command");
+
+        let r = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "start", "to": [f64::NAN, 0.0]}));
+        assert!(matches!(r, Err(EngineError::BadParams { .. })), "NaN in to should be BadParams: {:?}", r);
+    }
+
+    #[test]
+    fn stretching_start_with_huge_coordinates() {
+        let mut s = Session::new();
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [1e9, 0.0]]})).expect("wall command");
+        s.execute("window", &json!({"wall": "w0", "offset": 5e8, "width": 900.0, "height": 2.0, "sill": 0.6})).expect("window");
+
+        let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "start", "to": [-1e8, 0.0]}));
+        assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
+
+        let d = s.doc().expect("doc");
+        let w0 = d.arch.wall(ArchId(0)).expect("w0");
+        assert!((w0.start.x + 1e8).abs() < 1e-3, "w0.start.x should be -1e8: {}", w0.start.x);
+
+        let window = d.arch.opening(ArchId(0)).expect("window");
+        assert!((window.offset - 6e8).abs() < 1e-3, "window offset should be 6e8: {}", window.offset);
+    }
+
+    #[test]
+    fn stretching_start_of_vertical_wall_keeps_openings() {
+        let mut s = Session::new();
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [0.0, 10.0]]})).expect("wall command");
+        s.execute("window", &json!({"wall": "w0", "offset": 3.0, "width": 2.0, "height": 1.5, "sill": 0.9})).expect("window");
+
+        let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "start", "to": [0.0, -2.0]}));
+        assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
+
+        let d = s.doc().expect("doc");
+        let w0 = d.arch.wall(ArchId(0)).expect("w0");
+        assert!((w0.start.y + 2.0).abs() < 1e-6, "w0.start.y should be -2: {}", w0.start.y);
+
+        let window = d.arch.opening(ArchId(0)).expect("window");
+        assert!((window.offset - 5.0).abs() < 1e-6, "window offset should be 5: {}", window.offset);
+    }
+
+    #[test]
+    fn stretching_start_past_an_opening_is_refused() {
+        let mut s = Session::new();
+        s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]]})).expect("wall command");
+        s.execute("window", &json!({"wall": "w0", "offset": 1.0, "width": 1.0, "height": 1.5, "sill": 0.9})).expect("window");
+
+        let r = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "start", "to": [1.5, 0.0]}));
+        let err = r.expect_err("stretch that pushes window off the wall should fail");
+        assert!(err.to_string().contains("o0") && err.to_string().contains("w0"), "error should name the opening and wall, got: {}", err);
+
+        let d = s.doc().expect("doc");
+        let w0 = d.arch.wall(ArchId(0)).expect("w0");
+        assert!(w0.start.x.abs() < 1e-6 && w0.start.y.abs() < 1e-6, "w0.start should still be (0, 0)");
+        assert!((d.arch.opening(ArchId(0)).expect("window").offset - 1.0).abs() < 1e-6, "offset should still be 1.0");
+    }
 }
