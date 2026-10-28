@@ -77,7 +77,7 @@ pub fn plan_stair(rise: f64, width: f64, tread: Option<f64>, max_riser: f64, min
     // The candidate count must be representable and leave room for the 64-wide
     // scan window; otherwise the flight is unusable (avoids an out-of-range cast
     // and a debug overflow in the range end).
-    if ratio > f64::from(usize::MAX) {
+    if ratio >= f64::from(usize::MAX as u64) {
         return None;
     }
     let n_min = ratio.ceil() as usize;
