@@ -329,6 +329,143 @@ fn stair_with_large_rise() {
 }
 
 #[test]
+fn stair_with_zero_width() {
+    let mut model = ArchModel::default();
+    model.levels.push(Level { index: 0, elevation: 0.0, ..Default::default() });
+    model.levels.push(Level { index: 1, elevation: 2.7, ..Default::default() });
+
+    let mut stair = Stair::default();
+    stair.id = ArchId(0);
+    stair.start = Vec2::new(2.0, 1.0);
+    stair.direction = 0.0;
+    stair.width = 0.0;
+    stair.from_level = 0;
+    stair.to_level = 1;
+    stair.rise = 2.7;
+    stair.risers = 16;
+    stair.riser_height = 0.16875;
+    stair.treads = 15;
+    stair.tread_depth = 0.254;
+    stair.run = 3.81;
+    model.push_stair(stair);
+
+    // Zero-width stair should not panic; may produce no geometry
+    let scene = build(&model);
+    assert!(scene.stairs >= 0);
+}
+
+#[test]
+fn stair_with_minimal_rise() {
+    let mut model = ArchModel::default();
+    model.levels.push(Level { index: 0, elevation: 0.0, ..Default::default() });
+    model.levels.push(Level { index: 1, elevation: 0.15, ..Default::default() });
+
+    // 0.15m rise -> 1 riser of 0.15m, 0 treads
+    let mut stair = Stair::default();
+    stair.id = ArchId(0);
+    stair.start = Vec2::new(2.0, 1.0);
+    stair.direction = 0.0;
+    stair.width = 1.0;
+    stair.from_level = 0;
+    stair.to_level = 1;
+    stair.rise = 0.15;
+    stair.risers = 1;
+    stair.riser_height = 0.15;
+    stair.treads = 0;
+    stair.tread_depth = 0.254;
+    stair.run = 0.0;
+    model.push_stair(stair);
+
+    let scene = build(&model);
+    assert!(scene.stairs >= 0);
+    // Riser height should be within IRC max
+    assert!(stair.riser_height <= 0.196 + TOL);
+}
+
+#[test]
+fn deck_with_zero_height() {
+    let mut model = ArchModel::default();
+    model.levels.push(Level { index: 0, elevation: 0.0, ..Default::default() });
+
+    let deck = Room {
+        id: ArchId(40),
+        level: 0,
+        room_type: RoomType::Deck,
+        polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+        deck_height: Some(0.0),
+        ..Default::default()
+    };
+    model.push_room(deck);
+
+    let scene = build(&model);
+    // Deck at level elevation (0.0) with zero deck_height
+    // Probe just below surface should hit floor
+    assert_probe(&scene, 2.0, 1.5, -0.01, Some("floor"));
+    // Probe above should miss
+    assert_probe(&scene, 2.0, 1.5, 1.0, None);
+}
+
+#[test]
+fn stair_with_nan_rise() {
+    let mut model = ArchModel::default();
+    model.levels.push(Level { index: 0, elevation: 0.0, ..Default::default() });
+    model.levels.push(Level { index: 1, elevation: 2.7, ..Default::default() });
+
+    let mut stair = Stair::default();
+    stair.id = ArchId(0);
+    stair.start = Vec2::new(2.0, 1.0);
+    stair.direction = 0.0;
+    stair.width = 1.0;
+    stair.from_level = 0;
+    stair.to_level = 1;
+    stair.rise = f64::NAN;
+    stair.risers = 16;
+    stair.riser_height = 0.16875;
+    stair.treads = 15;
+    stair.tread_depth = 0.254;
+    stair.run = 3.81;
+    model.push_stair(stair);
+
+    // Should not panic with NaN rise
+    let scene = build(&model);
+    assert!(scene.stairs >= 0);
+}
+
+#[test]
+fn multiple_decks_different_heights() {
+    let mut model = ArchModel::default();
+    model.levels.push(Level { index: 0, elevation: 0.0, ..Default::default() });
+
+    let deck1 = Room {
+        id: ArchId(50),
+        level: 0,
+        room_type: RoomType::Deck,
+        polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+        deck_height: Some(0.9),
+        ..Default::default()
+    };
+    model.push_room(deck1);
+
+    let deck2 = Room {
+        id: ArchId(51),
+        level: 0,
+        room_type: RoomType::Deck,
+        polygon: vec![Vec2::new(5.0, 0.0), Vec2::new(9.0, 0.0), Vec2::new(9.0, 3.0), Vec2::new(5.0, 3.0)],
+        deck_height: Some(1.5),
+        ..Default::default()
+    };
+    model.push_room(deck2);
+
+    let scene = build(&model);
+    // First deck at 0.9m
+    assert_probe(&scene, 2.0, 1.5, 0.88, Some("deck"));
+    // Second deck at 1.5m
+    assert_probe(&scene, 7.0, 1.5, 1.48, Some("deck"));
+    // Between decks at low height should be empty
+    assert_probe(&scene, 4.5, 1.5, 0.5, None);
+}
+
+#[test]
 fn random_stairs_never_panic() {
     // Seeded property test
     let mut seed = 123456789u64;
