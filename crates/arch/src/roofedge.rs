@@ -492,6 +492,70 @@ mod tests {
         assert!(found_v2, "Valley 2 not found");
     }
 
+    /// The brief's T: a 12 x 4 bar with a 4 x 4 stem on top.
+    fn t_house_brief(m: &mut ArchModel) {
+        let ring = [(0.0, 0.0), (12.0, 0.0), (12.0, 4.0), (8.0, 4.0), (8.0, 8.0), (4.0, 8.0), (4.0, 4.0), (0.0, 4.0)];
+        for (i, &(x, y)) in ring.iter().enumerate() {
+            let (nx, ny) = ring[(i + 1) % ring.len()];
+            m.push_wall(Wall::new(Vec2::new(x, y), Vec2::new(nx, ny), 0.2));
+        }
+        for w in m.walls.iter_mut() {
+            w.height = 2.4;
+        }
+    }
+
+    fn brief_roof() -> Roof {
+        Roof { pitch_rise: 6.0, pitch_run: 12.0, overhang: 0.0, thickness: 0.0, ..Default::default() }
+    }
+
+    /// Whether `p` is a reflex vertex of the ring `outer`.
+    fn is_reflex_vertex(outer: &[Vec2], p: Vec2) -> bool {
+        let n = outer.len();
+        let area2: f64 = (0..n)
+            .map(|i| {
+                let (a, b) = (outer[i], outer[(i + 1) % n]);
+                a.x * b.y - b.x * a.y
+            })
+            .sum();
+        let sign = if area2 >= 0.0 { 1.0 } else { -1.0 };
+        (0..n).any(|i| {
+            if (outer[i] - p).len() >= 1e-6 {
+                return false;
+            }
+            let prev = outer[(i + n - 1) % n];
+            let next = outer[(i + 1) % n];
+            let (d1, d2) = (outer[i] - prev, next - outer[i]);
+            (d1.x * d2.y - d1.y * d2.x) * sign < -1e-9
+        })
+    }
+
+    #[test]
+    fn t_roof_has_two_valleys() {
+        let mut m = ArchModel::default();
+        t_house_brief(&mut m);
+        let g = crate::roof::roof_geometry(&m, 0, &brief_roof()).unwrap();
+        let edges = roof_edges_geom(&g);
+
+        let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        assert_eq!(valleys.len(), 2, "Expected exactly two valleys");
+        for v in valleys {
+            assert!(is_reflex_vertex(&g.fp.outer, v.a) || is_reflex_vertex(&g.fp.outer, v.b), "Valley has no reflex endpoint: {:?} {:?}", v.a, v.b);
+        }
+    }
+
+    #[test]
+    fn l_roof_has_one_valley_brief() {
+        let mut m = ArchModel::default();
+        l_house(&mut m);
+        let g = crate::roof::roof_geometry(&m, 0, &brief_roof()).unwrap();
+        let edges = roof_edges_geom(&g);
+
+        let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        assert_eq!(valleys.len(), 1, "Expected exactly one valley");
+        let v = valleys[0];
+        assert!(is_reflex_vertex(&g.fp.outer, v.a) || is_reflex_vertex(&g.fp.outer, v.b), "Valley has no reflex endpoint: {:?} {:?}", v.a, v.b);
+    }
+
     #[test]
     fn hip_roof_valleys_follow_reflex_vertices() {
         let mut m = ArchModel::default();
