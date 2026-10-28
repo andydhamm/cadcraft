@@ -129,6 +129,9 @@ pub struct Scene3d {
     pub floors: usize,
     pub ceilings: usize,
     pub roofs: usize,
+    pub stairs: usize,
+    pub railings: usize,
+    pub decks: usize,
 }
 
 impl Scene3d {
@@ -218,9 +221,20 @@ impl Scene3d {
         let mut ceilings = 0;
         for room in &model.rooms {
             let level = level_for(model, room.level);
-            if let Some(m) = floors::floor_slab(room, &level, "floor") {
-                meshes.push(m);
-                floors += 1;
+            let well_holes: Vec<Vec<Vec2>> =
+                model.stairs.iter().filter(|s| !s.well.is_empty() && s.to_level == room.level).map(|s| s.well.clone()).collect();
+            if well_holes.is_empty() {
+                if let Some(m) = floors::floor_slab(room, &level, "floor") {
+                    meshes.push(m);
+                    floors += 1;
+                }
+            } else {
+                let mut clone = room.clone();
+                clone.holes = well_holes;
+                if let Some(m) = floors::floor_slab(&clone, &level, "floor") {
+                    meshes.push(m);
+                    floors += 1;
+                }
             }
             if let Some(m) = floors::ceiling_surface(room, &level, "ceiling") {
                 meshes.push(m);
@@ -253,6 +267,42 @@ impl Scene3d {
             }
         }
 
+        let mut stairs_count = 0;
+        for stair in &model.stairs {
+            let base = level_for(model, stair.from_level).elevation;
+            let mut stair_meshes: Vec<Mesh> = Vec::new();
+            if let Some(m) = stairs::stair_mesh(stair, base) {
+                stair_meshes.push(m);
+            }
+            if let Some(m) = stairs::landing_mesh(stair, base) {
+                stair_meshes.push(m);
+            }
+            if !stair_meshes.is_empty() {
+                stairs_count += 1;
+                meshes.extend(stair_meshes);
+            }
+        }
+
+        let mut railings_count = 0;
+        for railing in &model.railings {
+            let base = level_for(model, railing.level).elevation;
+            if let Some(m) = railing::railing_mesh(railing, base) {
+                meshes.push(m);
+                railings_count += 1;
+            }
+        }
+
+        let mut decks_count = 0;
+        for room in &model.rooms {
+            if room.room_type == cadcraft_doc::arch::RoomType::Deck {
+                let level = level_for(model, room.level);
+                if let Some(m) = floors::floor_slab(room, &level, "deck") {
+                    meshes.push(m);
+                    decks_count += 1;
+                }
+            }
+        }
+
         meshes.retain(|m| !m.positions.is_empty() && mesh_is_finite(m));
 
         let bounds = match meshes.first() {
@@ -263,7 +313,18 @@ impl Scene3d {
             }),
         };
 
-        Scene3d { meshes, bounds, revision: 0, openings_built, floors, ceilings, roofs }
+        Scene3d {
+            meshes,
+            bounds,
+            revision: 0,
+            openings_built,
+            floors,
+            ceilings,
+            roofs,
+            stairs: stairs_count,
+            railings: railings_count,
+            decks: decks_count,
+        }
     }
 
     /// Incremental rebuild: reuses meshes for ids not in `dirty`, recomputes bounds.
@@ -383,9 +444,20 @@ impl Scene3d {
         for room in &model.rooms {
             let level = level_for(model, room.level);
             if dirty.contains(&room.id) {
-                if let Some(m) = floors::floor_slab(room, &level, "floor") {
-                    meshes.push(m);
-                    floors += 1;
+                let well_holes: Vec<Vec<Vec2>> =
+                    model.stairs.iter().filter(|s| !s.well.is_empty() && s.to_level == room.level).map(|s| s.well.clone()).collect();
+                if well_holes.is_empty() {
+                    if let Some(m) = floors::floor_slab(room, &level, "floor") {
+                        meshes.push(m);
+                        floors += 1;
+                    }
+                } else {
+                    let mut clone = room.clone();
+                    clone.holes = well_holes;
+                    if let Some(m) = floors::floor_slab(&clone, &level, "floor") {
+                        meshes.push(m);
+                        floors += 1;
+                    }
                 }
                 if let Some(m) = floors::ceiling_surface(room, &level, "ceiling") {
                     meshes.push(m);
@@ -451,6 +523,73 @@ impl Scene3d {
             }
         }
 
+        let mut stairs_count = 0;
+        for stair in &model.stairs {
+            if dirty.contains(&stair.id) {
+                let base = level_for(model, stair.from_level).elevation;
+                let mut stair_meshes: Vec<Mesh> = Vec::new();
+                if let Some(m) = stairs::stair_mesh(stair, base) {
+                    stair_meshes.push(m);
+                }
+                if let Some(m) = stairs::landing_mesh(stair, base) {
+                    stair_meshes.push(m);
+                }
+                if !stair_meshes.is_empty() {
+                    stairs_count += 1;
+                    meshes.extend(stair_meshes);
+                }
+            } else {
+                if let Some(om) = prev_by_object.get(&stair.id) {
+                    let non_empty: Vec<Mesh> = om.iter().filter(|m| !m.positions.is_empty()).cloned().collect();
+                    if !non_empty.is_empty() {
+                        stairs_count += 1;
+                        meshes.extend(non_empty);
+                    }
+                }
+            }
+        }
+
+        let mut railings_count = 0;
+        for railing in &model.railings {
+            if dirty.contains(&railing.id) {
+                let base = level_for(model, railing.level).elevation;
+                if let Some(m) = railing::railing_mesh(railing, base) {
+                    meshes.push(m);
+                    railings_count += 1;
+                }
+            } else {
+                if let Some(om) = prev_by_object.get(&railing.id) {
+                    let non_empty: Vec<Mesh> = om.iter().filter(|m| !m.positions.is_empty()).cloned().collect();
+                    if !non_empty.is_empty() {
+                        railings_count += 1;
+                        meshes.extend(non_empty);
+                    }
+                }
+            }
+        }
+
+        let mut decks_count = 0;
+        for room in &model.rooms {
+            if room.room_type != cadcraft_doc::arch::RoomType::Deck {
+                continue;
+            }
+            if dirty.contains(&room.id) {
+                let level = level_for(model, room.level);
+                if let Some(m) = floors::floor_slab(room, &level, "deck") {
+                    meshes.push(m);
+                    decks_count += 1;
+                }
+            } else {
+                if let Some(om) = prev_by_object.get(&room.id) {
+                    let deck_meshes: Vec<Mesh> = om.iter().filter(|m| m.material == "deck" && !m.positions.is_empty()).cloned().collect();
+                    if !deck_meshes.is_empty() {
+                        decks_count += 1;
+                        meshes.extend(deck_meshes);
+                    }
+                }
+            }
+        }
+
         meshes.retain(|m| !m.positions.is_empty() && mesh_is_finite(m));
 
         let bounds = match meshes.first() {
@@ -461,7 +600,18 @@ impl Scene3d {
             }),
         };
 
-        Scene3d { meshes, bounds, revision: 0, openings_built, floors, ceilings, roofs }
+        Scene3d {
+            meshes,
+            bounds,
+            revision: 0,
+            openings_built,
+            floors,
+            ceilings,
+            roofs,
+            stairs: stairs_count,
+            railings: railings_count,
+            decks: decks_count,
+        }
     }
 }
 
@@ -558,6 +708,7 @@ mod tests {
 
     use std::collections::BTreeSet;
 
+    use crate::probe::part_of;
     use cadcraft_doc::Wall;
     use cadcraft_doc::arch::{Level, Room};
     use cadcraft_geom::Vec2;
@@ -986,6 +1137,41 @@ mod tests {
         let (x, y) = origin;
         let pts = vec![Vec2::new(x, y), Vec2::new(x + size, y), Vec2::new(x + size, y + size), Vec2::new(x, y + size)];
         Room { id: ArchId(id), level, polygon: pts, ..Default::default() }
+    }
+
+    /// A closed cube mesh from `(x0, y0, z0)` with side `size`, for probing `part_of`.
+    fn box_mesh(x0: f64, y0: f64, z0: f64, size: f64, material: &str, object: ArchId) -> Mesh {
+        let x0 = x0 as f32;
+        let y0 = y0 as f32;
+        let z0 = z0 as f32;
+        let s = size as f32;
+        let positions: Vec<[f32; 3]> = vec![
+            [x0, y0, z0],
+            [x0 + s, y0, z0],
+            [x0 + s, y0 + s, z0],
+            [x0, y0 + s, z0],
+            [x0, y0, z0 + s],
+            [x0 + s, y0, z0 + s],
+            [x0 + s, y0 + s, z0 + s],
+            [x0, y0 + s, z0 + s],
+        ];
+        let normals: Vec<[f32; 3]> = vec![
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, -1.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+        ];
+        let uvs: Vec<[f32; 2]> = vec![[0.0, 0.0]; 8];
+        let indices: Vec<u32> = vec![0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 2, 3, 7, 2, 7, 6, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2];
+        Mesh { positions, normals, uvs, indices, ..Mesh::new(material, object) }
     }
 
     #[test]
@@ -2272,5 +2458,167 @@ mod tests {
                 assert!(crate::probe::is_probeable(m), "roof mesh {} should be probeable", m.material);
             }
         }
+    }
+
+    #[test]
+    fn scene_counts_stairs_railings_and_decks() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+
+        model.walls.push(Wall {
+            id: ArchId(0),
+            base_level: 0,
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.4,
+            ..Default::default()
+        });
+
+        // A stair between level 0 and level 1
+        let mut stair = cadcraft_doc::arch::Stair::default();
+        stair.id = ArchId(200);
+        stair.start = Vec2::new(2.0, 1.0);
+        stair.direction = 0.0;
+        stair.width = 1.0;
+        stair.from_level = 0;
+        stair.to_level = 1;
+        stair.rise = 2.7;
+        model.stairs.push(stair);
+
+        // A railing on level 1
+        let mut railing = cadcraft_doc::arch::Railing::default();
+        railing.id = ArchId(300);
+        railing.level = 1;
+        railing.height = 1.0;
+        railing.path = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)];
+        model.railings.push(railing);
+
+        // A deck room on level 0
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 0,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            room_type: cadcraft_doc::arch::RoomType::Deck,
+            ..Default::default()
+        });
+
+        let scene = Scene3d::build(&model);
+        assert!(scene.stairs > 0, "stairs should be counted, got {}", scene.stairs);
+        assert!(scene.railings > 0, "railings should be counted, got {}", scene.railings);
+        assert!(scene.decks > 0, "decks should be counted, got {}", scene.decks);
+    }
+
+    #[test]
+    fn well_holes_the_upper_floor_slab() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+
+        // A room on level 1 (upper floor)
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 1,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+            ..Default::default()
+        });
+
+        // A stair from level 0 to 1 with a well polygon
+        let well = vec![Vec2::new(2.0, 1.0), Vec2::new(6.0, 1.0), Vec2::new(6.0, 5.0), Vec2::new(2.0, 5.0)];
+        let mut stair = cadcraft_doc::arch::Stair::default();
+        stair.id = ArchId(200);
+        stair.from_level = 0;
+        stair.to_level = 1;
+        stair.well = well;
+        model.stairs.push(stair);
+
+        let scene = Scene3d::build(&model);
+        // The level-1 room slab should have the well as a hole.
+        // Probe at a point inside the well — should NOT hit the floor slab.
+        let well_point = Vec3::new(4.0, 3.0, 2.55);
+        assert!(scene.probe(well_point).is_none(), "probe at well center should not hit floor slab");
+        // Probe at a point in the solid part of the slab — should hit the floor.
+        let solid_point = Vec3::new(8.0, 3.0, 2.55);
+        assert!(scene.probe(solid_point).is_some(), "probe at solid slab center should hit floor slab");
+    }
+
+    #[test]
+    fn part_of_maps_stair_railing_deck() {
+        let base = box_mesh(0.0, 0.0, 0.0, 1.0, "stair-stringer", ArchId(1));
+        assert_eq!(part_of(&base), "stair");
+
+        let railing = box_mesh(0.0, 0.0, 0.0, 1.0, "railing-post", ArchId(2));
+        assert_eq!(part_of(&railing), "railing");
+
+        let deck = box_mesh(0.0, 0.0, 0.0, 1.0, "deck-board", ArchId(3));
+        assert_eq!(part_of(&deck), "deck");
+
+        // "stair" beats "floor" (e.g. "stair-floor")
+        let mixed1 = box_mesh(0.0, 0.0, 0.0, 1.0, "stair-floor", ArchId(4));
+        assert_eq!(part_of(&mixed1), "stair");
+
+        // "railing" beats "wall" (e.g. "railing-wall")
+        let mixed2 = box_mesh(0.0, 0.0, 0.0, 1.0, "railing-wall", ArchId(5));
+        assert_eq!(part_of(&mixed2), "railing");
+
+        // "deck" beats "wall" (e.g. "deck-wall")
+        let mixed3 = box_mesh(0.0, 0.0, 0.0, 1.0, "deck-wall", ArchId(6));
+        assert_eq!(part_of(&mixed3), "deck");
+    }
+
+    #[test]
+    fn incremental_matches_full_counts() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+
+        model.walls.push(Wall {
+            id: ArchId(0),
+            base_level: 0,
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.4,
+            ..Default::default()
+        });
+
+        let mut stair = cadcraft_doc::arch::Stair::default();
+        stair.id = ArchId(200);
+        stair.from_level = 0;
+        stair.to_level = 1;
+        model.stairs.push(stair.clone());
+
+        let mut railing = cadcraft_doc::arch::Railing::default();
+        railing.id = ArchId(300);
+        railing.level = 1;
+        model.railings.push(railing.clone());
+
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 0,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            room_type: cadcraft_doc::arch::RoomType::Deck,
+            ..Default::default()
+        });
+
+        let full = Scene3d::build(&model);
+
+        // Edit only the wall; stairs/railings/deck should be reused.
+        let mut edited = model.clone();
+        if let Some(w) = edited.walls.iter_mut().find(|w| w.id == ArchId(0)) {
+            w.end = Vec2::new(12.0, 0.0);
+        }
+
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(0)]);
+        let partial = Scene3d::build_dirty(&edited, &dirty, &full);
+        let full_edited = Scene3d::build(&edited);
+
+        assert_eq!(partial.stairs, full_edited.stairs, "stairs: partial={} full={}", partial.stairs, full_edited.stairs);
+        assert_eq!(partial.railings, full_edited.railings, "railings: partial={} full={}", partial.railings, full_edited.railings);
+        assert_eq!(partial.decks, full_edited.decks, "decks: partial={} full={}", partial.decks, full_edited.decks);
+        assert_eq!(partial.stairs, full.stairs, "stairs unchanged: partial={} full={}", partial.stairs, full.stairs);
+        assert_eq!(partial.railings, full.railings, "railings unchanged: partial={} full={}", partial.railings, full.railings);
+        assert_eq!(partial.decks, full.decks, "decks unchanged: partial={} full={}", partial.decks, full.decks);
     }
 }
