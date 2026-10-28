@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-28 11:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-28 12:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 85 of 85 segments merged · 10 of 11 acceptance checks**
 
-4,424 workspace tests passing at the last merge · 376 segments merged in all · 0 of 13 seats working
+4,429 workspace tests passing at the last merge · 377 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-28 11:45 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 10 / 11 | 50.9 h so far · expected done Oct 28 11:45–Oct 29 02:59 UTC |
+| 4 | Automatic roofs | building | 10 / 11 | 51.2 h so far · expected done Oct 28 12:00–Oct 29 03:13 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -34,6 +34,7 @@ Updated 2026-10-28 11:45 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 28 12:00 | `harden-p1-glb-spec-layout` | merged | 4,429 pass | tturbo-mac2 |
 | Oct 28 11:41 | `harden-p1-docs` | merged | 4,424 pass | tturbo-mac2 |
 | Oct 28 11:15 | `harden-p2-arch-placement` | merged | 4,424 pass | tturbo-mac2 |
 | Oct 28 10:56 | `harden-p4h-valley-convexity` | merged | 4,419 pass | tturbo-mac2 |
@@ -45,7 +46,6 @@ Updated 2026-10-28 11:45 UTC. This page and the card in the README are regenerat
 | Oct 28 06:07 | `p4n-footprint-largest-component` | merged | 4,370 pass | claude-sonnet-b |
 | Oct 28 06:00 | `harden-p2b-wall-elevation-cut` | merged | 4,365 pass | tturbo-mac2 |
 | Oct 28 05:47 | `harden-p3-probe-ray-cross` | merged | 4,357 pass | tturbo-mac |
-| Oct 28 05:29 | `p4n-footprint-largest-component` | refused | 4,357 pass | claude-sonnet-b |
 
 ## Seats active in the last hour
 
@@ -63,4 +63,4 @@ Updated 2026-10-28 11:45 UTC. This page and the card in the README are regenerat
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
 | tturbo-mac | tturbo-ultraheretic | agent | 360 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 203 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 204 |
