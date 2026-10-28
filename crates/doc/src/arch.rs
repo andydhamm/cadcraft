@@ -1447,6 +1447,14 @@ impl ArchModel {
                     break;
                 }
             }
+            if !s.well.is_empty() && s.well.len() < 3 {
+                messages.push(format!("{}: well has {} vertices (<3)", id, s.well.len()));
+            }
+            if let Some(room_id) = s.well_room {
+                if self.room(room_id).is_none() {
+                    messages.push(format!("{}: unknown well_room {}", id, room_id));
+                }
+            }
         }
 
         let mut seen_stair = std::collections::HashSet::new();
@@ -1483,6 +1491,20 @@ impl ArchModel {
                 if !p.is_finite() {
                     messages.push(format!("{}: non-finite path point", id));
                     break;
+                }
+            }
+            if !r.path.is_empty() && r.path.len() < 2 {
+                messages.push(format!("{}: path has {} vertices (<2)", id, r.path.len()));
+            }
+            if r.thickness <= 0.0 {
+                messages.push(format!("{}: thickness {} must be positive", id, r.thickness));
+            }
+            if r.post_spacing <= 0.0 {
+                messages.push(format!("{}: post spacing {} must be positive", id, r.post_spacing));
+            }
+            if let Some(stair_id) = r.follows {
+                if self.stair(stair_id).is_none() {
+                    messages.push(format!("{}: unknown follows stair {}", id, stair_id));
                 }
             }
         }
