@@ -321,3 +321,120 @@ fn probe_on_wall_corner_edge_is_inside() {
     assert!(hit.is_some(), "probe at wall corner edge (0,0,1.2) should hit a wall");
     assert_eq!(hit.unwrap().part, "wall", "wall corner edge probe should be wall");
 }
+
+#[test]
+fn gable_wall_mesh_has_more_vertices_than_eave_wall() {
+    let model = gable_house();
+    let gable_id = find_wall_id(&model, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)).expect("gable wall not found");
+    let eave_id = find_wall_id(&model, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)).expect("eave wall not found");
+
+    let scene = Scene3d::build(&model);
+    let gable_mesh = scene.mesh_for(&gable_id).expect("gable wall mesh");
+    let eave_mesh = scene.mesh_for(&eave_id).expect("eave wall mesh");
+
+    // The gable wall has a pentagon profile (5 vertices) while the eave wall
+    // has a rectangle (4 vertices), so the gable mesh should have more vertices.
+    assert!(
+        gable_mesh.positions.len() > eave_mesh.positions.len(),
+        "gable wall (pentagon profile) should have more vertices than eave wall (rectangle): gable={} eave={}",
+        gable_mesh.positions.len(),
+        eave_mesh.positions.len()
+    );
+}
+
+#[test]
+fn probe_at_various_heights_on_gable_wall() {
+    let model = gable_house();
+    let scene = Scene3d::build(&model);
+
+    // West gable wall at x=0, from y=0 to y=8.
+    // Ridge at y=4, z=4.45; eaves at y=0 and y=8, z=2.4.
+    let heights = [1.0, 2.0, 3.0, 4.0, 4.4];
+    for z in heights {
+        let hit = scene.probe(cadcraft_geom::Vec3::new(0.0, 4.0, z));
+        assert!(hit.is_some(), "probe at (0,4,{}) should hit wall", z);
+        assert_eq!(hit.unwrap().part, "wall", "probe at (0,4,{}) should be wall", z);
+    }
+
+    // Just above the ridge should be empty.
+    let hit = scene.probe(cadcraft_geom::Vec3::new(0.0, 4.0, 4.5));
+    assert!(hit.is_none(), "probe at (0,4,4.5) above ridge should be empty");
+}
+
+#[test]
+fn steep_roof_gable_reaches_higher_ridge() {
+    let mut model = gable_house();
+    // Change to 12/12 pitch (slope = 1.0).
+    for roof in &mut model.roofs {
+        for plane in &mut roof.planes {
+            plane.slope = 1.0;
+        }
+    }
+
+    let gable_id = find_wall_id(&model, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)).expect("gable wall not found");
+    let scene = Scene3d::build(&model);
+    let mesh = scene.mesh_for(&gable_id).expect("gable wall mesh");
+
+    // Ridge at y=4, z = 2.4 + 4.1 * 1.0 = 6.5 (with 0.1 overhang).
+    let max_z = mesh.positions.iter().map(|p| p[2]).fold(f32::NEG_INFINITY, f32::max);
+    assert!((max_z - 6.5_f32).abs() < 1e-2, "steep roof gable max z should be ≈6.5, got {max_z}");
+
+    // Probe well inside the gable at ridge height.
+    let hit = scene.probe(cadcraft_geom::Vec3::new(0.0, 4.0, 6.0));
+    assert!(hit.is_some(), "probe at (0,4,6) should hit steep gable wall");
+    assert_eq!(hit.unwrap().part, "wall", "probe at (0,4,6) should be wall");
+}
+
+#[test]
+fn shallow_roof_gable_reaches_lower_ridge() {
+    let mut model = gable_house();
+    // Change to 1/12 pitch (slope = 1/12).
+    let slope = 1.0 / 12.0;
+    for roof in &mut model.roofs {
+        for plane in &mut roof.planes {
+            plane.slope = slope;
+        }
+    }
+
+    let gable_id = find_wall_id(&model, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)).expect("gable wall not found");
+    let scene = Scene3d::build(&model);
+    let mesh = scene.mesh_for(&gable_id).expect("gable wall mesh");
+
+    // Ridge at y=4, z = 2.4 + 4.1 * (1/12) ≈ 2.7417.
+    let expected_ridge = 2.4 + 4.1 * slope;
+    let max_z = mesh.positions.iter().map(|p| p[2]).fold(f32::NEG_INFINITY, f32::max);
+    assert!((max_z as f64 - expected_ridge).abs() < 1e-2, "shallow roof gable max z should be ≈{}, got {}", expected_ridge, max_z);
+}
+
+#[test]
+fn gable_wall_is_closed_manifold_with_positive_volume() {
+    let model = gable_house();
+    let gable_id = find_wall_id(&model, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)).expect("gable wall not found");
+    let scene = Scene3d::build(&model);
+    let mesh = scene.mesh_for(&gable_id).expect("gable wall mesh");
+
+    assert!(mesh.is_manifold(), "gable wall mesh must be a closed manifold");
+
+    // Signed volume must be positive (outward winding).
+    let mut vol = 0.0;
+    for tri in mesh.indices.chunks(3) {
+        let (a, b, c) = (tri[0], tri[1], tri[2]);
+        let pa = mesh.positions[a as usize].map(|v| v as f64);
+        let pb = mesh.positions[b as usize].map(|v| v as f64);
+        let pc = mesh.positions[c as usize].map(|v| v as f64);
+        vol += pa[0] * (pb[1] * pc[2] - pb[2] * pc[1]) + pa[1] * (pb[2] * pc[0] - pb[0] * pc[2]) + pa[2] * (pb[0] * pc[1] - pb[1] * pc[0]);
+    }
+    vol /= 6.0;
+    assert!(vol > 0.0, "gable wall signed volume must be positive, got {}", vol);
+}
+
+#[test]
+fn probe_just_below_ridge_height_on_gable_wall() {
+    let model = gable_house();
+    let scene = Scene3d::build(&model);
+
+    // Ridge is at z=4.45. Probe just below that height on the gable wall.
+    let hit = scene.probe(cadcraft_geom::Vec3::new(0.0, 4.0, 4.44));
+    assert!(hit.is_some(), "probe just below ridge (0,4,4.44) should hit wall");
+    assert_eq!(hit.unwrap().part, "wall", "probe just below ridge should be wall");
+}
