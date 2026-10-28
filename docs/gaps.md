@@ -1,6 +1,6 @@
 # Where CADCraft falls short of AutoCAD
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-26 · **Change:** minor (arch3d phase 4 landed (roofs): ARCH-9 done; ARCH-14–ARCH-23 added; Named Viewports dialog: U11 narrowed; MVIEW Restore and PURGE of multiline styles had landed: F15 and F21 corrected) · **Target:** Autodesk AutoCAD 2027
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-28 · **Change:** minor (arch3d phase 5 landed (stairs/railings/decks): ARCH-10 done; ARCH-24–ARCH-30 added; ARCH-13 phase corrected to 12) · **Target:** Autodesk AutoCAD 2027
 
 Every known shortfall, one row each, ranked within each section by user impact. This is the work
 list: agents pick from here (top of a section first), and remove or update a row in the same PR
@@ -75,7 +75,14 @@ one commit each, ending at the ⛔ checkpoint in [DESIGN.md](arch3d/DESIGN.md).
 | ARCH-21 | Gutters and downspouts: gutter profiles along fascia; elbow and downspout placement; plan and 3D geometry | open | — |
 | ARCH-22 | Interactive plane joining: drag a roof plane edge to an adjoining plane; constraint solver snaps ridge/valley/hip edges so planes meet without gaps | open | — |
 | ARCH-23 | Curved walls under a roof: straight-skeleton approximation for polygonal walls with arc segments; round-tower hip cap | open | — |
-| ARCH-10 | Stairs, railings, decks: stair code calculator with code limits, landings | open — phase 5 | — |
+| ARCH-10 | Stairs, railings, decks: stair code calculator with code limits, landings, straight/L/U flights, deck rooms with height above grade, stair wells (OpenBelow rooms) | done — phase 5 | — |
+| ARCH-24 | Winders: curved stair treads for L and U turns | open | — |
+| ARCH-25 | Curved, spiral and wrapped stairs: helical geometry, continuous railings | open | — |
+| ARCH-26 | Ramps: sloped surfaces with code-compliant slope and handrails | open | — |
+| ARCH-27 | Gooseneck and smooth rail transitions: curved rail segments at landings and floor levels | open | — |
+| ARCH-28 | Open risers: stairs without vertical riser faces, with code-compliant tread/riser relationships | open | — |
+| ARCH-29 | Deck joist and beam framing: structural members under deck surfaces | open | — |
+| ARCH-30 | Stair soffits and stringer detail: underside geometry and stringer profiles | open | — |
 | ARCH-11 | HLR elevations and sections: hidden-line removal of our meshes → 2D vectors; orthographic elevation/section cameras | open — phase 7 | — |
 | ARCH-12 | ARCHDETECT on plain DXF: parallel-pair wall finding, door arcs, window mullions, AIA/NCS layer hints | open — phase 8 | — |
 | ARCH-13 | IFC export (`IfcWall`, `IfcWindow`, `IfcSlab`, `IfcRoof`, `IfcStair`, `IfcSpace`, own STEP writer); OBJ export | open — phase 12 | — |
@@ -216,6 +223,7 @@ Detail: [localization-parity.md](localization-parity.md).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-28 | minor | arch3d phase 5 landed: stairs (straight/L/U), railings, decks, stair wells; ARCH-10 done; deferred stair/railing/deck items (winders, curved/spiral stairs, ramps, gooseneck rails, open risers, deck framing, stair soffits) added as ARCH-24–ARCH-30; ARCH-13 phase corrected to 12 |
 | 2026-10-26 | minor | arch3d phase 4 landed: hip/gable/mixed auto roofs, per-wall directives, overhang, fascia/soffit, wall-to-roof clipping and opening-cut profiles; ARCH-9 done; deferred roof items (dormers, crickets, Dutch/half-hip gables, roof returns, attic/knee walls, bump-out roofs, skylights, gutters, interactive plane join, curved walls) added as ARCH-14–ARCH-23; ARCH-13 phase corrected from 9 to 12 |
 | 2026-10-25 | minor | arch3d phase 3 landed: rooms, floors, ceilings and levels with detection, area rules, slabs and level build-ups; ARCH-8 done |
 | 2026-10-25 | minor | arch3d phase 2 landed: doors, windows and garage openings with placement limits, plan symbols, elevation cutouts and DXF round-trip; ARCH-7 done |
