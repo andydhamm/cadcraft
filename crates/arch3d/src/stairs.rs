@@ -13,7 +13,7 @@ use cadcraft_geom::Vec2;
 /// flight coordinates and whose depth spans the full stair width. Returns `None`
 /// when the input is non-finite or degenerate.
 pub fn stair_mesh(s: &Stair, base: f64) -> Option<crate::mesh::Mesh> {
-    let ring = stair_profile(s)?;
+    let ring = drop_collinear(&stair_profile(s)?);
     if !base.is_finite() {
         return None;
     }
@@ -130,6 +130,23 @@ pub fn landing_mesh(s: &Stair, base: f64) -> Option<crate::mesh::Mesh> {
     Some(mesh)
 }
 
+/// Remove vertices collinear with their neighbours (including zero-width
+/// spikes such as the last riser meeting the underside at `u = run`), which
+/// would otherwise leave non-manifold edges in the extruded prism.
+fn drop_collinear(ring: &[Vec2]) -> Vec<Vec2> {
+    let n = ring.len();
+    let mut out = Vec::with_capacity(n);
+    for (i, &c) in ring.iter().enumerate() {
+        let a = ring[(i + n - 1) % n];
+        let b = ring[(i + 1) % n];
+        let cross = (c.x - a.x) * (b.y - c.y) - (c.y - a.y) * (b.x - c.x);
+        if cross.abs() > 1e-12 {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn stair_valid(s: &Stair) -> bool {
     s.start.is_finite()
         && s.direction.is_finite()
@@ -150,26 +167,23 @@ fn stair_profile(s: &Stair) -> Option<Vec<Vec2>> {
         return None;
     }
 
-    let flight_run = s.risers as f64 * s.tread_depth;
-    if !flight_run.is_finite() || flight_run <= 0.0 {
-        return None;
-    }
-
-    let mut ring = Vec::with_capacity(s.risers + 4);
+    // Tread k is a horizontal top at v = k * riser_height over
+    // u in [(k-1) * tread, k * tread]; the last riser rises at u = run.
+    let mut ring = Vec::with_capacity(s.treads.min(4096) * 2 + 3);
     ring.push(Vec2::ZERO);
-    for i in 0..s.risers {
-        let u = (i as f64 + 1.0) * s.tread_depth;
-        let v = (i as f64 + 1.0) * s.riser_height;
-        ring.push(Vec2::new(u, v));
+    for k in 1..=s.treads.min(4096) {
+        let v = k as f64 * s.riser_height;
+        ring.push(Vec2::new((k - 1) as f64 * s.tread_depth, v));
+        ring.push(Vec2::new(k as f64 * s.tread_depth, v));
     }
 
     if ring.len() < 3 {
         return None;
     }
 
-    // This ring closes back to the origin without repeating the first vertex,
-    // so the prism is a simple, non-degenerate stepped polygon.
-    ring.push(Vec2::new(flight_run, 0.0));
+    // The ring closes back to the origin without repeating the first vertex.
+    ring.push(Vec2::new(s.run, s.rise));
+    ring.push(Vec2::new(s.run, 0.0));
     if ring.iter().any(|p| !p.is_finite()) {
         return None;
     }
@@ -207,6 +221,51 @@ mod tests {
         let mesh = stair_mesh(&s, 0.0).expect("stair mesh");
         assert!(mesh.is_manifold());
         assert!(!mesh.indices.is_empty());
+    }
+
+    fn flight() -> Stair {
+        Stair {
+            start: Vec2::ZERO,
+            direction: 0.0,
+            width: 1.0,
+            risers: 16,
+            treads: 15,
+            riser_height: 0.16875,
+            tread_depth: 0.254,
+            rise: 2.7,
+            run: 3.81,
+            ..Default::default()
+        }
+    }
+
+    /// Highest profile `v` at flight coordinate `u`, from the ring's horizontal edges.
+    fn top_at(ring: &[Vec2], u: f64) -> f64 {
+        let mut best = f64::NEG_INFINITY;
+        for (i, p) in ring.iter().enumerate() {
+            let q = ring[(i + 1) % ring.len()];
+            if (p.y - q.y).abs() < 1e-12 && u >= p.x.min(q.x) && u <= p.x.max(q.x) {
+                best = best.max(p.y);
+            }
+        }
+        best
+    }
+
+    #[test]
+    fn stair_profile_step_tops_are_integer_risers() {
+        let ring = stair_profile(&flight()).expect("profile");
+        assert!((top_at(&ring, 0.1) - 0.16875).abs() < 1e-9);
+        assert!((top_at(&ring, 0.6) - 0.50625).abs() < 1e-9);
+        assert!((top_at(&ring, 3.7) - 2.53125).abs() < 1e-9);
+    }
+
+    #[test]
+    fn stair_profile_ends_at_run_and_rise() {
+        let s = flight();
+        let ring = stair_profile(&s).expect("profile");
+        let n = ring.len();
+        assert_eq!((ring[n - 2].x, ring[n - 2].y), (s.run, s.rise));
+        assert_eq!((ring[n - 1].x, ring[n - 1].y), (s.run, 0.0));
+        assert!(stair_profile(&Stair { treads: 0, ..flight() }).is_none());
     }
 
     #[test]
