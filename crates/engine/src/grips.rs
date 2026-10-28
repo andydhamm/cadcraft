@@ -565,6 +565,9 @@ impl Session {
             return match target {
                 ArchTarget::Room(_) => Ok(()),
                 ArchTarget::Opening(id) => {
+                    if !new_point.is_finite() {
+                        return Err(EngineError::Other("non-finite point".into()));
+                    }
                     let o = d.arch.opening(id).ok_or_else(|| EngineError::Other("no such opening".into()))?;
                     if d.arch.wall(o.host).is_none() {
                         return Err(EngineError::Other("no such wall".into()));
@@ -773,6 +776,98 @@ mod arch_grips_tests {
         let d = s.doc().unwrap();
         let w = d.arch.wall(ArchId(0)).unwrap();
         assert_eq!(w.end, Vec2::new(12.0, 0.0));
+    }
+
+    #[test]
+    fn opening_hinge_grip_drag_moves_opening() {
+        let mut s = setup_opening();
+        s.grip_edit(opening_handle(ArchId(0)), 1, Vec2::new(7.0, 0.0), GripMode::Stretch).unwrap();
+        let d = s.doc().unwrap();
+        let o = d.arch.opening(ArchId(0)).unwrap();
+        assert_eq!(o.offset, 7.0);
+    }
+
+    #[test]
+    fn opening_far_grip_drag_moves_opening() {
+        let mut s = setup_opening();
+        s.grip_edit(opening_handle(ArchId(0)), 2, Vec2::new(3.0, 0.0), GripMode::Stretch).unwrap();
+        let d = s.doc().unwrap();
+        let o = d.arch.opening(ArchId(0)).unwrap();
+        assert_eq!(o.offset, 3.0);
+    }
+
+    #[test]
+    fn opening_grips_on_vertical_wall() {
+        let mut s = Session::new();
+        s.execute("wall", &json!({"points": [[0, 0], [0, 10]]})).unwrap();
+        s.execute("door", &json!({"wall": "w0", "offset": 5.0, "width": 0.9})).unwrap();
+        let d = s.doc().unwrap();
+        let o = d.arch.opening(ArchId(0)).unwrap();
+        let w = d.arch.wall(o.host).unwrap();
+        let dir = (w.end - w.start).normalized();
+        let perp = dir.perp();
+        let centre = w.start + dir * o.offset;
+        let half_w = o.width / 2.0;
+        let half_t = w.thickness / 2.0;
+        let grips = s.grips_of(opening_handle(ArchId(0))).unwrap();
+        assert_eq!(grips.len(), 3);
+        assert_eq!(grips[0], centre);
+        assert_eq!(grips[1], centre + perp * half_t - dir * half_w);
+        assert_eq!(grips[2], centre + perp * half_t + dir * half_w);
+        s.grip_edit(opening_handle(ArchId(0)), 0, Vec2::new(0.0, 7.0), GripMode::Stretch).unwrap();
+        let d2 = s.doc().unwrap();
+        let o2 = d2.arch.opening(ArchId(0)).unwrap();
+        assert_eq!(o2.offset, 7.0);
+    }
+
+    #[test]
+    fn opening_grips_of_missing_opening_errors() {
+        let s = setup_opening();
+        assert!(s.grips_of(opening_handle(ArchId(99))).is_err());
+    }
+
+    #[test]
+    fn opening_grip_drag_locked_layer_errors() {
+        let mut s = setup_opening();
+        let layer_name = {
+            let d = s.doc().unwrap();
+            let o = d.arch.opening(ArchId(0)).unwrap();
+            o.layer.clone()
+        };
+        {
+            let d = s.doc_mut().unwrap();
+            if let Some(l) = d.layers.iter_mut().find(|l| l.name == layer_name) {
+                l.locked = true;
+            }
+        }
+        let result = s.grip_edit(opening_handle(ArchId(0)), 0, Vec2::new(7.0, 0.0), GripMode::Stretch);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn opening_grip_rejects_rotate_scale_mirror() {
+        let mut s = setup_opening();
+        assert!(s.grip_edit(opening_handle(ArchId(0)), 0, Vec2::new(7.0, 0.0), GripMode::Rotate).is_err());
+        assert!(s.grip_edit(opening_handle(ArchId(0)), 0, Vec2::new(7.0, 0.0), GripMode::Scale).is_err());
+        assert!(s.grip_edit(opening_handle(ArchId(0)), 0, Vec2::new(7.0, 0.0), GripMode::Mirror).is_err());
+    }
+
+    #[test]
+    fn opening_grip_drag_non_finite_point_errors() {
+        let mut s = setup_opening();
+        let nan = Vec2::new(f64::NAN, f64::NAN);
+        let inf = Vec2::new(f64::INFINITY, f64::NEG_INFINITY);
+        assert!(s.grip_edit(opening_handle(ArchId(0)), 0, nan, GripMode::Stretch).is_err());
+        assert!(s.grip_edit(opening_handle(ArchId(0)), 0, inf, GripMode::Stretch).is_err());
+    }
+
+    #[test]
+    fn opening_grip_drag_perpendicular_to_wall() {
+        let mut s = setup_opening();
+        s.grip_edit(opening_handle(ArchId(0)), 0, Vec2::new(5.0, 100.0), GripMode::Stretch).unwrap();
+        let d = s.doc().unwrap();
+        let o = d.arch.opening(ArchId(0)).unwrap();
+        assert_eq!(o.offset, 5.0);
     }
 
     /// An opening's proxy handle must resolve to the opening, never to the wall that
