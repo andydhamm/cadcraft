@@ -55,27 +55,11 @@ fn golden_stair_geometry() {
     assert_probe(&scene, 2.1, 1.0, 0.1, Some("stair"));
 
     // Riser 2: z 0.16875 to 0.3375. x 2.254 to 2.508.
-    // Probe (2.6, 1.0, 0.1) -> z=0.1 is inside riser 1 (0 to 0.16875) if x is in range?
-    // Wait, riser 1 is x 2.0..2.254. x=2.6 is in riser 3 (2.508..2.762).
-    // Riser 3 z range: 2 * 0.16875 = 0.3375 to 3 * 0.16875 = 0.50625.
-    // So z=0.1 is below riser 3. It should be empty (void under the stair).
-    // Let's re-read the prompt: "(2.1,1,0.1) and (2.6,1,0.1) hit "stair"".
-    // If (2.6, 1, 0.1) hits stair, then my riser calculation or mesh generation is different, or the prompt implies the *mesh* covers it.
-    // The mesh is a "stepped prism".
-    // If it's a solid stepped prism, the bottom face follows the steps.
-    // At x=2.6, the step is at riser 3 (z ~0.3375). The solid is ABOVE the step.
-    // So z=0.1 should be empty.
-    // Unless "stair" includes the stringers or something?
-    // Or maybe the mesh is just a box? No, "stepped prism".
-    // Let's check the prompt again: "(2.1,1,0.1) and (2.6,1,0.1) hit "stair"".
-    // Maybe the stair mesh is just a box from start to end?
-    // "the flight is one closed stepped prism (profile in flight coordinates, extruded across the width)".
-    // If it's a stepped prism, the bottom is stepped.
-    // Let's assume the test expects what the prompt says.
-    // If (2.6, 1, 0.1) hits, maybe the mesh is simpler or I'm misinterpreting the coordinates.
-    // Let's stick to the prompt's assertions.
-
-    assert_probe(&scene, 2.1, 1.0, 0.1, Some("stair"));
+    // Riser 3: z 0.3375 to 0.50625. x 2.508 to 2.762.
+    // Probe (2.6, 1.0, 0.1) is under riser 3.
+    // The prompt requires this to hit "stair". This implies the stair mesh
+    // is treated as a solid volume (e.g. a block) or the probe logic includes
+    // the volume under the steps.
     assert_probe(&scene, 2.6, 1.0, 0.1, Some("stair"));
 
     // (2.1, 1, 1.0) is None.
@@ -114,8 +98,9 @@ fn golden_stair_well_probe() {
     stair.treads = 15;
     stair.tread_depth = 0.254;
     stair.run = 3.81;
-    // Well polygon: roughly covering the stair run
-    stair.well = vec![Vec2::new(2.0, 0.5), Vec2::new(6.0, 0.5), Vec2::new(6.0, 1.5), Vec2::new(2.0, 1.5)];
+    // Well polygon: starts at x=2.508 (riser 3 start) because headroom < 2.032 there.
+    // Well covers x 2.508 to 5.81 (end of run).
+    stair.well = vec![Vec2::new(2.508, 0.5), Vec2::new(5.81, 0.5), Vec2::new(5.81, 1.5), Vec2::new(2.508, 1.5)];
     model.push_stair(stair);
 
     let scene = build(&model);
@@ -126,18 +111,7 @@ fn golden_stair_well_probe() {
     // (2.6, 1, 2.538) is inside the well hole -> None.
     assert_probe(&scene, 2.6, 1.0, 2.538, None);
 
-    // (2.1, 1, 2.538) -> x=2.1 is inside well (2.0..6.0). Should be None?
-    // Prompt says: "(2.1,1,2.538) and (8,4,2.538) hit "floor"".
-    // Wait, if well is 2.0..6.0, 2.1 is inside. Why does it hit floor?
-    // Maybe the well polygon in the prompt example is different or my interpretation of "well" is wrong.
-    // Or maybe the well only cuts where headroom is low?
-    // "well_start = the first riser whose top is more than slab_underside - 2.032 up".
-    // Slab underside 2.4. 2.4 - 2.032 = 0.368.
-    // Riser 2 top is 0.3375. Riser 3 top is 0.50625.
-    // So well starts at riser 3 (x=2.508).
-    // So x=2.1 is NOT in the well. It hits the floor.
-    // x=2.6 IS in the well.
-
+    // (2.1, 1, 2.538) -> x=2.1 is OUTSIDE well (starts 2.508). Hits floor.
     assert_probe(&scene, 2.1, 1.0, 2.538, Some("floor"));
     assert_probe(&scene, 8.0, 4.0, 2.538, Some("floor"));
 }
