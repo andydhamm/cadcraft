@@ -1034,4 +1034,50 @@ mod tests {
         let d = s.doc().expect("doc");
         assert_eq!(rev, d.arch_revision, "revision in response should match doc revision");
     }
+
+    /// A negative offset is rejected (the opening would be before the wall start).
+    #[test]
+    fn door_rejects_negative_offset() {
+        let mut s = session_with_wall();
+        let r = s.execute("door", &json!({"wall": "w0", "offset": -1.0, "width": 0.9, "height": 2.1}));
+        let err = r.expect_err("negative offset should be rejected");
+        assert!(!err.to_string().is_empty(), "expected an error, got empty");
+    }
+
+    /// An offset past the wall end is rejected (the opening would be after the wall end).
+    #[test]
+    fn door_rejects_offset_past_wall_end() {
+        let mut s = session_with_wall();
+        let r = s.execute("door", &json!({"wall": "w0", "offset": 11.0, "width": 0.9, "height": 2.1}));
+        let err = r.expect_err("offset past wall end should be rejected");
+        assert!(!err.to_string().is_empty(), "expected an error, got empty");
+    }
+
+    /// When both offset and point are provided, offset takes precedence.
+    #[test]
+    fn door_uses_offset_when_both_offset_and_point_given() {
+        let mut s = session_with_wall();
+        // offset 3.0, point projects to 5.0 - offset should win
+        let r = s.execute("door", &json!({"wall": "w0", "offset": 3.0, "point": [5.0, 0.0], "width": 0.9, "height": 2.1})).expect("door with both");
+        let one = &r["openings"].as_array().expect("openings")[0];
+        assert_eq!(one["offset"], json!(3.0), "offset should take precedence");
+    }
+
+    /// A point past the wall end is rejected (it does not project onto the wall).
+    #[test]
+    fn door_rejects_point_past_wall_end() {
+        let mut s = session_with_wall();
+        let r = s.execute("door", &json!({"wall": "w0", "point": [15.0, 0.0], "width": 0.9, "height": 2.1}));
+        let err = r.expect_err("point past wall end should be rejected");
+        assert!(err.to_string().contains("point"), "expected point error, got: {err}");
+    }
+
+    /// An unknown level is rejected.
+    #[test]
+    fn door_rejects_unknown_level() {
+        let mut s = session_with_wall();
+        let r = s.execute("door", &json!({"wall": "w0", "offset": 3.0, "width": 0.9, "height": 2.1, "level": "Level 99"}));
+        let err = r.expect_err("unknown level should be rejected");
+        assert!(err.to_string().contains("unknown level"), "expected unknown level error, got: {err}");
+    }
 }
