@@ -593,6 +593,9 @@ impl Session {
                     if !new_point.is_finite() {
                         return Err(EngineError::Other("non-finite point".into()));
                     }
+                    if grip_index > 2 {
+                        return Err(EngineError::Other("an arch opening has three grips: 0 (center), 1 (hinge), 2 (far)".into()));
+                    }
                     let o = d.arch.opening(id).ok_or_else(|| EngineError::Other("no such opening".into()))?;
                     if d.arch.wall(o.host).is_none() {
                         return Err(EngineError::Other("no such wall".into()));
@@ -612,6 +615,9 @@ impl Session {
                     .map(|_| ())
                 }
                 ArchTarget::Wall(id) => {
+                    if !new_point.is_finite() {
+                        return Err(EngineError::Other("non-finite point".into()));
+                    }
                     let end = match grip_index {
                         0 => "start",
                         1 => "end",
