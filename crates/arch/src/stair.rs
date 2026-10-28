@@ -393,7 +393,7 @@ mod tests {
         assert!(approx_poly(&path, &Vec2::new(2.508, 1.5)));
         assert!(approx_poly(&path, &Vec2::new(5.81, 0.5)));
         assert!(approx_poly(&path, &Vec2::new(5.81, 1.5)));
-        for (a, b) in path.windows(2) {
+        for (a, b) in path.iter().zip(path.iter().skip(1)) {
             assert!((a.x - b.x).abs() < 1e-9 || (a.y - b.y).abs() < 1e-9);
         }
     }
