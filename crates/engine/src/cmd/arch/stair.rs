@@ -56,7 +56,7 @@ pub fn specs() -> Vec<CommandSpec> {
 /// the `levels` vec. Mirrors `cmd/arch/level.rs::find_level`: a numeric string
 /// is tried as an index first, then as a name; unknown references are an
 /// error.
-fn find_level(arch: &cadcraft_doc::arch::ArchModel, ref_val: &Value) -> Result<usize, EngineError> {
+fn find_level(arch: &cadcraft_doc::arch::ArchModel, ref_val: &Value) -> Result<usize> {
     if let Some(n) = ref_val.as_str() {
         // Try as index first.
         if let Some(i) = n.parse::<u64>().ok() {
@@ -185,19 +185,20 @@ fn run_stair(s: &mut Session, p: &Value) -> Result<Value> {
     let slab_underside = to_level.elevation - to_level.structure;
     let well_poly = well_polygon(&stair, &plan, slab_underside, MIN_HEADROOM);
     let has_well = well_poly.is_some();
+    let well = well_poly.unwrap_or_default();
     let guard = well_poly.as_ref().and_then(|_| well_guard_path(&stair, &plan, slab_underside, MIN_HEADROOM));
 
     // --- one mutation + one revision bump; never a partial write ---
     let stair_id = d.arch.push_stair({
-        stair.well = well_poly.clone();
+        stair.well = well.clone();
         stair
     });
 
     if has_well {
         // Upper-level room for the open well.
         let mut room =
-            Room { name: "Open Below".into(), room_type: RoomType::OpenBelow, level: to_i as u32, polygon: well_poly.clone(), ..Room::default() };
-        room.interior_area = ring_area(&well_poly);
+            Room { name: "Open Below".into(), room_type: RoomType::OpenBelow, level: to_i as u32, polygon: well.clone(), ..Room::default() };
+        room.interior_area = ring_area(&well);
         room.standard_area = cadcraft_arch::area::standard_area(&d.arch, &room);
         let room_id = d.arch.push_room(room);
 
@@ -252,7 +253,9 @@ impl Default for StairM {
     fn default() -> Self {
         Self { phase: 0, start: None, direction: None, width: None, from_level: None, to_level: None, base: None }
     }
+}
 
+impl StairM {
     /// The text of the input (free text or a matched keyword), or `None` for
     /// points/enter/cancel/other.
     fn text_of(i: &Input) -> Option<String> {
@@ -320,13 +323,13 @@ impl Interactive for StairM {
         // Cancel (the input, or a "cancel" keyword/text) exits the command.
         match &i {
             Input::Cancel => return Ok(Step::Cancel),
-            Input::Keyword(k) | Input::Text(t) => {
-                let txt = if let Some(k) = i.as_keyword() {
-                    k.to_ascii_lowercase()
-                } else {
-                    i.as_text().map(|t| t.to_ascii_lowercase()).unwrap_or_default()
-                };
-                if txt == "cancel" {
+            Input::Keyword(k) => {
+                if k.to_ascii_lowercase() == "cancel" {
+                    return Ok(Step::Cancel);
+                }
+            }
+            Input::Text(t) => {
+                if t.to_ascii_lowercase() == "cancel" {
                     return Ok(Step::Cancel);
                 }
             }
