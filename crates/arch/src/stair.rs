@@ -69,7 +69,18 @@ pub fn plan_stair(rise: f64, width: f64, tread: Option<f64>, max_riser: f64, min
     }
 
     // Smallest `n` such that `rise / n <= max_riser`.
-    let n_min = (rise / max_riser).ceil() as usize;
+    let ratio = rise / max_riser;
+    if !ratio.is_finite() {
+        return None;
+    }
+
+    // The candidate count must be representable and leave room for the 64-wide
+    // scan window; otherwise the flight is unusable (avoids an out-of-range cast
+    // and a debug overflow in the range end).
+    if ratio > f64::from(usize::MAX) {
+        return None;
+    }
+    let n_min = ratio.ceil() as usize;
     if n_min == 0 {
         return None;
     }
@@ -77,7 +88,7 @@ pub fn plan_stair(rise: f64, width: f64, tread: Option<f64>, max_riser: f64, min
     // Scan a bounded 64-wide window of candidate riser counts.
     let mut best_n: Option<usize> = None;
     let mut best_dist: Option<f64> = None;
-    for n in n_min..n_min + 64 {
+    for n in n_min..n_min.saturating_add(64) {
         let riser_h = rise / (n as f64);
         if riser_h > max_riser {
             continue;
@@ -189,5 +200,13 @@ mod tests {
         assert!(!headroom_ok(0.0, f64::NAN, MIN_HEADROOM));
         assert!(!headroom_ok(0.0, 3.0, f64::NAN));
         assert!(!headroom_ok(5.0, 3.0, MIN_HEADROOM));
+    }
+
+    #[test]
+    fn plan_stair_is_bounded_for_huge_ratios() {
+        // Ratio overflowing to infinity must return None.
+        assert_eq!(plan_stair(1e300, 1.0, None, 1.0, MIN_TREAD), None);
+        assert_eq!(plan_stair(1e300, 1.0, None, 1e-300, MIN_TREAD), None);
+        assert_eq!(plan_stair(f64::MAX, 1.0, None, 1e-10, MIN_TREAD), None);
     }
 }
