@@ -1272,4 +1272,74 @@ mod tests {
         let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
         assert!(holes.is_empty(), "opening clipped to wall end should be dropped");
     }
+
+    /// A 4-point profile with a sloped top (not a rectangle) must use the profile_prism path,
+    /// not the fast push_prism path, and produce correct geometry.
+    #[test]
+    fn sloped_quad_profile_uses_profile_prism_path() {
+        let id = ArchId(42);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(8.0, -0.1), Vec2::new(8.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+
+        // Sloped top: left side 2.4, right side 4.45 (not a rectangle)
+        let profile = WallProfile { outer: vec![Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0), Vec2::new(8.0, 4.45), Vec2::new(0.0, 2.4)], holes: vec![] };
+
+        let mesh = extrude_wall_profile(&shape, profile, 0.0, "wall");
+        assert!(mesh.is_some(), "sloped quad should produce a mesh");
+        let mesh = mesh.unwrap();
+        assert!(mesh.triangle_count() > 0, "sloped quad mesh must have triangles");
+        // Not the fast path (which would give exactly 12 triangles)
+        let b = mesh.bounds();
+        assert!((b.max[2] - 4.45).abs() < 1e-3, "max z should be ≈ 4.45, got {}", b.max[2]);
+        assert!(b.min[2].abs() < 1e-3, "min z should be ≈ 0.0, got {}", b.min[2]);
+    }
+
+    /// A rectangle profile with holes must use the profile_prism path, not the fast path.
+    #[test]
+    fn rectangle_profile_with_holes_uses_profile_prism_path() {
+        let id = ArchId(42);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(10.0, -0.1), Vec2::new(10.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+
+        let profile = WallProfile {
+            outer: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 2.4), Vec2::new(0.0, 2.4)],
+            holes: vec![vec![Vec2::new(4.5, 0.5), Vec2::new(4.5, 1.7), Vec2::new(5.4, 1.7), Vec2::new(5.4, 0.5)]],
+        };
+
+        let mesh = extrude_wall_profile(&shape, profile, 0.0, "wall");
+        assert!(mesh.is_some(), "rectangle with hole should produce a mesh");
+        let mesh = mesh.unwrap();
+        assert!(mesh.triangle_count() > 12, "hole should add triangles beyond the 12 of the fast path");
+    }
+
+    /// A profile with fewer than 3 outer vertices must return None from extrude_wall_profile.
+    #[test]
+    fn extrude_wall_profile_returns_none_for_too_few_outer_vertices() {
+        let id = ArchId(42);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(8.0, -0.1), Vec2::new(8.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+
+        let profile = WallProfile { outer: vec![Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0)], holes: vec![] };
+
+        let mesh = extrude_wall_profile(&shape, profile, 0.0, "wall");
+        assert!(mesh.is_none(), "profile with 2 vertices should return None");
+    }
+
+    /// extrude_profile_slab with a zero-thickness wall must return None.
+    #[test]
+    fn extrude_profile_slab_returns_none_for_zero_thickness() {
+        let id = ArchId(42);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(8.0, -0.1), Vec2::new(8.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+
+        let profile = WallProfile { outer: vec![Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0), Vec2::new(8.0, 2.4), Vec2::new(0.0, 2.4)], holes: vec![] };
+
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(8.0, 0.0), thickness: 0.0, height: 2.4, ..Default::default() };
+        let mesh = extrude_profile_slab(&shape, &profile, 0.0, &wall, "wall");
+        assert!(mesh.is_none(), "zero-thickness wall should return None");
+    }
 }
