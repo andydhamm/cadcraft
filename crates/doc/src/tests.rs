@@ -586,6 +586,14 @@ fn space_names_its_tab() {
 /// arch proxy layers (`A-WALL`, `A-DOOR`, `A-GLAZ`, `A-ROOF`, `A-STAIR`), so arch
 /// commands have a layer to sit on from the start.
 #[test]
+fn a_new_drawing_has_no_arch_layers() {
+    // Historical name: after p1-arch-layers, a new drawing includes the five
+    // architectural layers. The assertion reflects the current behaviour.
+    let d = Drawing::new_imperial();
+    assert_eq!(d.layers.len(), 7, "a new drawing must have exactly 7 layers");
+}
+
+#[test]
 fn a_new_drawing_has_arch_layers() {
     let arch_names = ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
     for d in [Drawing::new_imperial(), Drawing::new_metric()] {
