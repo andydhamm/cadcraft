@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-28 19:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-28 19:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 5 of 13: Stairs, railings and decks — 13 of 18 segments merged · 1 of 9 acceptance checks**
 
-4,575 workspace tests passing at the last merge · 404 segments merged in all · 0 of 13 seats working
+4,580 workspace tests passing at the last merge · 405 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -15,7 +15,7 @@ Updated 2026-10-28 19:30 UTC. This page and the card in the README are regenerat
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
-| 5 | Stairs, railings and decks | building | 1 / 9 | 6.5 h so far · expected done Oct 29 01:44–Oct 29 07:26 UTC |
+| 5 | Stairs, railings and decks | building | 1 / 9 | 6.8 h so far · expected done Oct 29 02:13–Oct 29 08:09 UTC |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
@@ -27,17 +27,18 @@ Updated 2026-10-28 19:30 UTC. This page and the card in the README are regenerat
 
 ## Phase 5 segments
 
-13 merged, 3 queued, 1 gate, 1 working
+13 merged, 3 queued, 1 merging, 1 gate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p5-cmd-railing-deck` | RAILING and DECK commands | gate | bonsai-a |
-| `upstream-sync-9de2b8bbd` | merge upstream upstream/main up to 9de2b8bbd (4 commits) | working | claude-sonnet-a |
+| `p5-cmd-railing-deck` | RAILING and DECK commands | merging | bonsai-a |
+| `upstream-sync-9de2b8bbd` | merge upstream upstream/main up to 9de2b8bbd (4 commits) | gate | claude-sonnet-a |
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 28 19:36 | `harden-p5-arch-railing-rules` | merged | 4,580 pass | tturbo-mac2 |
 | Oct 28 19:06 | `harden-p5-arch3d-scene` | refused | 4,583 pass | tturbo-mac |
 | Oct 28 18:43 | `p5-golden-stairs` | merged | 4,575 pass | darwin-ws3 |
 | Oct 28 18:41 | `harden-p5-build3d-counts` | merged | 4,571 pass | tturbo-mac2 |
@@ -49,22 +50,21 @@ Updated 2026-10-28 19:30 UTC. This page and the card in the README are regenerat
 | Oct 28 17:00 | `harden-p5-arch-stair-geom` | merged | 4,542 pass | tturbo-mac |
 | Oct 28 16:53 | `harden-p5-glb-nodes` | merged | 4,536 pass | tturbo-mac2 |
 | Oct 28 16:45 | `p5-arch3d-scene` | refused | 4,535 pass | bonsai-b |
-| Oct 28 16:19 | `harden-p5-dxf-v5` | merged | 4,531 pass | tturbo-mac |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | gate | 584 |
-| bonsai-b | bonsai2-27b | gate | 537 |
+| bonsai-a | bonsai2-27b | merging | 585 |
+| bonsai-b | bonsai2-27b | merging | 538 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
-| claude-sonnet-a | sonnet | agent | 21 |
+| claude-sonnet-a | sonnet | gate | 21 |
 | claude-sonnet-b | sonnet | idle | 21 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 414 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 70 |
 | mai-flash | mai-code-1.1-flash | idle | 1 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
-| tturbo-mac | tturbo-ultraheretic | agent | 374 |
-| tturbo-mac2 | tturbo-ultraheretic | merging | 220 |
+| tturbo-mac | tturbo-ultraheretic | gate | 374 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 220 |
