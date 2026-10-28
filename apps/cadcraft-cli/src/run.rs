@@ -1,5 +1,5 @@
 use super::args::{CmdStep, Drawing, RunArgs, Step};
-use super::error::Result;
+use super::error::{CliError, Result};
 use super::open;
 use super::output::{Streams, export, export_framed, export_window, model_views};
 use cadcraft_engine::Session;
@@ -181,6 +181,7 @@ pub(crate) fn run_cmds(a: &RunArgs, io: &mut Streams) -> Result {
     }
     let before = model_views(&s);
     let mut last_handle: Option<Handle> = None;
+    let mut failed: Option<CliError> = None;
     for step in steps {
         // A handle belongs to the drawing that returned it: if this step makes another drawing
         // current (`new`, `open`, `document.switch`, `close`, or a script running one of them),
@@ -189,22 +190,28 @@ pub(crate) fn run_cmds(a: &RunArgs, io: &mut Streams) -> Result {
         let drawing = active_drawing(&s);
         match step {
             Ready::Script(body) => {
+                if let Some(earlier) = failed.take() {
+                    io.errln(format_args!("error: {earlier}"));
+                }
                 s.script(&body)?;
                 if active_drawing(&s) != drawing {
                     last_handle = None;
                 }
             }
             Ready::Cmd(CmdStep { id, params }) => {
-                let params = fill_last(params, last_handle).map_err(|source| RunError::CmdLast { id: id.clone(), source })?;
-                let r = s.execute(id, &params)?;
-                if active_drawing(&s) != drawing {
-                    last_handle = None;
-                }
-                if let Some(h) = returned_handle(&s, &r) {
-                    last_handle = Some(h);
-                }
-                if !r.is_null() {
-                    io.outln(format_args!("{r}"));
+                // A failing --cmd is reported and the run goes on; only the last step's failure
+                // sets the exit status (a --script failure still stops the run).
+                match cmd_step(&mut s, id, params, drawing, &mut last_handle, io) {
+                    Ok(()) => {
+                        if let Some(earlier) = failed.take() {
+                            io.errln(format_args!("error: {earlier}"));
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(earlier) = failed.replace(e) {
+                            io.errln(format_args!("error: {earlier}"));
+                        }
+                    }
                 }
             }
         }
@@ -218,6 +225,22 @@ pub(crate) fn run_cmds(a: &RunArgs, io: &mut Streams) -> Result {
     if let Some(p) = export_to {
         let window = if cadcraft_io::is_image(p) { export_window(&s, framing, Some(&before))? } else { None };
         export_framed(&s, p, window, io)?;
+    }
+    failed.map_or(Ok(()), Err)
+}
+
+/// One `--cmd` step. A failing step leaves `last_handle` as it was.
+fn cmd_step(s: &mut Session, id: &str, params: &Value, drawing: Option<u64>, last_handle: &mut Option<Handle>, io: &mut Streams) -> Result {
+    let params = fill_last(params, *last_handle).map_err(|source| RunError::CmdLast { id: id.to_string(), source })?;
+    let r = s.execute(id, &params)?;
+    if active_drawing(s) != drawing {
+        *last_handle = None;
+    }
+    if let Some(h) = returned_handle(s, &r) {
+        *last_handle = Some(h);
+    }
+    if !r.is_null() {
+        io.outln(format_args!("{r}"));
     }
     Ok(())
 }

@@ -19,6 +19,8 @@ pub(crate) enum CliError {
     Output(#[from] OutputError),
     #[error(transparent)]
     Perf(#[from] PerfError),
+    #[error(transparent)]
+    Render(#[from] crate::render::RenderError),
     /// The engine and io crates take file names as text.
     #[error("{}: the file name is not valid Unicode", .0.display())]
     NotUnicode(std::path::PathBuf),

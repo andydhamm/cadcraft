@@ -18,14 +18,17 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+cadcraft-arch3d = { workspace = true }
 cadcraft-engine = { workspace = true }
 cadcraft-io = { workspace = true }
 cadcraft-mcp = { workspace = true }
 cadcraft-render = { workspace = true }
+cadcraft-render3d = { workspace = true }
 clap = { workspace = true }
 same-file = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tokio = { version = "1", features = ["full"] }
 
 [dev-dependencies]
 # Shell completions and man pages (examples/man-and-completions.rs, for the Linux packages); not

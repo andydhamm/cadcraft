@@ -130,6 +130,10 @@ pub fn write_framed(d: &Drawing, name: impl AsRef<Path>, window: Option<Bounds2>
     {
         check_window(w)?;
     }
+    // glTF binary (arch3d): not a drawing format, chosen by extension alone.
+    if ext(name) == "glb" {
+        return Ok(glb::write_drawing(d));
+    }
     match format {
         Some(Format::Dxf | Format::Dwg) => write_with(d, name, &SaveOptions::default()),
         Some(Format::Svg) => Ok(svg::export_window(d, &Space::Model, window).into_bytes()),

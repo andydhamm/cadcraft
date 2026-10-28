@@ -81,6 +81,25 @@ pub(crate) enum Command {
     Mcp(McpArgs),
     Perf(PerfArgs),
     Sample(SampleArgs),
+    Render(RenderArgs),
+}
+
+/// Render a drawing's architectural 3D scene to a PNG
+///
+/// Prints `PROJECTED x0,y0,x1,y1` (the scene's screen bounds) on stdout and stderr. Without a GPU
+/// adapter it prints NO_ADAPTER on stderr and exits 3.
+#[derive(Args)]
+pub(crate) struct RenderArgs {
+    #[arg(value_name = "FILE", help = read_help())]
+    pub(crate) file: PathBuf,
+    #[arg(value_name = "OUT.png")]
+    pub(crate) output: PathBuf,
+    /// The camera: `orbit[,azimuth=A][,elevation=E][,distance=D][,fov=F]`
+    #[arg(long, value_name = "SPEC")]
+    pub(crate) camera: Option<String>,
+    /// The image size in pixels (default 2400x1600, each side 1-8192)
+    #[arg(long, value_name = "WxH", value_parser = crate::render::parse_size)]
+    pub(crate) size: Option<(u32, u32)>,
 }
 
 /// Print a drawing's summary as JSON

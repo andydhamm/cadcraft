@@ -643,7 +643,7 @@ dependencies = [
 
 [[package]]
 name = "cadcraft-arch"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "cadcraft-doc",
  "cadcraft-geom",
@@ -653,7 +653,7 @@ dependencies = [
 
 [[package]]
 name = "cadcraft-arch3d"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "cadcraft-arch",
  "cadcraft-color",
@@ -673,12 +673,14 @@ dependencies = [
  "cadcraft-io",
  "cadcraft-mcp",
  "cadcraft-render",
+ "cadcraft-render3d",
  "clap",
  "clap_complete",
  "clap_mangen",
  "same-file",
  "serde_json",
  "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]
@@ -818,7 +820,7 @@ dependencies = [
 
 [[package]]
 name = "cadcraft-render3d"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "bytemuck",
  "cadcraft-arch3d",

@@ -16,6 +16,7 @@ mod info;
 mod mcp;
 mod output;
 mod perf;
+mod render;
 mod run;
 mod sample;
 
@@ -99,7 +100,7 @@ where
         Command::Run(a) => a.settings.apply(),
         Command::Mcp(a) => a.settings.apply(),
         Command::Sample(a) => a.settings.apply(),
-        Command::Info(_) | Command::Commands(_) | Command::Perf(_) => {}
+        Command::Info(_) | Command::Commands(_) | Command::Perf(_) | Command::Render(_) => {}
     }
     let mut io = Streams::new(out, err);
     let result = match &cli.command {
@@ -110,6 +111,15 @@ where
         Command::Mcp(a) => mcp(a),
         Command::Perf(a) => perf(a.target.as_ref(), &mut io),
         Command::Sample(a) => sample(a, &mut io),
+        Command::Render(a) => match render::render(a, &mut io) {
+            Ok(()) => Ok(()),
+            Err(render::RenderError::NoAdapter) => {
+                io.errln(format_args!("NO_ADAPTER"));
+                io.finish();
+                return render::RENDER_NO_ADAPTER_EXIT;
+            }
+            Err(e) => Err(e.into()),
+        },
     };
     let mut code = 0;
     if let Err(e) = result {
