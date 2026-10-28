@@ -275,7 +275,7 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
     let dx = wall.end.x - wall.start.x;
     let dy = wall.end.y - wall.start.y;
     let len = (dx * dx + dy * dy).sqrt();
-    if len < 1e-9 {
+    if len < 1e-9 || !len.is_finite() {
         return None;
     }
     let dir = Vec2::new(dx / len, dy / len);
