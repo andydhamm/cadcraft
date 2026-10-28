@@ -1080,4 +1080,90 @@ mod tests {
         let result = roof_edges(&m, 0, &test_roof());
         assert!(result.is_err(), "NaN wall position should be rejected");
     }
+
+    /// A U-shaped footprint: outer rectangle with a rectangular notch cut from the top.
+    /// Should produce two valleys at the two inner (reflex) corners of the notch.
+    fn u_house(m: &mut ArchModel) {
+        let ring = [(0.0, 0.0), (10.0, 0.0), (10.0, 4.0), (7.0, 4.0), (7.0, 8.0), (3.0, 8.0), (3.0, 4.0), (0.0, 4.0)];
+        for (i, &(x, y)) in ring.iter().enumerate() {
+            let (nx, ny) = ring[(i + 1) % ring.len()];
+            m.push_wall(Wall::new(Vec2::new(x, y), Vec2::new(nx, ny), 0.2));
+        }
+        for w in m.walls.iter_mut() {
+            w.height = 2.4;
+        }
+    }
+
+    #[test]
+    fn u_footprint_has_two_valleys() {
+        let mut m = ArchModel::default();
+        u_house(&mut m);
+        let roof = Roof { pitch_rise: 6.0, pitch_run: 12.0, overhang: 0.0, thickness: 0.0, ..Default::default() };
+        let g = crate::roof::roof_geometry(&m, 0, &roof).unwrap();
+        let edges = roof_edges_geom(&g);
+
+        let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        assert_eq!(valleys.len(), 2, "U footprint should have exactly two valleys");
+
+        // Both valleys must be anchored at reflex vertices of the footprint
+        for v in &valleys {
+            let a_reflex = is_reflex_vertex(&g.fp.outer, v.a);
+            let b_reflex = is_reflex_vertex(&g.fp.outer, v.b);
+            assert!(a_reflex || b_reflex, "U valley has no reflex endpoint: a={:?} b={:?}", v.a, v.b);
+        }
+    }
+
+    /// A square footprint should produce a standard hip roof:
+    /// 4 hips, 1 ridge, 0 valleys, 4 eaves.
+    fn square_house(m: &mut ArchModel) {
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(8.0, 0.0), Vec2::new(8.0, 8.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(8.0, 8.0), Vec2::new(0.0, 8.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2));
+        for w in m.walls.iter_mut() {
+            w.height = 2.4;
+        }
+    }
+
+    #[test]
+    fn square_footprint_has_four_hips_one_ridge_no_valleys() {
+        let mut m = ArchModel::default();
+        square_house(&mut m);
+        let g = geom(&m);
+        let edges = roof_edges_geom(&g);
+
+        let hips: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Hip).collect();
+        let ridges: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Ridge).collect();
+        let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        let eaves: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Eave).collect();
+
+        assert_eq!(hips.len(), 4, "Square footprint should have 4 hips");
+        assert_eq!(ridges.len(), 1, "Square footprint should have 1 ridge");
+        assert_eq!(valleys.len(), 0, "Square footprint should have no valleys");
+        assert_eq!(eaves.len(), 4, "Square footprint should have 4 eaves");
+    }
+
+    /// Building the same roof geometry twice must produce identical edge lists
+    /// (determinism requirement from the design log).
+    #[test]
+    fn roof_edges_are_deterministic() {
+        let mut m = ArchModel::default();
+        t_house_brief(&mut m);
+        let roof = Roof { pitch_rise: 6.0, pitch_run: 12.0, overhang: 0.5, thickness: 0.0, ..Default::default() };
+
+        let g1 = crate::roof::roof_geometry(&m, 0, &roof).unwrap();
+        let edges1 = roof_edges_geom(&g1);
+
+        let g2 = crate::roof::roof_geometry(&m, 0, &roof).unwrap();
+        let edges2 = roof_edges_geom(&g2);
+
+        assert_eq!(edges1.len(), edges2.len(), "Edge count differs between builds");
+        for (e1, e2) in edges1.iter().zip(edges2.iter()) {
+            assert_eq!(e1.kind, e2.kind, "Edge kind differs");
+            assert!((e1.a - e2.a).len() < 1e-12, "Edge a differs");
+            assert!((e1.b - e2.b).len() < 1e-12, "Edge b differs");
+            assert!((e1.za - e2.za).abs() < 1e-12, "Edge za differs");
+            assert!((e1.zb - e2.zb).abs() < 1e-12, "Edge zb differs");
+        }
+    }
 }
