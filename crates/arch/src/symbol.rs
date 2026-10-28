@@ -415,4 +415,85 @@ mod tests {
         let s = opening_symbol(&m, o);
         assert!(s.is_none(), "expected None for missing host wall");
     }
+
+    #[test]
+    fn symbol_is_none_for_zero_thickness_wall() {
+        let mut m = ArchModel::default();
+        let h = test_wall(&mut m, Vec2::ZERO, Vec2::new(10.0, 0.0), 0.0);
+        let idx = opening_on(&mut m, h, 3.0, 0.9, OpeningKind::Door, "hinged");
+        let o = &m.openings[idx];
+        let s = opening_symbol(&m, o);
+        assert!(s.is_none(), "expected None for zero-thickness wall");
+    }
+
+    #[test]
+    fn symbol_is_none_for_zero_length_wall() {
+        let mut m = ArchModel::default();
+        let h = test_wall(&mut m, Vec2::new(5.0, 5.0), Vec2::new(5.0, 5.0), 0.2);
+        let idx = opening_on(&mut m, h, 0.0, 0.9, OpeningKind::Door, "hinged");
+        let o = &m.openings[idx];
+        let s = opening_symbol(&m, o);
+        assert!(s.is_none(), "expected None for zero-length wall");
+    }
+
+    #[test]
+    fn slider_window_has_six_polylines() {
+        let mut m = ArchModel::default();
+        let h = test_wall(&mut m, Vec2::ZERO, Vec2::new(10.0, 0.0), 0.2);
+        let idx = opening_on(&mut m, h, 3.0, 1.0, OpeningKind::Window, "slider");
+        let o = &m.openings[idx];
+        let s = opening_symbol(&m, o).unwrap();
+        assert_finite(&s);
+        assert_eq!(s.polylines.len(), 6, "slider window should have 6 polylines");
+        assert_eq!(s.layer, "A-GLAZ");
+    }
+
+    #[test]
+    fn poché_gaps_empty_for_no_openings() {
+        let mut m = ArchModel::default();
+        let h = test_wall(&mut m, Vec2::ZERO, Vec2::new(10.0, 0.0), 0.2);
+        let gaps = poché_gaps(&m, h);
+        assert!(gaps.is_empty(), "expected empty gaps for wall with no openings");
+    }
+
+    #[test]
+    fn poché_gaps_skips_non_finite_openings() {
+        let mut m = ArchModel::default();
+        let h = test_wall(&mut m, Vec2::ZERO, Vec2::new(10.0, 0.0), 0.2);
+
+        // Add an opening with NaN offset — should be skipped
+        let mut o1 = Opening::new(h, 1.0, 1.0, 2.0, OpeningKind::Window);
+        o1.offset = f64::NAN;
+        o1.style = "picture".to_string();
+        m.push_opening(o1);
+
+        // Add a valid opening
+        opening_on(&mut m, h, 5.0, 1.0, OpeningKind::Window, "picture");
+
+        let gaps = poché_gaps(&m, h);
+        assert_eq!(gaps.len(), 1, "expected 1 gap (NaN opening skipped)");
+    }
+
+    #[test]
+    fn symbol_handles_nan_offset_with_default() {
+        let mut m = ArchModel::default();
+        let h = test_wall(&mut m, Vec2::ZERO, Vec2::new(10.0, 0.0), 0.2);
+        let idx = opening_on(&mut m, h, f64::NAN, 0.9, OpeningKind::Door, "hinged");
+        let o = &m.openings[idx];
+        let s = opening_symbol(&m, o).unwrap();
+        assert_finite(&s);
+        // With NaN offset, the default 0.0 is used
+        assert_eq!(s.polylines.len(), 4, "hinged door with NaN offset should have 4 polylines");
+    }
+
+    #[test]
+    fn symbol_handles_large_values() {
+        let mut m = ArchModel::default();
+        let h = test_wall(&mut m, Vec2::ZERO, Vec2::new(1000000.0, 0.0), 0.2);
+        let idx = opening_on(&mut m, h, 500000.0, 100.0, OpeningKind::Door, "hinged");
+        let o = &m.openings[idx];
+        let s = opening_symbol(&m, o).unwrap();
+        assert_finite(&s);
+        assert_eq!(s.polylines.len(), 4);
+    }
 }
