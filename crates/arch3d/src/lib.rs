@@ -2492,6 +2492,7 @@ mod tests {
         railing.id = ArchId(300);
         railing.level = 1;
         railing.height = 1.0;
+        railing.path = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)];
         model.railings.push(railing);
 
         // A deck room on level 0
