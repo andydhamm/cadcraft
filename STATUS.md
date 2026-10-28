@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-28 00:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-28 00:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 81 of 84 segments merged · 10 of 11 acceptance checks**
 
@@ -14,7 +14,7 @@ Updated 2026-10-28 00:00 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 10 / 11 | 39.2 h so far · expected done Oct 28 01:55–Oct 28 06:42 UTC |
+| 4 | Automatic roofs | building | 10 / 11 | 39.4 h so far · expected done Oct 28 02:18–Oct 28 07:25 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -27,12 +27,12 @@ Updated 2026-10-28 00:00 UTC. This page and the card in the README are regenerat
 
 ## Phase 4 segments
 
-81 merged, 7 replaced, 2 working, 1 queued
+81 merged, 7 replaced, 2 gate, 1 queued
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p4m-footprint-connectivity-walk` | build the roof footprint ring by edge connectivity, pruning spurs | working | bonsai-a |
-| `upstream-sync-3929d94d8` | merge upstream upstream/main up to 3929d94d8 (23 commits) | working | claude-sonnet-a |
+| `p4m-footprint-connectivity-walk` | build the roof footprint ring by edge connectivity, pruning spurs | gate | bonsai-a |
+| `upstream-sync-3929d94d8` | merge upstream upstream/main up to 3929d94d8 (23 commits) | gate | claude-sonnet-a |
 
 ## Recent merges
 
@@ -55,15 +55,15 @@ Updated 2026-10-28 00:00 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 522 |
-| bonsai-b | bonsai2-27b | agent | 472 |
+| bonsai-a | bonsai2-27b | gate | 523 |
+| bonsai-b | bonsai2-27b | gate | 473 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
-| claude-sonnet-a | sonnet | agent | 17 |
+| claude-sonnet-a | sonnet | gate | 18 |
 | claude-sonnet-b | sonnet | idle | 15 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 335 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 336 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 65 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
 | tturbo-mac | tturbo-ultraheretic | agent | 342 |
-| tturbo-mac2 | tturbo-ultraheretic | gate | 170 |
+| tturbo-mac2 | tturbo-ultraheretic | merging | 171 |
