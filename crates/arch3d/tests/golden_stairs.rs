@@ -27,6 +27,15 @@ fn golden_stair_geometry() {
     model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
     model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
 
+    // Room on Level 0 covering the stair area to ensure it is built
+    let room = Room {
+        id: ArchId(1),
+        level: 0,
+        polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)],
+        ..Default::default()
+    };
+    model.push_room(room);
+
     // Stair from Level 0 to 1
     let mut stair = Stair::default();
     stair.id = ArchId(0);
