@@ -13,9 +13,11 @@ pub const DEFAULT_INT_THICKNESS: f64 = 0.1;
 pub const DEFAULT_WALL_HEIGHT: f64 = 2.7;
 
 pub mod build3d;
+pub mod deck;
 pub mod inspect;
 pub mod level;
 pub mod opening;
+pub mod railing;
 pub mod roofauto;
 pub mod roofplane;
 pub mod room;
@@ -57,5 +59,7 @@ pub fn specs() -> Vec<CommandSpec> {
     v.extend(stretch::specs());
     v.extend(view::specs());
     v.extend(roofauto::specs());
+    v.extend(deck::specs());
+    v.extend(railing::specs());
     v
 }
