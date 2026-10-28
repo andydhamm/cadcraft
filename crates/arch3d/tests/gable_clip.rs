@@ -473,3 +473,93 @@ fn gable_wall_profile_has_five_vertices() {
     // closed solid. The mesh should have at least 10 vertices (5 per face).
     assert!(mesh.positions.len() >= 10, "gable wall mesh should have at least 10 vertices, got {}", mesh.positions.len());
 }
+
+/// The east gable wall must also reach the ridge, symmetric to the west wall.
+#[test]
+fn east_gable_wall_reaches_the_ridge() {
+    let model = gable_house();
+    let east_id = find_wall_id(&model, Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0)).expect("east gable wall not found");
+    let scene = Scene3d::build(&model);
+    let mesh = scene.mesh_for(&east_id).expect("east gable mesh");
+
+    let ridge_z = 4.45_f32;
+    let ridge_y = 4.0_f32;
+    let has_ridge_vertex = mesh.positions.iter().any(|p| (p[1] - ridge_y).abs() < 1e-3 && (p[2] - ridge_z).abs() < 1e-3);
+    assert!(has_ridge_vertex, "east gable mesh must have a vertex at the ridge (y≈4.0, z≈4.45)");
+
+    let max_z = mesh.positions.iter().map(|p| p[2]).fold(f32::NEG_INFINITY, f32::max);
+    assert!((max_z - ridge_z).abs() < 1e-3, "east gable mesh max z must be ≈4.45, got {max_z}");
+}
+
+/// A probe on the sloped portion of a gable wall should hit the wall below the
+/// slope and find nothing above it.
+#[test]
+fn probe_on_gable_slope_hits_wall_below_and_misses_above() {
+    let model = gable_house();
+    let scene = Scene3d::build(&model);
+
+    // West gable wall at x=0. At y=2, roof height = 2.4 + 0.5*(2+0.1) = 3.45.
+    // Probe inside (z=3.0) and outside (z=3.5).
+    let hit_inside = scene.probe(cadcraft_geom::Vec3::new(0.0, 2.0, 3.0));
+    assert!(hit_inside.is_some(), "probe at (0,2,3) inside gable slope should hit wall");
+    assert_eq!(hit_inside.unwrap().part, "wall");
+
+    let hit_outside = scene.probe(cadcraft_geom::Vec3::new(0.0, 2.0, 3.5));
+    assert!(hit_outside.is_none(), "probe at (0,2,3.5) above gable slope should be empty");
+}
+
+/// A window in a gable wall must cut a hole; probe through the opening should
+/// miss the wall, probe below the sill should hit it.
+#[test]
+fn gable_wall_with_window_cuts_hole() {
+    use cadcraft_doc::arch::Opening;
+
+    let mut model = gable_house();
+    let west_id = find_wall_id(&model, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)).expect("west gable wall not found");
+    let mut opening = Opening::default();
+    opening.id = ArchId(200);
+    opening.host = west_id;
+    opening.offset = 4.0;
+    opening.width = 0.8;
+    opening.height = 1.0;
+    opening.sill = 2.0;
+    opening.style = "window".to_string();
+    model.openings.push(opening);
+
+    let scene = Scene3d::build(&model);
+
+    // Through the window: no wall hit.
+    let hit = scene.probe(cadcraft_geom::Vec3::new(0.0, 4.0, 2.5));
+    assert!(hit.is_none() || hit.unwrap().id != "w0", "probe through gable window should not hit wall");
+
+    // Below the sill: wall hit.
+    let hit_below = scene.probe(cadcraft_geom::Vec3::new(0.0, 4.0, 1.5));
+    assert!(hit_below.is_some(), "probe below gable window should hit wall");
+    assert_eq!(hit_below.unwrap().part, "wall");
+}
+
+/// Without a roof, a gable wall is just a rectangular wall at its full height.
+#[test]
+fn gable_wall_without_roof_is_rectangular() {
+    let mut model = gable_house();
+    model.roofs.clear();
+    let west_id = find_wall_id(&model, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)).expect("west gable wall not found");
+    let scene = Scene3d::build(&model);
+    let mesh = scene.mesh_for(&west_id).expect("west wall mesh");
+    let max_z = mesh.positions.iter().map(|p| p[2]).fold(f32::NEG_INFINITY, f32::max);
+    assert!((max_z - 2.4_f32).abs() < 1e-3, "without roof, wall max z should be 2.4, got {max_z}");
+}
+
+/// A roof on a different level than the wall must not clip the wall.
+#[test]
+fn roof_on_different_level_does_not_clip_wall() {
+    let mut model = gable_house();
+    for roof in &mut model.roofs {
+        roof.level = 1;
+    }
+    let west_id = find_wall_id(&model, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)).expect("west gable wall not found");
+    let scene = Scene3d::build(&model);
+    let mesh = scene.mesh_for(&west_id).expect("west wall mesh");
+    let max_z = mesh.positions.iter().map(|p| p[2]).fold(f32::NEG_INFINITY, f32::max);
+    assert!((max_z - 2.4_f32).abs() < 1e-3, "roof on different level should not clip wall, max z = {max_z}");
+}
