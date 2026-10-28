@@ -28,8 +28,8 @@ pub use arch::{
     ARCH_HANDLE_BASE, ArchId, ArchModel, JoinKind, Level, MAX_RAILINGS, MAX_ROOF_PLANES, MAX_ROOMS, MAX_STAIRS, MAX_WALLS, OPENING_HANDLE_OFFSET,
     Opening, RAILING_HANDLE_OFFSET, Railing, RailingStyle, RefSide, Roof, RoofDirective, RoofEdge, RoofEdgeKind, RoofPlane, Room, RoomType,
     STAIR_HANDLE_OFFSET, Stair, StairShape, Wall, WallLayer, WallType, arch_handle, is_arch_handle, is_opening_handle, is_railing_handle,
-    is_room_handle, is_stair_handle, opening_handle, opening_label, railing_handle, railing_label, room_handle, room_label, stair_handle,
-    stair_label, wall_label,
+    is_roof_handle, is_room_handle, is_stair_handle, opening_handle, opening_label, railing_handle, railing_label, roof_handle, roof_label,
+    room_handle, room_label, stair_handle, stair_label, wall_label,
 };
 pub use array::*;
 pub use cadcraft_color as color;
