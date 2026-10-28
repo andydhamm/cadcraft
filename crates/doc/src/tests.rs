@@ -842,3 +842,204 @@ fn arch_model_round_trips_stairs_and_railings() {
     assert_eq!(back.next_stair_id, 1);
     assert_eq!(back.next_railing_id, 1);
 }
+
+#[test]
+fn stair_and_railing_index_and_ids() {
+    let mut m = crate::ArchModel::default();
+    let s0 = m.push_stair(crate::Stair::default());
+    let s1 = m.push_stair(crate::Stair::default());
+    let s2 = m.push_stair(crate::Stair::default());
+    assert_eq!(m.stair_index(s0), Some(0));
+    assert_eq!(m.stair_index(s1), Some(1));
+    assert_eq!(m.stair_index(s2), Some(2));
+    assert_eq!(m.stair_index(crate::ArchId(99)), None);
+    let ids: Vec<_> = m.stair_ids().collect();
+    assert_eq!(ids, vec![s0, s1, s2]);
+
+    let r0 = m.push_railing(crate::Railing::default());
+    let r1 = m.push_railing(crate::Railing::default());
+    assert_eq!(m.railing_index(r0), Some(0));
+    assert_eq!(m.railing_index(r1), Some(1));
+    assert_eq!(m.railing_index(crate::ArchId(99)), None);
+    let rids: Vec<_> = m.railing_ids().collect();
+    assert_eq!(rids, vec![r0, r1]);
+}
+
+#[test]
+fn stair_railing_handle_range_boundaries() {
+    let stair_base = crate::ARCH_HANDLE_BASE + crate::STAIR_HANDLE_OFFSET;
+    assert!(crate::is_stair_handle(crate::Handle(stair_base)));
+    assert!(crate::is_stair_handle(crate::Handle(stair_base + 32767)));
+    assert!(!crate::is_stair_handle(crate::Handle(stair_base + 32768)));
+    assert!(!crate::is_stair_handle(crate::Handle(stair_base - 1)));
+
+    let rail_base = crate::ARCH_HANDLE_BASE + crate::RAILING_HANDLE_OFFSET;
+    assert!(crate::is_railing_handle(crate::Handle(rail_base)));
+    assert!(crate::is_railing_handle(crate::Handle(rail_base + 32767)));
+    assert!(!crate::is_railing_handle(crate::Handle(rail_base + 32768)));
+    assert!(!crate::is_railing_handle(crate::Handle(rail_base - 1)));
+}
+
+#[test]
+fn stair_railing_json_roundtrip_with_data() {
+    let mut s = crate::Stair::default();
+    s.id = crate::ArchId(7);
+    s.start = cadcraft_geom::Vec2::new(1.5, 2.5);
+    s.direction = 0.785;
+    s.width = 1.2;
+    s.from_level = 0;
+    s.to_level = 1;
+    s.rise = 2.7;
+    s.shape = crate::StairShape::L;
+    s.risers = 16;
+    s.riser_height = 0.16875;
+    s.tread_depth = 0.254;
+    s.treads = 15;
+    s.run = 3.81;
+    s.landing_depth = 1.2;
+    s.well = vec![
+        cadcraft_geom::Vec2::new(0.0, 0.0),
+        cadcraft_geom::Vec2::new(4.0, 0.0),
+        cadcraft_geom::Vec2::new(4.0, 1.5),
+        cadcraft_geom::Vec2::new(0.0, 1.5),
+    ];
+    s.well_room = Some(crate::ArchId(3));
+    s.layer = "A-STAIR".to_string();
+
+    let json = serde_json::to_string(&s).unwrap();
+    let back: crate::Stair = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.id, crate::ArchId(7));
+    assert_eq!(back.start, cadcraft_geom::Vec2::new(1.5, 2.5));
+    assert!((back.direction - 0.785).abs() < 1e-12);
+    assert_eq!(back.shape, crate::StairShape::L);
+    assert_eq!(back.risers, 16);
+    assert_eq!(back.well.len(), 4);
+    assert_eq!(back.well_room, Some(crate::ArchId(3)));
+
+    let mut r = crate::Railing::default();
+    r.id = crate::ArchId(5);
+    r.path = vec![cadcraft_geom::Vec2::new(0.0, 0.0), cadcraft_geom::Vec2::new(10.0, 0.0), cadcraft_geom::Vec2::new(10.0, 8.0)];
+    r.level = 1;
+    r.height = 0.914;
+    r.style = crate::RailingStyle::Balusters;
+    r.thickness = 0.05;
+    r.baluster_gap = 0.099;
+    r.post_spacing = 1.2;
+    r.follows = Some(crate::ArchId(7));
+    r.layer = "A-RAIL".to_string();
+
+    let json = serde_json::to_string(&r).unwrap();
+    let back: crate::Railing = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.id, crate::ArchId(5));
+    assert_eq!(back.path.len(), 3);
+    assert_eq!(back.style, crate::RailingStyle::Balusters);
+    assert_eq!(back.follows, Some(crate::ArchId(7)));
+}
+
+#[test]
+fn validate_rejects_too_many_stairs_and_railings() {
+    let mut m = crate::ArchModel::default();
+    for _ in 0..crate::MAX_STAIRS + 1 {
+        m.push_stair(crate::Stair::default());
+    }
+    let msgs = m.validate();
+    assert!(msgs.iter().any(|m| m.contains("max") && m.contains("stairs")));
+
+    let mut m = crate::ArchModel::default();
+    for _ in 0..crate::MAX_RAILINGS + 1 {
+        m.push_railing(crate::Railing::default());
+    }
+    let msgs = m.validate();
+    assert!(msgs.iter().any(|m| m.contains("max") && m.contains("railings")));
+}
+
+#[test]
+fn validate_flags_duplicate_stair_and_railing_ids() {
+    let mut m = crate::ArchModel::default();
+    m.push_stair(crate::Stair::default());
+    m.push_stair(crate::Stair::default());
+    m.stairs[1].id = m.stairs[0].id;
+    let msgs = m.validate();
+    assert!(msgs.iter().any(|m| m.contains("duplicate stair id")));
+
+    let mut m = crate::ArchModel::default();
+    m.push_railing(crate::Railing::default());
+    m.push_railing(crate::Railing::default());
+    m.railings[1].id = m.railings[0].id;
+    let msgs = m.validate();
+    assert!(msgs.iter().any(|m| m.contains("duplicate railing id")));
+}
+
+#[test]
+fn validate_reports_stale_next_stair_and_railing_id() {
+    let mut m = crate::ArchModel::default();
+    m.push_stair(crate::Stair::default());
+    m.push_stair(crate::Stair::default());
+    m.next_stair_id = 1;
+    let msgs = m.validate();
+    assert!(msgs.iter().any(|m| m.contains("next id") && m.contains("next_stair_id")));
+
+    let mut m = crate::ArchModel::default();
+    m.push_railing(crate::Railing::default());
+    m.push_railing(crate::Railing::default());
+    m.next_railing_id = 1;
+    let msgs = m.validate();
+    assert!(msgs.iter().any(|m| m.contains("next id") && m.contains("next_railing_id")));
+}
+
+#[test]
+fn validate_rejects_stair_with_degenerate_well() {
+    let mut m = crate::ArchModel::default();
+    let mut s = crate::Stair::default();
+    s.well = vec![cadcraft_geom::Vec2::new(0.0, 0.0), cadcraft_geom::Vec2::new(1.0, 0.0)];
+    m.push_stair(s);
+    let msgs = m.validate();
+    assert!(msgs.iter().any(|m| m.contains("well has") && m.contains("<3")));
+}
+
+#[test]
+fn validate_rejects_stair_with_invalid_well_room() {
+    let mut m = crate::ArchModel::default();
+    let mut s = crate::Stair::default();
+    s.well_room = Some(crate::ArchId(999));
+    m.push_stair(s);
+    let msgs = m.validate();
+    assert!(msgs.iter().any(|m| m.contains("unknown well_room")));
+}
+
+#[test]
+fn validate_rejects_railing_with_degenerate_path() {
+    let mut m = crate::ArchModel::default();
+    let mut r = crate::Railing::default();
+    r.path = vec![cadcraft_geom::Vec2::new(0.0, 0.0)];
+    m.push_railing(r);
+    let msgs = m.validate();
+    assert!(msgs.iter().any(|m| m.contains("path has") && m.contains("<2")));
+}
+
+#[test]
+fn validate_rejects_railing_with_invalid_follows() {
+    let mut m = crate::ArchModel::default();
+    let mut r = crate::Railing::default();
+    r.follows = Some(crate::ArchId(999));
+    m.push_railing(r);
+    let msgs = m.validate();
+    assert!(msgs.iter().any(|m| m.contains("unknown follows stair")));
+}
+
+#[test]
+fn validate_rejects_railing_with_non_positive_thickness_or_spacing() {
+    let mut m = crate::ArchModel::default();
+    let mut r = crate::Railing::default();
+    r.thickness = 0.0;
+    m.push_railing(r);
+    let msgs = m.validate();
+    assert!(msgs.iter().any(|m| m.contains("thickness") && m.contains("positive")));
+
+    let mut m = crate::ArchModel::default();
+    let mut r = crate::Railing::default();
+    r.post_spacing = 0.0;
+    m.push_railing(r);
+    let msgs = m.validate();
+    assert!(msgs.iter().any(|m| m.contains("post spacing") && m.contains("positive")));
+}
