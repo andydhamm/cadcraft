@@ -1349,4 +1349,97 @@ mod tests {
         assert!(r.is_ok(), "segment of exactly MIN_WALL_LENGTH should succeed");
         assert_eq!(s.doc().unwrap().arch.walls.len(), 1);
     }
+
+    #[test]
+    fn wall_machine_height_keyword_sets_height() {
+        let mut s = new_session_with_level();
+        s.start("wall").unwrap();
+        s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
+        s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
+        // Trigger the height prompt
+        s.input(Input::Text("Height".to_string()).into()).unwrap();
+        // Submit a height value
+        s.input(Input::Text("3.5".to_string()).into()).unwrap();
+        // Finish
+        s.input(Input::Text("".to_string()).into()).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 1);
+        // Height should be 3.5, not the default 2.7
+        assert!((d.arch.walls[0].height - 3.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn wall_machine_type_toggle_resets_thickness() {
+        let mut s = new_session_with_level();
+        s.start("wall").unwrap();
+        s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
+        s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
+        // Set thickness
+        s.input(Input::Text("Thickness".to_string()).into()).unwrap();
+        s.input(Input::Text("0.3".to_string()).into()).unwrap();
+        // Toggle type to interior (should reset thickness)
+        s.input(Input::Text("Type".to_string()).into()).unwrap();
+        // Finish
+        s.input(Input::Text("".to_string()).into()).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 1);
+        assert!(!d.arch.walls[0].exterior);
+        // Thickness should be the interior default, not 0.3
+        assert_eq!(d.arch.walls[0].thickness, super::super::DEFAULT_INT_THICKNESS);
+    }
+
+    #[test]
+    fn wall_machine_non_numeric_thickness_rejected() {
+        let mut s = new_session_with_level();
+        s.start("wall").unwrap();
+        s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
+        s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
+        // Trigger the thickness prompt
+        s.input(Input::Text("Thickness".to_string()).into()).unwrap();
+        // Submit non-numeric text, which must be rejected (re-prompt)
+        s.input(Input::Text("abc".to_string()).into()).unwrap();
+        // Wall not created yet
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
+        // Submit a valid value and finish
+        s.input(Input::Text("0.3".to_string()).into()).unwrap();
+        s.input(Input::Text("".to_string()).into()).unwrap();
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 1);
+    }
+
+    #[test]
+    fn wall_machine_close_with_two_points_creates_single_wall() {
+        let mut s = new_session_with_level();
+        s.start("wall").unwrap();
+        s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
+        s.input(Input::Point(Vec2::new(4.0, 0.0))).unwrap();
+        // Close with exactly 2 points: the JSON command does not add a closing segment
+        // for 2 points (it requires > 2), so this creates a single wall.
+        s.input(Input::Text("close".to_string()).into()).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 1);
+        assert_eq!(d.arch.walls[0].start, Vec2::new(0.0, 0.0));
+        assert_eq!(d.arch.walls[0].end, Vec2::new(4.0, 0.0));
+    }
+
+    #[test]
+    fn wall_machine_cancel_after_settings_discards() {
+        let mut s = new_session_with_level();
+        let before = s.doc().unwrap().arch.walls.len();
+        let before_rev = s.doc().unwrap().arch_revision;
+        s.start("wall").unwrap();
+        s.input(Input::Point(Vec2::new(0.0, 0.0))).unwrap();
+        s.input(Input::Point(Vec2::new(3.0, 0.0))).unwrap();
+        // Set thickness and height
+        s.input(Input::Text("Thickness".to_string()).into()).unwrap();
+        s.input(Input::Text("0.3".to_string()).into()).unwrap();
+        s.input(Input::Text("Height".to_string()).into()).unwrap();
+        s.input(Input::Text("3.0".to_string()).into()).unwrap();
+        // Toggle type
+        s.input(Input::Text("Type".to_string()).into()).unwrap();
+        // Cancel
+        s.input(Input::Cancel).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), before);
+        assert_eq!(d.arch_revision, before_rev);
+    }
 }
