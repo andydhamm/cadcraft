@@ -152,7 +152,12 @@ pub fn outer_footprint(model: &ArchModel, level: u32) -> Option<Footprint> {
             best = Some((area, ring));
         }
     }
-    let (_, mut ring) = best?;
+    let (_, mut ring) = match best {
+        Some(b) => b,
+        // Overlapping or T-joined walls leave no clean cycle: join the edge starts in angular
+        // order instead (the ring is still checked for simplicity below).
+        None => (0.0, angular_ring(&edges)?),
+    };
 
     // 6. Validate the ring.
     let raw: Vec<Vec2> = ring.iter().map(|e| e.a).collect();
@@ -169,6 +174,43 @@ pub fn outer_footprint(model: &ArchModel, level: u32) -> Option<Footprint> {
         }
     }
     Some(Footprint { outer, edges: ring })
+}
+
+/// Fallback ring for edge sets with no connected cycle: edges ordered by the angle of their
+/// midpoint around the bounds centre, each re-run from its start to the next start.
+fn angular_ring(edges: &[FootprintEdge]) -> Option<Vec<FootprintEdge>> {
+    let origin = ring_origin(edges);
+    let (mut max_x, mut max_y) = (origin.x, origin.y);
+    for p in edges.iter().flat_map(|e| [e.a, e.b]) {
+        max_x = max_x.max(p.x);
+        max_y = max_y.max(p.y);
+    }
+    let centre = Vec2::new((origin.x + max_x) / 2.0, (origin.y + max_y) / 2.0);
+    let mut tagged: Vec<(f64, &FootprintEdge)> = edges
+        .iter()
+        .map(|e| {
+            let v = Vec2::new((e.a.x + e.b.x) / 2.0, (e.a.y + e.b.y) / 2.0) - centre;
+            (v.y.atan2(v.x), e)
+        })
+        .collect();
+    tagged.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut merged: Vec<FootprintEdge> = Vec::with_capacity(tagged.len());
+    for (_, e) in tagged {
+        if let Some(last) = merged.last_mut() {
+            let (v1, v2) = (last.b - last.a, e.b - e.a);
+            if last.b.near(e.a, 1e-6) && v1.cross(v2).abs() <= 1e-9 * (v1.len() * v2.len()) && v1.dot(v2) > 0.0 {
+                last.b = e.b;
+                continue;
+            }
+        }
+        merged.push(e.clone());
+    }
+    let n = merged.len();
+    if n < 3 {
+        return None;
+    }
+    let starts: Vec<Vec2> = merged.iter().map(|e| e.a).collect();
+    Some(merged.iter().enumerate().filter_map(|(i, e)| Some(FootprintEdge { wall: e.wall, a: e.a, b: *starts.get((i + 1) % n)? })).collect())
 }
 
 /// The long poché edge of `ring` that faces away from the building `centroid`.
