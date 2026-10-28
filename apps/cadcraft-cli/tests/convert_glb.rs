@@ -205,3 +205,36 @@ fn wall_mesh_names_are_unique() {
     let unique: std::collections::HashSet<_> = names.iter().collect();
     assert_eq!(unique.len(), names.len(), "wall mesh names must be unique: {:?}", names);
 }
+
+#[test]
+fn run_export_rejects_missing_input() {
+    let dir = temp_dir("run_export_rejects_missing_input");
+    let missing = dir.join("missing.dxf");
+    let out_glb = dir.join("out.glb");
+
+    let out = run_cli(&["run".into(), missing.to_string_lossy().into(), "--export".into(), out_glb.to_string_lossy().into()]);
+    assert!(!out.status.success(), "run --export should fail for missing input");
+    assert!(!out_glb.exists(), "no output should be written for missing input");
+}
+
+#[test]
+fn convert_rejects_non_dxf_input() {
+    let dir = temp_dir("convert_rejects_non_dxf_input");
+    let not_dxf = dir.join("not_a_dxf.txt");
+    fs::write(&not_dxf, "this is not a DXF file").expect("write non-dxf file");
+    let out_glb = dir.join("out.glb");
+
+    let out = run_cli(&["convert".into(), not_dxf.to_string_lossy().into(), out_glb.to_string_lossy().into()]);
+    assert!(!out.status.success(), "convert should fail for non-DXF input");
+    assert!(!out_glb.exists(), "no output should be written for non-DXF input");
+}
+
+#[test]
+fn run_export_without_input_file() {
+    let dir = temp_dir("run_export_without_input_file");
+    let out_glb = dir.join("out.glb");
+
+    let out = run_cli(&["run".into(), "--export".into(), out_glb.to_string_lossy().into()]);
+    assert!(!out.status.success(), "run --export without input should fail");
+    assert!(!out_glb.exists(), "no output should be written without input");
+}
