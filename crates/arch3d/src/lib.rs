@@ -301,6 +301,7 @@ impl Scene3d {
                 if let Some(m) = floors::floor_slab(room, &level, "deck") {
                     meshes.push(m);
                     decks_count += 1;
+                    floors += 1;
                 }
             }
         }
@@ -588,12 +589,14 @@ impl Scene3d {
                 if let Some(m) = floors::floor_slab(room, &level, "deck") {
                     meshes.push(m);
                     decks_count += 1;
+                    floors += 1;
                 }
             } else {
                 if let Some(om) = prev_by_object.get(&room.id) {
                     let deck_meshes: Vec<Mesh> = om.iter().filter(|m| m.material == "deck" && !m.positions.is_empty()).cloned().collect();
                     if !deck_meshes.is_empty() {
                         decks_count += 1;
+                        floors += 1;
                         meshes.extend(deck_meshes);
                     }
                 }
