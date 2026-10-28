@@ -183,6 +183,169 @@ fn outer_face_edge(ring: &[Vec2], wall: &Wall, centroid: &Vec2) -> Option<(Vec2,
     best.map(|(_, e)| e)
 }
 
+/// Micron-quantised vertex key of `p`, relative to `origin` so georeferenced
+/// coordinates do not saturate the integer range.
+#[allow(dead_code)]
+fn vkey(p: Vec2, origin: Vec2) -> (i64, i64) {
+    (((p.x - origin.x) / 1e-6).round() as i64, ((p.y - origin.y) / 1e-6).round() as i64)
+}
+
+/// Bounds-minimum of all finite endpoints (the `origin` for [`vkey`]).
+#[allow(dead_code)]
+fn ring_origin(edges: &[FootprintEdge]) -> Vec2 {
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    for p in edges.iter().flat_map(|e| [e.a, e.b]) {
+        if p.is_finite() {
+            min_x = min_x.min(p.x);
+            min_y = min_y.min(p.y);
+        }
+    }
+    if min_x.is_finite() && min_y.is_finite() { Vec2::new(min_x, min_y) } else { Vec2::ZERO }
+}
+
+/// Repeatedly drop degenerate edges and edges ending at a dangling (single-end) vertex.
+/// Vertices with three or more ends are kept; `walk_ring` rejects them.
+#[allow(dead_code)]
+fn prune_spurs(edges: &mut Vec<FootprintEdge>, origin: Vec2) {
+    loop {
+        let mut counts: std::collections::BTreeMap<(i64, i64), usize> = std::collections::BTreeMap::new();
+        for e in edges.iter() {
+            for k in [vkey(e.a, origin), vkey(e.b, origin)] {
+                *counts.entry(k).or_insert(0) += 1;
+            }
+        }
+        let before = edges.len();
+        edges.retain(|e| {
+            let (ka, kb) = (vkey(e.a, origin), vkey(e.b, origin));
+            ka != kb && counts.get(&ka).is_some_and(|&c| c >= 2) && counts.get(&kb).is_some_and(|&c| c >= 2)
+        });
+        if edges.len() == before {
+            break;
+        }
+    }
+}
+
+/// Connected components of the edge graph, as edge-index groups sorted by first index.
+#[allow(dead_code)]
+fn components(edges: &[FootprintEdge], origin: Vec2) -> Vec<Vec<usize>> {
+    fn find(parent: &mut [usize], mut i: usize) -> usize {
+        while let Some(&p) = parent.get(i) {
+            if p == i {
+                break;
+            }
+            let gp = parent.get(p).copied().unwrap_or(p);
+            if let Some(slot) = parent.get_mut(i) {
+                *slot = gp;
+            }
+            i = gp;
+        }
+        i
+    }
+    let mut ids: std::collections::BTreeMap<(i64, i64), usize> = std::collections::BTreeMap::new();
+    let mut ends = Vec::with_capacity(edges.len());
+    for e in edges {
+        let mut id_of = |k: (i64, i64)| {
+            let next = ids.len();
+            *ids.entry(k).or_insert(next)
+        };
+        let ia = id_of(vkey(e.a, origin));
+        let ib = id_of(vkey(e.b, origin));
+        ends.push((ia, ib));
+    }
+    let mut parent: Vec<usize> = (0..ids.len()).collect();
+    for &(ia, ib) in &ends {
+        let (ra, rb) = (find(&mut parent, ia), find(&mut parent, ib));
+        if ra != rb {
+            if let Some(slot) = parent.get_mut(rb) {
+                *slot = ra;
+            }
+        }
+    }
+    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+    for (i, &(ia, _)) in ends.iter().enumerate() {
+        let root = find(&mut parent, ia);
+        groups.entry(root).or_default().push(i);
+    }
+    let mut out: Vec<Vec<usize>> = groups.into_values().collect();
+    out.sort_by_key(|g| g.first().copied().unwrap_or(usize::MAX));
+    out
+}
+
+/// Walk `edges` (spurs already pruned) into one closed, consistently oriented ring.
+#[allow(dead_code)]
+fn walk_ring(edges: &[FootprintEdge], origin: Vec2) -> Option<Vec<FootprintEdge>> {
+    if edges.len() < 3 {
+        return None;
+    }
+    let mut at: std::collections::BTreeMap<(i64, i64), Vec<usize>> = std::collections::BTreeMap::new();
+    for (i, e) in edges.iter().enumerate() {
+        let (ka, kb) = (vkey(e.a, origin), vkey(e.b, origin));
+        if ka == kb {
+            return None;
+        }
+        at.entry(ka).or_default().push(i);
+        at.entry(kb).or_default().push(i);
+    }
+    for list in at.values() {
+        match list.as_slice() {
+            [x, y] if x != y => {}
+            _ => return None,
+        }
+    }
+    let first = edges.first()?;
+    let start = vkey(first.a, origin);
+    let mut current = vkey(first.b, origin);
+    let mut used = vec![false; edges.len()];
+    *used.get_mut(0)? = true;
+    let mut ring = vec![first.clone()];
+    while current != start {
+        let next = at.get(&current)?.iter().copied().find(|&i| !used.get(i).copied().unwrap_or(true))?;
+        *used.get_mut(next)? = true;
+        let e = edges.get(next)?;
+        let oriented = if vkey(e.a, origin) == current { e.clone() } else { FootprintEdge { wall: e.wall, a: e.b, b: e.a } };
+        current = vkey(oriented.b, origin);
+        ring.push(oriented);
+    }
+    if used.iter().any(|u| !u) {
+        return None;
+    }
+    Some(ring)
+}
+
+/// Drop vertices where two consecutive edges are collinear and continue in the same direction.
+#[allow(dead_code)]
+fn merge_straight(ring: &mut Vec<FootprintEdge>, _origin: Vec2) {
+    const TOL: f64 = 1e-6;
+    'outer: loop {
+        let n = ring.len();
+        if n <= 3 {
+            return;
+        }
+        for i in 0..n {
+            let j = (i + 1) % n;
+            let (Some(prev), Some(next)) = (ring.get(i), ring.get(j)) else {
+                return;
+            };
+            let (pa, pb) = (prev.a, prev.b);
+            if (pb.x - next.a.x) * (pb.x - next.a.x) + (pb.y - next.a.y) * (pb.y - next.a.y) >= TOL * TOL {
+                continue;
+            }
+            let v1 = pb - pa;
+            let v2 = next.b - next.a;
+            if v1.cross(v2).abs() <= 1e-9 * (v1.len() * v2.len()) && v1.dot(v2) > 0.0 {
+                let nb = next.b;
+                if let Some(p) = ring.get_mut(i) {
+                    p.b = nb;
+                }
+                ring.remove(j);
+                continue 'outer;
+            }
+        }
+        return;
+    }
+}
+
 /// True when `first` and `second` are contiguous (`first.b` ≈ `second.a`) and on the
 /// same line (cross product within tolerance).
 fn collinear_contiguous(first: &mut FootprintEdge, second: &FootprintEdge) -> bool {
@@ -516,6 +679,73 @@ mod tests {
     use super::*;
     use cadcraft_doc::{ArchModel, Level};
     use cadcraft_geom::Vec2;
+
+    fn fe(i: u32, a: (f64, f64), b: (f64, f64)) -> FootprintEdge {
+        FootprintEdge { wall: ArchId(i), a: Vec2::new(a.0, a.1), b: Vec2::new(b.0, b.1) }
+    }
+
+    fn square_edges() -> Vec<FootprintEdge> {
+        vec![fe(0, (0.0, 0.0), (4.0, 0.0)), fe(1, (4.0, 0.0), (4.0, 4.0)), fe(2, (4.0, 4.0), (0.0, 4.0)), fe(3, (0.0, 4.0), (0.0, 0.0))]
+    }
+
+    #[test]
+    fn vkey_quantises_to_microns() {
+        assert_eq!(vkey(Vec2::new(1.0000004, 2.0), Vec2::ZERO), (1_000_000, 2_000_000));
+        assert_eq!(vkey(Vec2::new(1.0000004 - 1e-7, 2.0), Vec2::ZERO), (1_000_000, 2_000_000));
+    }
+
+    #[test]
+    fn walk_ring_orders_a_closed_ring() {
+        let s = square_edges();
+        let scrambled = vec![fe(2, (0.0, 4.0), (4.0, 4.0)), s[0].clone(), fe(3, (0.0, 0.0), (0.0, 4.0)), s[1].clone()];
+        let origin = ring_origin(&scrambled);
+        let ring = walk_ring(&scrambled, origin);
+        let ring = ring.expect("closed ring");
+        assert_eq!(ring.len(), 4);
+        for i in 0..4 {
+            assert!(ring[i].b.near(ring[(i + 1) % 4].a, 1e-6));
+        }
+        let pts: Vec<Vec2> = ring.iter().map(|e| e.a).collect();
+        assert!(crate::poly::ring_area(&pts).abs() > 1.0);
+    }
+
+    #[test]
+    fn walk_ring_prunes_a_dangling_stub() {
+        let mut edges = square_edges();
+        edges.push(fe(4, (4.0, 0.0), (6.0, 0.0)));
+        let origin = ring_origin(&edges);
+        prune_spurs(&mut edges, origin);
+        assert_eq!(edges.len(), 4);
+        assert!(walk_ring(&edges, origin).is_some());
+    }
+
+    #[test]
+    fn walk_ring_rejects_disconnected_rings() {
+        let mut edges = square_edges();
+        for (i, e) in square_edges().into_iter().enumerate() {
+            let sh = Vec2::new(10.0, 0.0);
+            edges.push(FootprintEdge { wall: ArchId(4 + i as u32), a: e.a + sh, b: e.b + sh });
+        }
+        let origin = ring_origin(&edges);
+        let comps = components(&edges, origin);
+        assert_eq!(comps.len(), 2);
+        assert!(walk_ring(&edges, origin).is_none());
+    }
+
+    #[test]
+    fn merge_straight_merges_collinear_runs() {
+        let mut ring = vec![
+            fe(0, (0.0, 0.0), (2.0, 0.0)),
+            fe(0, (2.0, 0.0), (4.0, 0.0)),
+            fe(1, (4.0, 0.0), (4.0, 4.0)),
+            fe(2, (4.0, 4.0), (0.0, 4.0)),
+            fe(3, (0.0, 4.0), (0.0, 0.0)),
+        ];
+        merge_straight(&mut ring, Vec2::ZERO);
+        assert_eq!(ring.len(), 4);
+        assert!(ring[0].a.near(Vec2::new(0.0, 0.0), 1e-9));
+        assert!(ring[0].b.near(Vec2::new(4.0, 0.0), 1e-9));
+    }
 
     /// A 10 × 8 rectangular house, 0.2 m walls, level 0.
     fn rectangular_house(model: &mut ArchModel) {
