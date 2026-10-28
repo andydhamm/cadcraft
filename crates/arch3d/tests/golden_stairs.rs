@@ -43,6 +43,7 @@ fn golden_stair_geometry() {
     stair.treads = 15;
     stair.tread_depth = 0.254;
     stair.run = 3.81; // 15 * 0.254
+    stair.layer = "A-STAIR".to_string();
 
     model.push_stair(stair);
 
