@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-28 02:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-28 03:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 82 of 84 segments merged · 10 of 11 acceptance checks**
 
@@ -14,7 +14,7 @@ Updated 2026-10-28 02:45 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 10 / 11 | 41.9 h so far · expected done Oct 28 04:21–Oct 28 09:52 UTC |
+| 4 | Automatic roofs | building | 10 / 11 | 42.2 h so far · expected done Oct 28 04:36–Oct 28 10:07 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -54,8 +54,8 @@ Updated 2026-10-28 02:45 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 535 |
-| bonsai-b | bonsai2-27b | agent | 485 |
+| bonsai-a | bonsai2-27b | agent | 537 |
+| bonsai-b | bonsai2-27b | gate | 486 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | idle | 19 |
@@ -64,5 +64,5 @@ Updated 2026-10-28 02:45 UTC. This page and the card in the README are regenerat
 | kimi-k31 | k3.1-pro-highspeed | idle | 68 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
-| tturbo-mac | tturbo-ultraheretic | agent | 347 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 177 |
+| tturbo-mac | tturbo-ultraheretic | gate | 347 |
+| tturbo-mac2 | tturbo-ultraheretic | gate | 177 |
