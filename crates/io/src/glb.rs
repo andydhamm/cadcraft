@@ -1326,4 +1326,191 @@ mod tests {
         assert!(node_names.contains(&"railing-ra7".to_string()), "node missing railing-ra7: {:?}", node_names);
         assert!(node_names.contains(&"deck-r9".to_string()), "node missing deck-r9: {:?}", node_names);
     }
+
+    #[test]
+    fn glb_multiple_stairs_railings_decks_interleaved() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "stair".into();
+            m.object = ArchId(1);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "railing".into();
+            m.object = ArchId(1);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "deck".into();
+            m.object = ArchId(1);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "stair".into();
+            m.object = ArchId(2);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "railing".into();
+            m.object = ArchId(2);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "deck".into();
+            m.object = ArchId(2);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert_eq!(mesh_names, vec!["stair-s1", "railing-ra1", "deck-r1", "stair-s2", "railing-ra2", "deck-r2"]);
+
+        let node_names: Vec<String> = json["nodes"].as_array().unwrap().iter().skip(1).filter_map(|n| n["name"].as_str()).map(String::from).collect();
+        assert_eq!(node_names, vec!["stair-s1", "railing-ra1", "deck-r1", "stair-s2", "railing-ra2", "deck-r2"]);
+    }
+
+    #[test]
+    fn glb_stair_railing_deck_zero_id() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "stair".into();
+            m.object = ArchId(0);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "railing".into();
+            m.object = ArchId(0);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "deck".into();
+            m.object = ArchId(0);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert_eq!(mesh_names, vec!["stair-s0", "railing-ra0", "deck-r0"]);
+
+        let node_names: Vec<String> = json["nodes"].as_array().unwrap().iter().skip(1).filter_map(|n| n["name"].as_str()).map(String::from).collect();
+        assert_eq!(node_names, vec!["stair-s0", "railing-ra0", "deck-r0"]);
+    }
+
+    #[test]
+    fn glb_stair_railing_deck_large_id() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "stair".into();
+            m.object = ArchId(65535);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "railing".into();
+            m.object = ArchId(65536);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "deck".into();
+            m.object = ArchId(1048576);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert_eq!(mesh_names, vec!["stair-s65535", "railing-ra65536", "deck-r1048576"]);
+
+        let node_names: Vec<String> = json["nodes"].as_array().unwrap().iter().skip(1).filter_map(|n| n["name"].as_str()).map(String::from).collect();
+        assert_eq!(node_names, vec!["stair-s65535", "railing-ra65536", "deck-r1048576"]);
+    }
+
+    #[test]
+    fn glb_mixed_scene_all_types_node_count() {
+        let mut scene = scene_with(2);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "stair".into();
+            m.object = ArchId(5);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "railing".into();
+            m.object = ArchId(3);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "deck".into();
+            m.object = ArchId(2);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "roof".into();
+            m.object = ArchId(0);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let meshes = json["meshes"].as_array().unwrap();
+        assert_eq!(meshes.len(), 6);
+        let mesh_names: Vec<String> = meshes.iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert_eq!(mesh_names, vec!["wall-w1", "wall-w2", "stair-s5", "railing-ra3", "deck-r2", "roof-r0p0"]);
+
+        let nodes = json["nodes"].as_array().unwrap();
+        assert_eq!(nodes.len(), 7);
+    }
+
+    #[test]
+    fn glb_stair_railing_deck_have_pbr_materials() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "stair".into();
+            m.object = ArchId(1);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "railing".into();
+            m.object = ArchId(1);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "deck".into();
+            m.object = ArchId(1);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let materials = json["materials"].as_array().unwrap();
+        assert_eq!(materials.len(), 3);
+        for mat in materials {
+            let name = mat["name"].as_str().unwrap();
+            let pbr = &mat["pbrMetallicRoughness"];
+            let base = &pbr["baseColorFactor"];
+            assert_eq!(base.as_array().unwrap().len(), 4, "material {} baseColorFactor must have 4 components", name);
+            assert!(pbr.get("metallicFactor").is_some(), "material {} must have metallicFactor", name);
+            assert!(pbr.get("roughnessFactor").is_some(), "material {} must have roughnessFactor", name);
+            assert_eq!(base[3].as_f64().unwrap(), 1.0, "material {} should be opaque", name);
+            assert!(mat.get("alphaMode").is_none(), "material {} should not have alphaMode", name);
+        }
+        let mat_names: Vec<String> = materials.iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert!(mat_names.contains(&"stair".to_string()));
+        assert!(mat_names.contains(&"railing".to_string()));
+        assert!(mat_names.contains(&"deck".to_string()));
+    }
 }
