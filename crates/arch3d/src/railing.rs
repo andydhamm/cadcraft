@@ -1,6 +1,6 @@
 //! Railing geometry generation for 3D scenes.
 
-use cadcraft_doc::arch::Railing;
+use cadcraft_doc::arch::{Railing, RailingStyle};
 use cadcraft_geom::Vec2;
 
 use crate::mesh::Mesh;
@@ -52,7 +52,7 @@ pub fn railing_mesh(r: &Railing, base: f64) -> Option<Mesh> {
         // Handrail
         mesh.push_prism_with_holes(&[p0, p1, p2, p3], &[], handrail_bottom, handrail_top);
 
-        if r.style == "panel" {
+        if r.style == RailingStyle::Panel {
             // Solid panel
             mesh.push_prism_with_holes(&[p0, p1, p2, p3], &[], base, handrail_bottom);
         } else {
@@ -112,7 +112,7 @@ mod tests {
         r.path = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
         r.height = 1.0;
         r.thickness = 0.1;
-        r.style = "panel".to_string();
+        r.style = RailingStyle::Panel;
 
         let mesh = railing_mesh(&r, 0.0).expect("railing mesh");
 
@@ -129,7 +129,7 @@ mod tests {
         r.path = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
         r.height = 1.0;
         r.thickness = 0.1;
-        r.style = "baluster".to_string();
+        r.style = RailingStyle::Baluster;
         r.baluster_gap = 0.1; // 100mm
 
         let mesh = railing_mesh(&r, 0.0).expect("railing mesh");
