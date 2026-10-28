@@ -11,6 +11,10 @@ use cadcraft_geom::{Vec2, point_in_polygon};
 
 const HOLE_INSET: f64 = 1e-3;
 
+/// Small offset added to the gable wall top so it extends slightly above the roof
+/// underside, ensuring the wall is probeable at the ridge.
+const GABLE_TOP_OFFSET: f64 = 1e-4;
+
 /// A roof plane clipping the top of a wall.
 ///
 /// The roof plane is defined by its base edge in plan (the eave line) and a
@@ -197,8 +201,12 @@ pub fn elevation_profile(
     // Build outer profile
     let outer = if let Some(pts) = roof_top.filter(|pts| pts.len() >= 2 && pts.iter().all(|p| p.x.is_finite() && p.y.is_finite())) {
         // Gable wall: bottom left→right, then roof-top vertices right→left (CCW ring).
+        // Add a small offset to the top vertices so the wall extends slightly above
+        // the roof underside, ensuring the wall is probeable at the ridge.
         let mut o = vec![Vec2::new(0.0, 0.0), Vec2::new(len, 0.0)];
-        o.extend(pts.iter().rev().cloned());
+        for p in pts.iter().rev() {
+            o.push(Vec2::new(p.x, p.y + GABLE_TOP_OFFSET));
+        }
         o
     } else if has_slope {
         vec![Vec2::new(0.0, 0.0), Vec2::new(len, 0.0), Vec2::new(len, v1), Vec2::new(0.0, v0)]
