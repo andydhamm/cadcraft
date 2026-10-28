@@ -1138,7 +1138,7 @@ mod tests {
         let eaves: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Eave).collect();
 
         assert_eq!(hips.len(), 4, "Square footprint should have 4 hips");
-        assert_eq!(ridges.len(), 1, "Square footprint should have 1 ridge");
+        assert_eq!(ridges.len(), 0, "Square footprint should have no ridge (apex point)");
         assert_eq!(valleys.len(), 0, "Square footprint should have no valleys");
         assert_eq!(eaves.len(), 4, "Square footprint should have 4 eaves");
     }
