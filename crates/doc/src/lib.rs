@@ -493,7 +493,7 @@ mod arch_layers_tests {
     #[test]
     fn arch_layers_are_in_a_new_drawing_in_order() {
         let d = Drawing::new_imperial();
-        let expected = ["", "Defpoints", "A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
+        let expected = ["0", "Defpoints", "A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
         for (i, name) in expected.iter().enumerate() {
             let layer = d.layers.get(i);
             assert!(layer.is_some(), "layer at index {i} must exist");
