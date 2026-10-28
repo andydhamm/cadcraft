@@ -154,4 +154,82 @@ mod tests {
         assert!(offset_path(&long, 1.0).is_empty());
         assert_eq!(path_length(&long), 0.0);
     }
+
+    #[test]
+    fn validate_height_exactly_at_boundaries() {
+        // Stair handrail: exactly at MIN and MAX should pass through unchanged.
+        assert_eq!(validate_height(MIN_HANDRAIL, true), Some(MIN_HANDRAIL));
+        assert_eq!(validate_height(MAX_HANDRAIL, true), Some(MAX_HANDRAIL));
+        // Guard: exactly at GUARD_HEIGHT and 1.2 should pass.
+        assert_eq!(validate_height(GUARD_HEIGHT, false), Some(GUARD_HEIGHT));
+        assert_eq!(validate_height(1.2, false), Some(1.2));
+        // Just outside the guard band.
+        assert_eq!(validate_height(GUARD_HEIGHT - 0.001, false), None);
+        assert_eq!(validate_height(1.2 + 0.001, false), None);
+    }
+
+    #[test]
+    fn baluster_spacing_narrow_run() {
+        // Run just barely large enough for one baluster (width 0.019) with gaps < 101.6 mm.
+        // n=1: gap = (run - 0.019) / 2 < 0.1016 => run < 0.2222.
+        let (g, n) = baluster_spacing(0.1, 0.019).unwrap();
+        assert_eq!(n, 1);
+        assert!((g - 0.0405).abs() < 1e-9);
+        // Run so small that even zero balusters would need a gap >= 101.6 mm.
+        // n=0: gap = run. If run >= 0.1016, n=0 works. But the code always uses at least n=1.
+        // Actually the code computes min_n and adds 1, so n is always >= 1.
+        // For run = 0.05, w = 0.019: gap = (0.05 - 0.019)/2 = 0.0155 < 0.1016. OK.
+        let (g, n) = baluster_spacing(0.05, 0.019).unwrap();
+        assert_eq!(n, 1);
+        assert!((g - 0.0155).abs() < 1e-9);
+        // Baluster width nearly the entire run.
+        let (g, n) = baluster_spacing(0.021, 0.02).unwrap();
+        assert_eq!(n, 1);
+        assert!((g - 0.0005).abs() < 1e-9);
+    }
+
+    #[test]
+    fn path_length_coincident_points() {
+        // Coincident points contribute zero length.
+        let p = [Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0), Vec2::new(3.0, 0.0), Vec2::new(3.0, 0.0), Vec2::new(3.0, 4.0)];
+        assert!((path_length(&p) - 7.0).abs() < 1e-12);
+        // All points coincident.
+        let q = [Vec2::new(1.0, 2.0), Vec2::new(1.0, 2.0), Vec2::new(1.0, 2.0)];
+        assert_eq!(path_length(&q), 0.0);
+        // Empty path.
+        let empty: [Vec2; 0] = [];
+        assert_eq!(path_length(&empty), 0.0);
+        // Single point.
+        let single = [Vec2::new(5.0, 5.0)];
+        assert_eq!(path_length(&single), 0.0);
+    }
+
+    #[test]
+    fn offset_path_collinear() {
+        // All points on a horizontal line; offset should shift all by d in y.
+        let p = [Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(2.0, 0.0), Vec2::new(3.0, 0.0)];
+        let o = offset_path(&p, 0.5);
+        assert_eq!(o.len(), 4);
+        for (i, q) in o.iter().enumerate() {
+            assert!((q.x - p[i].x).abs() < 1e-12);
+            assert!((q.y - 0.5).abs() < 1e-12);
+        }
+        // Zero offset returns the same points.
+        let o0 = offset_path(&p, 0.0);
+        assert_eq!(o0.len(), 4);
+        for (i, q) in o0.iter().enumerate() {
+            assert!((q.x - p[i].x).abs() < 1e-12);
+            assert!((q.y - p[i].y).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn path_length_exactly_512_points() {
+        // 512 points is allowed (the limit); 513 is rejected.
+        let p: Vec<Vec2> = (0..512).map(|i| Vec2::new(i as f64, 0.0)).collect();
+        // Length = 511 * 1.0 = 511.
+        assert!((path_length(&p) - 511.0).abs() < 1e-9);
+        let o = offset_path(&p, 1.0);
+        assert_eq!(o.len(), 512);
+    }
 }
