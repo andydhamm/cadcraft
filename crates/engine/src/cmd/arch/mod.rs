@@ -21,6 +21,7 @@ pub mod roofplane;
 pub mod room;
 pub mod roomdetect;
 pub mod sample;
+pub mod stair;
 pub mod stretch;
 pub mod view;
 pub mod wall;
@@ -50,6 +51,7 @@ pub fn specs() -> Vec<CommandSpec> {
     v.extend(roomdetect::specs());
     v.extend(inspect::specs());
     v.extend(level::specs());
+    v.extend(stair::specs());
     v.extend(build3d::specs());
     v.extend(sample::specs());
     v.extend(stretch::specs());
