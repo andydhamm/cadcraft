@@ -118,7 +118,7 @@ fn run_railing(s: &mut Session, p: &Value) -> Result<Value> {
     let thickness = size_param("railing", p, "thickness", false)?.unwrap_or(DEFAULT_THICKNESS);
 
     // --- Baluster gap from path length and thickness; 0.0 when degenerate ---
-    let gap = baluster_spacing(path_length(&pts), thickness).0;
+    let gap = baluster_spacing(path_length(&pts), thickness).map(|(g, _)| g).unwrap_or(0.0);
 
     // --- Cap, then build and push (one mutation + one revision bump) ---
     if d.arch.railings.len() >= MAX_RAILINGS {
@@ -130,7 +130,7 @@ fn run_railing(s: &mut Session, p: &Value) -> Result<Value> {
 
     Ok(json!({
         "id": format!("ra{}", id.0),
-        "handle": format!("{:016X}", ARCH_HANDLE_BASE + RAILING_HANDLE_OFFSET + id.0),
+        "handle": format!("{:016X}", ARCH_HANDLE_BASE + RAILING_HANDLE_OFFSET + id.0 as u64),
         "height": height,
         "style": match style {
             RailingStyle::Panel => "panel",
