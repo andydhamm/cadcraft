@@ -1457,4 +1457,102 @@ mod tests {
         let result = build_roof(&model, 0, &test_roof());
         assert!(matches!(result, Err(RoofError::Degenerate)), "all gable ends should produce no planes (degenerate)");
     }
+
+    #[test]
+    fn footprint_with_huge_coordinates() {
+        let mut model = ArchModel::default();
+        let s = 1e9;
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(s, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(s, 0.0), Vec2::new(s, s), 0.2));
+        model.push_wall(Wall::new(Vec2::new(s, s), Vec2::new(0.0, s), 0.2));
+        model.push_wall(Wall::new(Vec2::new(0.0, s), Vec2::new(0.0, 0.0), 0.2));
+        let fp = outer_footprint(&model, 0).expect("footprint with huge coordinates");
+        assert_eq!(fp.outer.len(), 4);
+        let area = crate::poly::ring_area(&fp.outer).abs();
+        // The outer face extends 0.1 m beyond the center line on each side (wall thickness 0.2).
+        let expected = (s + 0.2) * (s + 0.2);
+        assert!((area - expected).abs() < 1e6, "area {} != {}", area, expected);
+    }
+
+    #[test]
+    fn footprint_ignores_interior_divider_walls() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        // Add an interior divider wall across the middle.
+        let mut div = Wall::new(Vec2::new(0.0, 4.0), Vec2::new(10.0, 4.0), 0.1);
+        div.divider = true;
+        div.exterior = false;
+        model.push_wall(div);
+        let fp = outer_footprint(&model, 0).expect("footprint");
+        assert_eq!(fp.outer.len(), 4, "interior divider must not appear in the footprint");
+    }
+
+    #[test]
+    fn footprint_is_independent_of_wall_heights() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        // Give each wall a different height.
+        for (i, w) in model.walls.iter_mut().enumerate() {
+            w.height = 2.0 + i as f64 * 0.5;
+        }
+        let fp = outer_footprint(&model, 0).expect("footprint");
+        assert_eq!(fp.outer.len(), 4, "wall heights must not affect the footprint shape");
+    }
+
+    #[test]
+    fn footprint_with_nan_wall_endpoint_is_rejected() {
+        let mut model = ArchModel::default();
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), 0.2));
+        // One endpoint is NaN.
+        model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(f64::NAN, 0.0), 0.2));
+        assert!(outer_footprint(&model, 0).is_none(), "a wall with a NaN endpoint must be rejected");
+    }
+
+    #[test]
+    fn footprint_with_a_gap_is_rejected() {
+        let mut model = ArchModel::default();
+        // A square with a gap in the top edge
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 8.0), Vec2::new(5.0, 8.0), 0.2));
+        // Gap from (5,8) to (0,8)
+        model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2));
+        let fp = outer_footprint(&model, 0);
+        assert!(fp.is_none(), "a wall ring with a gap should be rejected");
+    }
+
+    #[test]
+    fn footprint_with_nearly_collinear_walls_not_merged() {
+        let mut model = ArchModel::default();
+        // Two walls that are nearly collinear but not quite (a very small angle)
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(5.0, 0.0), Vec2::new(10.0, 1e-4), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 1e-4), Vec2::new(10.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2));
+        let fp = outer_footprint(&model, 0).expect("footprint");
+        // The two nearly collinear walls should not be merged (angle is too large)
+        assert_eq!(fp.edges.len(), 5, "nearly collinear walls should not be merged");
+    }
+
+    #[test]
+    fn footprint_with_thin_walls() {
+        let mut model = ArchModel::default();
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.01));
+        model.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.01));
+        model.push_wall(Wall::new(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), 0.01));
+        model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.01));
+        let fp = outer_footprint(&model, 0).expect("footprint with thin walls");
+        assert_eq!(fp.outer.len(), 4);
+        let min_x = fp.outer.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+        let max_x = fp.outer.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+        let min_y = fp.outer.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
+        let max_y = fp.outer.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
+        assert!((min_x + 0.005).abs() < 1e-6, "min_x {} != -0.005", min_x);
+        assert!((max_x - 10.005).abs() < 1e-6, "max_x {} != 10.005", max_x);
+        assert!((min_y + 0.005).abs() < 1e-6, "min_y {} != -0.005", min_y);
+        assert!((max_y - 8.005).abs() < 1e-6, "max_y {} != 8.005", max_y);
+    }
 }
