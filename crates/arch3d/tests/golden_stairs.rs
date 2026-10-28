@@ -290,8 +290,8 @@ fn multiple_stairs_same_levels() {
     // Probe both stairs
     assert_probe(&scene, 2.1, 1.0, 0.05, Some("stair"));
     assert_probe(&scene, 8.1, 1.0, 0.05, Some("stair"));
-    // Probe between them (should be empty at that height)
-    assert_probe(&scene, 4.0, 1.0, 0.05, None);
+    // Probe between them (stair 1 ends at 5.81, stair 2 starts at 8.0)
+    assert_probe(&scene, 7.0, 1.0, 0.05, None);
 }
 
 #[test]
