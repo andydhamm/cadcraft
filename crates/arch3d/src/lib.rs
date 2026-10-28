@@ -708,6 +708,7 @@ mod tests {
 
     use std::collections::BTreeSet;
 
+    use crate::probe::part_of;
     use cadcraft_doc::Wall;
     use cadcraft_doc::arch::{Level, Room};
     use cadcraft_geom::Vec2;
@@ -1136,6 +1137,41 @@ mod tests {
         let (x, y) = origin;
         let pts = vec![Vec2::new(x, y), Vec2::new(x + size, y), Vec2::new(x + size, y + size), Vec2::new(x, y + size)];
         Room { id: ArchId(id), level, polygon: pts, ..Default::default() }
+    }
+
+    /// A closed cube mesh from `(x0, y0, z0)` with side `size`, for probing `part_of`.
+    fn box_mesh(x0: f64, y0: f64, z0: f64, size: f64, material: &str, object: ArchId) -> Mesh {
+        let x0 = x0 as f32;
+        let y0 = y0 as f32;
+        let z0 = z0 as f32;
+        let s = size as f32;
+        let positions: Vec<[f32; 3]> = vec![
+            [x0, y0, z0],
+            [x0 + s, y0, z0],
+            [x0 + s, y0 + s, z0],
+            [x0, y0 + s, z0],
+            [x0, y0, z0 + s],
+            [x0 + s, y0, z0 + s],
+            [x0 + s, y0 + s, z0 + s],
+            [x0, y0 + s, z0 + s],
+        ];
+        let normals: Vec<[f32; 3]> = vec![
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, -1.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+        ];
+        let uvs: Vec<[f32; 2]> = vec![[0.0, 0.0]; 8];
+        let indices: Vec<u32> = vec![0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 2, 3, 7, 2, 7, 6, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2];
+        Mesh { positions, normals, uvs, indices, ..Mesh::new(material, object) }
     }
 
     #[test]
@@ -2577,9 +2613,9 @@ mod tests {
         let partial = Scene3d::build_dirty(&edited, &dirty, &full);
         let full_edited = Scene3d::build(&edited);
 
-        assert_eq!(partial.stairs, full_edited.stairs, "stairs: partial={} full={}");
-        assert_eq!(partial.railings, full_edited.railings, "railings: partial={} full={}");
-        assert_eq!(partial.decks, full_edited.decks, "decks: partial={} full={}");
+        assert_eq!(partial.stairs, full_edited.stairs, "stairs: partial={} full={}", partial.stairs, full_edited.stairs);
+        assert_eq!(partial.railings, full_edited.railings, "railings: partial={} full={}", partial.railings, full_edited.railings);
+        assert_eq!(partial.decks, full_edited.decks, "decks: partial={} full={}", partial.decks, full_edited.decks);
         assert_eq!(partial.stairs, full.stairs, "stairs unchanged: partial={} full={}", partial.stairs, full.stairs);
         assert_eq!(partial.railings, full.railings, "railings unchanged: partial={} full={}", partial.railings, full.railings);
         assert_eq!(partial.decks, full.decks, "decks unchanged: partial={} full={}", partial.decks, full.decks);
