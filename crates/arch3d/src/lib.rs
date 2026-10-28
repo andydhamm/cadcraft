@@ -2013,6 +2013,228 @@ mod tests {
     }
 
     #[test]
+    fn build_dirty_rebuilds_collinear_wall_when_neighbour_moves() {
+        // Two collinear walls: (0,0)-(5,0) and (5,0)-(10,0).
+        // Move the first wall down; the second wall's join should change.
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(5.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(5.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let prev = Scene3d::build(&model);
+
+        // Move wall 1 down; wall 2 stays.
+        let mut moved = model.clone();
+        if let Some(w) = moved.walls.iter_mut().find(|w| w.id == ArchId(1)) {
+            w.start = Vec2::new(0.0, 2.0);
+            w.end = Vec2::new(5.0, 2.0);
+        }
+
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(1)]);
+        let incremental = Scene3d::build_dirty(&moved, &dirty, &prev);
+        let full = Scene3d::build(&moved);
+
+        assert_eq!(incremental.mesh_count(), full.mesh_count(), "mesh count: incremental={} full={}", incremental.mesh_count(), full.mesh_count());
+        for id in [ArchId(1), ArchId(2)] {
+            match (incremental.mesh_for(&id), full.mesh_for(&id)) {
+                (Some(a), Some(b)) => {
+                    assert_eq!(a.positions, b.positions, "positions mismatch for wall {}", id.0);
+                    assert_eq!(a.normals, b.normals, "normals mismatch for wall {}", id.0);
+                    assert_eq!(a.uvs, b.uvs, "uvs mismatch for wall {}", id.0);
+                    assert_eq!(a.indices, b.indices, "indices mismatch for wall {}", id.0);
+                }
+                (None, None) => {}
+                (a, b) => panic!("mesh presence mismatch for wall {}: incremental={} full={}", id.0, a.is_some(), b.is_some()),
+            }
+        }
+    }
+
+    #[test]
+    fn build_dirty_rebuilds_x_junction_when_one_wall_moves() {
+        // X-junction: two diagonal walls crossing at (5,5).
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 10.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(10.0, 0.0),
+            end: Vec2::new(0.0, 10.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let prev = Scene3d::build(&model);
+
+        // Move wall 1; wall 2's join should change.
+        let mut moved = model.clone();
+        if let Some(w) = moved.walls.iter_mut().find(|w| w.id == ArchId(1)) {
+            w.start = Vec2::new(0.0, 2.0);
+            w.end = Vec2::new(10.0, 12.0);
+        }
+
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(1)]);
+        let incremental = Scene3d::build_dirty(&moved, &dirty, &prev);
+        let full = Scene3d::build(&moved);
+
+        assert_eq!(incremental.mesh_count(), full.mesh_count(), "mesh count: incremental={} full={}", incremental.mesh_count(), full.mesh_count());
+        for id in [ArchId(1), ArchId(2)] {
+            match (incremental.mesh_for(&id), full.mesh_for(&id)) {
+                (Some(a), Some(b)) => {
+                    assert_eq!(a.positions, b.positions, "positions mismatch for wall {}", id.0);
+                    assert_eq!(a.normals, b.normals, "normals mismatch for wall {}", id.0);
+                    assert_eq!(a.uvs, b.uvs, "uvs mismatch for wall {}", id.0);
+                    assert_eq!(a.indices, b.indices, "indices mismatch for wall {}", id.0);
+                }
+                (None, None) => {}
+                (a, b) => panic!("mesh presence mismatch for wall {}: incremental={} full={}", id.0, a.is_some(), b.is_some()),
+            }
+        }
+    }
+
+    #[test]
+    fn build_dirty_rebuilds_neighbours_of_new_wall() {
+        // Start with one wall, then add a new wall that joins it.
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let prev = Scene3d::build(&model);
+
+        // Add a new wall that joins wall 1 at (5,0).
+        let mut extended = model.clone();
+        extended.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(5.0, 0.0),
+            end: Vec2::new(5.0, 5.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(2)]);
+        let incremental = Scene3d::build_dirty(&extended, &dirty, &prev);
+        let full = Scene3d::build(&extended);
+
+        assert_eq!(incremental.mesh_count(), full.mesh_count(), "mesh count: incremental={} full={}", incremental.mesh_count(), full.mesh_count());
+        for id in [ArchId(1), ArchId(2)] {
+            match (incremental.mesh_for(&id), full.mesh_for(&id)) {
+                (Some(a), Some(b)) => {
+                    assert_eq!(a.positions, b.positions, "positions mismatch for wall {}", id.0);
+                    assert_eq!(a.normals, b.normals, "normals mismatch for wall {}", id.0);
+                    assert_eq!(a.uvs, b.uvs, "uvs mismatch for wall {}", id.0);
+                    assert_eq!(a.indices, b.indices, "indices mismatch for wall {}", id.0);
+                }
+                (None, None) => {}
+                (a, b) => panic!("mesh presence mismatch for wall {}: incremental={} full={}", id.0, a.is_some(), b.is_some()),
+            }
+        }
+    }
+
+    #[test]
+    fn build_dirty_with_zero_length_wall_does_not_crash() {
+        // A zero-length wall near a dirty wall should not crash and should be skipped.
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(5.0, 0.0),
+            end: Vec2::new(5.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let prev = Scene3d::build(&model);
+
+        // Move wall 1.
+        let mut moved = model.clone();
+        if let Some(w) = moved.walls.iter_mut().find(|w| w.id == ArchId(1)) {
+            w.start = Vec2::new(0.0, 2.0);
+            w.end = Vec2::new(10.0, 2.0);
+        }
+
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(1)]);
+        let incremental = Scene3d::build_dirty(&moved, &dirty, &prev);
+        let full = Scene3d::build(&moved);
+
+        assert_eq!(incremental.mesh_count(), full.mesh_count(), "mesh count: incremental={} full={}", incremental.mesh_count(), full.mesh_count());
+        assert!(incremental.mesh_for(&ArchId(2)).is_none(), "zero-length wall should be skipped in incremental");
+        assert!(full.mesh_for(&ArchId(2)).is_none(), "zero-length wall should be skipped in full");
+    }
+
+    #[test]
+    fn build_dirty_with_nan_wall_does_not_crash() {
+        // A wall with NaN coordinates near a dirty wall should not crash.
+        let mut model = ArchModel::default();
+        model.walls.push(Wall {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+        model.walls.push(Wall {
+            id: ArchId(2),
+            start: Vec2::new(f64::NAN, 0.0),
+            end: Vec2::new(f64::NAN + 5.0, 0.0),
+            thickness: 0.3,
+            height: 2.5,
+            ..Default::default()
+        });
+
+        let prev = Scene3d::build(&model);
+
+        // Move wall 1.
+        let mut moved = model.clone();
+        if let Some(w) = moved.walls.iter_mut().find(|w| w.id == ArchId(1)) {
+            w.start = Vec2::new(0.0, 2.0);
+            w.end = Vec2::new(10.0, 2.0);
+        }
+
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(1)]);
+        let incremental = Scene3d::build_dirty(&moved, &dirty, &prev);
+        let full = Scene3d::build(&moved);
+
+        assert_eq!(incremental.mesh_count(), full.mesh_count(), "mesh count: incremental={} full={}", incremental.mesh_count(), full.mesh_count());
+        assert!(incremental.mesh_for(&ArchId(2)).is_none(), "NaN wall should be skipped in incremental");
+        assert!(full.mesh_for(&ArchId(2)).is_none(), "NaN wall should be skipped in full");
+    }
+
+    #[test]
     fn roof_meshes_are_all_probeable() {
         use cadcraft_doc::arch::{Roof, RoofPlane};
 
