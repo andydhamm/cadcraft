@@ -144,3 +144,90 @@ fn grip_edit_of_an_arch_wall_on_a_locked_layer_is_refused() {
     let w1 = d.arch.wall(ArchId(1)).expect("w1");
     assert!((w1.start.x - 10.0).abs() < 1e-9, "w1.start.x should still be 10, got {}", w1.start.x);
 }
+
+/// When the opening's layer (A-DOOR) is locked, `grip.stretch` on the opening
+/// must be refused and the offset unchanged.
+#[test]
+fn grip_stretch_of_an_arch_opening_on_a_locked_layer_is_refused() {
+    let mut s = make_wall_with_door();
+
+    // Lock the A-DOOR layer.
+    s.doc_mut().expect("doc_mut").layer_mut("A-DOOR").expect("A-DOOR layer").locked = true;
+
+    let oh = opening_handle(ArchId(0)).hex();
+    let r = s.execute("grip.stretch", &json!({"handle": oh, "index": 0, "to": [6.0, 0.0]}));
+    assert!(r.is_err(), "grip.stretch on a locked opening should return Err");
+
+    // Offset must be unchanged.
+    let d = s.doc().expect("doc");
+    let o = d.arch.opening(ArchId(0)).expect("o0");
+    assert!((o.offset - 3.0).abs() < 1e-9, "offset should still be 3.0, got {}", o.offset);
+}
+
+/// When the opening's layer is locked, `grip_edit` on the opening must be refused.
+#[test]
+fn grip_edit_of_an_arch_opening_on_a_locked_layer_is_refused() {
+    let mut s = make_wall_with_door();
+
+    // Lock the A-DOOR layer.
+    s.doc_mut().expect("doc_mut").layer_mut("A-DOOR").expect("A-DOOR layer").locked = true;
+
+    let h = opening_handle(ArchId(0));
+    let r = s.grip_edit(h, 0, Vec2::new(6.0, 0.0), GripMode::Stretch);
+    assert!(r.is_err(), "grip_edit on a locked opening should return Err");
+
+    // Offset must be unchanged.
+    let d = s.doc().expect("doc");
+    let o = d.arch.opening(ArchId(0)).expect("o0");
+    assert!((o.offset - 3.0).abs() < 1e-9, "offset should still be 3.0, got {}", o.offset);
+}
+
+/// `grip_edit` on a wall with a non-finite point must return Err.
+#[test]
+fn grip_edit_of_an_arch_wall_with_nan_point_is_refused() {
+    let mut s = make_l();
+    let h = arch_handle(ArchId(0));
+
+    let nan = Vec2::new(f64::NAN, f64::NAN);
+    let r = s.grip_edit(h, 1, nan, GripMode::Stretch);
+    assert!(r.is_err(), "grip_edit with NaN point should return Err");
+
+    let inf = Vec2::new(f64::INFINITY, f64::NEG_INFINITY);
+    let r = s.grip_edit(h, 1, inf, GripMode::Stretch);
+    assert!(r.is_err(), "grip_edit with inf point should return Err");
+
+    // Wall must be unchanged.
+    let d = s.doc().expect("doc");
+    let w0 = d.arch.wall(ArchId(0)).expect("w0");
+    assert!((w0.end.x - 10.0).abs() < 1e-9, "w0.end.x should still be 10, got {}", w0.end.x);
+}
+
+/// `grip.stretch` on an opening with index >= 3 must return BadParams.
+#[test]
+fn grip_stretch_of_an_arch_opening_rejects_a_fourth_grip() {
+    let mut s = make_wall_with_door();
+    let oh = opening_handle(ArchId(0)).hex();
+
+    let r = s.execute("grip.stretch", &json!({"handle": oh, "index": 3, "to": [6.0, 0.0]}));
+    assert!(matches!(r, Err(EngineError::BadParams { .. })), "index 3 should be BadParams, got {:?}", r);
+
+    // Offset must be unchanged.
+    let d = s.doc().expect("doc");
+    let o = d.arch.opening(ArchId(0)).expect("o0");
+    assert!((o.offset - 3.0).abs() < 1e-9, "offset should still be 3.0, got {}", o.offset);
+}
+
+/// `grip_edit` on an opening with index >= 3 must return Err.
+#[test]
+fn grip_edit_of_an_arch_opening_rejects_a_fourth_grip() {
+    let mut s = make_wall_with_door();
+    let h = opening_handle(ArchId(0));
+
+    let r = s.grip_edit(h, 3, Vec2::new(6.0, 0.0), GripMode::Stretch);
+    assert!(r.is_err(), "grip_edit with index 3 on an opening should return Err");
+
+    // Offset must be unchanged.
+    let d = s.doc().expect("doc");
+    let o = d.arch.opening(ArchId(0)).expect("o0");
+    assert!((o.offset - 3.0).abs() < 1e-9, "offset should still be 3.0, got {}", o.offset);
+}

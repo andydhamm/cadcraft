@@ -65,6 +65,9 @@ fn stretch(s: &mut Session, cmd: &str, p: &Value) -> Result<Value> {
                 )
             }
             ArchTarget::Opening(id) => {
+                if i > 2 {
+                    return Err(bad(cmd, "an arch opening has three grips: 0 (center), 1 (hinge), 2 (far)"));
+                }
                 let off = {
                     let d = s.doc()?;
                     let o = d.arch.opening(id).ok_or_else(|| bad(cmd, "no such opening"))?;
