@@ -1216,4 +1216,67 @@ mod tests {
             assert_eq!(alpha, 1.0, "material {} alpha should be 1.0", mat["name"]);
         }
     }
+
+    /// Every buffer view's byteOffset is a multiple of 4 (4-byte alignment).
+    #[test]
+    fn glb_buffer_views_are_4_byte_aligned() {
+        let bytes = write(&scene_with(3));
+        let json = glb_json_chunk(&bytes);
+        for bv in json["bufferViews"].as_array().unwrap() {
+            let offset = bv["byteOffset"].as_u64().unwrap();
+            assert_eq!(offset % 4, 0, "buffer view byteOffset {} not 4-byte aligned", offset);
+        }
+    }
+
+    /// Accessor type and componentType match the glTF 2.0 spec for each attribute.
+    #[test]
+    fn glb_accessor_types_and_component_types() {
+        let bytes = write(&scene_with(1));
+        let json = glb_json_chunk(&bytes);
+        let accessors = json["accessors"].as_array().unwrap();
+        // 4 accessors per mesh: POSITION(VEC3/5126), NORMAL(VEC3/5126), TEXCOORD_0(VEC2/5126), INDICES(SCALAR/5125)
+        assert_eq!(accessors.len(), 4);
+        assert_eq!(accessors[0]["type"], "VEC3");
+        assert_eq!(accessors[0]["componentType"], 5126);
+        assert_eq!(accessors[1]["type"], "VEC3");
+        assert_eq!(accessors[1]["componentType"], 5126);
+        assert_eq!(accessors[2]["type"], "VEC2");
+        assert_eq!(accessors[2]["componentType"], 5126);
+        assert_eq!(accessors[3]["type"], "SCALAR");
+        assert_eq!(accessors[3]["componentType"], 5125);
+    }
+
+    /// The buffer's byteLength matches the BIN chunk's declared length.
+    #[test]
+    fn glb_buffer_byte_length_matches_bin_chunk() {
+        let bytes = write(&scene_with(2));
+        let json = glb_json_chunk(&bytes);
+        let buffer_len = json["buffers"][0]["byteLength"].as_u64().unwrap();
+        let json_len = le32(&bytes, 12) as usize;
+        let bin_start = 12 + 8 + json_len;
+        let bin_len = le32(&bytes, bin_start) as u64;
+        assert_eq!(buffer_len, bin_len, "buffer byteLength {} != BIN chunk length {}", buffer_len, bin_len);
+    }
+
+    /// Every node's mesh index is within the range of the meshes array.
+    #[test]
+    fn glb_node_mesh_indices_are_valid() {
+        let bytes = write(&scene_with(3));
+        let json = glb_json_chunk(&bytes);
+        let mesh_count = json["meshes"].as_array().unwrap().len();
+        for node in json["nodes"].as_array().unwrap().iter().skip(1) {
+            let mesh_idx = node["mesh"].as_u64().unwrap();
+            assert!(mesh_idx < mesh_count as u64, "node mesh index {} >= mesh count {}", mesh_idx, mesh_count);
+        }
+    }
+
+    /// Every buffer view references buffer 0.
+    #[test]
+    fn glb_all_buffer_views_reference_buffer_zero() {
+        let bytes = write(&scene_with(2));
+        let json = glb_json_chunk(&bytes);
+        for bv in json["bufferViews"].as_array().unwrap() {
+            assert_eq!(bv["buffer"].as_u64().unwrap(), 0, "buffer view does not reference buffer 0");
+        }
+    }
 }
