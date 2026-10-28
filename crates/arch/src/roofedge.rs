@@ -999,4 +999,80 @@ mod tests {
         let result = roof_edges(&m, 0, &test_roof());
         assert!(result.is_err(), "Single wall should not form a closed ring for roof generation");
     }
+
+    #[test]
+    fn huge_house_still_produces_correct_valley_count() {
+        let scale = 1000.0;
+        let mut m = ArchModel::default();
+        let ring = [(0.0, 0.0), (12.0, 0.0), (12.0, 4.0), (8.0, 4.0), (8.0, 8.0), (4.0, 8.0), (4.0, 4.0), (0.0, 4.0)];
+        for (i, &(x, y)) in ring.iter().enumerate() {
+            let (nx, ny) = ring[(i + 1) % ring.len()];
+            m.push_wall(Wall::new(Vec2::new(x * scale, y * scale), Vec2::new(nx * scale, ny * scale), 0.2 * scale));
+        }
+        for w in m.walls.iter_mut() {
+            w.height = 2.4 * scale;
+        }
+        let roof = Roof { pitch_rise: 6.0, pitch_run: 12.0, overhang: 0.0, thickness: 0.0, ..Default::default() };
+        let edges = roof_edges(&m, 0, &roof).unwrap();
+        let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        assert_eq!(valleys.len(), 2, "Scaled T should still have two valleys");
+    }
+
+    #[test]
+    fn zero_length_wall_is_rejected() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2));
+        for w in m.walls.iter_mut() {
+            w.height = 2.4;
+        }
+        let result = roof_edges(&m, 0, &test_roof());
+        assert!(result.is_err(), "Zero-length wall should be rejected");
+    }
+
+    #[test]
+    fn collinear_walls_produce_same_roof_as_single_wall() {
+        let mut m_split = ArchModel::default();
+        m_split.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), 0.2));
+        m_split.push_wall(Wall::new(Vec2::new(5.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m_split.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+        m_split.push_wall(Wall::new(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), 0.2));
+        m_split.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2));
+        for w in m_split.walls.iter_mut() {
+            w.height = 2.4;
+        }
+
+        let mut m_single = ArchModel::default();
+        house_10_8(&mut m_single);
+
+        let edges_split = roof_edges(&m_split, 0, &test_roof()).unwrap();
+        let edges_single = roof_edges(&m_single, 0, &test_roof()).unwrap();
+
+        let eaves_split: Vec<_> = edges_split.iter().filter(|e| e.kind == RoofEdgeKind::Eave).collect();
+        let eaves_single: Vec<_> = edges_single.iter().filter(|e| e.kind == RoofEdgeKind::Eave).collect();
+        assert_eq!(eaves_split.len(), 4, "Split walls should merge to 4 eave edges");
+        assert_eq!(eaves_single.len(), 4, "Single walls should have 4 eave edges");
+
+        let ridges_split: Vec<_> = edges_split.iter().filter(|e| e.kind == RoofEdgeKind::Ridge).collect();
+        let ridges_single: Vec<_> = edges_single.iter().filter(|e| e.kind == RoofEdgeKind::Ridge).collect();
+        assert_eq!(ridges_split.len(), 1, "Split walls should produce one ridge");
+        assert_eq!(ridges_single.len(), 1, "Single walls should produce one ridge");
+    }
+
+    #[test]
+    fn nan_wall_position_is_rejected() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(f64::NAN, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), 0.2));
+        m.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2));
+        for w in m.walls.iter_mut() {
+            w.height = 2.4;
+        }
+        let result = roof_edges(&m, 0, &test_roof());
+        assert!(result.is_err(), "NaN wall position should be rejected");
+    }
 }
