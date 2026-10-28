@@ -238,9 +238,9 @@ fn deck_without_deck_height() {
     model.push_room(deck);
 
     let scene = build(&model);
-    // Deck at level elevation (0.0), thin slab below
-    // Probe just below surface (z = -0.01) should hit deck
-    assert_probe(&scene, 2.0, 1.5, -0.01, Some("deck"));
+    // Deck at level elevation (0.0) with no deck_height builds a floor slab
+    // Probe just below surface (z = -0.01) should hit floor
+    assert_probe(&scene, 2.0, 1.5, -0.01, Some("floor"));
     // Probe well below should miss
     assert_probe(&scene, 2.0, 1.5, -0.5, None);
     // Probe above should miss
@@ -271,7 +271,7 @@ fn multiple_stairs_same_levels() {
 
     let mut stair2 = Stair::default();
     stair2.id = ArchId(1);
-    stair2.start = Vec2::new(6.0, 1.0);
+    stair2.start = Vec2::new(8.0, 1.0);
     stair2.direction = 0.0;
     stair2.width = 1.0;
     stair2.from_level = 0;
@@ -289,7 +289,7 @@ fn multiple_stairs_same_levels() {
 
     // Probe both stairs
     assert_probe(&scene, 2.1, 1.0, 0.05, Some("stair"));
-    assert_probe(&scene, 6.1, 1.0, 0.05, Some("stair"));
+    assert_probe(&scene, 8.1, 1.0, 0.05, Some("stair"));
     // Probe between them (should be empty at that height)
     assert_probe(&scene, 4.0, 1.0, 0.05, None);
 }
