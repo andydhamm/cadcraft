@@ -1166,4 +1166,115 @@ mod tests {
             assert!((e1.zb - e2.zb).abs() < 1e-12, "Edge zb differs");
         }
     }
+
+    /// A regular pentagon footprint: 5 convex vertices, no reflex vertices.
+    fn pentagon_house(m: &mut ArchModel) {
+        let n = 5;
+        let r = 5.0;
+        for i in 0..n {
+            let a1 = 2.0 * std::f64::consts::PI * i as f64 / n as f64 - std::f64::consts::PI / 2.0;
+            let a2 = 2.0 * std::f64::consts::PI * (i + 1) as f64 / n as f64 - std::f64::consts::PI / 2.0;
+            let p1 = Vec2::new(r * a1.cos(), r * a1.sin());
+            let p2 = Vec2::new(r * a2.cos(), r * a2.sin());
+            m.push_wall(Wall::new(p1, p2, 0.2));
+        }
+        for w in m.walls.iter_mut() {
+            w.height = 2.4;
+        }
+    }
+
+    #[test]
+    fn convex_pentagon_has_five_hips_no_valleys() {
+        let mut m = ArchModel::default();
+        pentagon_house(&mut m);
+        let g = geom(&m);
+        let edges = roof_edges_geom(&g);
+
+        let hips: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Hip).collect();
+        let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        let ridges: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Ridge).collect();
+        let eaves: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Eave).collect();
+
+        assert_eq!(hips.len(), 5, "Pentagon should have 5 hips");
+        assert_eq!(valleys.len(), 0, "Pentagon should have no valleys");
+        assert_eq!(ridges.len(), 0, "Pentagon should have no ridge (apex is a point)");
+        assert_eq!(eaves.len(), 5, "Pentagon should have 5 eaves");
+    }
+
+    #[test]
+    fn every_convex_vertex_has_exactly_one_hip() {
+        let mut m = ArchModel::default();
+        house_10_8(&mut m);
+        let g = geom(&m);
+        let edges = roof_edges_geom(&g);
+
+        let n = g.fp.outer.len();
+        let mut convex_count = 0;
+        for i in 0..n {
+            let prev = g.fp.outer[(i + n - 1) % n];
+            let curr = g.fp.outer[i];
+            let next = g.fp.outer[(i + 1) % n];
+            let d1 = curr - prev;
+            let d2 = next - curr;
+            if (d1.x * d2.y - d1.y * d2.x) > 0.0 {
+                convex_count += 1;
+            }
+        }
+
+        let hips: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Hip).collect();
+        assert_eq!(hips.len(), convex_count, "Hip count should equal convex vertex count");
+    }
+
+    #[test]
+    fn every_reflex_vertex_has_exactly_one_valley() {
+        let mut m = ArchModel::default();
+        t_house_brief(&mut m);
+        let g = crate::roof::roof_geometry(&m, 0, &brief_roof()).unwrap();
+        let edges = roof_edges_geom(&g);
+
+        let n = g.fp.outer.len();
+        let mut reflex_count = 0;
+        for i in 0..n {
+            let prev = g.fp.outer[(i + n - 1) % n];
+            let curr = g.fp.outer[i];
+            let next = g.fp.outer[(i + 1) % n];
+            let d1 = curr - prev;
+            let d2 = next - curr;
+            if (d1.x * d2.y - d1.y * d2.x) < 0.0 {
+                reflex_count += 1;
+            }
+        }
+
+        let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        assert_eq!(valleys.len(), reflex_count, "Valley count should equal reflex vertex count");
+    }
+
+    #[test]
+    fn rotated_rectangle_classifies_correctly() {
+        let mut m = ArchModel::default();
+        let angle = std::f64::consts::PI / 6.0;
+        let cos_a = angle.cos();
+        let sin_a = angle.sin();
+        let pts = [Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)];
+        let rotated: Vec<Vec2> = pts.iter().map(|p| Vec2::new(p.x * cos_a - p.y * sin_a, p.x * sin_a + p.y * cos_a)).collect();
+
+        for i in 0..4 {
+            let j = (i + 1) % 4;
+            m.push_wall(Wall::new(rotated[i], rotated[j], 0.2));
+        }
+        for w in m.walls.iter_mut() {
+            w.height = 2.4;
+        }
+
+        let g = geom(&m);
+        let edges = roof_edges_geom(&g);
+
+        let hips: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Hip).collect();
+        let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        let ridges: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Ridge).collect();
+
+        assert_eq!(hips.len(), 4, "Rotated rectangle should have 4 hips");
+        assert_eq!(valleys.len(), 0, "Rotated rectangle should have no valleys");
+        assert_eq!(ridges.len(), 1, "Rotated rectangle should have 1 ridge");
+    }
 }
