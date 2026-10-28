@@ -17,6 +17,7 @@ pub mod probe;
 pub mod ray;
 pub mod roof;
 pub mod section;
+pub mod stairs;
 pub mod walls;
 
 pub use crate::mesh::{Bounds3, Mesh};
