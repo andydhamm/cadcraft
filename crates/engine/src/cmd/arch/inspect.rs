@@ -9,9 +9,11 @@ use cadcraft_arch::symbol::opening_symbol;
 use cadcraft_arch::wall::{wall_layer_polygons, wall_polygon};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::Handle;
-use cadcraft_doc::arch::{
-    OpeningKind, ROOM_HANDLE_OFFSET, Roof, RoofEdge, RoofEdgeKind, RoofPlane, RoomType, roof_handle, roof_label, room_label, wall_label,
+use cadraft_doc::arch::{
+    OpeningKind, ROOM_HANDLE_OFFSET, Railing, RailingStyle, Roof, RoofEdge, RoofEdgeKind, RoofPlane, RoomType, Stair, StairShape, railing_handle,
+    railing_label, roof_handle, roof_label, room_label, stair_handle, stair_label, wall_label,
 };
+use std::f64::consts::PI;
 // RoofId might be ArchId or a new type. If it's not found, we might need to use ArchId or import it if it exists.
 // Assuming RoofId is in cadcraft_doc::arch based on naming convention, but if E0425 says not found,
 // it might be that Roof uses ArchId for its id, or RoofId is not public.
@@ -69,6 +71,8 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     let rooms_flag = p.get("rooms").and_then(Value::as_bool).unwrap_or(false);
     let labels_flag = p.get("labels").and_then(Value::as_bool).unwrap_or(false);
     let roofs_flag = p.get("roofs").and_then(Value::as_bool).unwrap_or(false);
+    let stairs_flag = p.get("stairs").and_then(Value::as_bool).unwrap_or(false);
+    let railings_flag = p.get("railings").and_then(Value::as_bool).unwrap_or(false);
 
     let shapes = solve_joins(&d.arch);
     let mut solved: std::collections::BTreeMap<ArchId, &Vec<cadcraft_geom::Vec2>> = std::collections::BTreeMap::new();
@@ -157,6 +161,8 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
             obj.insert("standardArea".to_string(), json!(r.standard_area));
             obj.insert("livingIncluded".to_string(), json!(is_living(r, level)));
             obj.insert("ceiling".to_string(), json!(r.ceiling_height));
+            obj.insert("deckHeight".to_string(), json!(r.deck_height));
+            obj.insert("hasFloor".to_string(), json!(r.room_type.has_floor()));
             let label_pt = label_point(&r.polygon, &r.holes).unwrap_or_else(|| centroid_points(&r.polygon));
             obj.insert("label".to_string(), json!([label_pt.x, label_pt.y]));
             if labels_flag {
@@ -287,6 +293,55 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
         out.insert("roofs".to_string(), Value::Array(roof_objects));
     }
 
+    // Stair objects. Read-only: no `doc_mut`, no `touch_arch`.
+    let mut stair_objects = Vec::new();
+    if stairs_flag {
+        for st in &d.arch.stairs {
+            let mut obj = JsonMap::new();
+            obj.insert("id".to_string(), json!(stair_label(st.id)));
+            obj.insert("handle".to_string(), json!(stair_handle(st.id).hex().to_lowercase()));
+            obj.insert("start".to_string(), json!([st.start.x, st.start.y]));
+            let direction_deg = if st.direction.is_finite() { st.direction * 180.0 / PI } else { 0.0 };
+            obj.insert("direction".to_string(), json!(direction_deg));
+            obj.insert("width".to_string(), json!(st.width));
+            obj.insert("fromLevel".to_string(), json!(st.from_level));
+            obj.insert("toLevel".to_string(), json!(st.to_level));
+            obj.insert("rise".to_string(), json!(st.rise));
+            obj.insert("shape".to_string(), json!(stair_shape_key(st.shape)));
+            obj.insert("risers".to_string(), json!(st.risers));
+            obj.insert("riserHeight".to_string(), json!(st.riser_height));
+            obj.insert("treadDepth".to_string(), json!(st.tread_depth));
+            obj.insert("treads".to_string(), json!(st.treads));
+            obj.insert("run".to_string(), json!(st.run));
+            obj.insert("landingDepth".to_string(), json!(st.landing_depth));
+            obj.insert("well".to_string(), json_points(&st.well));
+            let well_room = st.well_room.map(room_label);
+            obj.insert("wellRoom".to_string(), json!(well_room));
+            stair_objects.push(Value::Object(obj));
+        }
+        out.insert("stairs".to_string(), Value::Array(stair_objects));
+    }
+
+    // Railing objects. Read-only: no `doc_mut`, no `touch_arch`.
+    let mut railing_objects = Vec::new();
+    if railings_flag {
+        for rl in &d.arch.railings {
+            let mut obj = JsonMap::new();
+            obj.insert("id".to_string(), json!(railing_label(rl.id)));
+            obj.insert("handle".to_string(), json!(railing_handle(rl.id).hex().to_lowercase()));
+            obj.insert("path".to_string(), json_points(&rl.path));
+            obj.insert("level".to_string(), json!(rl.level));
+            obj.insert("height".to_string(), json!(rl.height));
+            obj.insert("style".to_string(), json!(railing_style_key(rl.style)));
+            obj.insert("thickness".to_string(), json!(rl.thickness));
+            obj.insert("balusterGap".to_string(), json!(rl.baluster_gap));
+            let follows = rl.follows.map(stair_label);
+            obj.insert("follows".to_string(), json!(follows));
+            railing_objects.push(Value::Object(obj));
+        }
+        out.insert("railings".to_string(), Value::Array(railing_objects));
+    }
+
     Ok(Value::Object(out))
 }
 
@@ -298,6 +353,23 @@ fn roof_edge_kind_key(k: RoofEdgeKind) -> &'static str {
         RoofEdgeKind::Valley => "valley",
         RoofEdgeKind::Eave => "eave",
         RoofEdgeKind::GableEnd => "gableEnd",
+    }
+}
+
+/// Lower-case key for a stair [`StairShape`] (`Straight` -> `straight`).
+fn stair_shape_key(sh: StairShape) -> &'static str {
+    match sh {
+        StairShape::Straight => "straight",
+        StairShape::L => "l",
+        StairShape::U => "u",
+    }
+}
+
+/// Lower-case key for a railing [`RailingStyle`] (`Panel` -> `panel`).
+fn railing_style_key(st: RailingStyle) -> &'static str {
+    match st {
+        RailingStyle::Panel => "panel",
+        RailingStyle::Balusters => "balusters",
     }
 }
 
@@ -1566,6 +1638,154 @@ mod tests {
         let roofs = v["roofs"].as_array().expect("roofs array missing");
         let slope = roofs[0]["slope"].as_f64().expect("slope must be a number");
         assert!((slope - 0.5).abs() < 1e-9, "slope should be pitch_rise/pitch_run = 0.5, got {slope}");
+    }
+
+    /// Stairs report their full field set and radians-converted direction.
+    #[test]
+    fn inspect_reports_stairs() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_stair(Stair {
+                    start: Vec2::new(1.0, 2.0),
+                    direction: (std::f64::consts::PI / 2.0),
+                    width: 1.5,
+                    from_level: 0,
+                    to_level: 1,
+                    rise: 2.7,
+                    shape: StairShape::Straight,
+                    risers: 16,
+                    riser_height: 0.16875,
+                    tread_depth: 0.254,
+                    treads: 15,
+                    run: 3.81,
+                    landing_depth: 0.0,
+                    well: vec![Vec2::new(1.0, 1.0), Vec2::new(4.0, 1.0), Vec2::new(4.0, 3.0), Vec2::new(1.0, 3.0)],
+                    well_room: None,
+                    ..Stair::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "stairs": true }));
+        let stairs = v["stairs"].as_array().expect("stairs array missing");
+        assert_eq!(stairs.len(), 1, "expected one stair");
+        let st = &stairs[0];
+        assert_eq!(st["id"].as_str().expect("id must be a string"), "s0");
+        assert!(st["handle"].is_string(), "handle must be a string");
+        assert!(st["start"].is_array(), "start must be an array");
+        let start = st["start"].as_array().expect("start must be an array");
+        assert!((start[0].as_f64().expect("x") - 1.0).abs() < 1e-9);
+        assert!((start[1].as_f64().expect("y") - 2.0).abs() < 1e-9);
+        let direction = st["direction"].as_f64().expect("direction must be a number");
+        assert!((direction - 90.0).abs() < 1e-6, "direction should be 90 degrees, got {direction}");
+        assert!((st["width"].as_f64().expect("width") - 1.5).abs() < 1e-9);
+        assert_eq!(st["fromLevel"].as_i64().expect("fromLevel"), 0);
+        assert_eq!(st["toLevel"].as_i64().expect("toLevel"), 1);
+        assert!((st["rise"].as_f64().expect("rise") - 2.7).abs() < 1e-9);
+        assert_eq!(st["shape"].as_str().expect("shape must be a string"), "straight");
+        assert_eq!(st["risers"].as_i64().expect("risers"), 16);
+        assert!((st["riserHeight"].as_f64().expect("riserHeight") - 0.16875).abs() < 1e-9);
+        assert!((st["treadDepth"].as_f64().expect("treadDepth") - 0.254).abs() < 1e-9);
+        assert_eq!(st["treads"].as_i64().expect("treads"), 15);
+        assert!((st["run"].as_f64().expect("run") - 3.81).abs() < 1e-9);
+        assert_eq!(st["landingDepth"].as_f64().expect("landingDepth"), 0.0);
+        assert_eq!(st["well"].as_array().expect("well must be an array").len(), 4);
+        assert!(st["wellRoom"].is_null(), "wellRoom should be null when unset");
+    }
+
+    /// Railings report their field set; `follows` is null when the railing
+    /// does not follow a stair.
+    #[test]
+    fn inspect_reports_railings() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_railing(Railing {
+                    path: vec![Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), Vec2::new(5.0, 4.0)],
+                    level: 1,
+                    height: 0.914,
+                    style: RailingStyle::Balusters,
+                    thickness: 0.05,
+                    baluster_gap: 0.099,
+                    follows: None,
+                    ..Railing::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "railings": true }));
+        let rails = v["railings"].as_array().expect("railings array missing");
+        assert_eq!(rails.len(), 1, "expected one railing");
+        let r = &rails[0];
+        assert_eq!(r["id"].as_str().expect("id must be a string"), "ra0");
+        assert!(r["handle"].is_string(), "handle must be a string");
+        assert_eq!(r["path"].as_array().expect("path must be an array").len(), 3);
+        assert_eq!(r["level"].as_i64().expect("level"), 1);
+        assert!((r["height"].as_f64().expect("height") - 0.914).abs() < 1e-9);
+        assert_eq!(r["style"].as_str().expect("style must be a string"), "balusters");
+        assert!((r["thickness"].as_f64().expect("thickness") - 0.05).abs() < 1e-9);
+        assert!((r["balusterGap"].as_f64().expect("balusterGap") - 0.099).abs() < 1e-9);
+        assert!(r["follows"].is_null(), "follows should be null when unset");
+    }
+
+    /// A deck room carries its `deckHeight` and has a floor; a non-deck room
+    /// reports `deckHeight` as null. `hasFloor` reflects the room type.
+    #[test]
+    fn inspect_rooms_carry_deck_height() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "Deck".into(),
+                    room_type: RoomType::Deck,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+                    deck_height: Some(0.9),
+                    ..Room::default()
+                });
+                d.arch.push_room(Room {
+                    name: "Living".into(),
+                    room_type: RoomType::Living,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        assert_eq!(rooms.len(), 2, "expected two rooms");
+        // Deck carries its height and has a floor.
+        assert!((rooms[0]["deckHeight"].as_f64().expect("deckHeight") - 0.9).abs() < 1e-9);
+        assert_eq!(rooms[0]["hasFloor"].as_bool().expect("hasFloor"), true);
+        // Non-deck room: deckHeight null, still a floor.
+        assert!(rooms[1]["deckHeight"].is_null(), "deckHeight should be null when unset");
+        assert_eq!(rooms[1]["hasFloor"].as_bool().expect("hasFloor"), true);
+    }
+
+    /// The `stairs`/`railings` keys are absent unless their flag is set.
+    #[test]
+    fn inspect_stairs_absent_when_not_requested() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_stair(Stair::default());
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({}));
+        assert!(v["stairs"].is_null(), "stairs key absent without the flag");
+        assert!(v["railings"].is_null(), "railings key absent without the flag");
+        // A room-only request still must not reveal stairs.
+        let v2 = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        assert!(v2["stairs"].is_null(), "stairs key absent without the flag");
+        assert!(v2["railings"].is_null(), "railings key absent without the flag");
     }
 
     /// A closed loop of 4 walls has 4 shapes but 8 joined ends (2 per corner).
