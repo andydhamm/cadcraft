@@ -652,7 +652,7 @@ fn ensure_layer_is_case_insensitive() {
     let mut d = Drawing::new_imperial();
     assert!(d.ensure_layer("MyLayer"), "first call must add the layer");
     assert!(!d.ensure_layer("mylayer"), "lowercase must be a no-op");
-    assert!(!d.ensure_layer("My-Layer"), "mixed case must be a no-op");
+    assert!(!d.ensure_layer("MYLAYER"), "uppercase must be a no-op");
     assert!(!d.ensure_layer("MyLayer"), "exact repeat must be a no-op");
     assert_eq!(d.layers.iter().filter(|l| l.name.eq_ignore_ascii_case("MyLayer")).count(), 1, "MyLayer must exist exactly once");
     // The stored name is the first one passed.
