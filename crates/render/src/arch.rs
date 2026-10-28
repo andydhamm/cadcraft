@@ -1127,4 +1127,68 @@ mod tests {
         let label_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
         assert!(label_prims.is_empty(), "room labels should be skipped in plot build when A-ROOM is no-plot");
     }
+
+    /// Two openings on the same wall produce four gap-edge polylines (two per gap).
+    #[test]
+    fn multiple_openings_create_multiple_poché_gaps() {
+        let mut d = Drawing::new_metric();
+        let wid = d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+        d.arch.push_opening(Opening::new(wid, 3.0, 1.0, 2.1, OpeningKind::Door));
+        d.arch.push_opening(Opening::new(wid, 7.0, 1.0, 2.1, OpeningKind::Door));
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default(), false);
+
+        let handle = arch_handle(wid);
+        let wall_prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == handle).collect();
+        // 1 tris + 1 outline + 4 gap edges (2 per opening) = 6
+        assert_eq!(wall_prims.len(), 6, "expected 6 wall prims for 2 openings, got {}", wall_prims.len());
+        let gap_edges: Vec<&DPrim> = wall_prims.iter().copied().filter(|p| p.kind == Kind::Polyline && p.len == 2).collect();
+        assert_eq!(gap_edges.len(), 4, "expected 4 gap-edge polylines for 2 openings, got {}", gap_edges.len());
+    }
+
+    /// A wall with NaN in either endpoint is skipped entirely.
+    #[test]
+    fn wall_with_nan_endpoints_draws_nothing() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_wall(Wall { start: Vec2::new(f64::NAN, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(list.prims.is_empty(), "wall with NaN start should draw nothing");
+
+        let mut d2 = Drawing::new_metric();
+        d2.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, f64::NAN), thickness: 0.2, height: 2.7, ..Wall::default() });
+        d2.touch_arch();
+        let list2 = build_arch(&d2, &Options::default(), false);
+        assert!(list2.prims.is_empty(), "wall with NaN end should draw nothing");
+    }
+
+    /// A wall with zero thickness is skipped.
+    #[test]
+    fn wall_with_zero_thickness_draws_nothing() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 0.0, height: 2.7, ..Wall::default() });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(list.prims.is_empty(), "wall with zero thickness should draw nothing");
+    }
+
+    /// A wall with negative thickness is skipped.
+    #[test]
+    fn wall_with_negative_thickness_draws_nothing() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_wall(Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: -0.1, height: 2.7, ..Wall::default() });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(list.prims.is_empty(), "wall with negative thickness should draw nothing");
+    }
+
+    /// A wall whose start and end coincide is skipped.
+    #[test]
+    fn zero_length_wall_draws_nothing() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_wall(Wall { start: Vec2::new(5.0, 5.0), end: Vec2::new(5.0, 5.0), thickness: 0.2, height: 2.7, ..Wall::default() });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(list.prims.is_empty(), "zero-length wall should draw nothing");
+    }
 }
