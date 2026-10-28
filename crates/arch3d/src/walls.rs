@@ -1482,4 +1482,180 @@ mod tests {
         let mesh = extrude_profile_slab(&shape, &profile, 0.0, &wall, "wall");
         assert!(mesh.is_none(), "zero-thickness wall should return None");
     }
+
+    /// extrude_wall with zero height must return None.
+    #[test]
+    fn extrude_wall_zero_height_returns_none() {
+        let id = ArchId(1);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(4.0, -0.1), Vec2::new(4.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+        let mesh = extrude_wall(&shape, 0.0, 0.0, "wall");
+        assert!(mesh.is_none(), "zero height should return None");
+    }
+
+    /// extrude_wall with NaN height must return None.
+    #[test]
+    fn extrude_wall_nan_height_returns_none() {
+        let id = ArchId(1);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(4.0, -0.1), Vec2::new(4.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+        let mesh = extrude_wall(&shape, f64::NAN, 0.0, "wall");
+        assert!(mesh.is_none(), "NaN height should return None");
+    }
+
+    /// extrude_wall with non-finite z0 must return None.
+    #[test]
+    fn extrude_wall_non_finite_z0_returns_none() {
+        let id = ArchId(1);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(4.0, -0.1), Vec2::new(4.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+        let mesh = extrude_wall(&shape, 2.4, f64::NAN, "wall");
+        assert!(mesh.is_none(), "NaN z0 should return None");
+    }
+
+    /// elevation_profile with no openings and no roof clip must be a simple rectangle.
+    #[test]
+    fn elevation_profile_no_openings_is_rectangle() {
+        let id = ArchId(1);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(10.0, -0.1), Vec2::new(10.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+        let wall = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            height: 2.4,
+            exterior: true,
+            base_level: 0,
+            ..Default::default()
+        };
+        let profile = elevation_profile(&shape, &wall, 0.0, 2.4, None, None, &[]).unwrap();
+        assert_eq!(profile.outer.len(), 4, "no openings should give a 4-vertex rectangle");
+        assert!(profile.holes.is_empty(), "no openings should give no holes");
+        // Verify the rectangle dimensions
+        assert!((profile.outer[0].x - 0.0).abs() < 1e-9);
+        assert!((profile.outer[0].y - 0.0).abs() < 1e-9);
+        assert!((profile.outer[1].x - 10.0).abs() < 1e-9);
+        assert!((profile.outer[1].y - 0.0).abs() < 1e-9);
+        assert!((profile.outer[2].x - 10.0).abs() < 1e-9);
+        assert!((profile.outer[2].y - 2.4).abs() < 1e-9);
+        assert!((profile.outer[3].x - 0.0).abs() < 1e-9);
+        assert!((profile.outer[3].y - 2.4).abs() < 1e-9);
+    }
+
+    /// elevation_profile with a roof clip that is above the wall top must not clip.
+    #[test]
+    fn elevation_profile_with_roof_above_wall_is_rectangle() {
+        let id = ArchId(1);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(10.0, -0.1), Vec2::new(10.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+        let wall = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            height: 2.4,
+            exterior: true,
+            base_level: 0,
+            ..Default::default()
+        };
+        // Roof with eave_z well above the wall top (2.4)
+        let clip = RoofClip { base_edge: [0.0, 0.0, 10.0, 0.0], slope: 0.5, eave_z: 5.0 };
+        let profile = elevation_profile(&shape, &wall, 0.0, 2.4, Some(&clip), None, &[]).unwrap();
+        // The roof is above the wall, so the profile should still be a rectangle at height 2.4
+        assert_eq!(profile.outer.len(), 4, "roof above wall should not change profile");
+        assert!((profile.outer[2].y - 2.4).abs() < 1e-9, "top should be at wall height 2.4");
+        assert!((profile.outer[3].y - 2.4).abs() < 1e-9, "top should be at wall height 2.4");
+    }
+
+    /// opening_holes with two overlapping openings must produce two separate holes.
+    #[test]
+    fn opening_holes_with_overlapping_openings() {
+        let outer = rect_outer();
+        // Two openings that overlap in u (offset 4.0 width 1.5 and offset 4.5 width 1.5)
+        let op1 = Opening { width: 1.5, height: 1.2, sill: 0.9, offset: 4.0, ..Default::default() };
+        let op2 = Opening { width: 1.5, height: 1.2, sill: 0.9, offset: 4.5, ..Default::default() };
+        let holes = opening_holes(&[&op1, &op2], 0.0, 10.0, 2.4, &outer);
+        // Both openings are fully inside the wall, so both should produce holes
+        assert_eq!(holes.len(), 2, "two overlapping openings should produce two holes");
+    }
+
+    /// A wall with many openings must still produce a closed manifold mesh.
+    #[test]
+    fn wall_with_many_openings_is_manifold() {
+        let id = ArchId(7);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(12.0, -0.1), Vec2::new(12.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(12.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+        let wall = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(12.0, 0.0),
+            thickness: 0.2,
+            height: 2.4,
+            exterior: true,
+            base_level: 0,
+            ..Default::default()
+        };
+
+        // Six evenly spaced openings
+        let openings: Vec<Opening> =
+            (0..6).map(|i| Opening { offset: 1.0 + i as f64 * 2.0, width: 0.9, height: 1.2, sill: 0.9, ..Default::default() }).collect();
+        let opening_refs: Vec<&Opening> = openings.iter().collect();
+
+        let profile = elevation_profile(&shape, &wall, 0.0, 2.4, None, None, &opening_refs).unwrap();
+        assert_eq!(profile.holes.len(), 6, "six openings should produce six holes");
+
+        let mesh = extrude_wall_profile(&shape, profile, 0.0, "wall").unwrap();
+        assert!(mesh.triangle_count() > 0, "wall with six openings must have triangles");
+        assert!(mesh.is_manifold(), "wall with six openings must be a closed manifold");
+
+        // Positive signed volume (outward winding)
+        let mut vol = 0.0;
+        for tri in mesh.indices.chunks(3) {
+            let (a, b, c) = (tri[0], tri[1], tri[2]);
+            let pa = mesh.positions[a as usize].map(|v| v as f64);
+            let pb = mesh.positions[b as usize].map(|v| v as f64);
+            let pc = mesh.positions[c as usize].map(|v| v as f64);
+            vol += pa[0] * (pb[1] * pc[2] - pb[2] * pc[1]) + pa[1] * (pb[2] * pc[0] - pb[0] * pc[2]) + pa[2] * (pb[0] * pc[1] - pb[1] * pc[0]);
+        }
+        vol /= 6.0;
+        assert!(vol > 0.0, "signed volume must be > 0, got {vol}");
+    }
+
+    /// profile_prism with a pentagon profile and a hole must produce a closed manifold.
+    #[test]
+    fn profile_prism_with_pentagon_and_hole() {
+        // Gable pentagon profile
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0), Vec2::new(8.0, 2.4), Vec2::new(4.0, 4.45), Vec2::new(0.0, 2.4)];
+        // Small hole in the lower part of the wall
+        let hole = vec![Vec2::new(3.0, 0.5), Vec2::new(3.0, 1.5), Vec2::new(5.0, 1.5), Vec2::new(5.0, 0.5)];
+        let wall = Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(8.0, 0.0), thickness: 0.2, height: 4.45, ..Default::default() };
+        let mesh = profile_prism(&outer, &[hole], &wall, 0.0, "wall", ArchId(7)).unwrap();
+        assert!(mesh.triangle_count() > 0, "pentagon with hole must have triangles");
+        assert!(mesh.is_manifold(), "pentagon prism with a hole must be a closed manifold");
+
+        // Positive signed volume
+        let mut vol = 0.0;
+        for tri in mesh.indices.chunks(3) {
+            let (a, b, c) = (tri[0], tri[1], tri[2]);
+            let pa = mesh.positions[a as usize].map(|v| v as f64);
+            let pb = mesh.positions[b as usize].map(|v| v as f64);
+            let pc = mesh.positions[c as usize].map(|v| v as f64);
+            vol += pa[0] * (pb[1] * pc[2] - pb[2] * pc[1]) + pa[1] * (pb[2] * pc[0] - pb[0] * pc[2]) + pa[2] * (pb[0] * pc[1] - pb[1] * pc[0]);
+        }
+        vol /= 6.0;
+        assert!(vol > 0.0, "signed volume must be > 0, got {vol}");
+
+        // More triangles than without the hole
+        let no_hole = profile_prism(&outer, &[], &wall, 0.0, "wall", ArchId(8)).unwrap();
+        assert!(
+            mesh.triangle_count() > no_hole.triangle_count(),
+            "hole should add triangles: with={} without={}",
+            mesh.triangle_count(),
+            no_hole.triangle_count()
+        );
+    }
 }
