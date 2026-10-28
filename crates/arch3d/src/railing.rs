@@ -1,7 +1,7 @@
 //! Railing geometry generation for 3D scenes.
 
 use cadcraft_doc::arch::{Railing, RailingStyle};
-use cadcraft_geom::Vec2;
+use cadcraft_geom::{Vec2, Vec3};
 
 use crate::mesh::Mesh;
 
@@ -117,7 +117,7 @@ mod tests {
         let mesh = railing_mesh(&r, 0.0).expect("railing mesh");
 
         // Probe just below the handrail
-        let hit = mesh.probe(Vec3::new(0.5, 0.0, 0.9));
+        let hit = crate::probe::probe(&crate::Scene3d { meshes: vec![mesh.clone()], ..Default::default() }, Vec3::new(0.5, 0.0, 0.9));
         assert!(hit.is_some(), "probe under handrail should hit railing");
         assert_eq!(hit.unwrap().part, "railing");
     }
@@ -129,14 +129,14 @@ mod tests {
         r.path = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
         r.height = 1.0;
         r.thickness = 0.1;
-        r.style = RailingStyle::Baluster;
+        r.style = RailingStyle::Balusters;
         r.baluster_gap = 0.1; // 100mm
 
         let mesh = railing_mesh(&r, 0.0).expect("railing mesh");
 
         // Probe between balusters (approximate check for presence of geometry)
         // This test mainly ensures the mesh is generated and has parts tagged railing
-        let hit = mesh.probe(Vec3::new(0.5, 0.0, 0.5));
+        let hit = crate::probe::probe(&crate::Scene3d { meshes: vec![mesh.clone()], ..Default::default() }, Vec3::new(0.5, 0.0, 0.5));
         // Depending on exact baluster placement, this might hit a baluster or miss.
         // The requirement is "gap is under 101.6mm", which is enforced by the generator logic.
         // We just verify it builds.
