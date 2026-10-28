@@ -458,4 +458,61 @@ mod tests {
         let n = mesh_crossings_upward(o, &positions, &indices, usize::MAX);
         assert_eq!(n, 1, "extra vertices should be ignored, got {n}");
     }
+
+    #[test]
+    fn ray_through_triangle_vertex_counts() {
+        // Ray from (1,1,1) passes exactly through vertex (1,1,3) of the triangle.
+        let o = Vec3::new(1.0, 1.0, 1.0);
+        let a = Vec3::new(0.0, 0.0, 3.0);
+        let b = Vec3::new(2.0, 0.0, 3.0);
+        let c = Vec3::new(1.0, 2.0, 3.0);
+        assert!(crosses_upward(o, a, b, c), "ray through vertex should count");
+    }
+
+    #[test]
+    fn downward_facing_triangle_counts_from_below() {
+        // Same triangle as horizontal_triangle_above_the_point_counts but wound
+        // the other way so the normal points down (negative n.z).
+        let o = Vec3::new(0.5, 0.5, 1.0);
+        let a = Vec3::new(0.0, 0.0, 3.0);
+        let b = Vec3::new(1.0, 2.0, 3.0);
+        let c = Vec3::new(2.0, 0.0, 3.0);
+        assert!(crosses_upward(o, a, b, c), "downward-facing triangle should count from below");
+    }
+
+    #[test]
+    fn ray_through_shared_edge_of_adjacent_triangles_counts_once() {
+        // Two triangles sharing an edge; a ray through that edge should count
+        // exactly once thanks to the half-open rule.
+        let a = Vec3::new(0.0, 0.0, 3.0);
+        let b = Vec3::new(2.0, 0.0, 3.0);
+        let c1 = Vec3::new(1.0, 1.0, 3.0);
+        let c2 = Vec3::new(1.0, -1.0, 3.0);
+        let o = Vec3::new(1.0, 0.0, 1.0);
+        let t1 = [a, b, c1];
+        let t2 = [b, a, c2];
+        let tris = vec![t1, t2];
+        let n = crossings_upward(o, &tris);
+        assert_eq!(n, 1, "ray through shared edge should count once, got {n}");
+    }
+
+    #[test]
+    fn point_on_triangle_plane_does_not_count() {
+        // Point exactly on the triangle's plane: t=0, should not count as a crossing.
+        let o = Vec3::new(0.5, 0.5, 3.0);
+        let a = Vec3::new(0.0, 0.0, 3.0);
+        let b = Vec3::new(2.0, 0.0, 3.0);
+        let c = Vec3::new(1.0, 2.0, 3.0);
+        assert!(!crosses_upward(o, a, b, c), "point on plane should not count");
+    }
+
+    #[test]
+    fn nearly_degenerate_thin_triangle() {
+        // Very thin triangle (height 0.002); the ray through its middle should still cross.
+        let o = Vec3::new(1.0, 0.001, 1.0);
+        let a = Vec3::new(0.0, 0.0, 3.0);
+        let b = Vec3::new(2.0, 0.0, 3.0);
+        let c = Vec3::new(1.0, 0.002, 3.0);
+        assert!(crosses_upward(o, a, b, c), "thin triangle should still cross");
+    }
 }
