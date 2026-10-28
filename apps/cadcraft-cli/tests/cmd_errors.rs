@@ -178,6 +178,74 @@ fn all_cmds_fail_exits_1() {
     assert!(stderr.lines().any(|l| l.starts_with("error: ") && l.contains("also.missing")), "stderr: {stderr}");
 }
 
+/// The error line of a failed step names the command (`error: <cmd>: ...`).
+#[test]
+fn cmd_step_error_line_names_the_command() {
+    let out = run(&["run", "--metric", "--cmd", "no.such.command {}", "--cmd", "drawing.inspect {}"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.lines().any(|l| l.starts_with("error: ") && l.contains("no.such.command")), "stderr: {stderr}");
+}
+
+/// Invalid `--cmd` JSON is now refused up front (exit 2) instead of being skipped; nothing runs.
+#[test]
+fn cmd_json_parse_error_does_not_abort_the_run() {
+    let out = run(&["run", "--metric", "--cmd", r#"line {"points": [["#, "--cmd", r#"line {"points":[[0,0],[10,0]]}"#]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn a_good_last_step_clears_the_failure_status() {
+    let out = run(&["run", "--metric", "--cmd", "no.such.command {}", "--cmd", "drawing.inspect {}"]);
+    assert_eq!(out.status.code(), Some(0));
+    let out = run(&["run", "--metric", "--cmd", r#"line {"points":[[0,0],[10,0]]}"#, "--cmd", "no.such.command {}"]);
+    assert_eq!(out.status.code(), Some(1));
+}
+
+#[test]
+fn cmd_error_leaves_last_handle_untouched() {
+    let out = run(&[
+        "run",
+        "--metric",
+        "--cmd",
+        r#"line {"points":[[0,0],[10,0]]}"#,
+        "--cmd",
+        "no.such.command {}",
+        "--cmd",
+        r#"erase {"handles":["{last}"]}"#,
+        "--cmd",
+        r#"entities {"type":"LINE"}"#,
+    ]);
+    assert!(out.status.success());
+    assert_eq!(last_json(&String::from_utf8_lossy(&out.stdout))["count"].as_u64(), Some(0));
+}
+
+#[test]
+fn script_step_is_still_fatal() {
+    let out = run(&["run", "--metric", "--script", "NO.SUCH.COMMAND\n", "--cmd", "drawing.inspect {}"]);
+    assert_eq!(out.status.code(), Some(1));
+}
+
+#[test]
+fn script_step_clears_cmd_error() {
+    let out = run(&["run", "--metric", "--cmd", "no.such.command {}", "--script", "LINE 0,0 10,10\n\n"]);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[test]
+fn multiple_cmd_errors_all_reported() {
+    let out = run(&["run", "--metric", "--cmd", "no.such.command {}", "--cmd", "another.missing {}", "--cmd", "drawing.inspect {}"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success());
+    assert!(stderr.contains("no.such.command") && stderr.contains("another.missing"), "stderr: {stderr}");
+}
+
+#[test]
+fn cmd_with_no_json_object() {
+    let out = run(&["run", "--metric", "--cmd", "drawing.inspect", "--cmd", "drawing.inspect {}"]);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+}
+
 /// `{last}` is updated by a successful command that follows a failed one.
 #[test]
 fn last_handle_updates_after_success_following_failure() {

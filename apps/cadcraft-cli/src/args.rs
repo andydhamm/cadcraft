@@ -731,6 +731,60 @@ mod tests {
     }
 
     #[test]
+    fn validators_accept_only_the_documented_options() {
+        assert!(parse_args(&["info", "file.dxf"]).is_ok());
+        assert!(parse_args(&["perf", "100"]).is_ok());
+        assert!(parse_args(&["sample", "bracket", "out.dxf"]).is_ok());
+        assert!(parse_args(&["commands", "line"]).is_ok());
+        for command in ["info", "perf", "sample", "commands"] {
+            assert!(parse_args(&[command, "--typo"]).is_err(), "{command}");
+        }
+    }
+
+    #[test]
+    fn unknown_options_are_rejected_before_side_effects() {
+        for a in [&["info", "missing.dxf", "--typo"][..], &["perf", "1", "--typo"], &["sample", "bracket", "out.dxf", "--typo"]] {
+            let Err(e) = parse_args(a) else { panic!("{a:?} parsed") };
+            assert_eq!(e.kind(), ErrorKind::UnknownArgument, "{a:?}");
+        }
+    }
+
+    /// `--window`/`--view` only frame image output: a `.glb` is written whole, so framing it is an error.
+    #[test]
+    fn framing_does_not_apply_to_glb() {
+        let framed = |out: &str, a: &[&str]| parse_args(&["convert", "a.dxf", out].iter().chain(a).copied().collect::<Vec<_>>()).is_ok();
+        assert!(!framed("house.glb", &["--view", "extents"]));
+        assert!(framed("house.png", &["--view", "extents"]));
+        assert!(framed("house.glb", &[]));
+    }
+
+    #[test]
+    fn framing_output_extensions() {
+        let framed = |out: &str| parse_args(&["convert", "a.dxf", out, "--view", "extents"]).is_ok();
+        for ok in ["house.svg", "house.pdf", "house.PNG", "house.SVG", "house.PDF"] {
+            assert!(framed(ok), "{ok}");
+        }
+        assert!(!framed("house.GLB"));
+    }
+
+    #[test]
+    fn render_command_requires_file_and_output() {
+        assert!(parse_args(&["render"]).is_err());
+        assert!(parse_args(&["render", "model.dxf"]).is_err());
+        assert!(parse_args(&["render", "a.dxf", "b.png", "c.dxf"]).is_err());
+        assert!(parse_args(&["render", "a.dxf", "b.png"]).is_ok());
+    }
+
+    #[test]
+    fn render_command_parsing_with_options() {
+        assert!(parse_args(&["render", "--camera", "orbit", "--size", "640x480"]).is_err());
+        let Ok(cli) = parse_args(&["render", "a.dxf", "b.png", "--camera", "orbit", "--size", "640x480"]) else { panic!("should parse") };
+        let Command::Render(r) = cli.command else { panic!("not render") };
+        assert_eq!((r.camera.as_deref(), r.size), (Some("orbit"), Some((640, 480))));
+        assert!(parse_args(&["render", "a.dxf", "b.png", "--size", "9000x10"]).is_err());
+    }
+
+    #[test]
     fn window_parses() {
         let b = |x0, y0, x1, y1| Bounds2::new(Vec2::new(x0, y0), Vec2::new(x1, y1));
         assert_eq!(parse_window("0,0,30,20").unwrap(), b(0.0, 0.0, 30.0, 20.0));

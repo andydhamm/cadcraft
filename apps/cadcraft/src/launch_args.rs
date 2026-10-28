@@ -92,6 +92,27 @@ mod tests {
         assert!(usage_error(&["--control="]).contains("invalid value '' for '--control <PORT>'"));
     }
 
+    /// Was "ignored"; now a value that isn't a port is a usage error naming it.
+    #[test]
+    fn control_port_values_that_are_not_ports_are_ignored() {
+        assert_eq!(control_port("7979"), Ok(7979));
+        assert_eq!(control_port(" 7979 "), Ok(7979));
+        assert_eq!(parse_args(&[]).unwrap().control, None);
+        for bad in ["", "abc", "-1", "65536", "99999999999999999999", "\u{0}"] {
+            assert_eq!(control_port(bad), Err(NotAPort), "{bad:?}");
+            assert!(usage_error(&["--control", bad]).contains("--control <PORT>"), "{bad:?}");
+        }
+    }
+
+    /// `CADCRAFT_CONTROL_PORT=47321 cadcraft --control` (#844): a flag without its value is now a
+    /// usage error rather than a silent fall back, and a port given on the line is what is used.
+    #[test]
+    fn control_without_a_port_keeps_the_environment_port() {
+        assert!(usage_error(&["--control"]).contains("a value is required for '--control <PORT>'"));
+        assert_eq!(parse_args(&[]).unwrap().control, None);
+        assert_eq!(parse_args(&["--control", "7979"]).unwrap().control, Some(7979));
+    }
+
     #[test]
     fn usage_errors_exit_2() {
         assert!(usage_error(&["--sampel"]).contains("unexpected argument '--sampel'"));
