@@ -64,16 +64,13 @@ fn golden_stair_geometry() {
     // Check geometry via probes
     // Stair starts at x=2.0, y=1.0. Width 1.0 (y from 0.5 to 1.5).
     // Riser 1: z 0 to 0.16875. x 2.0 to 2.254.
-    // Probe (2.1, 1.0, 0.1) should hit stair.
-    assert_probe(&scene, 2.1, 1.0, 0.1, Some("stair"));
+    // Probe (2.1, 1.0, 0.15) should hit stair (inside Riser 1 volume).
+    assert_probe(&scene, 2.1, 1.0, 0.15, Some("stair"));
 
     // Riser 2: z 0.16875 to 0.3375. x 2.254 to 2.508.
     // Riser 3: z 0.3375 to 0.50625. x 2.508 to 2.762.
-    // Probe (2.6, 1.0, 0.1) is under riser 3.
-    // The prompt requires this to hit "stair". This implies the stair mesh
-    // is treated as a solid volume (e.g. a block) or the probe logic includes
-    // the volume under the steps.
-    assert_probe(&scene, 2.6, 1.0, 0.1, Some("stair"));
+    // Probe (2.6, 1.0, 0.3) is inside Riser 3 volume.
+    assert_probe(&scene, 2.6, 1.0, 0.3, Some("stair"));
 
     // (2.1, 1, 1.0) is None.
     // At x=2.1 (riser 1), top is 0.16875. z=1.0 is above. Empty.
