@@ -309,7 +309,7 @@ fn point_in_polygon(p: &Vec2, poly: &[Vec2]) -> bool {
 /// geometry cannot be built.
 pub fn roof_edges(model: &cadcraft_doc::ArchModel, level: u32, roof: &Roof) -> Result<Vec<RoofEdge>, RoofError> {
     for w in &model.walls {
-        if (w.b - w.a).len() < 1e-9 {
+        if (w.end - w.start).len() < 1e-9 {
             return Err(RoofError::Degenerate);
         }
     }
