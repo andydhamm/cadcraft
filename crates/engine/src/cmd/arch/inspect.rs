@@ -156,7 +156,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
             obj.insert("type".to_string(), json!(room_type_key(r.room_type)));
             obj.insert("level".to_string(), json!(level.map(|l| l.name.clone()).unwrap_or_default()));
             obj.insert("polygon".to_string(), json_points(&r.polygon));
-            obj.insert("holes".to_string(), json!(r.holes.len()));
+            obj.insert("holes".to_string(), Value::Array(r.holes.iter().map(|h| json_points(h)).collect()));
             obj.insert("interiorArea".to_string(), json!(r.interior_area));
             obj.insert("standardArea".to_string(), json!(r.standard_area));
             obj.insert("livingIncluded".to_string(), json!(is_living(r, level)));
@@ -833,7 +833,7 @@ mod tests {
         assert_eq!(r["type"].as_str().unwrap(), "living");
         assert_eq!(r["level"].as_str().unwrap(), "Level 1");
         assert!(r["polygon"].is_array(), "polygon must be an array");
-        assert_eq!(r["holes"].as_i64().unwrap(), 0);
+        assert_eq!(r["holes"].as_array().unwrap().len(), 0);
         assert!((r["interiorArea"].as_f64().unwrap() - 12.0).abs() < 1e-9);
         assert!((r["standardArea"].as_f64().unwrap() - 12.48).abs() < 1e-9);
         assert!(r["livingIncluded"].as_bool().unwrap());
@@ -960,9 +960,9 @@ mod tests {
         assert!(h1.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle 1 must be lowercase hex: {h1}");
     }
 
-    /// A room with holes still gets a label point inside its outer ring.
+    /// A room with holes reports those holes as array-of-rings, not a count.
     #[test]
-    fn inspect_room_label_with_holes() {
+    fn inspect_room_holes_are_rings() {
         let mut s = Session::new();
         match s.doc_mut() {
             Ok(d) => {
@@ -985,7 +985,9 @@ mod tests {
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         assert_eq!(rooms.len(), 1, "expected one room");
         let r = &rooms[0];
-        assert_eq!(r["holes"].as_i64().unwrap(), 1, "expected one hole");
+        let holes = r["holes"].as_array().expect("holes should be an array of rings");
+        assert_eq!(holes.len(), 1, "expected one hole ring");
+        assert_eq!(holes[0].as_array().unwrap().len(), 4, "expected a 4-point ring");
         let label = r["label"].as_array().expect("label must be an array");
         assert_eq!(label.len(), 2, "label must be [x, y]");
         let x = label[0].as_f64().expect("label x must be a number");
@@ -1560,7 +1562,7 @@ mod tests {
         let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         let r = &rooms[0];
-        assert_eq!(r["holes"].as_i64().unwrap(), 2, "expected 2 holes");
+        assert_eq!(r["holes"].as_array().unwrap().len(), 2, "expected 2 hole rings");
     }
 
     /// When labels are requested, labelPoint must match label (same algorithm).
