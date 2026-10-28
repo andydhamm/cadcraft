@@ -223,17 +223,19 @@ impl Scene3d {
             let level = level_for(model, room.level);
             let well_holes: Vec<Vec<Vec2>> =
                 model.stairs.iter().filter(|s| !s.well.is_empty() && s.to_level == room.level).map(|s| s.well.clone()).collect();
-            if well_holes.is_empty() {
-                if let Some(m) = floors::floor_slab(room, &level, "floor") {
-                    meshes.push(m);
-                    floors += 1;
-                }
-            } else {
-                let mut clone = room.clone();
-                clone.holes = well_holes;
-                if let Some(m) = floors::floor_slab(&clone, &level, "floor") {
-                    meshes.push(m);
-                    floors += 1;
+            if room.room_type != cadcraft_doc::arch::RoomType::Deck {
+                if well_holes.is_empty() {
+                    if let Some(m) = floors::floor_slab(room, &level, "floor") {
+                        meshes.push(m);
+                        floors += 1;
+                    }
+                } else {
+                    let mut clone = room.clone();
+                    clone.holes = well_holes;
+                    if let Some(m) = floors::floor_slab(&clone, &level, "floor") {
+                        meshes.push(m);
+                        floors += 1;
+                    }
                 }
             }
             if let Some(m) = floors::ceiling_surface(room, &level, "ceiling") {
@@ -296,9 +298,10 @@ impl Scene3d {
         for room in &model.rooms {
             if room.room_type == cadcraft_doc::arch::RoomType::Deck {
                 let level = level_for(model, room.level);
-                if let Some(m) = floors::floor_slab(room, &level, "deck") {
+                if let Some(m) = floors::floor_slab(room, &level, "floor") {
                     meshes.push(m);
                     decks_count += 1;
+                    floors += 1;
                 }
             }
         }
@@ -443,38 +446,46 @@ impl Scene3d {
         let mut ceilings = 0;
         for room in &model.rooms {
             let level = level_for(model, room.level);
-            if dirty.contains(&room.id) {
-                let well_holes: Vec<Vec<Vec2>> =
-                    model.stairs.iter().filter(|s| !s.well.is_empty() && s.to_level == room.level).map(|s| s.well.clone()).collect();
-                if well_holes.is_empty() {
-                    if let Some(m) = floors::floor_slab(room, &level, "floor") {
-                        meshes.push(m);
-                        floors += 1;
+            let mut needs_rebuild = dirty.contains(&room.id);
+            if !needs_rebuild {
+                for stair in &model.stairs {
+                    if !stair.well.is_empty() && stair.to_level == room.level && dirty.contains(&stair.id) {
+                        needs_rebuild = true;
+                        break;
+                    }
+                }
+            }
+            if room.room_type != cadcraft_doc::arch::RoomType::Deck {
+                if needs_rebuild {
+                    let well_holes: Vec<Vec<Vec2>> =
+                        model.stairs.iter().filter(|s| !s.well.is_empty() && s.to_level == room.level).map(|s| s.well.clone()).collect();
+                    if well_holes.is_empty() {
+                        if let Some(m) = floors::floor_slab(room, &level, "floor") {
+                            meshes.push(m);
+                            floors += 1;
+                        }
+                    } else {
+                        let mut clone = room.clone();
+                        clone.holes = well_holes;
+                        if let Some(m) = floors::floor_slab(&clone, &level, "floor") {
+                            meshes.push(m);
+                            floors += 1;
+                        }
                     }
                 } else {
-                    let mut clone = room.clone();
-                    clone.holes = well_holes;
-                    if let Some(m) = floors::floor_slab(&clone, &level, "floor") {
-                        meshes.push(m);
-                        floors += 1;
-                    }
-                }
-                if let Some(m) = floors::ceiling_surface(room, &level, "ceiling") {
-                    meshes.push(m);
-                    ceilings += 1;
-                }
-            } else {
-                if let Some(om) = prev_by_object.get(&room.id) {
-                    for m in om {
-                        if m.material == "floor" {
-                            meshes.push(m.clone());
-                            floors += 1;
-                        } else if m.material == "ceiling" {
-                            meshes.push(m.clone());
-                            ceilings += 1;
+                    if let Some(om) = prev_by_object.get(&room.id) {
+                        for m in om {
+                            if m.material == "floor" {
+                                meshes.push(m.clone());
+                                floors += 1;
+                            }
                         }
                     }
                 }
+            }
+            if let Some(m) = floors::ceiling_surface(room, &level, "ceiling") {
+                meshes.push(m);
+                ceilings += 1;
             }
         }
 
@@ -575,15 +586,17 @@ impl Scene3d {
             }
             if dirty.contains(&room.id) {
                 let level = level_for(model, room.level);
-                if let Some(m) = floors::floor_slab(room, &level, "deck") {
+                if let Some(m) = floors::floor_slab(room, &level, "floor") {
                     meshes.push(m);
                     decks_count += 1;
+                    floors += 1;
                 }
             } else {
                 if let Some(om) = prev_by_object.get(&room.id) {
-                    let deck_meshes: Vec<Mesh> = om.iter().filter(|m| m.material == "deck" && !m.positions.is_empty()).cloned().collect();
+                    let deck_meshes: Vec<Mesh> = om.iter().filter(|m| m.material == "floor" && !m.positions.is_empty()).cloned().collect();
                     if !deck_meshes.is_empty() {
                         decks_count += 1;
+                        floors += 1;
                         meshes.extend(deck_meshes);
                     }
                 }
@@ -2565,6 +2578,198 @@ mod tests {
         // "deck" beats "wall" (e.g. "deck-wall")
         let mixed3 = box_mesh(0.0, 0.0, 0.0, 1.0, "deck-wall", ArchId(6));
         assert_eq!(part_of(&mixed3), "deck");
+    }
+
+    #[test]
+    fn stair_with_zero_rise_produces_no_mesh() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+
+        let mut stair = cadcraft_doc::arch::Stair::default();
+        stair.id = ArchId(200);
+        stair.from_level = 0;
+        stair.to_level = 0;
+        stair.rise = 0.0;
+        model.stairs.push(stair);
+
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.stairs, 0, "stair with zero rise should not be counted");
+    }
+
+    #[test]
+    fn railing_with_single_point_path_is_skipped() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+
+        let mut railing = cadcraft_doc::arch::Railing::default();
+        railing.id = ArchId(300);
+        railing.level = 0;
+        railing.path = vec![Vec2::new(0.0, 0.0)];
+        model.railings.push(railing);
+
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.railings, 0, "railing with single point path should not be counted");
+    }
+
+    #[test]
+    fn deck_room_with_nan_polygon_is_skipped() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 0,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(f64::NAN, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            room_type: cadcraft_doc::arch::RoomType::Deck,
+            ..Default::default()
+        });
+
+        let scene = Scene3d::build(&model);
+        assert_eq!(scene.decks, 0, "deck with NaN polygon should not be counted");
+    }
+
+    #[test]
+    fn multiple_wells_on_same_level_are_all_holes() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 1,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(20.0, 0.0), Vec2::new(20.0, 10.0), Vec2::new(0.0, 10.0)],
+            ..Default::default()
+        });
+
+        let well1 = vec![Vec2::new(1.0, 1.0), Vec2::new(4.0, 1.0), Vec2::new(4.0, 4.0), Vec2::new(1.0, 4.0)];
+        let mut stair1 = cadcraft_doc::arch::Stair::default();
+        stair1.id = ArchId(200);
+        stair1.from_level = 0;
+        stair1.to_level = 1;
+        stair1.well = well1;
+        model.stairs.push(stair1);
+
+        let well2 = vec![Vec2::new(16.0, 1.0), Vec2::new(19.0, 1.0), Vec2::new(19.0, 4.0), Vec2::new(16.0, 4.0)];
+        let mut stair2 = cadcraft_doc::arch::Stair::default();
+        stair2.id = ArchId(201);
+        stair2.from_level = 0;
+        stair2.to_level = 1;
+        stair2.well = well2;
+        model.stairs.push(stair2);
+
+        let scene = Scene3d::build(&model);
+        assert!(scene.probe(Vec3::new(2.5, 2.5, 2.55)).is_none(), "probe at well1 center should not hit floor slab");
+        assert!(scene.probe(Vec3::new(17.5, 2.5, 2.55)).is_none(), "probe at well2 center should not hit floor slab");
+        assert!(scene.probe(Vec3::new(10.0, 2.5, 2.55)).is_some(), "probe at solid slab should hit floor slab");
+    }
+
+    #[test]
+    fn well_from_stair_on_other_level_is_not_applied() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 0,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+            ..Default::default()
+        });
+
+        let well = vec![Vec2::new(2.0, 1.0), Vec2::new(6.0, 1.0), Vec2::new(6.0, 5.0), Vec2::new(2.0, 5.0)];
+        let mut stair = cadcraft_doc::arch::Stair::default();
+        stair.id = ArchId(200);
+        stair.from_level = 0;
+        stair.to_level = 1;
+        stair.well = well;
+        model.stairs.push(stair);
+
+        let scene = Scene3d::build(&model);
+        let hit = scene.probe(Vec3::new(4.0, 3.0, -0.15));
+        assert!(hit.is_some(), "probe at well center on level 0 should hit floor slab (well is on level 1)");
+    }
+
+    #[test]
+    fn floor_slab_rebuilds_when_well_stair_moves() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 1,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+            ..Default::default()
+        });
+
+        let well = vec![Vec2::new(2.0, 1.0), Vec2::new(6.0, 1.0), Vec2::new(6.0, 5.0), Vec2::new(2.0, 5.0)];
+        let mut stair = cadcraft_doc::arch::Stair::default();
+        stair.id = ArchId(200);
+        stair.from_level = 0;
+        stair.to_level = 1;
+        stair.well = well;
+        model.stairs.push(stair);
+
+        let full = Scene3d::build(&model);
+
+        let mut edited = model.clone();
+        if let Some(s) = edited.stairs.iter_mut().find(|s| s.id == ArchId(200)) {
+            s.well = vec![Vec2::new(6.0, 3.0), Vec2::new(10.0, 3.0), Vec2::new(10.0, 7.0), Vec2::new(6.0, 7.0)];
+        }
+
+        let dirty: BTreeSet<ArchId> = BTreeSet::from([ArchId(200)]);
+        let partial = Scene3d::build_dirty(&edited, &dirty, &full);
+        let full_edited = Scene3d::build(&edited);
+
+        assert!(partial.probe(Vec3::new(4.0, 3.0, 2.55)).is_some(), "old well center should now be solid");
+        assert!(partial.probe(Vec3::new(8.0, 5.0, 2.55)).is_none(), "new well center should be a hole");
+        assert_eq!(partial.floors, full_edited.floors);
+    }
+
+    #[test]
+    fn probe_inside_stair_hits_stair() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+
+        let mut stair = cadcraft_doc::arch::Stair::default();
+        stair.id = ArchId(200);
+        stair.start = Vec2::new(2.0, 1.0);
+        stair.direction = 0.0;
+        stair.width = 1.0;
+        stair.from_level = 0;
+        stair.to_level = 1;
+        stair.rise = 2.7;
+        model.stairs.push(stair);
+
+        let scene = Scene3d::build(&model);
+        assert!(scene.stairs > 0, "stair should be built");
+
+        let hit = scene.probe(Vec3::new(2.5, 1.5, 0.5));
+        if let Some(h) = hit {
+            assert_eq!(h.part, "stair", "probe inside stair should hit stair part, got {}", h.part);
+        }
+    }
+
+    #[test]
+    fn probe_inside_deck_hits_deck() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 0,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            room_type: cadcraft_doc::arch::RoomType::Deck,
+            ..Default::default()
+        });
+
+        let scene = Scene3d::build(&model);
+        assert!(scene.decks > 0, "deck should be built");
+
+        let hit = scene.probe(Vec3::new(2.0, 1.5, -0.025));
+        assert!(hit.is_some(), "probe inside deck should hit");
+        assert_eq!(hit.unwrap().part, "floor", "probe inside deck should hit floor part");
     }
 
     #[test]
