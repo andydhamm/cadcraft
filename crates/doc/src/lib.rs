@@ -564,4 +564,34 @@ mod arch_layers_tests {
         let layer = d.layer("TestLayer").unwrap();
         assert_eq!(layer.name.as_str(), "TestLayer");
     }
+
+    #[test]
+    fn layer_zero_is_default_layer() {
+        let d = Drawing::new_imperial();
+        let layer0 = d.layers.first();
+        assert!(layer0.is_some(), "layer 0 must exist");
+        assert_eq!(layer0.unwrap().name.as_str(), "", "layer 0 must have an empty name");
+        assert!(layer0.unwrap().plot, "layer 0 must be plotting");
+    }
+
+    #[test]
+    fn layer_mut_finds_all_arch_layers() {
+        let mut d = Drawing::new_imperial();
+        for name in ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"] {
+            let layer = d.layer_mut(name);
+            assert!(layer.is_some(), "layer_mut({name}) must find the layer");
+        }
+    }
+
+    #[test]
+    fn all_layers_are_unique() {
+        let d = Drawing::new_imperial();
+        let mut names = Vec::new();
+        for l in &d.layers {
+            names.push(l.name.to_lowercase());
+        }
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), d.layers.len(), "all layer names must be unique (case-insensitive)");
+    }
 }
