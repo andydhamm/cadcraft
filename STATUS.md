@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-28 18:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-28 18:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 5 of 13: Stairs, railings and decks — 11 of 17 segments merged · 1 of 9 acceptance checks**
 
@@ -15,7 +15,7 @@ Updated 2026-10-28 18:00 UTC. This page and the card in the README are regenerat
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
-| 5 | Stairs, railings and decks | building | 1 / 9 | 5.0 h so far · expected done Oct 29 00:03–Oct 29 05:27 UTC |
+| 5 | Stairs, railings and decks | building | 1 / 9 | 5.3 h so far · expected done Oct 29 00:36–Oct 29 06:16 UTC |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
@@ -31,8 +31,8 @@ Updated 2026-10-28 18:00 UTC. This page and the card in the README are regenerat
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p5-cmd-stair` | STAIR command | working | bonsai-b |
-| `p5-cmd-railing-deck` | RAILING and DECK commands | gate | bonsai-a |
+| `p5-cmd-stair` | STAIR command | gate | bonsai-b |
+| `p5-cmd-railing-deck` | RAILING and DECK commands | working | bonsai-a |
 | `p5-golden-stairs` | Golden stair/railing/deck scene tests | working | darwin-ws3 |
 
 ## Recent merges
@@ -56,16 +56,16 @@ Updated 2026-10-28 18:00 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | gate | 575 |
-| bonsai-b | bonsai2-27b | agent | 531 |
+| bonsai-a | bonsai2-27b | agent | 577 |
+| bonsai-b | bonsai2-27b | gate | 532 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | idle | 21 |
 | claude-sonnet-b | sonnet | idle | 21 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 405 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 408 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 70 |
 | mai-flash | mai-code-1.1-flash | idle | 1 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
-| tturbo-mac | tturbo-ultraheretic | agent | 371 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 217 |
+| tturbo-mac | tturbo-ultraheretic | gate | 371 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 218 |
