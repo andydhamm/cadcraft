@@ -476,4 +476,45 @@ mod tests {
         assert_eq!(s.undo().unwrap(), Some("Stair".to_string()));
         assert_eq!(s.doc().unwrap().arch.stairs.len(), 0);
     }
+
+    #[test]
+    fn stair_command_refuses_same_level() {
+        let mut s = new_session();
+        let r = s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0, "fromLevel": 0, "toLevel": 0 }));
+        assert!(r.is_err());
+        assert_eq!(s.doc().unwrap().arch.stairs.len(), 0);
+    }
+
+    #[test]
+    fn stair_command_explicit_rise() {
+        let mut s = two_level_session();
+        let r = s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0, "fromLevel": 0, "toLevel": 1, "rise": 1.0 })).unwrap();
+        // 1.0 m rise: n=6 gives 0.1667 m risers (closest to 0.16875 without exceeding 0.196)
+        assert_eq!(r["risers"].as_u64(), Some(6));
+        let riser_height = r["riserHeight"].as_f64().unwrap();
+        assert!((riser_height - 1.0 / 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn stair_command_level_by_name() {
+        let mut s = two_level_session();
+        let r = s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0, "fromLevel": "Level 1", "toLevel": "Level 2" })).unwrap();
+        assert_eq!(r["risers"].as_u64(), Some(16));
+    }
+
+    #[test]
+    fn stair_command_width_zero() {
+        let mut s = two_level_session();
+        let r = s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0, "width": 0.0, "fromLevel": 0, "toLevel": 1 }));
+        assert!(r.is_err());
+        assert_eq!(s.doc().unwrap().arch.stairs.len(), 0);
+    }
+
+    #[test]
+    fn stair_command_width_too_large() {
+        let mut s = two_level_session();
+        let r = s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0, "width": 5.1, "fromLevel": 0, "toLevel": 1 }));
+        assert!(r.is_err());
+        assert_eq!(s.doc().unwrap().arch.stairs.len(), 0);
+    }
 }
