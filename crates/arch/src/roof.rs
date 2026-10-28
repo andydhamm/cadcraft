@@ -887,6 +887,94 @@ mod tests {
     }
 
     #[test]
+    fn wall_inside_ring_with_nan_midpoint_is_false() {
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        let ring_walls: std::collections::BTreeSet<cadcraft_doc::ArchId> = std::collections::BTreeSet::new();
+
+        // Wall with NaN endpoints → NaN midpoint → not inside.
+        let mut w = Wall::new(Vec2::new(f64::NAN, f64::NAN), Vec2::new(f64::NAN, f64::NAN), 0.2);
+        w.id = ArchId(99);
+        assert!(!wall_inside_ring(&w, &ring, &ring_walls), "NaN midpoint must not be inside");
+    }
+
+    #[test]
+    fn wall_inside_ring_at_exact_tolerance_is_not_inside() {
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        let ring_walls: std::collections::BTreeSet<cadcraft_doc::ArchId> = std::collections::BTreeSet::new();
+
+        // Wall with midpoint exactly at distance thickness/2 + 1e-3 from the boundary.
+        // thickness = 0.2 → threshold = 0.101. Place midpoint at x = 0.101 (distance 0.101 from left edge).
+        let mut w = Wall::new(Vec2::new(0.101, 5.0), Vec2::new(0.101, 6.0), 0.2);
+        w.id = ArchId(99);
+        assert!(!wall_inside_ring(&w, &ring, &ring_walls), "wall at exact tolerance must not be inside (strict >)");
+    }
+
+    #[test]
+    fn wall_inside_ring_just_inside_tolerance_is_inside() {
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        let ring_walls: std::collections::BTreeSet<cadcraft_doc::ArchId> = std::collections::BTreeSet::new();
+
+        // Wall with midpoint just past the tolerance (0.101 + 1e-6).
+        let mut w = Wall::new(Vec2::new(0.101 + 1e-6, 5.0), Vec2::new(0.101 + 1e-6, 6.0), 0.2);
+        w.id = ArchId(99);
+        assert!(wall_inside_ring(&w, &ring, &ring_walls), "wall just inside tolerance must be inside");
+    }
+
+    #[test]
+    fn wall_inside_ring_just_outside_tolerance_is_not_inside() {
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        let ring_walls: std::collections::BTreeSet<cadcraft_doc::ArchId> = std::collections::BTreeSet::new();
+
+        // Wall with midpoint just under the tolerance (0.101 - 1e-6).
+        let mut w = Wall::new(Vec2::new(0.101 - 1e-6, 5.0), Vec2::new(0.101 - 1e-6, 6.0), 0.2);
+        w.id = ArchId(99);
+        assert!(!wall_inside_ring(&w, &ring, &ring_walls), "wall just outside tolerance must not be inside");
+    }
+
+    #[test]
+    fn footprint_rejects_multiple_crossing_walls() {
+        let mut model = ArchModel::default();
+        // Square 0,0..8,8
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(8.0, 0.0), Vec2::new(8.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(8.0, 8.0), Vec2::new(0.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2));
+        // Two crossing walls
+        model.push_wall(Wall::new(Vec2::new(4.0, -2.0), Vec2::new(4.0, 10.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(-2.0, 4.0), Vec2::new(10.0, 4.0), 0.2));
+
+        assert!(outer_footprint(&model, 0).is_none(), "footprint should reject multiple crossing walls");
+        assert!(build_roof(&model, 0, &test_roof()).is_err(), "roof build should fail with multiple crossing walls");
+    }
+
+    #[test]
+    fn footprint_rejects_crossing_wall_on_l_shape() {
+        let mut model = ArchModel::default();
+        // L-shaped building
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 8.0), Vec2::new(6.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(6.0, 8.0), Vec2::new(6.0, 12.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(6.0, 12.0), Vec2::new(0.0, 12.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(0.0, 12.0), Vec2::new(0.0, 0.0), 0.2));
+        // Crossing wall through the L
+        model.push_wall(Wall::new(Vec2::new(5.0, -2.0), Vec2::new(5.0, 14.0), 0.2));
+
+        assert!(outer_footprint(&model, 0).is_none(), "footprint should reject crossing wall on L-shape");
+        assert!(build_roof(&model, 0, &test_roof()).is_err(), "roof build should fail on L-shape with crossing wall");
+    }
+
+    #[test]
+    fn wall_inside_ring_with_empty_ring_is_false() {
+        let ring: Vec<Vec2> = Vec::new();
+        let ring_walls: std::collections::BTreeSet<cadcraft_doc::ArchId> = std::collections::BTreeSet::new();
+
+        let mut w = Wall::new(Vec2::new(5.0, 5.0), Vec2::new(6.0, 5.0), 0.2);
+        w.id = ArchId(99);
+        assert!(!wall_inside_ring(&w, &ring, &ring_walls), "wall must not be inside an empty ring");
+    }
+
+    #[test]
     fn vkey_quantises_to_microns() {
         assert_eq!(vkey(Vec2::new(1.0000004, 2.0), Vec2::ZERO), (1_000_000, 2_000_000));
         assert_eq!(vkey(Vec2::new(1.0000004 - 1e-7, 2.0), Vec2::ZERO), (1_000_000, 2_000_000));
