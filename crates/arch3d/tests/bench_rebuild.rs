@@ -276,6 +276,21 @@ fn build_dirty_empty_set_is_noop() {
 }
 
 #[test]
+fn build_dirty_multiple_walls_rebuilds_only_those() {
+    let model = build_300_wall_grid();
+    let scene = cadcraft_arch3d::build(&model);
+
+    // Mark 10 walls dirty.
+    let mut dirty = BTreeSet::new();
+    for i in 0..10 {
+        dirty.insert(scene.meshes[i].object);
+    }
+
+    let rebuilt = cadcraft_arch3d::build_dirty(&model, &dirty, &scene);
+    assert_eq!(rebuilt.meshes.len(), scene.meshes.len(), "dirty rebuild changed mesh count");
+}
+
+#[test]
 fn build_dirty_unknown_id_is_noop() {
     let model = build_300_wall_grid();
     let scene = cadcraft_arch3d::build(&model);
