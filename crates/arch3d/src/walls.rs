@@ -275,7 +275,7 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
     let dx = wall.end.x - wall.start.x;
     let dy = wall.end.y - wall.start.y;
     let len = (dx * dx + dy * dy).sqrt();
-    if len < 1e-9 {
+    if len < 1e-9 || !len.is_finite() {
         return None;
     }
     let dir = Vec2::new(dx / len, dy / len);
@@ -770,6 +770,146 @@ mod tests {
         for wall in &model.walls {
             assert!(roof_top_polyline(&model, wall, 0.0, 2.4).is_none());
         }
+    }
+
+    #[test]
+    fn roof_top_polyline_zero_length_wall_returns_none() {
+        let model = gable_house();
+        let wall = Wall {
+            start: Vec2::new(5.0, 4.0),
+            end: Vec2::new(5.0, 4.0),
+            thickness: 0.2,
+            height: 2.4,
+            exterior: true,
+            base_level: 0,
+            ..Default::default()
+        };
+        assert!(roof_top_polyline(&model, &wall, 0.0, 2.4).is_none());
+    }
+
+    #[test]
+    fn roof_top_polyline_ignores_roofs_at_other_levels() {
+        let mut model = gable_house();
+        // Add a second level and a roof at that level
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+        let mut roof2 = Roof::default();
+        roof2.id = ArchId(200);
+        roof2.level = 1;
+        let plane = RoofPlane {
+            base_edge: [-0.1, -0.1, 10.1, -0.1],
+            ring: vec![Vec2::new(-0.1, -0.1), Vec2::new(10.1, -0.1), Vec2::new(10.1, 4.0), Vec2::new(-0.1, 4.0)],
+            slope: 0.5,
+            eave_z: 2.7,
+            thickness: 0.25,
+            ..Default::default()
+        };
+        roof2.planes.push(plane);
+        model.roofs.push(roof2);
+
+        // The level-0 walls should still see the level-0 roof (gable wall rises)
+        let wall = &model.walls[3]; // west wall
+        let poly = roof_top_polyline(&model, wall, 0.0, 2.4);
+        assert!(poly.is_some(), "level-0 wall should still see level-0 roof");
+        let poly = poly.unwrap();
+        assert!(poly.iter().any(|p| (p.x - 4.0).abs() < 1e-3 && (p.y - 4.45).abs() < 1e-3));
+    }
+
+    #[test]
+    fn roof_top_polyline_handles_roof_with_no_planes() {
+        let mut model = gable_house();
+        let mut roof = Roof::default();
+        roof.id = ArchId(300);
+        roof.level = 0;
+        model.roofs.push(roof);
+
+        // The gable wall should still see the original roof's planes
+        let wall = &model.walls[3]; // west wall
+        let poly = roof_top_polyline(&model, wall, 0.0, 2.4);
+        assert!(poly.is_some(), "wall should still see planes from the other roof");
+    }
+
+    #[test]
+    fn roof_top_polyline_min_z_from_multiple_planes() {
+        let mut model = gable_house();
+        // Add a third plane with a steeper slope covering the same area as the south plane
+        let steep = RoofPlane {
+            base_edge: [-0.1, -0.1, 10.1, -0.1],
+            ring: vec![Vec2::new(-0.1, -0.1), Vec2::new(10.1, -0.1), Vec2::new(10.1, 4.0), Vec2::new(-0.1, 4.0)],
+            slope: 1.0, // steeper than 0.5
+            eave_z: 2.4,
+            thickness: 0.25,
+            ..Default::default()
+        };
+        model.roofs[0].planes.push(steep);
+
+        // The south wall is an eave wall; its outer face is the base edge.
+        // The minimum z from the two planes at the base edge is still 2.4 (eave_z).
+        // So the south wall should still return None.
+        let south_wall = &model.walls[0];
+        assert!(roof_top_polyline(&model, south_wall, 0.0, 2.4).is_none());
+
+        // The west wall should still rise to the ridge, but now the steeper plane
+        // also covers it. At the ridge (y=4), the steeper plane gives z = 2.4 + 1.0*4.1 = 6.5,
+        // while the original gives 4.45. The minimum is 4.45.
+        let west_wall = &model.walls[3];
+        let poly = roof_top_polyline(&model, west_wall, 0.0, 2.4).unwrap();
+        // The ridge point should still be at v=4.45 (the minimum of the two planes)
+        assert!(poly.iter().any(|p| (p.x - 4.0).abs() < 1e-3 && (p.y - 4.45).abs() < 1e-3));
+    }
+
+    #[test]
+    fn roof_top_polyline_nan_wall_returns_none() {
+        let model = gable_house();
+        let wall = Wall {
+            start: Vec2::new(f64::NAN, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: 0.2,
+            height: 2.4,
+            exterior: true,
+            base_level: 0,
+            ..Default::default()
+        };
+        assert!(roof_top_polyline(&model, &wall, 0.0, 2.4).is_none());
+    }
+
+    #[test]
+    fn roof_top_polyline_degenerate_base_edge_skipped() {
+        let mut model = gable_house();
+        // Add a plane with a degenerate base edge (both endpoints the same)
+        let degenerate = RoofPlane {
+            base_edge: [5.0, 4.0, 5.0, 4.0],
+            ring: vec![Vec2::new(4.0, 3.0), Vec2::new(6.0, 3.0), Vec2::new(5.0, 5.0)],
+            slope: 0.5,
+            eave_z: 2.4,
+            thickness: 0.25,
+            ..Default::default()
+        };
+        model.roofs[0].planes.push(degenerate);
+
+        // The gable wall should still work as before
+        let wall = &model.walls[3]; // west wall
+        let poly = roof_top_polyline(&model, wall, 0.0, 2.4);
+        assert!(poly.is_some(), "degenerate plane should be skipped, not break the function");
+    }
+
+    #[test]
+    fn roof_top_polyline_few_ring_points_skipped() {
+        let mut model = gable_house();
+        // Add a plane with only 2 ring points
+        let few_points = RoofPlane {
+            base_edge: [0.0, 0.0, 10.0, 0.0],
+            ring: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)],
+            slope: 0.5,
+            eave_z: 2.4,
+            thickness: 0.25,
+            ..Default::default()
+        };
+        model.roofs[0].planes.push(few_points);
+
+        // The gable wall should still work as before
+        let wall = &model.walls[3]; // west wall
+        let poly = roof_top_polyline(&model, wall, 0.0, 2.4);
+        assert!(poly.is_some(), "plane with < 3 ring points should be skipped");
     }
 
     /// A pentagon profile (5 outer vertices) must go through `extrude_profile_manual`,
