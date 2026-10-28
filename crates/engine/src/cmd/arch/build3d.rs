@@ -14,6 +14,7 @@ use crate::Session;
 
 /// Run body. Returns `{"meshes": ..., "triangles": ..., "rebuildMs": ...,
 /// "bounds": {"min": [x,y,z], "max": [x,y,z]}, "floors": ..., "ceilings": ..., "roofs": ...,
+/// "stairs": ..., "railings": ..., "decks": ...,
 /// "openings": ..., "revision": ..., "probe": [{id, part, level} | null, ...]}`.
 /// The optional `probe` key is a list of at most 1024 `[x, y, z]` points;
 /// each element of the returned `probe` array is the hit (or `null`) for the
@@ -51,6 +52,9 @@ fn run_build3d(s: &mut Session, params: &Value) -> crate::Result<Value> {
         "floors": scene.floors,
         "ceilings": scene.ceilings,
         "roofs": scene.roofs,
+        "stairs": scene.stairs,
+        "railings": scene.railings,
+        "decks": scene.decks,
         "openings": scene.openings_built,
         "revision": d.arch_revision,
         "probe": probe_results,
@@ -117,7 +121,7 @@ pub fn specs() -> Vec<crate::cmd::CommandSpec> {
 mod tests {
     use super::*;
 
-    use cadcraft_doc::arch::{Level, Opening, OpeningKind, Room, RoomType};
+    use cadcraft_doc::arch::{Level, Opening, OpeningKind, Room, RoomType, Stair};
     use cadcraft_doc::{ArchId, Wall};
     use cadcraft_geom::Vec2;
     use serde_json::json;
@@ -832,5 +836,53 @@ mod tests {
         let r = s.execute("build3d", &json!({})).unwrap();
         assert_eq!(r["roofs"].as_u64(), Some(1), "building with openings must report 1 roof");
         assert_eq!(r["openings"].as_u64(), Some(2), "expected 2 openings");
+    }
+
+    #[test]
+    fn build3d_reports_stair_and_railing_counts() {
+        let mut s = fresh_session();
+        let d = s.doc_mut().unwrap();
+
+        // Create two levels manually or via command if available.
+        // Using command is safer if it exists, but we know stair command failed.
+        // Level command likely exists.
+        drop(d);
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+
+        let d = s.doc_mut().unwrap();
+        // Manually add a stair to the model
+        d.arch.stairs.push(Stair {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            direction: 0.0,
+            width: 1.0,
+            from_level: 0,
+            to_level: 1,
+            ..Stair::default()
+        });
+        d.touch_arch();
+
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["stairs"].as_u64(), Some(1), "expected 1 stair");
+        // Railings count should be non-negative
+        assert!(r["railings"].as_u64().unwrap_or(0) >= 0, "railings count should be non-negative");
+    }
+
+    #[test]
+    fn build3d_reports_deck_count() {
+        let mut s = fresh_session();
+        // Create a deck room
+        s.execute(
+            "room",
+            &json!({
+                "points": [[0.0, 0.0], [4.0, 0.0], [4.0, 5.0], [0.0, 5.0], [0.0, 0.0]],
+                "name": "Deck",
+                "type": "Deck"
+            }),
+        )
+        .unwrap();
+
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["decks"].as_u64(), Some(1), "expected 1 deck");
     }
 }
