@@ -316,11 +316,14 @@ impl Interactive for OpeningM {
 fn parse_arch_id(s: &str, space: &str) -> Result<ArchId, String> {
     let s = s.trim();
     let digits = if space == "opening" {
-        match s.as_bytes().first() {
-            Some(b) if *b == b'o' || *b == b'O' => &s[1..],
-            _ => return Err(format!("opening id requires an `o` prefix, got `{s}`")),
-        }
+        // Accepts o{n}, O{n}, w{n}, W{n}, or bare {n}
+        let start = match s.as_bytes().first() {
+            Some(b) if *b == b'o' || *b == b'O' || *b == b'w' || *b == b'W' => 1,
+            _ => 0,
+        };
+        &s[start..]
     } else {
+        // wall space: accepts w{n}, W{n}, or bare {n}
         let start = match s.as_bytes().first() {
             Some(b) if *b == b'w' || *b == b'W' => 1,
             _ => 0,
@@ -961,5 +964,74 @@ mod tests {
         assert_eq!(d.arch.openings[0].style, "hinged", "first door should be hinged");
         assert_eq!(d.arch.openings[1].style, "slider", "window should be slider");
         assert_eq!(d.arch.openings[2].style, "hinged", "second door should be hinged");
+    }
+
+    /// Moving an opening requires either an offset or a point.
+    #[test]
+    fn opening_move_rejects_missing_offset_and_point() {
+        let mut s = session_with_door();
+        let r = s.execute("arch.opening.move", &json!({"opening": "o0"}));
+        let err = r.expect_err("missing both offset and point should be rejected");
+        assert!(err.to_string().contains("`offset` (number) or `point`"), "expected missing-offset error, got: {err}");
+    }
+
+    /// When both offset and point are provided, offset takes precedence.
+    #[test]
+    fn opening_move_offset_takes_precedence_over_point() {
+        let mut s = session_with_door();
+        // offset 6.5, point projects to 7.0 - offset should win
+        let r = s.execute("arch.opening.move", &json!({"opening": "o0", "offset": 6.5, "point": [7.0, 0.0]})).expect("move with both");
+        assert_eq!(r["offset"], json!(6.5), "offset should take precedence");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.opening(ArchId(0)).map(|o| o.offset), Some(6.5), "stored offset should be 6.5");
+    }
+
+    /// Moving an opening bumps the arch revision.
+    #[test]
+    fn opening_move_bumps_revision() {
+        let mut s = session_with_door();
+        let rev_before = s.doc().expect("doc").arch_revision;
+        s.execute("arch.opening.move", &json!({"opening": "o0", "offset": 5.0})).expect("move opening");
+        let rev_after = s.doc().expect("doc").arch_revision;
+        assert_ne!(rev_before, rev_after, "revision should change after move");
+    }
+
+    /// A null offset is rejected (not silently treated as missing).
+    #[test]
+    fn opening_move_rejects_null_offset() {
+        let mut s = session_with_door();
+        let r = s.execute("arch.opening.move", &json!({"opening": "o0", "offset": null}));
+        let err = r.expect_err("null offset should be rejected");
+        assert!(!err.to_string().is_empty(), "expected an error, got empty");
+    }
+
+    /// The opening id can be a bare number (no prefix).
+    #[test]
+    fn opening_move_accepts_bare_number_id() {
+        let mut s = session_with_door();
+        let r = s.execute("arch.opening.move", &json!({"opening": "0", "offset": 5.0})).expect("move with bare number");
+        assert!(r["moved"].is_string(), "moved should be a string");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.opening(ArchId(0)).map(|o| o.offset), Some(5.0), "stored offset should be 5.0");
+    }
+
+    /// The opening id can use the wall prefix format (w0).
+    #[test]
+    fn opening_move_accepts_wall_id_format() {
+        let mut s = session_with_door();
+        let r = s.execute("arch.opening.move", &json!({"opening": "w0", "offset": 5.0})).expect("move with w-prefixed id");
+        assert!(r["moved"].is_string(), "moved should be a string");
+        let d = s.doc().expect("doc");
+        assert_eq!(d.arch.opening(ArchId(0)).map(|o| o.offset), Some(5.0), "stored offset should be 5.0");
+    }
+
+    /// The response includes the current arch revision matching the doc.
+    #[test]
+    fn opening_move_returns_revision() {
+        let mut s = session_with_door();
+        let r = s.execute("arch.opening.move", &json!({"opening": "o0", "offset": 5.0})).expect("move opening");
+        let rev = r["revision"].as_u64().expect("revision should be a number");
+        let d = s.doc().expect("doc");
+        assert_eq!(rev, d.arch_revision, "revision in response should match doc revision");
     }
 }
