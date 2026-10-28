@@ -37,105 +37,125 @@ pub struct Footprint {
 /// 256 edges.
 pub fn outer_footprint(model: &ArchModel, level: u32) -> Option<Footprint> {
     // 1. Exterior, non-divider walls on the level.
-    let walls: Vec<&Wall> = model.walls.iter().filter(|w| w.exterior && !w.divider && w.base_level == level).collect();
-    if walls.is_empty() {
+    let candidates: Vec<&Wall> =
+        model.walls.iter().filter(|w| w.exterior && !w.divider && w.base_level == level && w.start.is_finite() && w.end.is_finite()).collect();
+    if candidates.len() < 3 {
         return None;
     }
 
-    // 2. Building centroid (centre of the level walls' bounds).
-    let mut min_x = f64::INFINITY;
-    let mut min_y = f64::INFINITY;
-    let mut max_x = f64::NEG_INFINITY;
-    let mut max_y = f64::NEG_INFINITY;
-    for w in &walls {
-        if !w.start.is_finite() || !w.end.is_finite() {
-            continue;
+    // 2. Centre-line graph: drop dangling stubs (so they cannot distort the corner joins)
+    // and give each connected building its own centroid (centre of its bounds).
+    let centre_lines: Vec<FootprintEdge> = candidates.iter().map(|w| FootprintEdge { wall: w.id, a: w.start, b: w.end }).collect();
+    let centre_origin = ring_origin(&centre_lines);
+    let mut kept = centre_lines.clone();
+    prune_spurs(&mut kept, centre_origin);
+    if kept.len() < 3 {
+        return None;
+    }
+    let mut centroids: std::collections::BTreeMap<ArchId, Vec2> = std::collections::BTreeMap::new();
+    for group in components(&kept, centre_origin) {
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for e in group.iter().filter_map(|&i| kept.get(i)) {
+            for p in [e.a, e.b] {
+                min_x = min_x.min(p.x);
+                min_y = min_y.min(p.y);
+                max_x = max_x.max(p.x);
+                max_y = max_y.max(p.y);
+            }
         }
-        min_x = min_x.min(w.start.x);
-        min_y = min_y.min(w.start.y);
-        max_x = max_x.max(w.end.x);
-        max_y = max_y.max(w.end.y);
-        min_x = min_x.min(w.end.x);
-        min_y = min_y.min(w.end.y);
-        max_x = max_x.max(w.start.x);
-        max_y = max_y.max(w.start.y);
+        let centroid = Vec2::new((min_x + max_x) / 2.0, (min_y + max_y) / 2.0);
+        let group_edges: Vec<FootprintEdge> = group.iter().filter_map(|&i| kept.get(i).cloned()).collect();
+        for e in &group_edges {
+            centroids.insert(e.wall, centroid);
+        }
+        // A closed centre-line ring says exactly which side of each wall is inside, which
+        // the bounds centre cannot for concave buildings: aim at a point on the inner side.
+        if let Some(ring) = walk_ring(&group_edges, centre_origin) {
+            let pts: Vec<Vec2> = ring.iter().map(|e| e.a).collect();
+            let sign = if crate::poly::ring_area(&pts) >= 0.0 { 1.0 } else { -1.0 };
+            for e in &ring {
+                let d = e.b - e.a;
+                let len = d.len();
+                if len < 1e-12 {
+                    continue;
+                }
+                let mid = Vec2::new((e.a.x + e.b.x) / 2.0, (e.a.y + e.b.y) / 2.0);
+                let inner = d.perp() * (sign / len);
+                centroids.insert(e.wall, mid + inner);
+            }
+        }
     }
-    if min_x.is_infinite() {
-        return None;
-    }
-    let centroid = Vec2::new((min_x + max_x) / 2.0, (min_y + max_y) / 2.0);
+    let walls: Vec<&Wall> = candidates.iter().copied().filter(|w| centroids.contains_key(&w.id)).collect();
 
-    // 3. Solved poché rings.
-    let shapes = crate::join::solve_joins(model);
+    // 3. Solved poché rings, without the pruned stubs.
+    let mut pruned = model.clone();
+    pruned.walls.retain(|w| w.base_level == level && (centroids.contains_key(&w.id) || !candidates.iter().any(|c| c.id == w.id)));
+    let shapes = crate::join::solve_joins(&pruned);
 
-    // 4. One outer-face edge per wall, tagged with its angle around the centroid.
-    let mut tagged: Vec<(f64, FootprintEdge)> = Vec::with_capacity(walls.len());
+    // 4. One outer-face edge per wall.
+    let mut edges: Vec<FootprintEdge> = Vec::with_capacity(walls.len());
     for wall in &walls {
         let Some(shape) = shapes.iter().find(|s| s.id == wall.id) else {
             continue;
         };
-        let Some((a, b)) = outer_face_edge(&shape.polygon, wall, &centroid) else {
+        let Some(centroid) = centroids.get(&wall.id) else {
             continue;
         };
-        let edge = FootprintEdge { wall: wall.id, a, b };
-        let mid = Vec2::new((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
-        let v = mid - centroid;
-        tagged.push((v.y.atan2(v.x), edge));
-    }
-    if tagged.len() < 3 {
-        return None;
-    }
-
-    // 5. CCW order around the centroid.
-    tagged.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-
-    // 6. Merge collinear, contiguous runs (keep the first wall's attribution).
-    let mut merged: Vec<FootprintEdge> = Vec::with_capacity(tagged.len());
-    for (_angle, edge) in tagged {
-        if let Some(last) = merged.last_mut() {
-            if collinear_contiguous(last, &edge) {
-                last.b = edge.b;
-                continue;
-            }
+        let Some((a, b)) = outer_face_edge(&shape.polygon, wall, centroid) else {
+            continue;
+        };
+        if !a.is_finite() || !b.is_finite() || a.near(b, 1e-9) {
+            continue;
         }
-        merged.push(edge);
+        edges.push(FootprintEdge { wall: wall.id, a, b });
     }
-    if merged.len() < 3 {
+    if edges.len() < 3 {
         return None;
     }
 
-    // 7. Ring from edge starts; validate; orient CCW.
-    let raw: Vec<Vec2> = merged.iter().map(|e| e.a).collect();
-    if raw.len() > 256 {
+    // 5. Candidate rings, one per connected component; keep the largest.
+    let origin = ring_origin(&edges);
+    let mut best: Option<(f64, Vec<FootprintEdge>)> = None;
+    for group in components(&edges, origin) {
+        let mut group_edges: Vec<FootprintEdge> = group.iter().filter_map(|&i| edges.get(i).cloned()).collect();
+        prune_spurs(&mut group_edges, origin);
+        let Some(mut ring) = walk_ring(&group_edges, origin) else {
+            continue;
+        };
+        merge_straight(&mut ring, origin);
+        if ring.len() < 3 {
+            continue;
+        }
+        let pts: Vec<Vec2> = ring.iter().map(|e| e.a).collect();
+        let area = crate::poly::ring_area(&pts).abs();
+        if !area.is_finite() {
+            continue;
+        }
+        let better = match &best {
+            None => true,
+            Some((ba, br)) => area > *ba || (area == *ba && ring.len() > br.len()),
+        };
+        if better {
+            best = Some((area, ring));
+        }
+    }
+    let (_, mut ring) = best?;
+
+    // 6. Validate the ring.
+    let raw: Vec<Vec2> = ring.iter().map(|e| e.a).collect();
+    if raw.len() > 256 || raw.iter().any(|p| !p.is_finite()) || !crate::poly::is_simple(&raw) {
         return None;
     }
-    if raw.iter().any(|p| !p.is_finite()) {
-        return None;
-    }
-    if !crate::poly::is_simple(&raw) {
-        return None;
-    }
+
+    // 7. Orient CCW, reversing the edge list to match.
     let outer = crate::poly::ensure_ccw(&raw);
-
-    // 8. Re-attribute each oriented edge to its source wall (match by midpoint).
-    let n = outer.len();
-    let mut edges: Vec<FootprintEdge> = Vec::with_capacity(n);
-    for i in 0..n {
-        let a = outer[i];
-        let b = outer[(i + 1) % n];
-        let mid = Vec2::new((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
-        let wall_id = merged
-            .iter()
-            .find(|e| {
-                let emid = Vec2::new((e.a.x + e.b.x) / 2.0, (e.a.y + e.b.y) / 2.0);
-                emid.dist(mid) < 1.0
-            })
-            .map(|e| e.wall)
-            .unwrap_or(merged.first().map(|e| e.wall).unwrap_or_else(|| ArchId(0)));
-        edges.push(FootprintEdge { wall: wall_id, a, b });
+    if crate::poly::ring_area(&raw) < 0.0 {
+        ring.reverse();
+        for e in &mut ring {
+            std::mem::swap(&mut e.a, &mut e.b);
+        }
     }
-
-    Some(Footprint { outer, edges })
+    Some(Footprint { outer, edges: ring })
 }
 
 /// The long poché edge of `ring` that faces away from the building `centroid`.
@@ -344,20 +364,6 @@ fn merge_straight(ring: &mut Vec<FootprintEdge>, _origin: Vec2) {
         }
         return;
     }
-}
-
-/// True when `first` and `second` are contiguous (`first.b` ≈ `second.a`) and on the
-/// same line (cross product within tolerance).
-fn collinear_contiguous(first: &mut FootprintEdge, second: &FootprintEdge) -> bool {
-    if !first.b.near(second.a, 1e-6) {
-        return false;
-    }
-    let ab = first.b - first.a;
-    let cd = second.b - second.a;
-    if ab.len() < 1e-12 || cd.len() < 1e-12 {
-        return false;
-    }
-    ab.cross(cd).abs() < 1e-9
 }
 
 /// Outset the footprint ring uniformly by `overhang` (outward) and re-attribute each
@@ -873,6 +879,78 @@ mod tests {
         for w in model.walls.iter_mut() {
             w.height = 2.4;
         }
+    }
+
+    fn closed_ring_walls(model: &mut ArchModel, pts: &[(f64, f64)]) {
+        for i in 0..pts.len() {
+            let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+            let mut w = Wall::new(Vec2::new(a.0, a.1), Vec2::new(b.0, b.1), 0.2);
+            w.height = 2.4;
+            model.push_wall(w);
+        }
+    }
+
+    fn assert_closed_simple(fp: &Footprint) {
+        assert!(crate::poly::is_simple(&fp.outer));
+        let n = fp.edges.len();
+        assert_eq!(n, fp.outer.len());
+        for i in 0..n {
+            assert!(fp.edges[i].b.near(fp.edges[(i + 1) % n].a, 1e-6), "edge {i} does not meet the next");
+        }
+    }
+
+    #[test]
+    fn t_footprint_is_a_closed_simple_ring() {
+        let mut model = ArchModel::default();
+        closed_ring_walls(&mut model, &[(0.0, 0.0), (12.0, 0.0), (12.0, 4.0), (8.0, 4.0), (8.0, 8.0), (4.0, 8.0), (4.0, 4.0), (0.0, 4.0)]);
+        let fp = outer_footprint(&model, 0).expect("footprint");
+        assert_eq!(fp.outer.len(), 8);
+        assert_closed_simple(&fp);
+    }
+
+    #[test]
+    fn l_footprint_is_a_closed_simple_ring() {
+        let mut model = ArchModel::default();
+        closed_ring_walls(&mut model, &[(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (6.0, 8.0), (6.0, 12.0), (0.0, 12.0)]);
+        let fp = outer_footprint(&model, 0).expect("footprint");
+        assert_eq!(fp.outer.len(), 6);
+        assert_closed_simple(&fp);
+    }
+
+    #[test]
+    fn footprint_rejects_disconnected_walls() {
+        let mut model = ArchModel::default();
+        closed_ring_walls(&mut model, &[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)]);
+        closed_ring_walls(&mut model, &[(20.0, 0.0), (24.0, 0.0), (24.0, 4.0), (20.0, 4.0)]);
+        let fp = outer_footprint(&model, 0).expect("one building's ring");
+        assert_eq!(fp.outer.len(), 4);
+    }
+
+    #[test]
+    fn rectangle_footprint_is_the_outer_face_ring() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        let fp = outer_footprint(&model, 0).expect("footprint");
+        assert_eq!(fp.outer.len(), 4);
+        let min_x = fp.outer.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+        let max_x = fp.outer.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+        let min_y = fp.outer.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
+        let max_y = fp.outer.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
+        assert!((min_x + 0.1).abs() < 1e-6 && (max_x - 10.1).abs() < 1e-6);
+        assert!((min_y + 0.1).abs() < 1e-6 && (max_y - 8.1).abs() < 1e-6);
+        assert!(crate::poly::ring_area(&fp.outer) > 0.0);
+        assert_closed_simple(&fp);
+    }
+
+    #[test]
+    fn footprint_prunes_a_dangling_exterior_stub() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        let mut stub = Wall::new(Vec2::new(10.0, 0.0), Vec2::new(12.0, 0.0), 0.2);
+        stub.height = 2.4;
+        model.push_wall(stub);
+        let fp = outer_footprint(&model, 0).expect("footprint");
+        assert_eq!(fp.outer.len(), 4);
     }
 
     #[test]
