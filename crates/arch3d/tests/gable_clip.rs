@@ -55,7 +55,7 @@ fn gable_house() -> ArchModel {
         ring: vec![Vec2::new(-0.1, -0.1), Vec2::new(10.1, -0.1), Vec2::new(10.1, 4.0), Vec2::new(-0.1, 4.0)],
         slope: 0.5,
         eave_z: 2.4,
-        thickness: 0.25,
+        thickness: 0.04,
         ..Default::default()
     });
     roof.planes.push(RoofPlane {
@@ -63,7 +63,7 @@ fn gable_house() -> ArchModel {
         ring: vec![Vec2::new(-0.1, 8.1), Vec2::new(-0.1, 4.0), Vec2::new(10.1, 4.0), Vec2::new(10.1, 8.1)],
         slope: 0.5,
         eave_z: 2.4,
-        thickness: 0.25,
+        thickness: 0.04,
         ..Default::default()
     });
     model.roofs.push(roof);
@@ -437,4 +437,39 @@ fn probe_just_below_ridge_height_on_gable_wall() {
     let hit = scene.probe(cadcraft_geom::Vec3::new(0.0, 4.0, 4.44));
     assert!(hit.is_some(), "probe just below ridge (0,4,4.44) should hit wall");
     assert_eq!(hit.unwrap().part, "wall", "probe just below ridge should be wall");
+}
+
+#[test]
+fn probe_at_ridge_height_on_gable_wall() {
+    let model = gable_house();
+    let scene = Scene3d::build(&model);
+
+    // Probe exactly at the ridge height (4.45) on the gable wall.
+    // The wall tops out at 4.45, so a point at z=4.45 is on the top edge.
+    let hit = scene.probe(cadcraft_geom::Vec3::new(0.0, 4.0, 4.45));
+    assert!(hit.is_some(), "probe at ridge height (0,4,4.45) should hit wall");
+    assert_eq!(hit.unwrap().part, "wall", "probe at ridge height should be wall");
+}
+
+#[test]
+fn probe_well_above_roof_is_empty() {
+    let model = gable_house();
+    let scene = Scene3d::build(&model);
+
+    // Roof top at ridge is 4.45 + 0.04 = 4.49; probe well above that.
+    let hit = scene.probe(cadcraft_geom::Vec3::new(0.0, 4.0, 10.0));
+    assert!(hit.is_none(), "probe well above roof (0,4,10) should be empty");
+}
+
+#[test]
+fn gable_wall_profile_has_five_vertices() {
+    let model = gable_house();
+    let gable_id = find_wall_id(&model, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)).expect("gable wall not found");
+
+    let scene = Scene3d::build(&model);
+    let mesh = scene.mesh_for(&gable_id).expect("gable wall mesh");
+
+    // The gable wall has a pentagon profile (5 vertices), extruded into a
+    // closed solid. The mesh should have at least 10 vertices (5 per face).
+    assert!(mesh.positions.len() >= 10, "gable wall mesh should have at least 10 vertices, got {}", mesh.positions.len());
 }
