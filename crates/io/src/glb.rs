@@ -1117,4 +1117,103 @@ mod tests {
         assert_eq!(scene_nodes.len(), 1, "scene should reference only the root node");
         assert_eq!(scene_nodes[0].as_u64().unwrap(), 0, "scene should reference root node at index 0");
     }
+
+    /// Buffer views use ARRAY_BUFFER (34962) for attributes and
+    /// ELEMENT_ARRAY_BUFFER (34963) for indices.
+    #[test]
+    fn glb_buffer_view_targets_are_correct() {
+        let bytes = write(&scene_with(2));
+        let json = glb_json_chunk(&bytes);
+        let views = json["bufferViews"].as_array().unwrap();
+        assert_eq!(views.len(), 8);
+        for i in 0..8 {
+            let target = views[i]["target"].as_u64().unwrap();
+            if i % 4 == 3 {
+                assert_eq!(target, 34963, "indices buffer view target wrong");
+            } else {
+                assert_eq!(target, 34962, "attribute buffer view target wrong");
+            }
+        }
+    }
+
+    /// The material list contains one entry per distinct material name.
+    #[test]
+    fn glb_material_count_matches_distinct_materials() {
+        let mut scene = scene_with(2);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "glass".into();
+            m.object = ArchId(5);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "glass".into();
+            m.object = ArchId(6);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "frame".into();
+            m.object = ArchId(7);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let materials = json["materials"].as_array().unwrap();
+        assert_eq!(materials.len(), 3);
+    }
+
+    /// A non-empty scene has one root node plus one node per mesh.
+    #[test]
+    fn glb_node_count_is_one_plus_mesh_count() {
+        let bytes = write(&scene_with(4));
+        let json = glb_json_chunk(&bytes);
+        let nodes = json["nodes"].as_array().unwrap();
+        assert_eq!(nodes.len(), 5);
+    }
+
+    /// Glass detection works for material names containing "glass" at any position.
+    #[test]
+    fn glb_glass_detection_for_various_names() {
+        let mut scene = scene_with(0);
+        for name in ["glass", "window-glass", "glass-panel", "tinted-glass"] {
+            scene.meshes.push({
+                let mut m = wall_mesh();
+                m.material = name.into();
+                m.object = ArchId(0);
+                m
+            });
+        }
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let materials = json["materials"].as_array().unwrap();
+        for mat in materials {
+            assert_eq!(mat["alphaMode"], "BLEND", "material {} should be BLEND", mat["name"]);
+            let alpha = mat["pbrMetallicRoughness"]["baseColorFactor"][3].as_f64().unwrap();
+            assert_eq!(alpha, 0.35, "material {} alpha should be 0.35", mat["name"]);
+        }
+    }
+
+    /// Non-glass materials remain opaque (no alphaMode, alpha 1.0).
+    #[test]
+    fn glb_non_glass_materials_are_opaque() {
+        let mut scene = scene_with(0);
+        for name in ["wall", "frame", "leaf", "casing", "sill", "header", "roof"] {
+            scene.meshes.push({
+                let mut m = wall_mesh();
+                m.material = name.into();
+                m.object = ArchId(0);
+                m
+            });
+        }
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let materials = json["materials"].as_array().unwrap();
+        for mat in materials {
+            assert!(mat.get("alphaMode").is_none(), "material {} should not have alphaMode", mat["name"]);
+            let alpha = mat["pbrMetallicRoughness"]["baseColorFactor"][3].as_f64().unwrap();
+            assert_eq!(alpha, 1.0, "material {} alpha should be 1.0", mat["name"]);
+        }
+    }
 }
