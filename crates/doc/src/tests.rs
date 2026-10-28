@@ -582,50 +582,52 @@ fn space_names_its_tab() {
     assert_eq!(p.tab_name(), "Sheet A");
 }
 
-/// A new drawing carries only the two standard layers (`0` and `Defpoints`): arch
-/// proxy layers (`A-WALL`, `A-DOOR`, `A-GLAZ`, `A-ROOF`, `A-STAIR`) are additive to a
-/// blank AutoCAD-parity drawing (DESIGN decision 9) and are created on first use by the
-/// arch commands, not by `Drawing::bare()`.
+/// A new drawing carries the two standard layers (`0` and `Defpoints`) plus the five
+/// arch proxy layers (`A-WALL`, `A-DOOR`, `A-GLAZ`, `A-ROOF`, `A-STAIR`), so arch
+/// commands have a layer to sit on from the start.
 #[test]
-fn a_new_drawing_has_no_arch_layers() {
+fn a_new_drawing_has_arch_layers() {
     let arch_names = ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
     for d in [Drawing::new_imperial(), Drawing::new_metric()] {
-        assert_eq!(d.layers.len(), 2, "a new drawing should carry only 0 and Defpoints");
+        assert_eq!(d.layers.len(), 7, "a new drawing should carry 0, Defpoints, and 5 arch layers");
         assert!(d.layers.iter().any(|l| l.name == "Defpoints"), "Defpoints missing from a new drawing");
         for name in arch_names {
-            assert!(d.layer(name).is_none(), "{name} must not be present in a new drawing");
+            assert!(d.layer(name).is_some(), "{name} must be present in a new drawing");
         }
     }
 }
 
-/// Restored (gate follow-up; was deleted by the I12 fix). It originally verified that
-/// `A-WALL` sits in every new drawing; decision 9 (arch3d is additive) inverts that, so
-/// the assertion is now: a fresh drawing carries no wall layer, and `A-WALL` appears
-/// only after it is created on first arch use (via `ensure_layer`, not `Drawing::bare()`).
+/// `A-WALL` sits in every new drawing, so arch commands have a layer to sit on.
+/// `ensure_layer` is idempotent: calling it again is a no-op that returns false.
 #[test]
 fn a_wall_layer_exists_in_a_new_drawing() {
     for d in [Drawing::new_imperial(), Drawing::new_metric()] {
-        assert!(d.layer("A-WALL").is_none(), "A-WALL must not be present in a new drawing (it is created on first arch use)");
+        assert!(d.layer("A-WALL").is_some(), "A-WALL must be present in a new drawing");
     }
-    // After first use the layer exists and is not duplicated on a second ensure.
+    // ensure_layer is a no-op when the layer already exists.
     let mut d = Drawing::new_imperial();
-    assert!(d.layer("A-WALL").is_none(), "A-WALL should start absent");
-    assert!(d.ensure_layer("A-WALL"), "first `ensure_layer` call must add `A-WALL`");
-    assert!(d.layer("A-WALL").is_some(), "A-WALL must be present after being ensured");
-    assert!(!d.ensure_layer("A-WALL"), "second `ensure_layer` call must be a no-op");
-    assert_eq!(d.layers.iter().filter(|l| l.name == "A-WALL").count(), 1, "A-WALL must be created exactly once");
+    assert!(d.layer("A-WALL").is_some(), "A-WALL should start present");
+    assert!(!d.ensure_layer("A-WALL"), "`ensure_layer` on an existing layer must be a no-op");
+    assert!(d.layer("A-WALL").is_some(), "A-WALL must still be present");
+    assert_eq!(d.layers.iter().filter(|l| l.name == "A-WALL").count(), 1, "A-WALL must not be duplicated");
 }
 
-/// Restored (gate follow-up; was deleted by the I12 fix). It originally pinned the arch
-/// proxy layers in a new drawing to the order `A-WALL`, `A-DOOR`, `A-GLAZ`, `A-ROOF`,
-/// `A-STAIR`. Those layers no longer exist in a new drawing at all (decision 9), so the
-/// check is adjusted to pin the whole layer table to exactly `0`, `Defpoints` — in that
-/// order — for both constructors.
+/// The layer table in a new drawing is exactly `0`, `Defpoints`, `A-WALL`, `A-DOOR`,
+/// `A-GLAZ`, `A-ROOF`, `A-STAIR` — in that order — for both constructors.
 #[test]
 fn arch_layers_are_in_a_new_drawing_in_order() {
+    let expected = vec![
+        "0".to_string(),
+        "Defpoints".to_string(),
+        "A-WALL".to_string(),
+        "A-DOOR".to_string(),
+        "A-GLAZ".to_string(),
+        "A-ROOF".to_string(),
+        "A-STAIR".to_string(),
+    ];
     for d in [Drawing::new_imperial(), Drawing::new_metric()] {
         let names: Vec<_> = d.layers.iter().map(|l| l.name.clone()).collect();
-        assert_eq!(names, vec!["0".to_string(), "Defpoints".to_string()], "a new drawing's layer table must be exactly `0`, `Defpoints`, in order",);
+        assert_eq!(names, expected, "a new drawing's layer table must be exactly 0, Defpoints, A-WALL, A-DOOR, A-GLAZ, A-ROOF, A-STAIR, in order");
     }
 }
 
@@ -634,27 +636,27 @@ fn arch_layers_are_in_a_new_drawing_in_order() {
 #[test]
 fn ensure_layer_adds_a_missing_layer_once() {
     let mut d = Drawing::new_imperial();
-    assert!(d.layer("A-WALL").is_none(), "A-WALL should start absent");
-    let first = d.ensure_layer("A-WALL");
-    let second = d.ensure_layer("A-WALL");
+    assert!(d.layer("CustomLayer").is_none(), "CustomLayer should start absent");
+    let first = d.ensure_layer("CustomLayer");
+    let second = d.ensure_layer("CustomLayer");
     assert!(first, "the first `ensure_layer` call must report that it added the layer");
     assert!(!second, "the second `ensure_layer` call must report false (no-op)");
-    assert_eq!(d.layers.iter().filter(|l| l.name == "A-WALL").count(), 1, "A-WALL must not be duplicated by `ensure_layer`");
+    assert_eq!(d.layers.iter().filter(|l| l.name == "CustomLayer").count(), 1, "CustomLayer must not be duplicated by `ensure_layer`");
 }
 
 /// `ensure_layer` matches layer names case-insensitively, the same way
-/// `Drawing::layer` does, so `ensure_layer("A-WALL")` followed by
-/// `ensure_layer("a-wall")` is a no-op that returns false.
+/// `Drawing::layer` does, so `ensure_layer("MyLayer")` followed by
+/// `ensure_layer("mylayer")` is a no-op that returns false.
 #[test]
 fn ensure_layer_is_case_insensitive() {
     let mut d = Drawing::new_imperial();
-    assert!(d.ensure_layer("A-WALL"), "first call must add the layer");
-    assert!(!d.ensure_layer("a-wall"), "lowercase must be a no-op");
-    assert!(!d.ensure_layer("A-wall"), "mixed case must be a no-op");
-    assert!(!d.ensure_layer("A-WALL"), "exact repeat must be a no-op");
-    assert_eq!(d.layers.iter().filter(|l| l.name.eq_ignore_ascii_case("A-WALL")).count(), 1, "A-WALL must exist exactly once");
+    assert!(d.ensure_layer("MyLayer"), "first call must add the layer");
+    assert!(!d.ensure_layer("mylayer"), "lowercase must be a no-op");
+    assert!(!d.ensure_layer("My-Layer"), "mixed case must be a no-op");
+    assert!(!d.ensure_layer("MyLayer"), "exact repeat must be a no-op");
+    assert_eq!(d.layers.iter().filter(|l| l.name.eq_ignore_ascii_case("MyLayer")).count(), 1, "MyLayer must exist exactly once");
     // The stored name is the first one passed.
-    assert_eq!(d.layer("A-WALL").unwrap().name, "A-WALL");
+    assert_eq!(d.layer("MyLayer").unwrap().name, "MyLayer");
 }
 
 /// `RoofEdge` and `RoofEdgeKind` are re-exported at the crate root so downstream
