@@ -157,6 +157,15 @@ mod tests {
     }
 
     #[test]
+    fn the_override_variable_wins_and_empty_values_are_unset() {
+        let vars = [(CONFIG_DIR, "/tmp/cc"), ("HOME", "/home/u"), ("XDG_CONFIG_HOME", "/x"), ("APPDATA", "C:\\a")];
+        assert_eq!(Env::from_vars(env(&vars)).config_dir, Some(PathBuf::from("/tmp/cc")));
+        let empty = [(CONFIG_DIR, ""), ("HOME", ""), ("XDG_CONFIG_HOME", ""), ("APPDATA", "")];
+        assert_eq!(Env::from_vars(env(&empty)).config_dir, None, "no usable variable means no directory, not the working directory");
+        assert_eq!(Env::from_vars(env(&[(CONFIG_DIR, "")])).config_dir, None);
+    }
+
+    #[test]
     fn config_dir_unset_is_the_platform_folder_set_is_that_folder_blank_is_none() {
         let platform = [("HOME", "/home/u"), ("XDG_CONFIG_HOME", "/x"), ("APPDATA", "C:\\a")];
         let expected = cadcraft_engine::settings_dir::platform(env(&platform));
