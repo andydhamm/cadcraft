@@ -9,6 +9,7 @@ use cadcraft_geom::Vec2;
 use crate::{DPrim, DisplayList, Kind, Options};
 
 pub use cadcraft_doc::arch::roof_handle;
+use cadcraft_doc::arch::{railing_handle, stair_handle};
 pub use cadcraft_doc::{is_arch_handle, opening_handle, room_handle};
 
 /// Stable proxy handle for an architectural object: arch objects have no entity handle, so
@@ -278,7 +279,84 @@ pub fn build_arch(d: &Drawing, _opts: &Options, plotting: bool) -> DisplayList {
         }
     }
 
+    // Stair plan linework: the flight outline, one line per riser across the width, and the
+    // well polygon when present, all tagged with the stair's proxy handle.
+    if !arch_layer_skipped(d, "A-STAIR", plotting) {
+        let layer_color = d.layer("A-STAIR").map(|l| l.color).unwrap_or(Color::Index(7));
+        let stair_ink = crate::ink(Color::ByLayer, layer_color, Color::Index(7));
+        for s in &d.arch.stairs {
+            let handle = stair_handle(s.id);
+            let Some(outline) = flight_outline(s) else { continue };
+            push_polyline(&mut list, handle, &stair_ink, &outline);
+            let (dir, side) = (Vec2::new(s.direction.cos(), s.direction.sin()), Vec2::new(-s.direction.sin(), s.direction.cos()));
+            if s.tread_depth.is_finite() && s.tread_depth > 1e-6 {
+                let mut n = 1usize;
+                while n <= MAX_RISER_LINES && (n as f64) * s.tread_depth < s.run - 1e-9 {
+                    let a = s.start + dir * (n as f64 * s.tread_depth);
+                    let b = a + side * s.width;
+                    push_polyline(&mut list, handle, &stair_ink, &[a, b]);
+                    n += 1;
+                }
+            }
+            if s.well.len() >= 3 && s.well.iter().all(|p| p.is_finite()) {
+                let mut ring = s.well.clone();
+                ring.push(s.well[0]);
+                push_polyline(&mut list, handle, &stair_ink, &ring);
+            }
+        }
+    }
+
+    // Railing plan linework: each railing path as one polyline on A-RAIL.
+    if !arch_layer_skipped(d, "A-RAIL", plotting) {
+        let layer_color = d.layer("A-RAIL").map(|l| l.color).unwrap_or(Color::Index(7));
+        let rail_ink = crate::ink(Color::ByLayer, layer_color, Color::Index(7));
+        for r in &d.arch.railings {
+            if r.path.len() < 2 || !r.path.iter().all(|p| p.is_finite()) {
+                continue;
+            }
+            push_polyline(&mut list, railing_handle(r.id), &rail_ink, &r.path);
+        }
+    }
+
     list
+}
+
+/// Upper bound on riser lines drawn for one stair (hostile tread depths).
+const MAX_RISER_LINES: usize = 512;
+
+/// The plan rectangle of a stair's flight (start, direction, width, run), or `None` when any
+/// dimension is non-finite or non-positive.
+fn flight_outline(s: &cadcraft_doc::arch::Stair) -> Option<[Vec2; 5]> {
+    let ok = s.start.is_finite() && s.direction.is_finite() && s.width.is_finite() && s.run.is_finite();
+    if !ok || s.width <= 0.0 || s.run <= 0.0 {
+        return None;
+    }
+    let dir = Vec2::new(s.direction.cos(), s.direction.sin());
+    let side = Vec2::new(-s.direction.sin(), s.direction.cos());
+    let p0 = s.start;
+    let p1 = p0 + dir * s.run;
+    let p2 = p1 + side * s.width;
+    let p3 = p0 + side * s.width;
+    Some([p0, p1, p2, p3, p0])
+}
+
+/// Append one polyline prim of `pts` tagged `handle`.
+fn push_polyline(list: &mut DisplayList, handle: Handle, ink: &crate::Ink, pts: &[Vec2]) {
+    let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
+    for &p in pts {
+        list.bounds.add(p);
+        list.verts.push(p);
+    }
+    list.prims.push(DPrim {
+        handle,
+        color: ink.rgb,
+        aci7: ink.aci7,
+        lw: 0.0,
+        transparency: 0,
+        kind: Kind::Polyline,
+        start,
+        len: u32::try_from(pts.len()).unwrap_or(u32::MAX),
+    });
 }
 
 #[cfg(test)]
@@ -785,6 +863,50 @@ mod tests {
         assert!((pts[0].y - 1e12).abs() < 1.0, "y0 precision: {}", pts[0].y);
         assert!((pts[1].x - 2e12).abs() < 1.0, "x1 precision: {}", pts[1].x);
         assert!((pts[1].y - 2e12).abs() < 1.0, "y1 precision: {}", pts[1].y);
+    }
+
+    /// Stair plan linework carries the stair handle: outline, risers and the well.
+    #[test]
+    fn stair_plan_linework_is_tagged() {
+        use cadcraft_doc::arch::Stair;
+        let mut d = Drawing::new_metric();
+        let sid = d.arch.push_stair(Stair {
+            run: 1.0,
+            tread_depth: 0.25,
+            width: 1.0,
+            well: vec![Vec2::new(0.0, 0.0), Vec2::new(2.0, 0.0), Vec2::new(2.0, 1.0)],
+            ..Stair::default()
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default(), false);
+        let h = stair_handle(sid);
+        let prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == h).collect();
+        // outline + 3 interior risers (0.25, 0.5, 0.75) + well
+        assert_eq!(prims.len(), 5);
+        assert!(prims.iter().all(|p| p.kind == Kind::Polyline));
+        assert_eq!(prims[0].len, 5);
+        assert_eq!(prims[4].len, 4);
+    }
+
+    /// Railing linework is one polyline and obeys the A-RAIL layer state.
+    #[test]
+    fn railing_linework_follows_layer_state() {
+        use cadcraft_doc::arch::Railing;
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_railing(Railing { path: vec![Vec2::new(0.0, 0.0), Vec2::new(3.0, 0.0), Vec2::new(3.0, 2.0)], ..Railing::default() });
+        d.touch_arch();
+        let h = railing_handle(rid);
+        let list = build_arch(&d, &Options::default(), false);
+        let prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == h).collect();
+        assert_eq!(prims.len(), 1);
+        assert_eq!(prims[0].len, 3);
+
+        d.ensure_layer("A-RAIL");
+        if let Some(l) = d.layer_mut("A-RAIL") {
+            l.on = false;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(list.prims.iter().all(|p| p.handle != h), "hidden layer still drew");
     }
 
     /// A roof with an empty edges list draws no prims.
