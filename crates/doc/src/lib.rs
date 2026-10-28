@@ -484,6 +484,14 @@ mod arch_layers_tests {
     use super::*;
 
     #[test]
+    fn a_new_drawing_has_no_arch_layers() {
+        // After p1-arch-layers, a new drawing includes the five architectural layers.
+        // The name is historical; the assertion reflects the current behaviour.
+        let d = Drawing::new_imperial();
+        assert_eq!(d.layers.len(), 7, "a new drawing must have exactly 7 layers");
+    }
+
+    #[test]
     fn a_wall_layer_exists_in_a_new_drawing() {
         let d = Drawing::new_imperial();
         let wall = d.layer("A-WALL");
@@ -526,5 +534,34 @@ mod arch_layers_tests {
             let lower = name.to_lowercase();
             assert!(d.layer(&lower).is_some(), "layer lookup for {lower} must find {name}");
         }
+    }
+
+    #[test]
+    fn a_metric_drawing_also_has_arch_layers() {
+        let d = Drawing::new_metric();
+        let expected = ["0", "Defpoints", "A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
+        for (i, name) in expected.iter().enumerate() {
+            let layer = d.layers.get(i);
+            assert!(layer.is_some(), "metric drawing must have layer {name} at index {i}");
+            assert_eq!(layer.unwrap().name.as_str(), *name);
+        }
+    }
+
+    #[test]
+    fn arch_layers_are_plotting() {
+        let d = Drawing::new_imperial();
+        for name in ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"] {
+            let layer = d.layer(name).unwrap();
+            assert!(layer.plot, "layer {name} must be plotting");
+        }
+    }
+
+    #[test]
+    fn ensure_layer_creates_a_layer_with_the_correct_name() {
+        let mut d = Drawing::new_imperial();
+        let created = d.ensure_layer("TestLayer");
+        assert!(created);
+        let layer = d.layer("TestLayer").unwrap();
+        assert_eq!(layer.name.as_str(), "TestLayer");
     }
 }
