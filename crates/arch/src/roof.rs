@@ -1469,7 +1469,45 @@ mod tests {
         let fp = outer_footprint(&model, 0).expect("footprint with huge coordinates");
         assert_eq!(fp.outer.len(), 4);
         let area = crate::poly::ring_area(&fp.outer).abs();
-        assert!((area - s * s).abs() < 1e6, "area {} != {}", area, s * s);
+        // The outer face extends 0.1 m beyond the center line on each side (wall thickness 0.2).
+        let expected = (s + 0.2) * (s + 0.2);
+        assert!((area - expected).abs() < 1e6, "area {} != {}", area, expected);
+    }
+
+    #[test]
+    fn footprint_ignores_interior_divider_walls() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        // Add an interior divider wall across the middle.
+        let mut div = Wall::new(Vec2::new(0.0, 4.0), Vec2::new(10.0, 4.0), 0.1);
+        div.divider = true;
+        div.exterior = false;
+        model.push_wall(div);
+        let fp = outer_footprint(&model, 0).expect("footprint");
+        assert_eq!(fp.outer.len(), 4, "interior divider must not appear in the footprint");
+    }
+
+    #[test]
+    fn footprint_is_independent_of_wall_heights() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        // Give each wall a different height.
+        for (i, w) in model.walls.iter_mut().enumerate() {
+            w.height = 2.0 + i as f64 * 0.5;
+        }
+        let fp = outer_footprint(&model, 0).expect("footprint");
+        assert_eq!(fp.outer.len(), 4, "wall heights must not affect the footprint shape");
+    }
+
+    #[test]
+    fn footprint_with_nan_wall_endpoint_is_rejected() {
+        let mut model = ArchModel::default();
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0), 0.2));
+        // One endpoint is NaN.
+        model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(f64::NAN, 0.0), 0.2));
+        assert!(outer_footprint(&model, 0).is_none(), "a wall with a NaN endpoint must be rejected");
     }
 
     #[test]
