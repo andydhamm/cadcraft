@@ -185,8 +185,8 @@ fn run_stair(s: &mut Session, p: &Value) -> Result<Value> {
     let slab_underside = to_level.elevation - to_level.structure;
     let well_poly = well_polygon(&stair, &plan, slab_underside, MIN_HEADROOM);
     let has_well = well_poly.is_some();
-    let well = well_poly.unwrap_or_default();
     let guard = well_poly.as_ref().and_then(|_| well_guard_path(&stair, &plan, slab_underside, MIN_HEADROOM));
+    let well = well_poly.unwrap_or_default();
 
     // --- one mutation + one revision bump; never a partial write ---
     let stair_id = d.arch.push_stair({
@@ -273,16 +273,16 @@ impl StairM {
         if let Some(pt) = self.start {
             m.insert("start".into(), json!([pt.x, pt.y]));
         }
-        if let Some(d) = self.direction {
+        if let Some(d) = self.direction.as_deref() {
             m.insert("direction".into(), json!(d));
         }
-        if let Some(w) = self.width {
+        if let Some(w) = self.width.as_deref() {
             m.insert("width".into(), json!(w));
         }
-        if let Some(f) = self.from_level {
+        if let Some(f) = self.from_level.as_deref() {
             m.insert("fromLevel".into(), json!(f));
         }
-        if let Some(t) = self.to_level {
+        if let Some(t) = self.to_level.as_deref() {
             m.insert("toLevel".into(), json!(t));
         }
         Value::Object(m)
@@ -420,9 +420,11 @@ mod tests {
         let mut s = two_level_session();
         let r = s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0, "fromLevel": 0, "toLevel": 1 })).unwrap();
         assert_eq!(r["id"].as_str().unwrap(), "s0");
-        assert_eq!(r["risers"], 16);
-        assert!((r["riserHeight"] - 0.16875).abs() < 1e-9);
-        assert!((r["run"] - 3.81).abs() < 1e-6);
+        assert_eq!(r["risers"].as_u64(), Some(16));
+        let riser_height = r["riserHeight"].as_f64().unwrap();
+        let run = r["run"].as_f64().unwrap();
+        assert!((riser_height - 0.16875).abs() < 1e-9);
+        assert!((run - 3.81).abs() < 1e-6);
     }
 
     #[test]
