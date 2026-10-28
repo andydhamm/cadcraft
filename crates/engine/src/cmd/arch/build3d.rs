@@ -121,7 +121,7 @@ pub fn specs() -> Vec<crate::cmd::CommandSpec> {
 mod tests {
     use super::*;
 
-    use cadcraft_doc::arch::{Level, Opening, OpeningKind, Room, RoomType, Stair};
+    use cadcraft_doc::arch::{Level, Opening, OpeningKind, Railing, Room, RoomType, Stair};
     use cadcraft_doc::{ArchId, Wall};
     use cadcraft_geom::Vec2;
     use serde_json::json;
@@ -866,6 +866,200 @@ mod tests {
         assert_eq!(r["stairs"].as_u64(), Some(1), "expected 1 stair");
         // Railings count should be non-negative
         assert!(r["railings"].as_u64().unwrap_or(0) >= 0, "railings count should be non-negative");
+    }
+
+    /// An empty scene must report zero stairs, railings, and decks.
+    #[test]
+    fn build3d_zero_stairs_railings_decks_on_empty_scene() {
+        let mut s = fresh_session();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["stairs"].as_u64(), Some(0), "empty scene must report 0 stairs");
+        assert_eq!(r["railings"].as_u64(), Some(0), "empty scene must report 0 railings");
+        assert_eq!(r["decks"].as_u64(), Some(0), "empty scene must report 0 decks");
+    }
+
+    /// Multiple stairs must each be counted.
+    #[test]
+    fn build3d_multiple_stairs_count_correctly() {
+        let mut s = fresh_session();
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+        let d = s.doc_mut().unwrap();
+        d.arch.stairs.push(Stair {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            direction: 0.0,
+            width: 1.0,
+            from_level: 0,
+            to_level: 1,
+            ..Stair::default()
+        });
+        d.arch.stairs.push(Stair {
+            id: ArchId(2),
+            start: Vec2::new(5.0, 0.0),
+            direction: 0.0,
+            width: 1.0,
+            from_level: 0,
+            to_level: 1,
+            ..Stair::default()
+        });
+        d.arch.stairs.push(Stair {
+            id: ArchId(3),
+            start: Vec2::new(10.0, 0.0),
+            direction: 0.0,
+            width: 1.0,
+            from_level: 0,
+            to_level: 1,
+            ..Stair::default()
+        });
+        d.touch_arch();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["stairs"].as_u64(), Some(3), "expected 3 stairs");
+    }
+
+    /// A standalone railing (not following a stair) must be counted.
+    #[test]
+    fn build3d_standalone_railing_counted() {
+        let mut s = fresh_session();
+        let d = s.doc_mut().unwrap();
+        d.arch.railings.push(Railing { id: ArchId(1), path: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0)], ..Railing::default() });
+        d.touch_arch();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["railings"].as_u64(), Some(1), "expected 1 railing");
+        assert_eq!(r["stairs"].as_u64(), Some(0), "railing alone must not create stairs");
+    }
+
+    /// Multiple deck rooms must each be counted.
+    #[test]
+    fn build3d_multiple_decks_count_correctly() {
+        let mut s = fresh_session();
+        s.execute(
+            "room",
+            &json!({
+                "points": [[0.0, 0.0], [4.0, 0.0], [4.0, 5.0], [0.0, 5.0], [0.0, 0.0]],
+                "name": "Deck A",
+                "type": "Deck"
+            }),
+        )
+        .unwrap();
+        s.execute(
+            "room",
+            &json!({
+                "points": [[5.0, 0.0], [9.0, 0.0], [9.0, 5.0], [5.0, 5.0], [5.0, 0.0]],
+                "name": "Deck B",
+                "type": "Deck"
+            }),
+        )
+        .unwrap();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["decks"].as_u64(), Some(2), "expected 2 decks");
+    }
+
+    /// Stair, railing, and deck counts must be stable across repeated build3d calls.
+    #[test]
+    fn build3d_stair_railing_deck_counts_stable_across_calls() {
+        let mut s = fresh_session();
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+        let d = s.doc_mut().unwrap();
+        d.arch.stairs.push(Stair {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            direction: 0.0,
+            width: 1.0,
+            from_level: 0,
+            to_level: 1,
+            ..Stair::default()
+        });
+        d.arch.railings.push(Railing { id: ArchId(2), path: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0)], ..Railing::default() });
+        d.touch_arch();
+        drop(d);
+        s.execute(
+            "room",
+            &json!({
+                "points": [[0.0, 0.0], [4.0, 0.0], [4.0, 5.0], [0.0, 5.0], [0.0, 0.0]],
+                "name": "Deck",
+                "type": "Deck"
+            }),
+        )
+        .unwrap();
+
+        let r1 = s.execute("build3d", &json!({})).unwrap();
+        let r2 = s.execute("build3d", &json!({})).unwrap();
+        let r3 = s.execute("build3d", &json!({})).unwrap();
+
+        assert_eq!(r1["stairs"].as_u64(), Some(1));
+        assert_eq!(r1["railings"].as_u64(), Some(1));
+        assert_eq!(r1["decks"].as_u64(), Some(1));
+
+        assert_eq!(r1["stairs"].as_u64(), r2["stairs"].as_u64(), "stairs count must be stable");
+        assert_eq!(r1["railings"].as_u64(), r2["railings"].as_u64(), "railings count must be stable");
+        assert_eq!(r1["decks"].as_u64(), r2["decks"].as_u64(), "decks count must be stable");
+
+        assert_eq!(r2["stairs"].as_u64(), r3["stairs"].as_u64(), "stairs count must be stable");
+        assert_eq!(r2["railings"].as_u64(), r3["railings"].as_u64(), "railings count must be stable");
+        assert_eq!(r2["decks"].as_u64(), r3["decks"].as_u64(), "decks count must be stable");
+    }
+
+    /// Stair, railing, and deck counts must be correct when probe is also used.
+    #[test]
+    fn build3d_stair_railing_deck_counts_with_probe() {
+        let mut s = fresh_session();
+        s.execute("level", &json!({"above": "Level 1"})).unwrap();
+        let d = s.doc_mut().unwrap();
+        d.arch.stairs.push(Stair {
+            id: ArchId(1),
+            start: Vec2::new(0.0, 0.0),
+            direction: 0.0,
+            width: 1.0,
+            from_level: 0,
+            to_level: 1,
+            ..Stair::default()
+        });
+        d.arch.railings.push(Railing { id: ArchId(2), path: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0)], ..Railing::default() });
+        d.touch_arch();
+        drop(d);
+        s.execute(
+            "room",
+            &json!({
+                "points": [[0.0, 0.0], [4.0, 0.0], [4.0, 5.0], [0.0, 5.0], [0.0, 0.0]],
+                "name": "Deck",
+                "type": "Deck"
+            }),
+        )
+        .unwrap();
+
+        let params = json!({"probe": [[2.0, 2.0, 1.0]]});
+        let r = s.execute("build3d", &params).unwrap();
+        assert_eq!(r["stairs"].as_u64(), Some(1), "stairs count must be correct with probe");
+        assert_eq!(r["railings"].as_u64(), Some(1), "railings count must be correct with probe");
+        assert_eq!(r["decks"].as_u64(), Some(1), "decks count must be correct with probe");
+        let probe = r["probe"].as_array().expect("missing `probe` array");
+        assert_eq!(probe.len(), 1);
+    }
+
+    /// Non-deck rooms must not be counted as decks.
+    #[test]
+    fn build3d_non_deck_rooms_have_zero_deck_count() {
+        let mut s = fresh_session();
+        s.execute(
+            "room",
+            &json!({
+                "points": [[0.0, 0.0], [4.0, 0.0], [4.0, 5.0], [0.0, 5.0], [0.0, 0.0]],
+                "name": "Living Room",
+                "type": "Living"
+            }),
+        )
+        .unwrap();
+        s.execute(
+            "room",
+            &json!({
+                "points": [[5.0, 0.0], [9.0, 0.0], [9.0, 5.0], [5.0, 5.0], [5.0, 0.0]],
+                "name": "Bedroom",
+                "type": "Bedroom"
+            }),
+        )
+        .unwrap();
+        let r = s.execute("build3d", &json!({})).unwrap();
+        assert_eq!(r["decks"].as_u64(), Some(0), "non-deck rooms must not be counted as decks");
     }
 
     #[test]
