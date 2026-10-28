@@ -1393,6 +1393,7 @@
 	Plane	Площина
 	Room	Кімната
 	Room Detect	Виявити кімнати
+	Stair	Сходи
 	Interior (inner surfaces)	Внутрішній (внутрішні поверхні)
 	Standard (centre of walls)	Стандартний (центр стін)
 	Living (living areas)	Жилій (жилові зони)
@@ -1410,6 +1411,7 @@
 	Architecture>Room	Архітектура>Кімната
 	Architecture>Room Detect	Архітектура>Виявити кімнати
 	Architecture>Level	Архітектура>Рівень
+	Architecture>Stair	Архітектура>Сходи
 	Check for Updates…	Перевірити оновлення…
 	CADCraft is up to date.	Встановлено найновішу версію CADCraft.
 	Could not check for updates.	Не вдалося перевірити оновлення.
