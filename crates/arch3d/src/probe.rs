@@ -45,8 +45,14 @@ pub fn part_of(mesh: &Mesh) -> &'static str {
     if m.contains("roof") || m.contains("fascia") || m.contains("soffit") || m.contains("shingle") {
         return "roof";
     }
+    if m.contains("stair") {
+        return "stair";
+    }
     if m.contains("railing") {
         return "railing";
+    }
+    if m.contains("deck") {
+        return "deck";
     }
     if m.contains("ceiling") {
         return "ceiling";
