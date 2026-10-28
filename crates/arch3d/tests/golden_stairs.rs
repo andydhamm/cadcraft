@@ -53,6 +53,9 @@ fn golden_stair_geometry() {
     stair.tread_depth = 0.254;
     stair.run = 3.81; // 15 * 0.254
     stair.layer = "A-STAIR".to_string();
+    // Well polygon: starts at x=2.508 (riser 3 start) because headroom < 2.032 there.
+    // Well covers x 2.508 to 5.81 (end of run).
+    stair.well = vec![Vec2::new(2.508, 0.5), Vec2::new(5.81, 0.5), Vec2::new(5.81, 1.5), Vec2::new(2.508, 1.5)];
 
     model.push_stair(stair);
 
