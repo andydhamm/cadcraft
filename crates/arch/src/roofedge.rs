@@ -830,4 +830,115 @@ mod tests {
         let non_eave: Vec<_> = edges.iter().filter(|e| e.kind != RoofEdgeKind::Eave).collect();
         assert_eq!(pairs.len(), non_eave.len(), "Interior edge pairs should match non-eave edges");
     }
+
+    #[test]
+    fn all_valley_endpoints_are_reflex_vertices() {
+        // T footprint: two valleys, each anchored at a reflex vertex
+        let mut m_t = ArchModel::default();
+        t_house_brief(&mut m_t);
+        let g_t = crate::roof::roof_geometry(&m_t, 0, &brief_roof()).unwrap();
+        let edges_t = roof_edges_geom(&g_t);
+        let valleys_t: Vec<_> = edges_t.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        assert_eq!(valleys_t.len(), 2, "T should have two valleys");
+        for v in &valleys_t {
+            let a_reflex = is_reflex_vertex(&g_t.fp.outer, v.a);
+            let b_reflex = is_reflex_vertex(&g_t.fp.outer, v.b);
+            assert!(a_reflex || b_reflex, "T valley has no reflex endpoint: a={:?} b={:?}", v.a, v.b);
+        }
+
+        // L footprint: one valley, anchored at a reflex vertex
+        let mut m_l = ArchModel::default();
+        l_house(&mut m_l);
+        let g_l = crate::roof::roof_geometry(&m_l, 0, &brief_roof()).unwrap();
+        let edges_l = roof_edges_geom(&g_l);
+        let valleys_l: Vec<_> = edges_l.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        assert_eq!(valleys_l.len(), 1, "L should have one valley");
+        let v = &valleys_l[0];
+        assert!(
+            is_reflex_vertex(&g_l.fp.outer, v.a) || is_reflex_vertex(&g_l.fp.outer, v.b),
+            "L valley has no reflex endpoint: a={:?} b={:?}",
+            v.a,
+            v.b
+        );
+    }
+
+    #[test]
+    fn roof_edge_count_equals_arcs_plus_eaves() {
+        let mut m = ArchModel::default();
+        house_10_8(&mut m);
+        let g = geom(&m);
+        let edges = roof_edges_geom(&g);
+
+        let eaves: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Eave).collect();
+        let interior: Vec<_> = edges.iter().filter(|e| e.kind != RoofEdgeKind::Eave).collect();
+
+        // Eaves should match footprint edge count
+        assert_eq!(eaves.len(), g.fp.edges.len(), "Eave count should equal footprint edge count");
+
+        // Total edges = interior arcs (a != b) + eaves
+        let arc_count = g.skel.arcs.iter().filter(|(a, b)| a != b).count();
+        assert_eq!(edges.len(), arc_count + eaves.len(), "Total edges should equal arcs plus eaves");
+        assert_eq!(interior.len(), arc_count, "Interior edge count should equal arc count");
+    }
+
+    #[test]
+    fn overhang_preserves_valley_counts_for_t_and_l() {
+        let overhang_roof = Roof { pitch_rise: 6.0, pitch_run: 12.0, overhang: 0.5, thickness: 0.0, ..Default::default() };
+
+        // T footprint with overhang
+        let mut m_t = ArchModel::default();
+        t_house_brief(&mut m_t);
+        let g_t = crate::roof::roof_geometry(&m_t, 0, &overhang_roof).unwrap();
+        let edges_t = roof_edges_geom(&g_t);
+        let valleys_t: Vec<_> = edges_t.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        assert_eq!(valleys_t.len(), 2, "T with overhang should still have two valleys");
+
+        // L footprint with overhang
+        let mut m_l = ArchModel::default();
+        l_house(&mut m_l);
+        let g_l = crate::roof::roof_geometry(&m_l, 0, &overhang_roof).unwrap();
+        let edges_l = roof_edges_geom(&g_l);
+        let valleys_l: Vec<_> = edges_l.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        assert_eq!(valleys_l.len(), 1, "L with overhang should still have one valley");
+    }
+
+    #[test]
+    fn hip_roof_edge_heights_bounded_by_eave_and_ridge() {
+        let mut m = ArchModel::default();
+        house_10_8(&mut m);
+        let edges = roof_edges(&m, 0, &test_roof()).unwrap();
+
+        let eave_z = 2.4;
+        let ridge_z = 4.45;
+
+        for edge in &edges {
+            assert!(edge.za >= eave_z - 1e-9 && edge.za <= ridge_z + 1e-9, "Edge za {} outside [eave, ridge] bounds", edge.za);
+            assert!(edge.zb >= eave_z - 1e-9 && edge.zb <= ridge_z + 1e-9, "Edge zb {} outside [eave, ridge] bounds", edge.zb);
+        }
+
+        // Eave edges should be exactly at eave height
+        let eaves: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Eave).collect();
+        for e in &eaves {
+            assert!((e.za - eave_z).abs() < 1e-9, "Eave za {} != eave height", e.za);
+            assert!((e.zb - eave_z).abs() < 1e-9, "Eave zb {} != eave height", e.zb);
+        }
+
+        // Ridge edges should be exactly at ridge height
+        let ridges: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Ridge).collect();
+        for r in &ridges {
+            assert!((r.za - ridge_z).abs() < 1e-9, "Ridge za {} != ridge height", r.za);
+            assert!((r.zb - ridge_z).abs() < 1e-9, "Ridge zb {} != ridge height", r.zb);
+        }
+    }
+
+    #[test]
+    fn single_wall_is_not_a_closed_ring() {
+        let mut m = ArchModel::default();
+        m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        if let Some(w) = m.walls.get_mut(0) {
+            w.height = 2.4;
+        }
+        let result = roof_edges(&m, 0, &test_roof());
+        assert!(result.is_err(), "Single wall should not form a closed ring for roof generation");
+    }
 }
