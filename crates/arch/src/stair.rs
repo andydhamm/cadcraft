@@ -408,4 +408,79 @@ mod tests {
         assert_eq!(well_polygon(&s, &p, 5.0, MIN_HEADROOM), None);
         assert_eq!(well_guard_path(&s, &p, 5.0, MIN_HEADROOM), None);
     }
+
+    #[test]
+    fn flight_polygon_with_vertical_direction() {
+        let mut s = sample_stair();
+        s.direction = std::f64::consts::FRAC_PI_2;
+        let p = plan_stair(2.7, 1.0, None, MAX_RISER, MIN_TREAD).unwrap();
+        let poly = flight_polygon(&s, &p);
+        assert_eq!(poly.len(), 4);
+        // Direction up (0, 1): flight runs from (2,1) to (2, 1+3.81)
+        // Width 1 centred: x in [1.5, 2.5]
+        assert!(approx_poly(&poly, &Vec2::new(1.5, 1.0)));
+        assert!(approx_poly(&poly, &Vec2::new(2.5, 1.0)));
+        assert!(approx_poly(&poly, &Vec2::new(2.5, 4.81)));
+        assert!(approx_poly(&poly, &Vec2::new(1.5, 4.81)));
+    }
+
+    #[test]
+    fn well_polygon_with_left_direction() {
+        let mut s = sample_stair();
+        s.direction = std::f64::consts::PI;
+        let p = plan_stair(2.7, 1.0, None, MAX_RISER, MIN_TREAD).unwrap();
+        let poly = well_polygon(&s, &p, 2.4, MIN_HEADROOM).expect("well present");
+        assert_eq!(poly.len(), 4);
+        // Direction left (-1, 0): well runs from x=2-0.508=1.492 to x=2-3.81=-1.81
+        // Width 1 centred: y in [0.5, 1.5]
+        assert!(approx_poly(&poly, &Vec2::new(1.492, 0.5)));
+        assert!(approx_poly(&poly, &Vec2::new(1.492, 1.5)));
+        assert!(approx_poly(&poly, &Vec2::new(-1.81, 1.5)));
+        assert!(approx_poly(&poly, &Vec2::new(-1.81, 0.5)));
+    }
+
+    #[test]
+    fn well_start_at_bottom_when_slab_is_low() {
+        let s = sample_stair();
+        let p = plan_stair(2.7, 1.0, None, MAX_RISER, MIN_TREAD).unwrap();
+        // Slab underside at 0.0: threshold = 0.0 - 2.032 = -2.032
+        // First riser top 0.16875 > -2.032, so well starts at (1-1)*tread = 0
+        assert_eq!(well_start(&s, &p, 0.0, MIN_HEADROOM), Some(0.0));
+    }
+
+    #[test]
+    fn well_start_boundary_is_strict() {
+        let s = sample_stair();
+        let p = plan_stair(2.7, 1.0, None, MAX_RISER, MIN_TREAD).unwrap();
+        // Make riser 3 top exactly at threshold: 3*0.16875 = 0.50625
+        // threshold = slab_underside - 2.032 = 0.50625 -> slab_underside = 2.53825
+        // i=3: 0.50625 > 0.50625? No (strict). i=4: 0.675 > 0.50625? Yes.
+        // So well starts at (4-1)*tread = 3*0.254 = 0.762
+        let slab = 3.0 * p.riser_height + MIN_HEADROOM;
+        assert_eq!(well_start(&s, &p, slab, MIN_HEADROOM), Some(3.0 * p.tread_depth));
+    }
+
+    #[test]
+    fn flight_polygon_rejects_negative_width() {
+        let mut s = sample_stair();
+        s.width = -1.0;
+        let p = plan_stair(2.7, 1.0, None, MAX_RISER, MIN_TREAD).unwrap();
+        assert!(flight_polygon(&s, &p).is_empty());
+    }
+
+    #[test]
+    fn flight_polygon_is_counterclockwise() {
+        let s = sample_stair();
+        let p = plan_stair(2.7, 1.0, None, MAX_RISER, MIN_TREAD).unwrap();
+        let poly = flight_polygon(&s, &p);
+        // Signed area > 0 means CCW
+        let n = poly.len();
+        let mut signed = 0.0;
+        for i in 0..n {
+            let a = poly[i];
+            let b = poly[(i + 1) % n];
+            signed += a.x * b.y - a.y * b.x;
+        }
+        assert!(signed > 0.0, "flight polygon should be CCW, signed area = {}", signed);
+    }
 }
