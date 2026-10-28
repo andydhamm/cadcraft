@@ -134,3 +134,19 @@ Stairs/railings/decks and stair wells (ARCH-10); PBR, sun+shadows, SSAO, display
 - **Numbers:** L1 0 → L2 2.7 → **16 risers of 0.16875 m, 15 treads of 0.254 m, run 3.81 m**; deck 4 × 3 m at 0.9 m → **5 risers of 0.18 m** (6 × 0.15 is further from 168.75 mm); a probe 2.032 m above the top of the 3rd riser (z 2.538, inside the Level-2 slab's 2.4…2.7) finds **no** floor slab.
 - Carry the hostile-input and layers/wasm/i18n checks; `uk.tsv` rows in the same segment; new shared-struct fields get defaults; stairs must be probeable (`part: "stair"`, `"railing"`, `"deck"`).
 - Out of scope: winders, curved/spiral/wrapped stairs, ramps, gooseneck and smooth rail transitions, open risers, deck joist and beam framing.
+
+## Phase 5 plan
+
+**Phase 5 — stairs, railings, decks.**
+
+Data (`doc::arch`): `Stair{id,start,direction(rad),width,from_level,to_level,rise,shape,risers,riser_height,tread_depth,treads,run,landing_depth,well,well_room,layer}` and `Railing{id,path,level,height,style,thickness,baluster_gap,post_spacing,follows,layer}`, both on `ArchModel` with their own counters; `Room.deck_height: Option<f64>`. Handle windows `STAIR_HANDLE_OFFSET 0x20000` (`s{n}`), `RAILING_HANDLE_OFFSET 0x28000` (`ra{n}`); `grips.rs::arch_id_from_handle` gains both arms. All new fields defaulted, so `cargo xtask literals` stays clean.
+
+The calculator (`arch::stair`) is data, not command logic: *n* minimises |rise/n − 0.16875| subject to rise/n ≤ 0.196, searched from ⌈rise/maxRiser⌉ over a bounded 64-wide window; tread = min tread (0.254) unless given; landing ≥ width. `well_start` = the first riser whose top is more than `slab_underside − 2.032` up, and the well begins one tread earlier. `arch::railing` owns the height bands (handrail 0.864–0.965, guard ≥ 0.914) and baluster spacing (< 0.1016 clear). Commands validate through these functions and refuse — never clamp.
+
+3D (`arch3d::stairs`, `arch3d::railing`): the flight is one closed stepped prism (profile in flight coordinates, extruded across the width) — no CSG, the same trick as walls. Railings always carry a top handrail bar so a probe anywhere under the rail resolves. Deck rooms build a board slab whose top is `level.elevation + deck_height` (0.05 thick, material `deck`) instead of the grade slab. `Scene3d` gains `stairs`/`railings`/`decks`; `part_of` maps stair/railing/deck ahead of floor/wall. Stair wells are holes: the stair's `well` polygon is added to the upper level's floor-slab holes and becomes an `OpenBelow` room (no slab) ringed by a guard `Railing` with `follows = stair id`.
+
+Numbers locked: 2.7 m → 16 risers × 0.16875, 15 treads × 0.254, run 3.81; 0.9 m → 5 risers × 0.18, run 1.016; well x 2.508…5.81, area 3.302, probe (2.6,1,2.538) empty while (2.1,1,2.538) and (8,4,2.538) hit the Level-2 slab; deck 4×3 at 0.9 probes `deck` at 0.88, nothing at 2.39 or −0.15.
+
+Plumbing: `arch.inspect {stairs,railings}` + `deckHeight`/`hasFloor` on rooms; `build3d` counts; CADCRAFT_ARCH **v5** (accepts 1–5, clears stairs/railings for ≤4); GLB nodes `stair-s{n}`, `railing-ra{n}`, `deck-r{n}`; plan linework on new `A-STAIR`/`A-RAIL` layers; `uk.tsv` rows in the same segment.
+
+**Phase-5 gaps (vs Chief):** winders, curved/spiral/wrapped stairs, ramps, gooseneck and smooth rail transitions, open risers, stair soffits and stringer detail, deck joist/beam framing, railings that follow the nosing line exactly (we use a straight top rail), stair railings on the flight itself (only well/landing guards are generated), multi-flight L/U geometry is stored but only `straight` is meshed, stairs under a roof, stairs in elevations/sections (phase 7), stairs from `ARCHDETECT` (phase 8), stairs in IFC (phase 12).
