@@ -65,7 +65,8 @@ pub fn part_of(mesh: &Mesh) -> &'static str {
 pub fn is_probeable(mesh: &Mesh) -> bool {
     let b = mesh.bounds();
     let z_extent = b.max[2] - b.min[2];
-    z_extent >= 1e-6
+    // Use a small tolerance to account for f32->f64 rounding in bounds computation.
+    z_extent >= 1e-6 - 1e-12
 }
 
 /// A hit reported by a probe: the owning object id, the part name,
