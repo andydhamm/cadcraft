@@ -921,7 +921,7 @@ mod tests {
     fn build3d_standalone_railing_counted() {
         let mut s = fresh_session();
         let d = s.doc_mut().unwrap();
-        d.arch.railings.push(Railing { id: ArchId(1), ..Railing::default() });
+        d.arch.railings.push(Railing { id: ArchId(1), path: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0)], ..Railing::default() });
         d.touch_arch();
         let r = s.execute("build3d", &json!({})).unwrap();
         assert_eq!(r["railings"].as_u64(), Some(1), "expected 1 railing");
@@ -969,7 +969,7 @@ mod tests {
             to_level: 1,
             ..Stair::default()
         });
-        d.arch.railings.push(Railing { id: ArchId(2), ..Railing::default() });
+        d.arch.railings.push(Railing { id: ArchId(2), path: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0)], ..Railing::default() });
         d.touch_arch();
         drop(d);
         s.execute(
@@ -1014,7 +1014,7 @@ mod tests {
             to_level: 1,
             ..Stair::default()
         });
-        d.arch.railings.push(Railing { id: ArchId(2), ..Railing::default() });
+        d.arch.railings.push(Railing { id: ArchId(2), path: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0)], ..Railing::default() });
         d.touch_arch();
         drop(d);
         s.execute(
