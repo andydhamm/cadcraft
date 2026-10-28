@@ -223,17 +223,19 @@ impl Scene3d {
             let level = level_for(model, room.level);
             let well_holes: Vec<Vec<Vec2>> =
                 model.stairs.iter().filter(|s| !s.well.is_empty() && s.to_level == room.level).map(|s| s.well.clone()).collect();
-            if well_holes.is_empty() {
-                if let Some(m) = floors::floor_slab(room, &level, "floor") {
-                    meshes.push(m);
-                    floors += 1;
-                }
-            } else {
-                let mut clone = room.clone();
-                clone.holes = well_holes;
-                if let Some(m) = floors::floor_slab(&clone, &level, "floor") {
-                    meshes.push(m);
-                    floors += 1;
+            if room.room_type != cadcraft_doc::arch::RoomType::Deck {
+                if well_holes.is_empty() {
+                    if let Some(m) = floors::floor_slab(room, &level, "floor") {
+                        meshes.push(m);
+                        floors += 1;
+                    }
+                } else {
+                    let mut clone = room.clone();
+                    clone.holes = well_holes;
+                    if let Some(m) = floors::floor_slab(&clone, &level, "floor") {
+                        meshes.push(m);
+                        floors += 1;
+                    }
                 }
             }
             if let Some(m) = floors::ceiling_surface(room, &level, "ceiling") {
@@ -452,38 +454,37 @@ impl Scene3d {
                     }
                 }
             }
-            if needs_rebuild {
-                let well_holes: Vec<Vec<Vec2>> =
-                    model.stairs.iter().filter(|s| !s.well.is_empty() && s.to_level == room.level).map(|s| s.well.clone()).collect();
-                if well_holes.is_empty() {
-                    if let Some(m) = floors::floor_slab(room, &level, "floor") {
-                        meshes.push(m);
-                        floors += 1;
+            if room.room_type != cadcraft_doc::arch::RoomType::Deck {
+                if needs_rebuild {
+                    let well_holes: Vec<Vec<Vec2>> =
+                        model.stairs.iter().filter(|s| !s.well.is_empty() && s.to_level == room.level).map(|s| s.well.clone()).collect();
+                    if well_holes.is_empty() {
+                        if let Some(m) = floors::floor_slab(room, &level, "floor") {
+                            meshes.push(m);
+                            floors += 1;
+                        }
+                    } else {
+                        let mut clone = room.clone();
+                        clone.holes = well_holes;
+                        if let Some(m) = floors::floor_slab(&clone, &level, "floor") {
+                            meshes.push(m);
+                            floors += 1;
+                        }
                     }
                 } else {
-                    let mut clone = room.clone();
-                    clone.holes = well_holes;
-                    if let Some(m) = floors::floor_slab(&clone, &level, "floor") {
-                        meshes.push(m);
-                        floors += 1;
-                    }
-                }
-                if let Some(m) = floors::ceiling_surface(room, &level, "ceiling") {
-                    meshes.push(m);
-                    ceilings += 1;
-                }
-            } else {
-                if let Some(om) = prev_by_object.get(&room.id) {
-                    for m in om {
-                        if m.material == "floor" {
-                            meshes.push(m.clone());
-                            floors += 1;
-                        } else if m.material == "ceiling" {
-                            meshes.push(m.clone());
-                            ceilings += 1;
+                    if let Some(om) = prev_by_object.get(&room.id) {
+                        for m in om {
+                            if m.material == "floor" {
+                                meshes.push(m.clone());
+                                floors += 1;
+                            }
                         }
                     }
                 }
+            }
+            if let Some(m) = floors::ceiling_surface(room, &level, "ceiling") {
+                meshes.push(m);
+                ceilings += 1;
             }
         }
 
