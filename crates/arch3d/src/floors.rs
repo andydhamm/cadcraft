@@ -200,4 +200,80 @@ mod tests {
         assert!(floor_slab(&room_empty, &level2, "floor").is_none());
         assert!(ceiling_surface(&room_empty, &level2, "ceiling").is_none());
     }
+
+    #[test]
+    fn floor_slab_nan_structure_returns_none() {
+        let level = Level { structure: f64::NAN, ..Default::default() };
+        let room = Room { id: ArchId(1), room_type: RoomType::Living, polygon: sq(), ..Default::default() };
+        assert!(floor_slab(&room, &level, "floor").is_none());
+    }
+
+    #[test]
+    fn floor_slab_negative_structure_returns_none() {
+        let level = default_level(0.0, -0.1);
+        let room = Room { id: ArchId(1), room_type: RoomType::Living, polygon: sq(), ..Default::default() };
+        assert!(floor_slab(&room, &level, "floor").is_none());
+    }
+
+    #[test]
+    fn ceiling_surface_ignores_zero_room_height() {
+        let level = default_level(0.0, 0.3);
+        let room = Room { id: ArchId(1), room_type: RoomType::Living, polygon: sq(), ceiling_height: Some(0.0), ..Default::default() };
+        let ceil = ceiling_surface(&room, &level, "ceiling").expect("should fall back to level height");
+        let z_max = ceil.positions.iter().map(|p| p[2] as f64).fold(NEG_INFINITY, f64::max);
+        assert!((z_max - 2.4).abs() < 1e-6, "z_max = {z_max}, expected 2.4 (level default)");
+    }
+
+    #[test]
+    fn ceiling_surface_ignores_negative_room_height() {
+        let level = default_level(0.0, 0.3);
+        let room = Room { id: ArchId(1), room_type: RoomType::Living, polygon: sq(), ceiling_height: Some(-1.0), ..Default::default() };
+        let ceil = ceiling_surface(&room, &level, "ceiling").expect("should fall back to level height");
+        let z_max = ceil.positions.iter().map(|p| p[2] as f64).fold(NEG_INFINITY, f64::max);
+        assert!((z_max - 2.4).abs() < 1e-6, "z_max = {z_max}, expected 2.4 (level default)");
+    }
+
+    #[test]
+    fn ceiling_surface_too_thin_returns_none() {
+        let level = Level { ceiling_height: 0.01, ..Default::default() };
+        let room = Room { id: ArchId(1), room_type: RoomType::Living, polygon: sq(), ..Default::default() };
+        assert!(ceiling_surface(&room, &level, "ceiling").is_none());
+    }
+
+    #[test]
+    fn floor_slab_level_elevation_field_is_set() {
+        let level = default_level(3.5, 0.3);
+        let room = Room { id: ArchId(1), room_type: RoomType::Living, polygon: sq(), ..Default::default() };
+        let slab = floor_slab(&room, &level, "floor").expect("floor slab");
+        assert!((slab.level_elevation - 3.5).abs() < 1e-6, "level_elevation = {}", slab.level_elevation);
+    }
+
+    #[test]
+    fn ceiling_surface_level_elevation_field_is_set() {
+        let level = default_level(3.5, 0.3);
+        let room = Room { id: ArchId(1), room_type: RoomType::Living, polygon: sq(), ..Default::default() };
+        let ceil = ceiling_surface(&room, &level, "ceiling").expect("ceiling surface");
+        assert!((ceil.level_elevation - 3.5).abs() < 1e-6, "level_elevation = {}", ceil.level_elevation);
+    }
+
+    #[test]
+    fn floor_slab_negative_elevation_works() {
+        let level = default_level(-2.7, 0.3);
+        let room = Room { id: ArchId(1), room_type: RoomType::Living, polygon: sq(), ..Default::default() };
+        let slab = floor_slab(&room, &level, "floor").expect("floor slab");
+        let z_min = slab.positions.iter().map(|p| p[2] as f64).fold(INFINITY, f64::min);
+        let z_max = slab.positions.iter().map(|p| p[2] as f64).fold(NEG_INFINITY, f64::max);
+        assert!((z_max - (-2.7)).abs() < 1e-6, "z_max = {z_max}, expected -2.7");
+        assert!((z_min - (-3.0)).abs() < 1e-6, "z_min = {z_min}, expected -3.0");
+    }
+
+    #[test]
+    fn floor_slab_huge_polygon_coordinates() {
+        let level = default_level(0.0, 0.3);
+        let huge = vec![Vec2::new(0.0, 0.0), Vec2::new(1e6, 0.0), Vec2::new(1e6, 1e6), Vec2::new(0.0, 1e6)];
+        let room = Room { id: ArchId(1), room_type: RoomType::Living, polygon: huge, ..Default::default() };
+        let slab = floor_slab(&room, &level, "floor").expect("floor slab");
+        assert!(!slab.positions.is_empty());
+        assert!(slab.is_manifold());
+    }
 }
