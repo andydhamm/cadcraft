@@ -462,7 +462,8 @@ mod tests {
         let h = test_wall(&mut m, Vec2::ZERO, Vec2::new(10.0, 0.0), 0.2);
 
         // Add an opening with NaN offset — should be skipped
-        let mut o1 = Opening::new(h, f64::NAN, 1.0, 2.0, OpeningKind::Window);
+        let mut o1 = Opening::new(h, 1.0, 1.0, 2.0, OpeningKind::Window);
+        o1.offset = f64::NAN;
         o1.style = "picture".to_string();
         m.push_opening(o1);
 
