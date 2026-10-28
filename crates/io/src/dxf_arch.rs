@@ -1014,6 +1014,18 @@ mod tests {
         assert_eq!(second_text.matches(ARCH_ROOM_MARKER).count(), 1, "room proxies duplicated on re-save");
     }
 
+    /// The previous wire version (v4) is still understood by [`parse_arch`] even though the
+    /// writer now emits v5 — a v4 record reads back into its walls.
+    #[test]
+    fn arch_record_version_is_four() {
+        let m = one_wall_model();
+        let json = serde_json::json!({ "version": 4, "model": m }).to_string();
+        let text = crate::dxf_ext::json_chunks(&json).join("");
+        let parsed = parse_arch(&text);
+        assert!(parsed.is_some(), "a version-4 payload must still parse");
+        assert_eq!(parsed.unwrap().walls.len(), 1, "version-4 payload lost its wall");
+    }
+
     #[test]
     fn arch_record_version_is_five() {
         let chunks = arch_chunks(&one_wall_model()).unwrap();
