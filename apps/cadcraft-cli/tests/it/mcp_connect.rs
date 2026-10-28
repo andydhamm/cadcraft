@@ -33,12 +33,15 @@ fn replies(out: &Output) -> Vec<Value> {
 #[test]
 fn connect_without_address_fails_before_serving() {
     let input = format!("{INIT}\n{CIRCLE}\n");
-    for args in [&["--connect"][..], &["--connect", ""], &["--connect", "--foo"]] {
+    // clap names an unknown flag rather than the value it left missing.
+    for (args, named) in
+        [(&["--connect"][..], "--connect <HOST:PORT>"), (&["--connect", ""], "--connect <HOST:PORT>"), (&["--connect", "--foo"], "'--foo'")]
+    {
         let out = mcp(args, &input);
-        assert!(!out.status.success(), "{args:?} must exit non-zero");
+        assert_eq!(out.status.code(), Some(2), "{args:?} is a usage error");
         assert!(out.stdout.is_empty(), "{args:?} must not answer MCP requests: {}", String::from_utf8_lossy(&out.stdout));
         let err = String::from_utf8_lossy(&out.stderr);
-        assert!(err.contains("--connect needs HOST:PORT"), "{args:?}: {err}");
+        assert!(err.contains(named), "{args:?}: {err}");
     }
 }
 
@@ -82,10 +85,15 @@ fn connect_with_address_routes_to_that_endpoint() {
 
 #[test]
 fn connect_to_closed_port_fails() {
-    let addr = {
-        let l = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
-        l.local_addr().expect("local addr").to_string()
-    };
+    // A freed ephemeral port can be taken by a parallel test before we use it: pick one that refuses.
+    let addr = (0..50)
+        .find_map(|_| {
+            let l = TcpListener::bind("127.0.0.1:0").ok()?;
+            let addr = l.local_addr().ok()?.to_string();
+            drop(l);
+            std::net::TcpStream::connect(&addr).is_err().then_some(addr)
+        })
+        .expect("a closed loopback port");
     let out = mcp(&["--connect", &addr], &format!("{INIT}\n"));
     assert!(!out.status.success());
     assert!(out.stdout.is_empty());

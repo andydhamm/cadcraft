@@ -34,7 +34,7 @@ fn cmd_error_is_reported_on_stderr() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "exit {:?}\nstdout: {stdout}\nstderr: {stderr}", out.status);
-    assert!(stderr.lines().any(|l| l.starts_with("error: no.such.command:")), "stderr: {stderr}");
+    assert!(stderr.lines().any(|l| l.starts_with("error: ") && l.contains("no.such.command")), "stderr: {stderr}");
     assert!(stdout.contains("\"entities\""), "stdout: {stdout}");
     assert!(!stdout.contains("no.such.command"), "stdout: {stdout}");
 }
@@ -58,9 +58,9 @@ fn cmd_error_does_not_abort_the_run() {
     assert_eq!(r["count"].as_u64(), Some(1), "stdout: {stdout}");
 }
 
-/// A `--cmd` with invalid JSON is a parse error, reported on stderr, and does not abort the run.
+/// A `--cmd` with invalid JSON is a usage error (exit 2) before anything runs.
 #[test]
-fn cmd_json_parse_error_does_not_abort_the_run() {
+fn cmd_json_parse_error_is_a_usage_error() {
     let out = run(&[
         "run",
         "--metric",
@@ -73,10 +73,9 @@ fn cmd_json_parse_error_does_not_abort_the_run() {
     ]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(out.status.success(), "exit {:?}\nstdout: {stdout}\nstderr: {stderr}", out.status);
-    assert!(stderr.lines().any(|l| l.starts_with("error: line:")), "stderr: {stderr}");
-    let r = last_json(&stdout);
-    assert_eq!(r["count"].as_u64(), Some(1), "stdout: {stdout}");
+    assert_eq!(out.status.code(), Some(2), "stdout: {stdout}\nstderr: {stderr}");
+    assert!(stderr.starts_with("error: invalid value"), "stderr: {stderr}");
+    assert!(stdout.is_empty(), "nothing runs: {stdout}");
 }
 
 /// The phase-3 hostile shape: an earlier command fails, but a good last step still exits 0.
@@ -96,7 +95,7 @@ fn last_cmd_error_sets_the_exit_status() {
     let out = run(&["run", "--metric", "--cmd", r#"line {"points":[[0,0],[1,0]]}"#, "--cmd", r#"door {"wall":"w0","offset":5.0,"width":12.0}"#]);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "stderr: {stderr}");
-    assert!(stderr.lines().any(|l| l.starts_with("error: door:")), "stderr: {stderr}");
+    assert!(stderr.lines().any(|l| l.starts_with("error: ") && l.contains("`door`")), "stderr: {stderr}");
 
     // A failed command followed by a good one exits 0.
     let out2 = run(&["run", "--metric", "--cmd", r#"door {"wall":"w0","offset":5.0,"width":12.0}"#, "--cmd", "drawing.inspect {}"]);
@@ -130,7 +129,7 @@ fn script_failure_is_still_fatal() {
     let out = run(&["run", "--metric", "--script", "no.such.command"]);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "stderr: {stderr}");
-    assert!(!stderr.starts_with("error:"), "stderr: {stderr}");
+    assert!(stderr.starts_with("error: "), "stderr: {stderr}");
 }
 
 /// Multiple consecutive failed `--cmd` steps are each reported on stderr, and the run continues.
@@ -151,9 +150,9 @@ fn multiple_cmd_errors_all_reported_on_stderr() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "exit {:?}\nstdout: {stdout}\nstderr: {stderr}", out.status);
-    assert!(stderr.lines().any(|l| l.starts_with("error: no.such.command:")), "stderr: {stderr}");
-    assert!(stderr.lines().any(|l| l.starts_with("error: also.missing:")), "stderr: {stderr}");
-    assert!(stderr.lines().any(|l| l.starts_with("error: still.not.there:")), "stderr: {stderr}");
+    assert!(stderr.lines().any(|l| l.starts_with("error: ") && l.contains("no.such.command")), "stderr: {stderr}");
+    assert!(stderr.lines().any(|l| l.starts_with("error: ") && l.contains("also.missing")), "stderr: {stderr}");
+    assert!(stderr.lines().any(|l| l.starts_with("error: ") && l.contains("still.not.there")), "stderr: {stderr}");
     assert!(stdout.contains("\"entities\""), "stdout: {stdout}");
 }
 
@@ -164,7 +163,7 @@ fn cmd_missing_required_param_is_reported() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "exit {:?}\nstdout: {stdout}\nstderr: {stderr}", out.status);
-    assert!(stderr.lines().any(|l| l.starts_with("error: line:")), "stderr: {stderr}");
+    assert!(stderr.lines().any(|l| l.starts_with("error: ") && l.contains("`line`")), "stderr: {stderr}");
     let r = last_json(&stdout);
     assert_eq!(r["count"].as_u64(), Some(1), "stdout: {stdout}");
 }
@@ -175,8 +174,76 @@ fn all_cmds_fail_exits_1() {
     let out = run(&["run", "--metric", "--cmd", "no.such.command {}", "--cmd", "also.missing {}"]);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "stderr: {stderr}");
-    assert!(stderr.lines().any(|l| l.starts_with("error: no.such.command:")), "stderr: {stderr}");
-    assert!(stderr.lines().any(|l| l.starts_with("error: also.missing:")), "stderr: {stderr}");
+    assert!(stderr.lines().any(|l| l.starts_with("error: ") && l.contains("no.such.command")), "stderr: {stderr}");
+    assert!(stderr.lines().any(|l| l.starts_with("error: ") && l.contains("also.missing")), "stderr: {stderr}");
+}
+
+/// The error line of a failed step names the command (`error: <cmd>: ...`).
+#[test]
+fn cmd_step_error_line_names_the_command() {
+    let out = run(&["run", "--metric", "--cmd", "no.such.command {}", "--cmd", "drawing.inspect {}"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.lines().any(|l| l.starts_with("error: ") && l.contains("no.such.command")), "stderr: {stderr}");
+}
+
+/// Invalid `--cmd` JSON is now refused up front (exit 2) instead of being skipped; nothing runs.
+#[test]
+fn cmd_json_parse_error_does_not_abort_the_run() {
+    let out = run(&["run", "--metric", "--cmd", r#"line {"points": [["#, "--cmd", r#"line {"points":[[0,0],[10,0]]}"#]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn a_good_last_step_clears_the_failure_status() {
+    let out = run(&["run", "--metric", "--cmd", "no.such.command {}", "--cmd", "drawing.inspect {}"]);
+    assert_eq!(out.status.code(), Some(0));
+    let out = run(&["run", "--metric", "--cmd", r#"line {"points":[[0,0],[10,0]]}"#, "--cmd", "no.such.command {}"]);
+    assert_eq!(out.status.code(), Some(1));
+}
+
+#[test]
+fn cmd_error_leaves_last_handle_untouched() {
+    let out = run(&[
+        "run",
+        "--metric",
+        "--cmd",
+        r#"line {"points":[[0,0],[10,0]]}"#,
+        "--cmd",
+        "no.such.command {}",
+        "--cmd",
+        r#"erase {"handles":["{last}"]}"#,
+        "--cmd",
+        r#"entities {"type":"LINE"}"#,
+    ]);
+    assert!(out.status.success());
+    assert_eq!(last_json(&String::from_utf8_lossy(&out.stdout))["count"].as_u64(), Some(0));
+}
+
+#[test]
+fn script_step_is_still_fatal() {
+    let out = run(&["run", "--metric", "--script", "NO.SUCH.COMMAND\n", "--cmd", "drawing.inspect {}"]);
+    assert_eq!(out.status.code(), Some(1));
+}
+
+#[test]
+fn script_step_clears_cmd_error() {
+    let out = run(&["run", "--metric", "--cmd", "no.such.command {}", "--script", "LINE 0,0 10,10\n\n"]);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[test]
+fn multiple_cmd_errors_all_reported() {
+    let out = run(&["run", "--metric", "--cmd", "no.such.command {}", "--cmd", "another.missing {}", "--cmd", "drawing.inspect {}"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success());
+    assert!(stderr.contains("no.such.command") && stderr.contains("another.missing"), "stderr: {stderr}");
+}
+
+#[test]
+fn cmd_with_no_json_object() {
+    let out = run(&["run", "--metric", "--cmd", "drawing.inspect", "--cmd", "drawing.inspect {}"]);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
 }
 
 /// `{last}` is updated by a successful command that follows a failed one.
