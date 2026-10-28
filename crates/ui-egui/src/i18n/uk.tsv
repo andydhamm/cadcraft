@@ -103,6 +103,7 @@
 	Blend	Плавне з'єднання
 	Block	Блок
 	Block Attribute Manager...	Диспетчер атрибутів блоків...
+	Block Description...	Опис блока...
 	Block Editor	Редактор блоків
 	Block Reference	Посилання на блок
 	Block...	Блок...
@@ -564,6 +565,7 @@
 	N	Пн
 	Name	Назва
 	Name (A–Z)	Назва (А–Я)
+	Named Viewports...	Іменовані видові екрани...
 	Named Views...	Іменовані види...
 	Nearest	Найближча точка
 	New	Створити
@@ -779,6 +781,7 @@
 	Save As	Зберегти як
 	Save As...	Зберегти як...
 	Save Layer State	Зберегти стан шарів
+	Save Layout as Template	Зберегти аркуш як шаблон
 	Save State	Зберегти стан
 	Scale	Масштаб
 	Search for layer	Пошук шару
