@@ -113,11 +113,11 @@ pub fn plan_stair(rise: f64, width: f64, tread: Option<f64>, max_riser: f64, min
 /// Both are absolute z-coordinates (meters, level datum). The reference for
 /// headroom is the slab underside, not the floor level above.
 pub fn headroom_ok(stair_z: f64, slab_underside: f64, min_headroom: f64) -> bool {
-    let clearance = slab_underside.checked_sub(stair_z);
-    match clearance {
-        Some(c) => stair_z.is_finite() && slab_underside.is_finite() && min_headroom.is_finite() && c >= min_headroom,
-        None => false,
+    if !stair_z.is_finite() || !slab_underside.is_finite() || !min_headroom.is_finite() {
+        return false;
     }
+    let clearance = slab_underside - stair_z;
+    clearance.is_finite() && clearance >= min_headroom
 }
 
 #[cfg(test)]
