@@ -165,6 +165,12 @@ pub fn outer_footprint(model: &ArchModel, level: u32) -> Option<Footprint> {
         return None;
     }
 
+    // Reject if any candidate wall lies strictly inside the footprint ring (crossing the building).
+    let ring_walls: std::collections::BTreeSet<cadcraft_doc::ArchId> = ring.iter().map(|e| e.wall).collect();
+    if candidates.iter().any(|w| wall_inside_ring(w, &raw, &ring_walls)) {
+        return None;
+    }
+
     // 7. Orient CCW, reversing the edge list to match.
     let outer = crate::poly::ensure_ccw(&raw);
     if crate::poly::ring_area(&raw) < 0.0 {
@@ -211,6 +217,72 @@ fn angular_ring(edges: &[FootprintEdge]) -> Option<Vec<FootprintEdge>> {
     }
     let starts: Vec<Vec2> = merged.iter().map(|e| e.a).collect();
     Some(merged.iter().enumerate().filter_map(|(i, e)| Some(FootprintEdge { wall: e.wall, a: e.a, b: *starts.get((i + 1) % n)? })).collect())
+}
+
+/// Distance from `p` to segment `a`-`b`.
+fn seg_dist(p: Vec2, a: Vec2, b: Vec2) -> f64 {
+    crate::poly::point_segment_dist(p, a, b)
+}
+
+/// Distance from `p` to the ring boundary (min over its edges).
+fn ring_boundary_dist(ring: &[Vec2], p: Vec2) -> f64 {
+    if ring.is_empty() {
+        return f64::INFINITY;
+    }
+    let n = ring.len();
+    let mut min_d = f64::INFINITY;
+    for i in 0..n {
+        let a = ring[i];
+        let b = ring[(i + 1) % n];
+        let d = seg_dist(p, a, b);
+        if d < min_d {
+            min_d = d;
+        }
+    }
+    min_d
+}
+
+/// Even-odd point-in-polygon (orientation independent).
+fn ring_contains(ring: &[Vec2], p: Vec2) -> bool {
+    let n = ring.len();
+    if n < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = n - 1;
+    for i in 0..n {
+        let pi = ring[i];
+        let pj = ring[j];
+        if (pi.y > p.y) != (pj.y > p.y) {
+            let x_int = (pj.x - pi.x) * (p.y - pi.y) / (pj.y - pi.y) + pi.x;
+            if p.x < x_int {
+                inside = !inside;
+            }
+        }
+        j = i;
+    }
+    inside
+}
+
+/// True when `wall` lies inside `ring` instead of on it: its centre-line midpoint is
+/// strictly inside and more than `wall.thickness / 2.0 + 1e-3` from the boundary.
+fn wall_inside_ring(wall: &cadcraft_doc::Wall, ring: &[Vec2], ring_walls: &std::collections::BTreeSet<cadcraft_doc::ArchId>) -> bool {
+    if ring_walls.contains(&wall.id) {
+        return false;
+    }
+    let mid = Vec2::new((wall.start.x + wall.end.x) / 2.0, (wall.start.y + wall.end.y) / 2.0);
+    if !mid.is_finite() {
+        return false;
+    }
+    if !ring_contains(ring, mid) {
+        return false;
+    }
+    let dist = ring_boundary_dist(ring, mid);
+    if !dist.is_finite() {
+        return false;
+    }
+    let threshold = wall.thickness / 2.0 + 1e-3;
+    dist > threshold
 }
 
 /// The long poché edge of `ring` that faces away from the building `centroid`.
@@ -747,6 +819,71 @@ mod tests {
 
     fn square_edges() -> Vec<FootprintEdge> {
         vec![fe(0, (0.0, 0.0), (4.0, 0.0)), fe(1, (4.0, 0.0), (4.0, 4.0)), fe(2, (4.0, 4.0), (0.0, 4.0)), fe(3, (0.0, 4.0), (0.0, 0.0))]
+    }
+
+    #[test]
+    fn footprint_rejects_a_wall_crossing_the_building() {
+        let mut model = ArchModel::default();
+        // Square 0,0..8,8
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(8.0, 0.0), Vec2::new(8.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(8.0, 8.0), Vec2::new(0.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2));
+        // Crossing wall (4,-2)-(4,10)
+        model.push_wall(Wall::new(Vec2::new(4.0, -2.0), Vec2::new(4.0, 10.0), 0.2));
+
+        assert!(outer_footprint(&model, 0).is_none(), "footprint should reject crossing wall");
+        assert!(build_roof(&model, 0, &test_roof()).is_err(), "roof build should fail");
+    }
+
+    #[test]
+    fn footprint_accepts_a_wall_collinear_with_a_ring_edge() {
+        let mut model = ArchModel::default();
+        // Square 0,0..8,8
+        model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(8.0, 0.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(8.0, 0.0), Vec2::new(8.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(8.0, 8.0), Vec2::new(0.0, 8.0), 0.2));
+        model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0), 0.2));
+        // Collinear extension (0,8)-(12,8)
+        model.push_wall(Wall::new(Vec2::new(0.0, 8.0), Vec2::new(12.0, 8.0), 0.2));
+
+        assert!(outer_footprint(&model, 0).is_some(), "footprint should accept collinear wall");
+        assert!(build_roof(&model, 0, &test_roof()).is_ok(), "roof build should succeed");
+    }
+
+    #[test]
+    fn footprint_of_a_plain_house_is_unchanged() {
+        let mut model = ArchModel::default();
+        house_10_8(&mut model);
+        let fp = outer_footprint(&model, 0).expect("footprint");
+        assert_eq!(fp.outer.len(), 4);
+        let roof = build_roof(&model, 0, &test_roof()).unwrap();
+        assert!((projected_area_sum(&roof) - 83.64).abs() < 1e-6);
+    }
+
+    #[test]
+    fn wall_inside_ring_skips_ring_walls_and_outside_walls() {
+        let ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        let ring_walls: std::collections::BTreeSet<cadcraft_doc::ArchId> = [ArchId(1)].into_iter().collect();
+
+        // Wall in ring_walls
+        let w_in = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2);
+        // Note: wall.id is not set by Wall::new, defaults to ArchId(0) or similar?
+        // In tests, we usually set IDs or rely on push_wall assigning them.
+        // Here we construct manually. Let's assume ArchId(1) for the ring wall.
+        let mut w_in = w_in;
+        w_in.id = ArchId(1);
+        assert!(!wall_inside_ring(&w_in, &ring, &ring_walls), "ring wall should be skipped");
+
+        // Wall outside
+        let mut w_out = Wall::new(Vec2::new(20.0, 20.0), Vec2::new(30.0, 20.0), 0.2);
+        w_out.id = ArchId(2);
+        assert!(!wall_inside_ring(&w_out, &ring, &ring_walls), "outside wall should be skipped");
+
+        // Wall inside
+        let mut w_int = Wall::new(Vec2::new(5.0, 5.0), Vec2::new(6.0, 5.0), 0.2);
+        w_int.id = ArchId(3);
+        assert!(wall_inside_ring(&w_int, &ring, &ring_walls), "interior wall should be detected");
     }
 
     #[test]
