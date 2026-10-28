@@ -640,4 +640,81 @@ mod tests {
         let host = wall(&mut model, Vec2::new(f64::NAN, 0.0), Vec2::new(5.0, 0.0), 0.2);
         assert_eq!(project_to_wall(&model, host, Vec2::new(3.0, 5.0)), None);
     }
+
+    #[test]
+    fn spans_overlap_detects_overlap_and_touching() {
+        assert!(spans_overlap(0.0, 1.0, 0.5, 1.5));
+        assert!(spans_overlap(0.5, 1.5, 0.0, 1.0));
+        assert!(spans_overlap(0.0, 2.0, 0.5, 1.5));
+        // Touching endpoints are not an overlap.
+        assert!(!spans_overlap(0.0, 1.0, 1.0, 2.0));
+        assert!(!spans_overlap(1.0, 2.0, 0.0, 1.0));
+        // Disjoint spans.
+        assert!(!spans_overlap(0.0, 1.0, 2.0, 3.0));
+        assert!(!spans_overlap(2.0, 3.0, 0.0, 1.0));
+    }
+
+    #[test]
+    fn min_width_for_bifold_and_other_styles() {
+        assert_eq!(min_width(OpeningKind::Door, "bifold"), 0.45);
+        assert_eq!(min_width(OpeningKind::Door, "hinged"), MIN_HINGED_WIDTH);
+        assert_eq!(min_width(OpeningKind::Door, "pocket"), MIN_HINGED_WIDTH);
+        assert_eq!(min_width(OpeningKind::Door, "sliding"), MIN_HINGED_WIDTH);
+        assert_eq!(min_width(OpeningKind::Window, "slider"), 0.1);
+        assert_eq!(min_width(OpeningKind::GarageDoor, "garage"), MIN_GARAGE_WIDTH);
+        // Case-insensitive.
+        assert_eq!(min_width(OpeningKind::Door, "Bifold"), 0.45);
+        assert_eq!(min_width(OpeningKind::Door, "HINGED"), MIN_HINGED_WIDTH);
+    }
+
+    #[test]
+    fn clamp_recess_clamps_to_host_thickness() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        let mut o = Opening::new(host, 1.0, 1.0, 2.0, OpeningKind::Door);
+        o.recess = 0.5;
+        let clamped = clamp_recess(&model, &mut o);
+        assert_eq!(clamped, 0.2);
+        assert_eq!(o.recess, 0.2);
+        // Negative recess clamps to 0.
+        o.recess = -0.1;
+        let clamped2 = clamp_recess(&model, &mut o);
+        assert_eq!(clamped2, 0.0);
+        assert_eq!(o.recess, 0.0);
+    }
+
+    #[test]
+    fn validate_placement_with_ignore_parameter() {
+        let mut model = ArchModel::default();
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
+        model.walls.iter_mut().find(|w| w.id == host).map(|w| w.height = 2.5);
+        let other = opening_on(&mut model, host, 1.0, 1.0);
+        // Without ignore, overlaps.
+        let res = validate_placement(&model, host, 1.0, 1.0, 0.0, 2.0, OpeningKind::Door, "hinged", None);
+        assert!(res.is_err());
+        // With ignore, passes.
+        let res2 = validate_placement(&model, host, 1.0, 1.0, 0.0, 2.0, OpeningKind::Door, "hinged", Some(other));
+        assert!(res2.is_ok());
+    }
+
+    #[test]
+    fn project_to_wall_for_diagonal_wall() {
+        let mut model = ArchModel::default();
+        // Diagonal wall from (0,0) to (10,10), length 10*sqrt(2)
+        let host = wall(&mut model, Vec2::ZERO, Vec2::new(10.0, 10.0), 0.2);
+        // Point (5,5) is at the midpoint, offset should be half the wall length.
+        let offset = project_to_wall(&model, host, Vec2::new(5.0, 5.0)).unwrap();
+        let expected = 10.0 * 2.0_f64.sqrt() / 2.0;
+        assert!((offset - expected).abs() < 1e-9);
+        // Point (0,10) projects to the wall at the same midpoint.
+        let offset2 = project_to_wall(&model, host, Vec2::new(0.0, 10.0)).unwrap();
+        assert!((offset2 - expected).abs() < 1e-9);
+        // Point before the start clamps to 0.
+        let offset3 = project_to_wall(&model, host, Vec2::new(-5.0, -5.0)).unwrap();
+        assert_eq!(offset3, 0.0);
+        // Point past the end clamps to wall length.
+        let offset4 = project_to_wall(&model, host, Vec2::new(15.0, 15.0)).unwrap();
+        let wall_len = 10.0 * 2.0_f64.sqrt();
+        assert!((offset4 - wall_len).abs() < 1e-9);
+    }
 }
