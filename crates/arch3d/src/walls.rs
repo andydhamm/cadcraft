@@ -190,8 +190,11 @@ pub fn elevation_profile(
         v1 = z1 - base;
 
         if v0.is_finite() && v1.is_finite() {
-            // If the roof is lower than the wall top, it clips.
-            if v0 < max_v || v1 < max_v {
+            // If the roof is lower than the wall top at either end, it clips.
+            // If the roof height varies along the wall (perpendicular/angled wall),
+            // the wall top follows the roof line even when the roof is above the
+            // nominal wall height (gable wall).
+            if v0 < max_v || v1 < max_v || (v0 - v1).abs() > 1e-9 {
                 has_slope = true;
                 max_v = v0.max(v1);
             }
