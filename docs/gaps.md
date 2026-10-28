@@ -87,39 +87,6 @@ one commit each, ending at the ⛔ checkpoint in [DESIGN.md](arch3d/DESIGN.md).
 | ARCH-12 | ARCHDETECT on plain DXF: parallel-pair wall finding, door arcs, window mullions, AIA/NCS layer hints | open — phase 8 | — |
 | ARCH-13 | IFC export (`IfcWall`, `IfcWindow`, `IfcSlab`, `IfcRoof`, `IfcStair`, `IfcSpace`, own STEP writer); OBJ export | open — phase 12 | — |
 
-## Architecture (arch3d)
-
-Additive architectural 3D ("draw a plan, get the house in 3D"). **F24 above is
-AutoCAD 3D and stays as-is**; these rows are ours and land one phase at a time,
-one commit each, ending at the ⛔ checkpoint in [DESIGN.md](arch3d/DESIGN.md).
-**done** = phase landed; **open** = scheduled phase.
-
-| # | Gap | Status | Est. |
-|---|---|---|---|
-| ARCH-1 | Arch object model on `Drawing`: `ArchModel`, `ArchId`, `Wall` (centre-line `start`/`end`, thickness, height, base level, `to_ceiling`, exterior, `wall_type`, `join_start`/`join_end`); `arch_revision: u64` and `Drawing::touch_arch()` so undo, autosave, AUDIT and DXF save all see it | done — phase 1 | — |
-| ARCH-2 | Wall join solver: `solve_joins` trims/extends centre-line ends to neighbour face-line intersections (L, T, X, angled, collinear; mitre/butt, parallel→square) and offsets; `stretch_wall` transitive neighbour stretch — pure, deterministic, one pass + spatial hash, capped | done — phase 1 | — |
-| ARCH-3 | Plan poché: arch geometry expanded into the 2D display list at draw time, tagged with proxy handles `Handle(0xA000_0000 + arch_id)` so picking, selection, linetypes, colours and plot styles work; proxy LWPOLYLINEs written on save only, never read back when arch data is present | done — phase 1 | — |
-| ARCH-4 | Extruded 3D: `arch3d::build` / `build_dirty` → `Scene3d`, pure/deterministic/incremental; wall elevation = 2D face region (minus opening rectangles, no CSG) extruded; meshes carry the owning `ArchId` for picking and box UVs (u=x, v=z) | done — phase 1 | — |
-| ARCH-5 | Orbit view: offscreen wgpu render into its own colour+depth textures, presented as an image; headless render returns `NoAdapter` (exit 0 / SKIP) without a GPU | done — phase 1 | — |
-| ARCH-6 | GLB export: own GLTF 2.0 writer in `io::glb` (no dependency), node names `wall-w1`, POSITION min/max on every accessor | done — phase 1 | — |
-| ARCH-7 | Openings: doors, windows, garages — placement limits, plan symbols, elevation cutouts | done — phase 2 | — |
-| ARCH-8 | Rooms, floors, ceilings, levels: room detection with holes, area/perimeter rules, floor/ceiling geometry | done — phase 3 | — |
-| ARCH-9 | Roofs: straight-skeleton hip/gable/mixed auto-roof generator; per-wall `RoofDirective` (hip, gable, half); configurable pitch and overhang; fascia and soffit geometry; wall-top clip to rafter planes; opening-cut profiles at gable ends | done — phase 4 | — |
-| ARCH-14 | Dormers: shed, gable and hip dormers placed on a roof plane; roof surface cut, cheek walls, dormer roof joining | open | — |
-| ARCH-15 | Crickets (saddles): small shed roofs behind chimneys and penetrations to shed water; auto-placed by chimney footprint | open | — |
-| ARCH-16 | Dutch and half-hip (jerkinhead) gables: gable end clipped to a small hip, with matching fascia return | open | — |
-| ARCH-17 | Roof returns: horizontal fascia return from a gable end back into the wall (classical frieze-board detail) | open | — |
-| ARCH-18 | Attic and knee walls: short walls that follow the roof line (auto-height from pitch and `attic_height`); attic floor as a room | open | — |
-| ARCH-19 | Roofs over lower-level bump-outs: shed or independent gable roofs over projections below the main plate; intersect and clip against the main roof | open | — |
-| ARCH-20 | Skylights: rectangular and custom openings through roof planes; curb framing; weathering geometry; plan and 3D symbol | open | — |
-| ARCH-21 | Gutters and downspouts: gutter profiles along fascia; elbow and downspout placement; plan and 3D geometry | open | — |
-| ARCH-22 | Interactive plane joining: drag a roof plane edge to an adjoining plane; constraint solver snaps ridge/valley/hip edges so planes meet without gaps | open | — |
-| ARCH-23 | Curved walls under a roof: straight-skeleton approximation for polygonal walls with arc segments; round-tower hip cap | open | — |
-| ARCH-10 | Stairs, railings, decks: stair code calculator with code limits, landings | open — phase 5 | — |
-| ARCH-11 | HLR elevations and sections: hidden-line removal of our meshes → 2D vectors; orthographic elevation/section cameras | open — phase 7 | — |
-| ARCH-12 | ARCHDETECT on plain DXF: parallel-pair wall finding, door arcs, window mullions, AIA/NCS layer hints | open — phase 8 | — |
-| ARCH-13 | IFC export (`IfcWall`, `IfcWindow`, `IfcSlab`, `IfcRoof`, `IfcStair`, `IfcSpace`, own STEP writer); OBJ export | open — phase 12 | — |
-
 ## UI/UX
 
 Detail and evidence: [ui-parity.md](ui-parity.md).
