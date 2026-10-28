@@ -81,7 +81,11 @@ fn area_object_on_an_open_polyline_closes_the_area_but_not_the_perimeter() {
 }
 
 #[test]
-fn area_length_extends_the_last_segment() {
+fn area_unsupported_keywords_say_so_and_length_extends_the_last_segment() {
+    // Arc used to be unavailable; it now enters arc mode instead of saying so.
+    let (s, log) = run(&["area", "0,0", "a"]);
+    assert!(!has(&log, "not available yet"), "{log:?}");
+    assert!(s.running.is_some());
     // Length continues along the previous segment: 0,0 -> 4,0 -> +6 -> 10,0, then 10,10.
     let (_, log) = run(&["area", "0,0", "4,0", "l", "6", "10,10", ""]);
     assert!(has(&log, "Area = 50.0000"), "{log:?}");
