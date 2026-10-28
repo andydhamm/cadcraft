@@ -374,12 +374,13 @@ fn stair_with_minimal_rise() {
     stair.treads = 0;
     stair.tread_depth = 0.254;
     stair.run = 0.0;
+    let riser_height = stair.riser_height;
     model.push_stair(stair);
 
     let scene = build(&model);
     assert!(scene.stairs >= 0);
     // Riser height should be within IRC max
-    assert!(stair.riser_height <= 0.196 + TOL);
+    assert!(riser_height <= 0.196 + TOL);
 }
 
 #[test]
