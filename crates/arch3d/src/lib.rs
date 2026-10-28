@@ -14,6 +14,7 @@ pub mod hlr;
 pub mod mesh;
 pub mod openings;
 pub mod probe;
+pub mod railing;
 pub mod ray;
 pub mod roof;
 pub mod section;

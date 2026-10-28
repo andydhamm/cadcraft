@@ -24,17 +24,59 @@ pub fn floor_slab(room: &Room, level: &Level, mat: &str) -> Option<Mesh> {
     if !room.room_type.has_floor() {
         return None;
     }
-    if !level.structure.is_finite() || level.structure <= 0.0 {
-        return None;
-    }
     if !level.elevation.is_finite() {
         return None;
     }
-    let top = level.elevation;
-    let mut m = Mesh::new(mat, room.id);
-    m.level_elevation = level.elevation;
-    m.push_prism_with_holes(&room.polygon, &room.holes, top - level.structure, top);
-    if m.positions.is_empty() { None } else { Some(m) }
+
+    // Deck slab logic
+    if room.room_type == RoomType::Deck {
+        if let Some(h) = room.deck_height {
+            if h.is_finite() && h > 0.0 {
+                let top = level.elevation + h;
+                let mut m = Mesh::new("deck", room.id);
+                m.level_elevation = level.elevation;
+                // 0.05 thick
+                m.push_prism_with_holes(&room.polygon, &room.holes, top - 0.05, top);
+                if m.positions.is_empty() { None } else { Some(m) }
+            } else {
+                // Invalid deck height, fall through to standard slab or None?
+                // Prompt says "Otherwise unchanged". If deck_height is Some but invalid,
+                // we probably shouldn't emit a deck slab.
+                // If it's None, we emit standard slab.
+                // If it's Some(invalid), we treat as no deck slab?
+                // "deck_height is Some(h) finite and > 0 ... Otherwise unchanged."
+                // So if not (finite and > 0), we do the standard logic.
+                if !level.structure.is_finite() || level.structure <= 0.0 {
+                    return None;
+                }
+                let top = level.elevation;
+                let mut m = Mesh::new(mat, room.id);
+                m.level_elevation = level.elevation;
+                m.push_prism_with_holes(&room.polygon, &room.holes, top - level.structure, top);
+                if m.positions.is_empty() { None } else { Some(m) }
+            }
+        } else {
+            // No deck height, standard slab
+            if !level.structure.is_finite() || level.structure <= 0.0 {
+                return None;
+            }
+            let top = level.elevation;
+            let mut m = Mesh::new(mat, room.id);
+            m.level_elevation = level.elevation;
+            m.push_prism_with_holes(&room.polygon, &room.holes, top - level.structure, top);
+            if m.positions.is_empty() { None } else { Some(m) }
+        }
+    } else {
+        // Standard room
+        if !level.structure.is_finite() || level.structure <= 0.0 {
+            return None;
+        }
+        let top = level.elevation;
+        let mut m = Mesh::new(mat, room.id);
+        m.level_elevation = level.elevation;
+        m.push_prism_with_holes(&room.polygon, &room.holes, top - level.structure, top);
+        if m.positions.is_empty() { None } else { Some(m) }
+    }
 }
 
 /// Build a ceiling-surface mesh for `room` at `level`.
@@ -206,6 +248,26 @@ mod tests {
         let level = Level { structure: f64::NAN, ..Default::default() };
         let room = Room { id: ArchId(1), room_type: RoomType::Living, polygon: sq(), ..Default::default() };
         assert!(floor_slab(&room, &level, "floor").is_none());
+    }
+
+    #[test]
+    fn deck_slab_top_is_at_its_own_height() {
+        let level = default_level(0.0, 0.3);
+        let room = Room { id: ArchId(1), room_type: RoomType::Deck, polygon: sq(), deck_height: Some(0.9), ..Default::default() };
+        let slab = floor_slab(&room, &level, "floor").expect("deck slab");
+        assert_eq!(slab.material, "deck");
+        let z_max = slab.positions.iter().map(|p| p[2] as f64).fold(NEG_INFINITY, f64::max);
+        assert!((z_max - 0.9).abs() < 1e-6, "z_max = {z_max}, expected 0.9");
+    }
+
+    #[test]
+    fn deck_without_height_keeps_the_grade_slab() {
+        let level = default_level(0.0, 0.3);
+        let room = Room { id: ArchId(1), room_type: RoomType::Deck, polygon: sq(), deck_height: None, ..Default::default() };
+        let slab = floor_slab(&room, &level, "floor").expect("grade slab");
+        assert_eq!(slab.material, "floor");
+        let z_max = slab.positions.iter().map(|p| p[2] as f64).fold(NEG_INFINITY, f64::max);
+        assert!((z_max - 0.0).abs() < 1e-6, "z_max = {z_max}, expected 0.0");
     }
 
     #[test]
