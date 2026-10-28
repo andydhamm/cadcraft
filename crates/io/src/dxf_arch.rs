@@ -57,33 +57,36 @@ struct Payload {
 
 /// JSON chunks (≤ 250 characters) for the architectural XRECORD.
 ///
-/// Returns `None` when the model has no walls, openings, rooms or roofs (nothing to write);
-/// otherwise the escaped, chunked payload, exactly like [`dxf_ext::constraint_chunks`](crate::dxf_ext).
+/// Returns `None` when the model has no walls, openings, rooms, roofs, stairs or railings
+/// (nothing to write); otherwise the escaped, chunked payload, exactly like
+/// [`dxf_ext::constraint_chunks`](crate::dxf_ext).
 pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
-    if m.walls.is_empty() && m.openings.is_empty() && m.rooms.is_empty() && m.roofs.is_empty() {
+    if m.walls.is_empty() && m.openings.is_empty() && m.rooms.is_empty() && m.roofs.is_empty() && m.stairs.is_empty() && m.railings.is_empty() {
         return None;
     }
-    let json = serde_json::to_string(&Payload { version: 4, model: m.clone() }).ok()?;
+    let json = serde_json::to_string(&Payload { version: 5, model: m.clone() }).ok()?;
     Some(crate::dxf_ext::json_chunks(&json))
 }
 
 /// Parse an architectural XRECORD payload; `None` when it is not a payload we understand.
 ///
-/// Accepts schema versions 1 through 4:
+/// Accepts schema versions 1 through 5:
 /// - v1: no openings (cleared).
 /// - v2: openings present.
 /// - v3: rooms/levels present, no roofs (cleared).
 /// - v4: roofs present.
+/// - v5: stairs and railings present.
 ///
 /// All versions are bounded — the wall count against [`MAX_WALLS`], the opening count
-/// against [`MAX_OPENINGS`], and the roof count against [`MAX_ROOFS`] — so hostile payloads
-/// can not overflow allocations.
+/// against [`MAX_OPENINGS`], the roof count against [`MAX_ROOFS`], the stair count against
+/// [`MAX_STAIRS`], and the railing count against [`MAX_RAILINGS`] — so hostile payloads can
+/// not overflow allocations.
 pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     if text.len() > MAX_ARCH_PAYLOAD {
         return None;
     }
     let p: Payload = serde_json::from_str(text).ok()?;
-    if !(1..=4).contains(&p.version) {
+    if !(1..=5).contains(&p.version) {
         return None;
     }
     if p.model.walls.len() > cadcraft_doc::MAX_WALLS {
@@ -96,10 +99,20 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     if p.version <= 3 {
         model.roofs.clear();
     }
+    if p.version <= 4 {
+        model.stairs.clear();
+        model.railings.clear();
+    }
     if model.openings.len() > cadcraft_doc::arch::MAX_OPENINGS {
         return None;
     }
     if model.roofs.len() > cadcraft_doc::arch::MAX_ROOFS {
+        return None;
+    }
+    if model.stairs.len() > cadcraft_doc::arch::MAX_STAIRS {
+        return None;
+    }
+    if model.railings.len() > cadcraft_doc::arch::MAX_RAILINGS {
         return None;
     }
     Some(model)
@@ -328,7 +341,7 @@ pub(crate) fn proxy_roof_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
 mod tests {
     use super::*;
     use crate::{read_dxf, write_dxf};
-    use cadcraft_doc::arch::{Opening, OpeningKind, Roof, RoofEdge, RoofEdgeKind, RoofPlane, Room};
+    use cadcraft_doc::arch::{Opening, OpeningKind, Railing, Roof, RoofEdge, RoofEdgeKind, RoofPlane, Room, Stair};
     use cadcraft_doc::{ArchModel, Drawing, EntityKind, Wall};
     use cadcraft_geom::Vec2;
 
@@ -375,8 +388,8 @@ mod tests {
 
     #[test]
     fn parse_arch_rejects_unknown_versions() {
-        // Versions 1..4 are understood; 0 and 5+ are unknown.
-        assert!(parse_arch(r#"{"version": 5, "model": { "walls": [] }}"#).is_none());
+        // Versions 1..=5 are understood; 0 and 6+ are unknown.
+        assert!(parse_arch(r#"{"version": 6, "model": { "walls": [] }}"#).is_none());
         assert!(parse_arch(r#"{"version": 0, "model": { "walls": [] }}"#).is_none());
     }
 
@@ -1001,11 +1014,23 @@ mod tests {
         assert_eq!(second_text.matches(ARCH_ROOM_MARKER).count(), 1, "room proxies duplicated on re-save");
     }
 
+    /// The previous wire version (v4) is still understood by [`parse_arch`] even though the
+    /// writer now emits v5 — a v4 record reads back into its walls.
     #[test]
     fn arch_record_version_is_four() {
+        let m = one_wall_model();
+        let json = serde_json::json!({ "version": 4, "model": m }).to_string();
+        let text = crate::dxf_ext::json_chunks(&json).join("");
+        let parsed = parse_arch(&text);
+        assert!(parsed.is_some(), "a version-4 payload must still parse");
+        assert_eq!(parsed.unwrap().walls.len(), 1, "version-4 payload lost its wall");
+    }
+
+    #[test]
+    fn arch_record_version_is_five() {
         let chunks = arch_chunks(&one_wall_model()).unwrap();
         let obj: serde_json::Value = serde_json::from_str(&chunks.join("")).unwrap();
-        assert_eq!(obj["version"].as_u64(), Some(4), "written payload version");
+        assert_eq!(obj["version"].as_u64(), Some(5), "written payload version");
     }
 
     #[test]
@@ -1017,7 +1042,7 @@ mod tests {
         let parsed = parse_arch(&text).expect("a version-3 payload must still parse");
         assert_eq!(parsed.walls.len(), 1);
         assert!(parsed.roofs.is_empty(), "a v3 file predates roofs");
-        assert!(parse_arch(r#"{"version": 5, "model": {"walls": []}}"#).is_none());
+        assert!(parse_arch(r#"{"version": 6, "model": {"walls": []}}"#).is_none());
     }
 
     #[test]
@@ -1551,5 +1576,50 @@ mod tests {
         // No proxy polylines should survive the read
         let polylines = back.model.iter().filter(|e| matches!(&e.kind, EntityKind::LwPolyline(_))).count();
         assert_eq!(polylines, 0, "proxy linework survived the read");
+    }
+
+    /// A model with stairs and a railing survives a DXF round trip as a v5 payload.
+    #[test]
+    fn arch_v5_round_trips_stairs() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_stair(Stair::default());
+        d.arch.push_railing(Railing::default());
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.stairs.len(), 1, "stair lost on DXF round trip");
+        assert_eq!(back.arch.railings.len(), 1, "railing lost on DXF round trip");
+
+        // The record should carry version 5.
+        let chunks = arch_chunks(&d.arch);
+        assert!(chunks.is_some(), "arch_chunks should produce a v5 record with stairs/railings");
+        let obj: serde_json::Value = serde_json::from_str(&chunks.unwrap().join("")).unwrap();
+        assert_eq!(obj["version"].as_u64(), Some(5), "written payload version should be 5");
+    }
+
+    /// A v4 payload that carries stairs/railings clears them on parse.
+    #[test]
+    fn v4_payload_clears_stairs() {
+        let mut m = ArchModel::default();
+        m.push_stair(Stair::default());
+        m.push_railing(Railing::default());
+        let json = serde_json::json!({ "version": 4, "model": m }).to_string();
+        let text = crate::dxf_ext::json_chunks(&json).join("");
+        let parsed = parse_arch(&text).expect("a version-4 payload must still parse");
+        assert!(parsed.stairs.is_empty(), "a v4 payload must clear stairs");
+        assert!(parsed.railings.is_empty(), "a v4 payload must clear railings");
+    }
+
+    /// A v5 payload with more stairs than [`MAX_STAIRS`] is rejected.
+    #[test]
+    fn hostile_stair_payload_is_rejected() {
+        let mut m = ArchModel::default();
+        for _ in 0..(cadcraft_doc::arch::MAX_STAIRS + 1) {
+            m.push_stair(Stair::default());
+        }
+        let json = serde_json::json!({ "version": 5, "model": m }).to_string();
+        let text = crate::dxf_ext::json_chunks(&json).join("");
+        assert!(parse_arch(&text).is_none(), "a payload with {} stairs must be rejected", cadcraft_doc::arch::MAX_STAIRS + 1,);
     }
 }
