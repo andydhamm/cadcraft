@@ -1,3 +1,5 @@
+use cadcraft_doc::Layer;
+
 use super::assoc::std_assoc_refs;
 use super::blocks::{arrow_block_entities, dim_block_entities, dim_block_plan, reuse_handles, table_block_entities};
 use super::common::annotative_xdata;
@@ -184,8 +186,15 @@ fn write_tables(w: &mut W, plan: TableWritePlan<'_>) -> HashMap<String, String> 
 }
 
 fn write_layer_table(w: &mut W, d: &Drawing) {
-    let th = table_head(w, "LAYER", d.layers.len());
-    for l in &d.layers {
+    // Rooms and roofs get their proxy layer even when no command registered it explicitly.
+    let missing = |used: bool, name: &str| used && !d.layers.iter().any(|l| l.name.eq_ignore_ascii_case(name));
+    let extra_room_layer = missing(!d.arch.rooms.is_empty(), crate::dxf_arch::ARCH_ROOM_LAYER)
+        .then(|| Layer { name: crate::dxf_arch::ARCH_ROOM_LAYER.into(), ..Layer::default() });
+    let extra_roof_layer = missing(!d.arch.roofs.is_empty(), crate::dxf_arch::ARCH_ROOF_LAYER)
+        .then(|| Layer { name: crate::dxf_arch::ARCH_ROOF_LAYER.into(), ..Layer::default() });
+    let layer_count = d.layers.len() + usize::from(extra_room_layer.is_some()) + usize::from(extra_roof_layer.is_some());
+    let th = table_head(w, "LAYER", layer_count);
+    for l in d.layers.iter().chain(extra_room_layer.iter()).chain(extra_roof_layer.iter()) {
         let lh = record_head(w, "LAYER", &th, "AcDbLayerTableRecord");
         w.layers.insert(l.name.to_ascii_uppercase(), lh);
         w.s(2, &l.name);
@@ -365,6 +374,30 @@ fn write_entities(w: &mut W, d: &Drawing, ms_br: &str, ps_brs: &[(String, String
     if let Some((_, h, l)) = ps_brs.first() {
         for e in sheet_first(l) {
             entity(w, d, e, h, true, cx);
+        }
+    }
+    if !d.arch.is_empty() || !d.arch.rooms.is_empty() || !d.arch.roofs.is_empty() {
+        let mut proxy = |layer: &str, tags: Vec<Tag>| {
+            w.s(0, "LWPOLYLINE");
+            let h = w.h();
+            w.s(5, h);
+            w.s(330, ms_br);
+            w.s(100, "AcDbEntity");
+            w.s(8, layer);
+            w.s(100, "AcDbPolyline");
+            w.t.extend(tags);
+        };
+        for tags in crate::dxf_arch::proxy_polylines(&d.arch) {
+            proxy(crate::dxf_arch::ARCH_PROXY_LAYER, tags);
+        }
+        for (layer, tags) in crate::dxf_arch::proxy_opening_polylines(&d.arch) {
+            proxy(&layer, tags);
+        }
+        for tags in crate::dxf_arch::proxy_room_polylines(&d.arch) {
+            proxy(crate::dxf_arch::ARCH_ROOM_LAYER, tags);
+        }
+        for tags in crate::dxf_arch::proxy_roof_polylines(&d.arch) {
+            proxy(crate::dxf_arch::ARCH_ROOF_LAYER, tags);
         }
     }
     w.s(0, "ENDSEC");

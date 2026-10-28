@@ -4,10 +4,11 @@ use std::collections::HashMap;
 
 use cadcraft_color::{Color, Rgb};
 use cadcraft_doc::{
-    Arc, AssocSnap, Attrib, AttribModes, AttribProps, Block, Circle, Common, DashElement, DimAssoc, DimKind, DimStyle, Dimension, Drawing, Ellipse,
-    Entity, EntityKind, Face3d, Gradient, Group, HAlign, HVal, Handle, Hatch, HatchLoop, Helix, HelixConstrain, Insert, Layer, Layout, Leader, Line,
-    Linetype, Lineweight, LwPolyline, MAX_FRAME_CHARS, MLeaderStyle, MText, MultilineAttrib, NamedView, PageSetup, Point, Polyline3d, RawTag,
-    RayLine, Solid, Table, TableCell, Text, TextStyle, Tolerance, Transparency, Ucs, Unknown, VAlign, Viewport, VportConfig, VportTile, Wipeout,
+    ARCH_HANDLE_BASE, Arc, AssocSnap, Attrib, AttribModes, AttribProps, Block, Circle, Common, DashElement, DimAssoc, DimKind, DimStyle, Dimension,
+    Drawing, Ellipse, Entity, EntityKind, Face3d, Gradient, Group, HAlign, HVal, Handle, Hatch, HatchLoop, Helix, HelixConstrain, Insert, Layer,
+    Layout, Leader, Line, Linetype, Lineweight, LwPolyline, MAX_FRAME_CHARS, MLeaderStyle, MText, MultilineAttrib, NamedView, PageSetup, Point,
+    Polyline3d, RawTag, RayLine, Solid, Table, TableCell, Text, TextStyle, Tolerance, Transparency, Ucs, Unknown, VAlign, Viewport, VportConfig,
+    VportTile, Wipeout,
 };
 use cadcraft_dxf::{Tag, records, sections};
 use cadcraft_geom::{PolyVertex, Spline, Vec2, Vec3};
@@ -191,6 +192,7 @@ mod table_budget_tests {
 #[cfg(test)]
 mod arch_handle_tests {
     use super::*;
+    use cadcraft_doc::is_arch_handle;
 
     /// A LINE at handle A0000001 (below the reserved range) keeps its handle and is not an arch handle.
     #[test]

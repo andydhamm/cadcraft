@@ -230,6 +230,16 @@ fn run_ui_toggle_command(app: &mut CadApp, id: &str, params: &Value) -> Option<R
             toggle(&mut app.ui.show_command_line, params);
             Ok(Value::Null)
         }
+        // `{"on": true}`/`{"on": false}` set the pane, no params flips; view3d runs only on the
+        // off->on transition so toggling off returns to the 2D canvas.
+        "ui.show3d" => {
+            let was = app.ui.show_three_d;
+            toggle(&mut app.ui.show_three_d, params);
+            if app.ui.show_three_d && !was {
+                let _ = app.run("view3d", json!({}));
+            }
+            Ok(json!({"showThreeD": app.ui.show_three_d}))
+        }
         "ui.toggle.systemcursor" => {
             toggle(&mut app.ui.system_cursor, params);
             Ok(Value::Null)
