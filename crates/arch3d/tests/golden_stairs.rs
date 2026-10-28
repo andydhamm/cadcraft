@@ -173,17 +173,23 @@ fn stair_riser_invariants() {
     stair.treads = 15;
     stair.tread_depth = 0.254;
     stair.run = 3.81;
+    let riser_height = stair.riser_height;
+    let risers = stair.risers;
+    let treads = stair.treads;
+    let tread_depth = stair.tread_depth;
+    let run = stair.run;
+    let rise = stair.rise;
     model.push_stair(stair);
 
     let scene = build(&model);
     // Invariant: riser_height * risers should equal rise (within tolerance)
-    let computed_rise = stair.riser_height * stair.risers as f64;
-    assert!((computed_rise - stair.rise).abs() < TOL, "riser_height * risers = {} but rise = {}", computed_rise, stair.rise);
+    let computed_rise = riser_height * risers as f64;
+    assert!((computed_rise - rise).abs() < TOL, "riser_height * risers = {} but rise = {}", computed_rise, rise);
     // Invariant: treads == risers - 1 for straight stairs
-    assert_eq!(stair.treads, stair.risers - 1, "treads should be risers - 1");
+    assert_eq!(treads, risers - 1, "treads should be risers - 1");
     // Invariant: run == treads * tread_depth
-    let computed_run = stair.treads as f64 * stair.tread_depth;
-    assert!((computed_run - stair.run).abs() < TOL, "treads * tread_depth = {} but run = {}", computed_run, stair.run);
+    let computed_run = treads as f64 * tread_depth;
+    assert!((computed_run - run).abs() < TOL, "treads * tread_depth = {} but run = {}", computed_run, run);
     // Scene should have built the stair
     assert!(scene.stairs > 0, "scene should have at least one stair");
 }
@@ -308,6 +314,7 @@ fn stair_with_large_rise() {
     stair.treads = 23;
     stair.tread_depth = 0.254;
     stair.run = 23.0 * 0.254;
+    let riser_height = stair.riser_height;
     model.push_stair(stair);
 
     let scene = build(&model);
@@ -318,7 +325,7 @@ fn stair_with_large_rise() {
     // Probe at the top of the stair (near 4.0m)
     assert_probe(&scene, 2.0 + 22.0 * 0.254, 1.0, 3.5, Some("stair"));
     // Riser height should be within IRC max (0.196m)
-    assert!(stair.riser_height <= 0.196 + TOL, "riser height {} exceeds max", stair.riser_height);
+    assert!(riser_height <= 0.196 + TOL, "riser height {} exceeds max", riser_height);
 }
 
 #[test]
