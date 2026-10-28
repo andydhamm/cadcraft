@@ -1622,4 +1622,62 @@ mod tests {
         let text = crate::dxf_ext::json_chunks(&json).join("");
         assert!(parse_arch(&text).is_none(), "a payload with {} stairs must be rejected", cadcraft_doc::arch::MAX_STAIRS + 1,);
     }
+
+    /// A model with only railings (no walls, openings, rooms, roofs, stairs) still writes the record.
+    #[test]
+    fn arch_chunks_writes_record_for_railings_only() {
+        let mut m = ArchModel::default();
+        m.push_railing(Railing::default());
+        let chunks = arch_chunks(&m);
+        assert!(chunks.is_some(), "a model with only a railing must write an XRECORD");
+    }
+
+    /// A model with only stairs (no walls, openings, rooms, roofs, railings) still writes the record.
+    #[test]
+    fn arch_chunks_writes_record_for_stairs_only() {
+        let mut m = ArchModel::default();
+        m.push_stair(Stair::default());
+        let chunks = arch_chunks(&m);
+        assert!(chunks.is_some(), "a model with only a stair must write an XRECORD");
+    }
+
+    /// A v5 payload with more railings than [`MAX_RAILINGS`] is rejected.
+    #[test]
+    fn hostile_railing_payload_is_rejected() {
+        let mut m = ArchModel::default();
+        for _ in 0..(cadcraft_doc::arch::MAX_RAILINGS + 1) {
+            m.push_railing(Railing::default());
+        }
+        let json = serde_json::json!({ "version": 5, "model": m }).to_string();
+        let text = crate::dxf_ext::json_chunks(&json).join("");
+        assert!(parse_arch(&text).is_none(), "a payload with {} railings must be rejected", cadcraft_doc::arch::MAX_RAILINGS + 1,);
+    }
+
+    /// A v5 payload missing the stairs and railings fields still parses (they default to empty).
+    #[test]
+    fn v5_payload_missing_stairs_railings_fields() {
+        let mut m = one_wall_model();
+        let json = serde_json::json!({ "version": 5, "model": m }).to_string();
+        let text = crate::dxf_ext::json_chunks(&json).join("");
+        let parsed = parse_arch(&text).expect("a v5 payload without stairs/railings fields must parse");
+        assert_eq!(parsed.walls.len(), 1);
+        assert!(parsed.stairs.is_empty());
+        assert!(parsed.railings.is_empty());
+    }
+
+    /// Multiple stairs and railings survive a DXF round trip.
+    #[test]
+    fn multiple_stairs_railings_round_trip() {
+        let mut d = Drawing::new_metric();
+        d.arch.push_stair(Stair::default());
+        d.arch.push_stair(Stair::default());
+        d.arch.push_railing(Railing::default());
+        d.arch.push_railing(Railing::default());
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.stairs.len(), 2, "stairs lost on DXF round trip");
+        assert_eq!(back.arch.railings.len(), 2, "railings lost on DXF round trip");
+    }
 }

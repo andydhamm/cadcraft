@@ -174,7 +174,15 @@ impl Drawing {
         Drawing {
             header: Header::default(),
             foreign: std::sync::Arc::default(),
-            layers: vec![Layer::default(), Layer { name: "Defpoints".into(), plot: false, ..Layer::default() }],
+            layers: vec![
+                Layer::default(),
+                Layer { name: "Defpoints".into(), plot: false, ..Layer::default() },
+                Layer { name: "A-WALL".into(), ..Layer::default() },
+                Layer { name: "A-DOOR".into(), ..Layer::default() },
+                Layer { name: "A-GLAZ".into(), ..Layer::default() },
+                Layer { name: "A-ROOF".into(), ..Layer::default() },
+                Layer { name: "A-STAIR".into(), ..Layer::default() },
+            ],
             linetypes: vec![
                 Linetype { name: "ByBlock".into(), description: String::new(), pattern: Vec::new() },
                 Linetype { name: "ByLayer".into(), description: String::new(), pattern: Vec::new() },
@@ -470,5 +478,122 @@ mod handseed_tests {
         let before = d.handseed;
         d.bump_handseed(Handle(u64::MAX));
         assert_eq!(d.handseed, before, "bump_handseed with u64::MAX must leave handseed unchanged");
+    }
+}
+
+#[cfg(test)]
+mod arch_layers_tests {
+    use super::*;
+
+    #[test]
+    fn a_new_drawing_has_no_arch_layers() {
+        // After p1-arch-layers, a new drawing includes the five architectural layers.
+        // The name is historical; the assertion reflects the current behaviour.
+        let d = Drawing::new_imperial();
+        assert_eq!(d.layers.len(), 7, "a new drawing must have exactly 7 layers");
+    }
+
+    #[test]
+    fn a_wall_layer_exists_in_a_new_drawing() {
+        let d = Drawing::new_imperial();
+        let wall = d.layer("A-WALL");
+        assert!(wall.is_some(), "A-WALL layer must exist in a new drawing");
+    }
+
+    #[test]
+    fn arch_layers_are_in_a_new_drawing_in_order() {
+        let d = Drawing::new_imperial();
+        let expected = ["0", "Defpoints", "A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
+        for (i, name) in expected.iter().enumerate() {
+            let layer = d.layers.get(i);
+            assert!(layer.is_some(), "layer at index {i} must exist");
+            assert_eq!(layer.unwrap().name.as_str(), *name, "layer at index {i} must be {name}");
+        }
+    }
+
+    #[test]
+    fn defpoints_remains_non_plotting_and_first() {
+        let d = Drawing::new_imperial();
+        let defpoints = d.layers.get(1);
+        assert!(defpoints.is_some(), "Defpoints must be at index 1");
+        assert!(!defpoints.unwrap().plot, "Defpoints must be non-plotting");
+    }
+
+    #[test]
+    fn ensure_layer_does_not_duplicate_arch_layers() {
+        let mut d = Drawing::new_imperial();
+        let created = d.ensure_layer("A-WALL");
+        assert!(!created, "ensure_layer(A-WALL) must not create a duplicate");
+        let created_lower = d.ensure_layer("a-wall");
+        assert!(!created_lower, "ensure_layer(a-wall) must find A-WALL case-insensitively");
+        assert_eq!(d.layers.len(), 7, "layer count must remain 7 after ensure_layer on existing layers");
+    }
+
+    #[test]
+    fn layer_lookup_is_case_insensitive_for_arch_layers() {
+        let d = Drawing::new_imperial();
+        for name in ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"] {
+            let lower = name.to_lowercase();
+            assert!(d.layer(&lower).is_some(), "layer lookup for {lower} must find {name}");
+        }
+    }
+
+    #[test]
+    fn a_metric_drawing_also_has_arch_layers() {
+        let d = Drawing::new_metric();
+        let expected = ["0", "Defpoints", "A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
+        for (i, name) in expected.iter().enumerate() {
+            let layer = d.layers.get(i);
+            assert!(layer.is_some(), "metric drawing must have layer {name} at index {i}");
+            assert_eq!(layer.unwrap().name.as_str(), *name);
+        }
+    }
+
+    #[test]
+    fn arch_layers_are_plotting() {
+        let d = Drawing::new_imperial();
+        for name in ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"] {
+            let layer = d.layer(name).unwrap();
+            assert!(layer.plot, "layer {name} must be plotting");
+        }
+    }
+
+    #[test]
+    fn ensure_layer_creates_a_layer_with_the_correct_name() {
+        let mut d = Drawing::new_imperial();
+        let created = d.ensure_layer("TestLayer");
+        assert!(created);
+        let layer = d.layer("TestLayer").unwrap();
+        assert_eq!(layer.name.as_str(), "TestLayer");
+    }
+
+    #[test]
+    fn layer_zero_is_default_layer() {
+        let d = Drawing::new_imperial();
+        let layer0 = d.layers.first();
+        assert!(layer0.is_some(), "layer 0 must exist");
+        assert_eq!(layer0.unwrap().name.as_str(), "0", "layer 0 must be named 0");
+        assert!(layer0.unwrap().plot, "layer 0 must be plotting");
+    }
+
+    #[test]
+    fn layer_mut_finds_all_arch_layers() {
+        let mut d = Drawing::new_imperial();
+        for name in ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"] {
+            let layer = d.layer_mut(name);
+            assert!(layer.is_some(), "layer_mut({name}) must find the layer");
+        }
+    }
+
+    #[test]
+    fn all_layers_are_unique() {
+        let d = Drawing::new_imperial();
+        let mut names = Vec::new();
+        for l in &d.layers {
+            names.push(l.name.to_lowercase());
+        }
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), d.layers.len(), "all layer names must be unique (case-insensitive)");
     }
 }
