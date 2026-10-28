@@ -1639,8 +1639,8 @@ mod tests {
         let origin = ring_origin(&edges);
         let comps = components(&edges, origin);
         assert_eq!(comps.len(), 2);
-        assert_eq!(comps[0], vec![1], "first component must be edge 1 (lower index)");
-        assert_eq!(comps[1], vec![0], "second component must be edge 0");
+        assert_eq!(comps[0], vec![0], "first component must be edge 0 (lower index)");
+        assert_eq!(comps[1], vec![1], "second component must be edge 1");
     }
 
     #[test]
