@@ -267,6 +267,9 @@ impl Mesh {
     /// loop (detected as repeated undirected edges) so the resulting mesh stays
     /// a closed 2-manifold. If a hole cannot be bridged it is dropped.
     pub fn push_prism_with_holes(&mut self, outer: &[Vec2], holes: &[Vec<Vec2>], z0: f64, z1: f64) {
+        if !z0.is_finite() || !z1.is_finite() {
+            return;
+        }
         // Filter holes: >=3 finite vertices and non-degenerate area, normalised to CW.
         let filtered_holes: Vec<Vec<Vec2>> = holes
             .iter()
@@ -1732,6 +1735,66 @@ mod tests {
         m2.push_prism_with_holes(&ring, &[hole], 0.0, 2.5);
         check(m2);
         check(mesh_with_concave());
+    }
+
+    #[test]
+    fn push_prism_with_holes_nan_z0_produces_no_geometry() {
+        let outer = square_ring();
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[], f64::NAN, 2.5);
+        assert!(mesh.positions.is_empty(), "NaN z0 must yield no positions");
+        assert!(mesh.indices.is_empty(), "NaN z0 must yield no indices");
+    }
+
+    #[test]
+    fn push_prism_with_holes_inf_z1_produces_no_geometry() {
+        let outer = square_ring();
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[], 0.0, f64::INFINITY);
+        assert!(mesh.positions.is_empty(), "Inf z1 must yield no positions");
+        assert!(mesh.indices.is_empty(), "Inf z1 must yield no indices");
+    }
+
+    #[test]
+    fn is_manifold_empty_mesh() {
+        let mesh = Mesh::new("wall", ArchId(1));
+        assert!(mesh.is_manifold(), "empty mesh must be manifold");
+    }
+
+    #[test]
+    fn is_manifold_single_triangle() {
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.positions.push([0.0, 0.0, 0.0]);
+        mesh.positions.push([1.0, 0.0, 0.0]);
+        mesh.positions.push([0.0, 1.0, 0.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.uvs.push([0.0, 0.0]);
+        mesh.uvs.push([1.0, 0.0]);
+        mesh.uvs.push([0.0, 1.0]);
+        mesh.indices.extend([0, 1, 2]);
+        assert!(!mesh.is_manifold(), "single triangle must not be manifold (open boundary)");
+    }
+
+    #[test]
+    fn push_prism_with_holes_cw_outer_ring() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(0.0, 4.0), Vec2::new(4.0, 4.0), Vec2::new(4.0, 0.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[], 0.0, 2.5);
+        assert!(mesh.triangle_count() > 0, "CW outer must produce geometry");
+        let area = top_cap_area(&mesh);
+        assert!((area - 16.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 16.0");
+    }
+
+    #[test]
+    fn push_prism_with_holes_cw_hole() {
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        let hole = vec![Vec2::new(1.0, 1.0), Vec2::new(1.0, 2.0), Vec2::new(2.0, 2.0), Vec2::new(2.0, 1.0)];
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.push_prism_with_holes(&outer, &[hole], 0.0, 2.5);
+        let area = top_cap_area(&mesh);
+        assert!((area - 15.0).abs() < 1e-6, "cap area {area} not within 1e-6 of 15.0");
     }
 
     /// Small helper building a mesh from a concave ring (for the geometric-normal
