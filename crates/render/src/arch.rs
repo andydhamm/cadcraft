@@ -1313,4 +1313,130 @@ mod tests {
         let list = build_arch(&d, &Options::default(), false);
         assert!(list.prims.is_empty(), "zero-length wall should draw nothing");
     }
+
+    /// Stair plan linework obeys the A-STAIR layer state (off, frozen, no-plot).
+    #[test]
+    fn stair_linework_follows_layer_state() {
+        use cadcraft_doc::arch::Stair;
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-STAIR");
+        let sid = d.arch.push_stair(Stair { run: 1.0, tread_depth: 0.25, width: 1.0, ..Stair::default() });
+        d.touch_arch();
+        let h = stair_handle(sid);
+
+        // A-STAIR on: draws.
+        let list = build_arch(&d, &Options::default(), false);
+        let prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == h).collect();
+        assert!(!prims.is_empty(), "stair should draw when A-STAIR is on");
+
+        // A-STAIR off: skipped.
+        if let Some(l) = d.layer_mut("A-STAIR") {
+            l.on = false;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(list.prims.iter().all(|p| p.handle != h), "stair should be skipped when A-STAIR is off");
+
+        // A-STAIR frozen: skipped.
+        if let Some(l) = d.layer_mut("A-STAIR") {
+            l.on = true;
+            l.frozen = true;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        assert!(list.prims.iter().all(|p| p.handle != h), "stair should be skipped when A-STAIR is frozen");
+
+        // A-STAIR no-plot: drawn in screen build, skipped in plot build.
+        if let Some(l) = d.layer_mut("A-STAIR") {
+            l.on = true;
+            l.frozen = false;
+            l.plot = false;
+        }
+        let list = build_arch(&d, &Options::default(), false);
+        let prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == h).collect();
+        assert!(!prims.is_empty(), "stair should draw in screen build when A-STAIR is no-plot");
+
+        let list = build_arch(&d, &Options::default(), true);
+        assert!(list.prims.iter().all(|p| p.handle != h), "stair should be skipped in plot build when A-STAIR is no-plot");
+    }
+
+    /// A stair with tread_depth larger than run draws only the outline, no riser lines.
+    #[test]
+    fn stair_with_large_tread_depth_draws_no_riser_lines() {
+        use cadcraft_doc::arch::Stair;
+        let mut d = Drawing::new_metric();
+        let sid = d.arch.push_stair(Stair { run: 1.0, tread_depth: 2.0, width: 1.0, ..Stair::default() });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default(), false);
+        let h = stair_handle(sid);
+        let prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == h).collect();
+        // Only the outline (5-point polyline), no riser lines.
+        assert_eq!(prims.len(), 1, "expected 1 prim (outline only), got {}", prims.len());
+        assert_eq!(prims[0].len, 5, "outline should have 5 vertices");
+    }
+
+    /// A stair with very small tread_depth caps riser lines at MAX_RISER_LINES (512).
+    #[test]
+    fn stair_with_tiny_tread_depth_caps_riser_lines() {
+        use cadcraft_doc::arch::Stair;
+        let mut d = Drawing::new_metric();
+        let sid = d.arch.push_stair(Stair { run: 10.0, tread_depth: 0.001, width: 1.0, ..Stair::default() });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default(), false);
+        let h = stair_handle(sid);
+        let prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == h).collect();
+        // 1 outline + 512 riser lines = 513 prims
+        assert_eq!(prims.len(), 513, "expected 513 prims (1 outline + 512 risers), got {}", prims.len());
+    }
+
+    /// A stair with NaN in its well polygon draws the outline but not the well.
+    #[test]
+    fn stair_with_nan_in_well_draws_no_well() {
+        use cadcraft_doc::arch::Stair;
+        let mut d = Drawing::new_metric();
+        let sid = d.arch.push_stair(Stair {
+            run: 1.0,
+            tread_depth: 0.25,
+            width: 1.0,
+            well: vec![Vec2::new(0.0, 0.0), Vec2::new(f64::NAN, 0.0), Vec2::new(2.0, 1.0)],
+            ..Stair::default()
+        });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default(), false);
+        let h = stair_handle(sid);
+        let prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == h).collect();
+        // outline + 3 riser lines, no well
+        assert_eq!(prims.len(), 4, "expected 4 prims (outline + 3 risers, no well), got {}", prims.len());
+    }
+
+    /// Multiple stairs each produce prims tagged with their own distinct proxy handle.
+    #[test]
+    fn multiple_stairs_get_distinct_handles() {
+        use cadcraft_doc::arch::Stair;
+        let mut d = Drawing::new_metric();
+        let sid0 = d.arch.push_stair(Stair { run: 1.0, tread_depth: 0.25, width: 1.0, ..Stair::default() });
+        let sid1 = d.arch.push_stair(Stair { start: Vec2::new(5.0, 5.0), run: 1.0, tread_depth: 0.25, width: 1.0, ..Stair::default() });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default(), false);
+
+        let h0 = stair_handle(sid0);
+        let h1 = stair_handle(sid1);
+        let prims0: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == h0).collect();
+        let prims1: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == h1).collect();
+        assert!(!prims0.is_empty(), "stair 0 should have prims");
+        assert!(!prims1.is_empty(), "stair 1 should have prims");
+        assert_ne!(h0, h1, "stair handles must be distinct");
+    }
+
+    /// A railing with coincident points is still drawn (no automatic dedup).
+    #[test]
+    fn railing_with_coincident_points_is_drawn() {
+        use cadcraft_doc::arch::Railing;
+        let mut d = Drawing::new_metric();
+        let rid = d.arch.push_railing(Railing { path: vec![Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0), Vec2::new(3.0, 0.0)], ..Railing::default() });
+        d.touch_arch();
+        let list = build_arch(&d, &Options::default(), false);
+        let h = railing_handle(rid);
+        let prims: Vec<&DPrim> = list.prims.iter().filter(|p| p.handle == h).collect();
+        assert_eq!(prims.len(), 1, "expected 1 railing prim");
+        assert_eq!(prims[0].len, 3, "railing should have 3 vertices (no dedup)");
+    }
 }
