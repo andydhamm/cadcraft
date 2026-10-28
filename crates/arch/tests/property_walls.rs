@@ -286,7 +286,7 @@ fn stretch_wall_moves_end_and_preserves_length() {
     let id = model.add_wall(wall);
 
     // Stretch the start end toward (10, 0) — should move start to the right.
-    let affected = stretch_wall(&mut model, id, End::Start, Vec2::new(10.0, 0.0));
+    let affected = stretch_wall(&mut model, id, End::Start, Vec2::new(10.0, 0.0)).expect("stretch_wall failed");
     assert!(affected.contains(&id), "stretched wall must be in the affected set");
 
     let stretched = model.wall(id).expect("wall must still exist");
