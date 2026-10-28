@@ -450,4 +450,149 @@ mod tests {
         let empty = material_albedo("");
         assert_eq!(empty, [0.75, 0.75, 0.75]);
     }
+
+    #[test]
+    fn upload_handles_missing_normals_and_uvs() {
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.positions.push([0.0, 0.0, 0.0]);
+        mesh.positions.push([1.0, 0.0, 0.0]);
+        mesh.positions.push([0.0, 1.0, 0.0]);
+        // No normals, no uvs — defaults should be used
+        mesh.indices = vec![0, 1, 2];
+
+        let scene = Scene3d { meshes: vec![mesh], ..Default::default() };
+
+        let Some((device, _queue)) = crate::gputest::shared_device() else { return };
+
+        let meshes = upload(&device, &scene);
+        assert_eq!(meshes.vertex_count, 3);
+        assert_eq!(meshes.index_count, 3);
+        assert_eq!(meshes.draws.len(), 1);
+    }
+
+    #[test]
+    fn upload_drops_out_of_range_indices() {
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.positions.push([0.0, 0.0, 0.0]);
+        mesh.positions.push([1.0, 0.0, 0.0]);
+        mesh.positions.push([0.0, 1.0, 0.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.uvs.push([0.0, 0.0]);
+        mesh.uvs.push([1.0, 0.0]);
+        mesh.uvs.push([0.0, 1.0]);
+        // First triangle valid, second has index 99 (out of range)
+        mesh.indices = vec![0, 1, 2, 0, 1, 99];
+
+        let scene = Scene3d { meshes: vec![mesh], ..Default::default() };
+
+        let Some((device, _queue)) = crate::gputest::shared_device() else { return };
+
+        let meshes = upload(&device, &scene);
+        // Only the first triangle should be kept
+        assert_eq!(meshes.index_count, 3);
+    }
+
+    #[test]
+    fn upload_drops_incomplete_triangle() {
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.positions.push([0.0, 0.0, 0.0]);
+        mesh.positions.push([1.0, 0.0, 0.0]);
+        mesh.positions.push([0.0, 1.0, 0.0]);
+        mesh.positions.push([1.0, 1.0, 0.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.uvs.push([0.0, 0.0]);
+        mesh.uvs.push([1.0, 0.0]);
+        mesh.uvs.push([0.0, 1.0]);
+        mesh.uvs.push([1.0, 1.0]);
+        // 4 indices: first triangle valid, second incomplete (only 1 index)
+        mesh.indices = vec![0, 1, 2, 3];
+
+        let scene = Scene3d { meshes: vec![mesh], ..Default::default() };
+
+        let Some((device, _queue)) = crate::gputest::shared_device() else { return };
+
+        let meshes = upload(&device, &scene);
+        // Only the first triangle should be kept
+        assert_eq!(meshes.index_count, 3);
+    }
+
+    #[test]
+    fn upload_handles_nan_and_inf_coordinates() {
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.positions.push([f32::NAN, 0.0, 0.0]);
+        mesh.positions.push([1.0, f32::INFINITY, 0.0]);
+        mesh.positions.push([0.0, 0.0, f32::NEG_INFINITY]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.uvs.push([f32::NAN, 0.0]);
+        mesh.uvs.push([0.0, f32::NAN]);
+        mesh.uvs.push([0.0, 0.0]);
+        mesh.indices = vec![0, 1, 2];
+
+        let scene = Scene3d { meshes: vec![mesh], ..Default::default() };
+
+        let Some((device, _queue)) = crate::gputest::shared_device() else { return };
+
+        let meshes = upload(&device, &scene);
+        // Should not crash; NaN/Inf values are passed through to the GPU
+        assert_eq!(meshes.vertex_count, 3);
+        assert_eq!(meshes.index_count, 3);
+    }
+
+    #[test]
+    fn upload_empty_mesh_in_scene_contributes_nothing() {
+        let empty_mesh = Mesh::new("wall", ArchId(1));
+        let mut mesh2 = Mesh::new("floor", ArchId(2));
+        mesh2.positions.push([0.0, 0.0, 0.0]);
+        mesh2.positions.push([1.0, 0.0, 0.0]);
+        mesh2.positions.push([0.0, 1.0, 0.0]);
+        mesh2.normals.push([0.0, 0.0, 1.0]);
+        mesh2.normals.push([0.0, 0.0, 1.0]);
+        mesh2.normals.push([0.0, 0.0, 1.0]);
+        mesh2.uvs.push([0.0, 0.0]);
+        mesh2.uvs.push([1.0, 0.0]);
+        mesh2.uvs.push([0.0, 1.0]);
+        mesh2.indices = vec![0, 1, 2];
+
+        let scene = Scene3d { meshes: vec![empty_mesh, mesh2], ..Default::default() };
+
+        let Some((device, _queue)) = crate::gputest::shared_device() else { return };
+
+        let meshes = upload(&device, &scene);
+        // Empty mesh contributes 0 vertices; mesh2 contributes 3
+        assert_eq!(meshes.vertex_count, 3);
+        assert_eq!(meshes.index_count, 3);
+        // Only mesh2 should have a draw
+        assert_eq!(meshes.draws.len(), 1);
+        assert_eq!(meshes.draws[0].albedo, material_albedo("floor"));
+    }
+
+    #[test]
+    fn upload_large_coordinates() {
+        let mut mesh = Mesh::new("wall", ArchId(1));
+        mesh.positions.push([1e10, 2e10, 3e10]);
+        mesh.positions.push([1e10 + 1.0, 2e10, 3e10]);
+        mesh.positions.push([1e10, 2e10 + 1.0, 3e10]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.normals.push([0.0, 0.0, 1.0]);
+        mesh.uvs.push([0.0, 0.0]);
+        mesh.uvs.push([1.0, 0.0]);
+        mesh.uvs.push([0.0, 1.0]);
+        mesh.indices = vec![0, 1, 2];
+
+        let scene = Scene3d { meshes: vec![mesh], ..Default::default() };
+
+        let Some((device, _queue)) = crate::gputest::shared_device() else { return };
+
+        let meshes = upload(&device, &scene);
+        assert_eq!(meshes.vertex_count, 3);
+        assert_eq!(meshes.index_count, 3);
+    }
 }
