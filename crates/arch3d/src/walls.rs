@@ -190,8 +190,11 @@ pub fn elevation_profile(
         v1 = z1 - base;
 
         if v0.is_finite() && v1.is_finite() {
-            // If the roof is lower than the wall top, it clips.
-            if v0 < max_v || v1 < max_v {
+            // If the roof is lower than the wall top at either end, it clips.
+            // If the roof height varies along the wall (perpendicular/angled wall),
+            // the wall top follows the roof line even when the roof is above the
+            // nominal wall height (gable wall).
+            if v0 < max_v || v1 < max_v || (v0 - v1).abs() > 1e-9 {
                 has_slope = true;
                 max_v = v0.max(v1);
             }
@@ -1127,6 +1130,85 @@ mod tests {
         }
         vol /= 6.0;
         assert!(vol > 0.0, "signed volume must be > 0, got {vol}");
+    }
+
+    /// An opening at exactly the wall start (offset 0) is clipped and dropped.
+    #[test]
+    fn opening_at_exact_wall_start_is_clipped_and_dropped() {
+        let outer = rect_outer();
+        let op = Opening { width: 0.9, height: 1.2, sill: 0.9, offset: 0.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty(), "opening at exact wall start should be clipped and dropped");
+    }
+
+    /// An opening at exactly the wall end (offset = length) is clipped and dropped.
+    #[test]
+    fn opening_at_exact_wall_end_is_clipped_and_dropped() {
+        let outer = rect_outer();
+        let op = Opening { width: 0.9, height: 1.2, sill: 0.9, offset: 10.0, ..Default::default() };
+        let holes = opening_holes(&[&op], 0.0, 10.0, 2.4, &outer);
+        assert!(holes.is_empty(), "opening at exact wall end should be clipped and dropped");
+    }
+
+    /// A diagonal wall (45 degrees) with an opening produces a correct profile and manifold mesh.
+    #[test]
+    fn diagonal_wall_with_opening_produces_correct_profile() {
+        let id = ArchId(7);
+        let polygon = vec![Vec2::new(-0.07, 0.07), Vec2::new(7.0, 7.14), Vec2::new(7.14, 7.0), Vec2::new(0.07, -0.07)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(7.07, 7.07));
+        let shape = WallShape::new(id, polygon, centre);
+        let wall = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(7.07, 7.07),
+            thickness: 0.2,
+            height: 2.4,
+            exterior: true,
+            base_level: 0,
+            ..Default::default()
+        };
+
+        let profile = elevation_profile(
+            &shape,
+            &wall,
+            0.0,
+            2.4,
+            None,
+            None,
+            &[&Opening { offset: 3.5, width: 0.9, height: 1.2, sill: 0.9, ..Default::default() }],
+        )
+        .unwrap();
+
+        assert_eq!(profile.outer.len(), 4, "diagonal wall profile should be a rectangle");
+        assert_eq!(profile.holes.len(), 1, "diagonal wall should have one hole");
+
+        let mesh = extrude_wall_profile(&shape, profile, 0.0, "wall").unwrap();
+        assert!(mesh.triangle_count() > 0, "diagonal wall with opening must have triangles");
+        assert!(mesh.is_manifold(), "diagonal wall with opening must be a closed manifold");
+    }
+
+    /// elevation_profile with a roof clip where the wall is perpendicular to the base edge.
+    #[test]
+    fn elevation_profile_with_perpendicular_roof_clip() {
+        let id = ArchId(1);
+        let polygon = vec![Vec2::new(0.0, -0.1), Vec2::new(4.0, -0.1), Vec2::new(4.0, 0.1), Vec2::new(0.0, 0.1)];
+        let centre = (Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0));
+        let shape = WallShape::new(id, polygon, centre);
+        let wall = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(0.0, 4.0),
+            thickness: 0.2,
+            height: 2.4,
+            exterior: true,
+            base_level: 0,
+            ..Default::default()
+        };
+        let clip = RoofClip { base_edge: [0.0, 0.0, 10.0, 0.0], slope: 0.5, eave_z: 2.4 };
+        let profile = elevation_profile(&shape, &wall, 0.0, 2.4, Some(&clip), None, &[]).unwrap();
+        assert_eq!(profile.outer.len(), 4, "perpendicular wall with roof clip should have 4 vertices");
+        assert!((profile.outer[0].y - 0.0).abs() < 1e-9);
+        assert!((profile.outer[1].y - 0.0).abs() < 1e-9);
+        assert!((profile.outer[2].y - 4.4).abs() < 1e-9, "top at wall end should be 4.4");
+        assert!((profile.outer[3].y - 2.4).abs() < 1e-9, "top at wall start should be 2.4");
     }
 
     /// A pentagon profile must land on the wall's centre-line frame: for a horizontal
