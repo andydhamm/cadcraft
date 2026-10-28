@@ -57,33 +57,36 @@ struct Payload {
 
 /// JSON chunks (≤ 250 characters) for the architectural XRECORD.
 ///
-/// Returns `None` when the model has no walls, openings, rooms or roofs (nothing to write);
-/// otherwise the escaped, chunked payload, exactly like [`dxf_ext::constraint_chunks`](crate::dxf_ext).
+/// Returns `None` when the model has no walls, openings, rooms, roofs, stairs or railings
+/// (nothing to write); otherwise the escaped, chunked payload, exactly like
+/// [`dxf_ext::constraint_chunks`](crate::dxf_ext).
 pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
-    if m.walls.is_empty() && m.openings.is_empty() && m.rooms.is_empty() && m.roofs.is_empty() {
+    if m.walls.is_empty() && m.openings.is_empty() && m.rooms.is_empty() && m.roofs.is_empty() && m.stairs.is_empty() && m.railings.is_empty() {
         return None;
     }
-    let json = serde_json::to_string(&Payload { version: 4, model: m.clone() }).ok()?;
+    let json = serde_json::to_string(&Payload { version: 5, model: m.clone() }).ok()?;
     Some(crate::dxf_ext::json_chunks(&json))
 }
 
 /// Parse an architectural XRECORD payload; `None` when it is not a payload we understand.
 ///
-/// Accepts schema versions 1 through 4:
+/// Accepts schema versions 1 through 5:
 /// - v1: no openings (cleared).
 /// - v2: openings present.
 /// - v3: rooms/levels present, no roofs (cleared).
 /// - v4: roofs present.
+/// - v5: stairs and railings present.
 ///
 /// All versions are bounded — the wall count against [`MAX_WALLS`], the opening count
-/// against [`MAX_OPENINGS`], and the roof count against [`MAX_ROOFS`] — so hostile payloads
-/// can not overflow allocations.
+/// against [`MAX_OPENINGS`], the roof count against [`MAX_ROOFS`], the stair count against
+/// [`MAX_STAIRS`], and the railing count against [`MAX_RAILINGS`] — so hostile payloads can
+/// not overflow allocations.
 pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     if text.len() > MAX_ARCH_PAYLOAD {
         return None;
     }
     let p: Payload = serde_json::from_str(text).ok()?;
-    if !(1..=4).contains(&p.version) {
+    if !(1..=5).contains(&p.version) {
         return None;
     }
     if p.model.walls.len() > cadcraft_doc::MAX_WALLS {
@@ -96,10 +99,20 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     if p.version <= 3 {
         model.roofs.clear();
     }
+    if p.version <= 4 {
+        model.stairs.clear();
+        model.railings.clear();
+    }
     if model.openings.len() > cadcraft_doc::arch::MAX_OPENINGS {
         return None;
     }
     if model.roofs.len() > cadcraft_doc::arch::MAX_ROOFS {
+        return None;
+    }
+    if model.stairs.len() > cadcraft_doc::arch::MAX_STAIRS {
+        return None;
+    }
+    if model.railings.len() > cadcraft_doc::arch::MAX_RAILINGS {
         return None;
     }
     Some(model)
