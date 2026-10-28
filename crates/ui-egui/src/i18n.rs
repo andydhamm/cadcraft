@@ -576,6 +576,36 @@ mod uk_tests {
             }
         });
     }
+
+    #[test]
+    fn uk_stair_railing_deck_translations_exist() {
+        with_language("uk", || {
+            assert_eq!(t("Stair"), "Сходи");
+            assert_eq!(t("Railing"), "Огорожа");
+            assert_eq!(t("Deck"), "Тераса");
+            assert_eq!(t("Architecture>Stair"), "Архітектура>Сходи");
+            assert_eq!(t("Architecture>Railing"), "Архітектура>Огорожа");
+            assert_eq!(t("Architecture>Deck"), "Архітектура>Тераса");
+            assert_eq!(t("cmd.stair"), "Сходи");
+            assert_eq!(t("cmd.railing"), "Огорожа");
+            assert_eq!(t("cmd.deck"), "Тераса");
+        });
+    }
+
+    #[test]
+    fn uk_stair_translations_are_not_english_fallbacks() {
+        with_language("uk", || {
+            assert_ne!(t("Stair"), "Stair");
+            assert_ne!(t("Railing"), "Railing");
+            assert_ne!(t("Deck"), "Deck");
+            assert_ne!(t("Architecture>Stair"), "Architecture>Stair");
+            assert_ne!(t("Architecture>Railing"), "Architecture>Railing");
+            assert_ne!(t("Architecture>Deck"), "Architecture>Deck");
+            assert_ne!(t("cmd.stair"), "cmd.stair");
+            assert_ne!(t("cmd.railing"), "cmd.railing");
+            assert_ne!(t("cmd.deck"), "cmd.deck");
+        });
+    }
 }
 
 /// `name` lowercased with the Latin accents that occur in language names folded away, so a

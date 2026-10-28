@@ -1395,7 +1395,7 @@
 	Room Detect	Виявити кімнати
 	Stair	Сходи
 	Deck	Тераса
-	Railing	Огорода
+	Railing	Огорожа
 	Interior (inner surfaces)	Внутрішній (внутрішні поверхні)
 	Standard (centre of walls)	Стандартний (центр стін)
 	Living (living areas)	Жилій (жилові зони)
@@ -1419,10 +1419,6 @@
 	Could not check for updates.	Не вдалося перевірити оновлення.
 
 # Phase 5: Stairs, Railings, Decks
-	Stair	Сходи
-	Railing	Огорожа
-	Deck	Тераса
-	Architecture>Stair	Архітектура>Сходи
 	Architecture>Railing	Архітектура>Огорожа
 	Architecture>Deck	Архітектура>Тераса
 	cmd.stair	Сходи
@@ -1571,138 +1567,3 @@
 	Stair headroom check not authorized	Перевірка простору над сходами не авторизована
 	Stair headroom check not permitted	Перевірка простору над сходами не дозволена
 	Stair headroom check not allowed	Перевірка простору над сходами не дозволена
-	Stair headroom check not enabled	Перевірка простору над сходами не увімкнена
-	Stair headroom check not activated	Перевірка простору над сходами не активована
-	Stair headroom check not started	Перевірка простору над сходами не розпочата
-	Stair headroom check not begun	Перевірка простору над сходами не розпочата
-	Stair headroom check not commenced	Перевірка простору над сходами не розпочата
-	Stair headroom check not initiated	Перевірка простору над сходами не розпочата
-	Stair headroom check not launched	Перевірка простору над сходами не запущена
-	Stair headroom check not triggered	Перевірка простору над сходами не запущена
-	Stair headroom check not invoked	Перевірка простору над сходами не викликана
-	Stair headroom check not called	Перевірка простору над сходами не викликана
-	Stair headroom check not requested	Перевірка простору над сходами не запитана
-	Stair headroom check not asked	Перевірка простору над сходами не запитана
-	Stair headroom check not demanded	Перевірка простору над сходами не вимагалася
-	Stair headroom check not required	Перевірка простору над сходами не вимагалася
-	Stair headroom check not needed	Перевірка простору над сходами не потрібна
-	Stair headroom check not wanted	Перевірка простору над сходами не бажана
-	Stair headroom check not desired	Перевірка простору над сходами не бажана
-	Stair headroom check not expected	Перевірка простору над сходами не очікувалася
-	Stair headroom check not anticipated	Перевірка простору над сходами не очікувалася
-	Stair headroom check not predicted	Перевірка простору над сходами не передбачалася
-	Stair headroom check not foreseen	Перевірка простору над сходами не передбачалася
-	Stair headroom check not projected	Перевірка простору над сходами не передбачалася
-	Stair headroom check not forecast	Перевірка простору над сходами не передбачалася
-	Stair headroom check not estimated	Перевірка простору над сходами не оцінювалася
-	Stair headroom check not calculated	Перевірка простору над сходами не розраховувалася
-	Stair headroom check not computed	Перевірка простору над сходами не розраховувалася
-	Stair headroom check not determined	Перевірка простору над сходами не визначалася
-	Stair headroom check not established	Перевірка простору над сходами не встановлювалася
-	Stair headroom check not found	Перевірка простору над сходами не знайдена
-	Stair headroom check not discovered	Перевірка простору над сходами не знайдена
-	Stair headroom check not detected	Перевірка простору над сходами не виявлена
-	Stair headroom check not identified	Перевірка простору над сходами не ідентифікована
-	Stair headroom check not recognized	Перевірка простору над сходами не розпізнана
-	Stair headroom check not known	Перевірка простору над сходами не відома
-	Stair headroom check not understood	Перевірка простору над сходами не зрозуміла
-	Stair headroom check not comprehended	Перевірка простору над сходами не зрозуміла
-	Stair headroom check not grasped	Перевірка простору над сходами не зрозуміла
-	Stair headroom check not apprehended	Перевірка простору над сходами не зрозуміла
-	Stair headroom check not perceived	Перевірка простору над сходами не сприйнята
-	Stair headroom check not observed	Перевірка простору над сходами не спостерігалася
-	Stair headroom check not noticed	Перевірка простору над сходами не помічена
-	Stair headroom check not seen	Перевірка простору над сходами не бачена
-	Stair headroom check not viewed	Перевірка простору над сходами не переглянута
-	Stair headroom check not watched	Перевірка простору над сходами не спостерігалася
-	Stair headroom check not monitored	Перевірка простору над сходами не моніторилася
-	Stair headroom check not tracked	Перевірка простору над сходами не відстежувалася
-	Stair headroom check not followed	Перевірка простору над сходами не відстежувалася
-	Stair headroom check not pursued	Перевірка простору над сходами не переслідувалася
-	Stair headroom check not chased	Перевірка простору над сходами не переслідувалася
-	Stair headroom check not hunted	Перевірка простору над сходами не полювали
-	Stair headroom check not sought	Перевірка простору над сходами не шукали
-	Stair headroom check not searched	Перевірка простору над сходами не шукали
-	Stair headroom check not looked for	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out	Перевірка простору над сходами не шукали
-	Stair headroom check not sought after	Перевірка простору над сходами не шукали
-	Stair headroom check not sought for	Перевірка простору над сходами не шукали
-	Stair headroom check not sought upon	Перевірка простору над сходами не шукали
-	Stair headroom check not sought over	Перевірка простору над сходами не шукали
-	Stair headroom check not sought under	Перевірка простору над сходами не шукали
-	Stair headroom check not sought through	Перевірка простору над сходами не шукали
-	Stair headroom check not sought across	Перевірка простору над сходами не шукали
-	Stair headroom check not sought along	Перевірка простору над сходами не шукали
-	Stair headroom check not sought around	Перевірка простору над сходами не шукали
-	Stair headroom check not sought about	Перевірка простору над сходами не шукали
-	Stair headroom check not sought above	Перевірка простору над сходами не шукали
-	Stair headroom check not sought below	Перевірка простору над сходами не шукали
-	Stair headroom check not sought before	Перевірка простору над сходами не шукали
-	Stair headroom check not sought after	Перевірка простору над сходами не шукали
-	Stair headroom check not sought during	Перевірка простору над сходами не шукали
-	Stair headroom check not sought while	Перевірка простору над сходами не шукали
-	Stair headroom check not sought when	Перевірка простору над сходами не шукали
-	Stair headroom check not sought since	Перевірка простору над сходами не шукали
-	Stair headroom check not sought until	Перевірка простору над сходами не шукали
-	Stair headroom check not sought till	Перевірка простору над сходами не шукали
-	Stair headroom check not sought by	Перевірка простору над сходами не шукали
-	Stair headroom check not sought with	Перевірка простору над сходами не шукали
-	Stair headroom check not sought without	Перевірка простору над сходами не шукали
-	Stair headroom check not sought for	Перевірка простору над сходами не шукали
-	Stair headroom check not sought to	Перевірка простору над сходами не шукали
-	Stair headroom check not sought at	Перевірка простору над сходами не шукали
-	Stair headroom check not sought in	Перевірка простору над сходами не шукали
-	Stair headroom check not sought on	Перевірка простору над сходами не шукали
-	Stair headroom check not sought into	Перевірка простору над сходами не шукали
-	Stair headroom check not sought onto	Перевірка простору над сходами не шукали
-	Stair headroom check not sought upon	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out of	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from under	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from over	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from above	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from below	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from before	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from after	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from during	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from while	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from when	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from since	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from until	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from till	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from by	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from with	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from without	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from for	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from to	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from at	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from in	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from on	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from into	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from onto	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from upon	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out of	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from under	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from over	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from above	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from below	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from before	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from after	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from during	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from while	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from when	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from since	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from until	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from till	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from by	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from with	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from without	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from for	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from to	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from at	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from in	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from on	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from into	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from onto	Перевірка простору над сходами не шукали
-	Stair headroom check not sought out from out from upon	Перевірка простору над сходами не шукали
