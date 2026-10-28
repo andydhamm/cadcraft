@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-28 19:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-28 19:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 5 of 13: Stairs, railings and decks — 13 of 18 segments merged · 1 of 9 acceptance checks**
 
@@ -15,7 +15,7 @@ Updated 2026-10-28 19:00 UTC. This page and the card in the README are regenerat
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
-| 5 | Stairs, railings and decks | building | 1 / 9 | 6.0 h so far · expected done Oct 29 00:46–Oct 29 06:02 UTC |
+| 5 | Stairs, railings and decks | building | 1 / 9 | 6.3 h so far · expected done Oct 29 01:15–Oct 29 06:44 UTC |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
@@ -38,6 +38,7 @@ Updated 2026-10-28 19:00 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 28 19:06 | `harden-p5-arch3d-scene` | refused | 4,583 pass | tturbo-mac |
 | Oct 28 18:43 | `p5-golden-stairs` | merged | 4,575 pass | darwin-ws3 |
 | Oct 28 18:41 | `harden-p5-build3d-counts` | merged | 4,571 pass | tturbo-mac2 |
 | Oct 28 18:35 | `p5-cmd-stair` | merged | 4,564 pass | bonsai-b |
@@ -49,22 +50,21 @@ Updated 2026-10-28 19:00 UTC. This page and the card in the README are regenerat
 | Oct 28 16:53 | `harden-p5-glb-nodes` | merged | 4,536 pass | tturbo-mac2 |
 | Oct 28 16:45 | `p5-arch3d-scene` | refused | 4,535 pass | bonsai-b |
 | Oct 28 16:19 | `harden-p5-dxf-v5` | merged | 4,531 pass | tturbo-mac |
-| Oct 28 16:12 | `harden-p1-arch-layers` | merged | 4,526 pass | tturbo-mac2 |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | gate | 582 |
-| bonsai-b | bonsai2-27b | gate | 536 |
+| bonsai-a | bonsai2-27b | gate | 583 |
+| bonsai-b | bonsai2-27b | agent | 537 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | agent | 21 |
 | claude-sonnet-b | sonnet | idle | 21 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 412 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 413 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 70 |
 | mai-flash | mai-code-1.1-flash | idle | 1 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
-| tturbo-mac | tturbo-ultraheretic | merging | 374 |
-| tturbo-mac2 | tturbo-ultraheretic | gate | 219 |
+| tturbo-mac | tturbo-ultraheretic | agent | 374 |
+| tturbo-mac2 | tturbo-ultraheretic | merging | 220 |
