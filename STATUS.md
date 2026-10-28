@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-28 03:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-28 03:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 82 of 84 segments merged · 10 of 11 acceptance checks**
 
-4,314 workspace tests passing at the last merge · 358 segments merged in all · 0 of 12 seats working
+4,324 workspace tests passing at the last merge · 360 segments merged in all · 0 of 12 seats working
 
 ## Phases
 
@@ -14,7 +14,7 @@ Updated 2026-10-28 03:30 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 10 / 11 | 42.7 h so far · expected done Oct 28 05:06–Oct 28 10:37 UTC |
+| 4 | Automatic roofs | building | 10 / 11 | 42.9 h so far · expected done Oct 28 05:21–Oct 28 10:52 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -34,6 +34,8 @@ Updated 2026-10-28 03:30 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 28 03:39 | `harden-p2-render-openings` | merged | 4,324 pass | tturbo-mac2 |
+| Oct 28 03:30 | `harden-p4g-gable-clip-wire` | merged | 4,319 pass | tturbo-mac |
 | Oct 28 03:18 | `harden-p2-opening-commands` | merged | 4,314 pass | tturbo-mac2 |
 | Oct 28 03:08 | `harden-p4r-build-dirty-neighbours` | merged | 4,309 pass | tturbo-mac |
 | Oct 28 02:44 | `harden-p4f-gable-clip-probe` | merged | 4,304 pass | tturbo-mac |
@@ -44,8 +46,6 @@ Updated 2026-10-28 03:30 UTC. This page and the card in the README are regenerat
 | Oct 27 23:36 | `harden-p2-arch-sample-openings` | merged | 4,248 pass | tturbo-mac2 |
 | Oct 27 23:20 | `harden-p4j-build3d-reports-roofs` | merged | 4,241 pass | tturbo-mac2 |
 | Oct 27 22:36 | `harden-p4k-roof-plane-vertical-thickness` | merged | 4,234 pass | tturbo-mac2 |
-| Oct 27 22:18 | `harden-p4h-roof-invariant-tests` | merged | 4,229 pass | tturbo-mac2 |
-| Oct 27 21:59 | `p4k-roof-plane-vertical-thickness` | merged | 4,226 pass | bonsai-ws2-b |
 
 ## Seats active in the last hour
 
@@ -61,5 +61,5 @@ Updated 2026-10-28 03:30 UTC. This page and the card in the README are regenerat
 | kimi-k31 | k3.1-pro-highspeed | idle | 68 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
-| tturbo-mac | tturbo-ultraheretic | merging | 349 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 179 |
+| tturbo-mac | tturbo-ultraheretic | gate | 349 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 180 |
