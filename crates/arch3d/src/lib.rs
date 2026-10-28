@@ -109,6 +109,36 @@ pub fn wall_span(model: &ArchModel, w: &Wall) -> Option<(f64, f64)> {
     Some((base, top))
 }
 
+/// Rounded (centroid.x, centroid.y, |area|) of a ring, used to spot duplicate holes.
+fn ring_key(ring: &[Vec2]) -> (i64, i64, i64) {
+    let n = ring.len().max(1) as f64;
+    let (mut cx, mut cy, mut a) = (0.0, 0.0, 0.0);
+    for (i, p) in ring.iter().enumerate() {
+        cx += p.x;
+        cy += p.y;
+        if let Some(q) = ring.get((i + 1) % ring.len()) {
+            a += p.x * q.y - q.x * p.y;
+        }
+    }
+    let r = |v: f64| if v.is_finite() { (v * 1e6).round() as i64 } else { 0 };
+    (r(cx / n), r(cy / n), r(a.abs() * 0.5))
+}
+
+/// The room's own holes plus every stair well opening into its level, skipping
+/// wells already present among the holes.
+fn well_holes_for(model: &ArchModel, room: &cadcraft_doc::arch::Room) -> Vec<Vec<Vec2>> {
+    let mut holes = room.holes.clone();
+    let mut keys: Vec<_> = holes.iter().map(|h| ring_key(h)).collect();
+    for s in model.stairs.iter().filter(|s| s.to_level == room.level && !s.well.is_empty()) {
+        let k = ring_key(&s.well);
+        if !keys.contains(&k) {
+            keys.push(k);
+            holes.push(s.well.clone());
+        }
+    }
+    holes
+}
+
 /// The [`Level`] corresponding to `index`, preferring the last level
 /// (or a default) when no level with that index exists.
 fn level_for(model: &ArchModel, index: u32) -> cadcraft_doc::arch::Level {
@@ -221,8 +251,7 @@ impl Scene3d {
         let mut ceilings = 0;
         for room in &model.rooms {
             let level = level_for(model, room.level);
-            let well_holes: Vec<Vec<Vec2>> =
-                model.stairs.iter().filter(|s| !s.well.is_empty() && s.to_level == room.level).map(|s| s.well.clone()).collect();
+            let well_holes = well_holes_for(model, room);
             if room.room_type != cadcraft_doc::arch::RoomType::Deck {
                 if well_holes.is_empty() {
                     if let Some(m) = floors::floor_slab(room, &level, "floor") {
@@ -457,8 +486,7 @@ impl Scene3d {
             }
             if room.room_type != cadcraft_doc::arch::RoomType::Deck {
                 if needs_rebuild {
-                    let well_holes: Vec<Vec<Vec2>> =
-                        model.stairs.iter().filter(|s| !s.well.is_empty() && s.to_level == room.level).map(|s| s.well.clone()).collect();
+                    let well_holes = well_holes_for(model, room);
                     if well_holes.is_empty() {
                         if let Some(m) = floors::floor_slab(room, &level, "floor") {
                             meshes.push(m);
@@ -2554,6 +2582,51 @@ mod tests {
         // Probe at a point in the solid part of the slab — should hit the floor.
         let solid_point = Vec3::new(8.0, 3.0, 2.55);
         assert!(scene.probe(solid_point).is_some(), "probe at solid slab center should hit floor slab");
+    }
+
+    fn well_test_model(room_holes: Vec<Vec<Vec2>>, wells: Vec<Vec<Vec2>>) -> ArchModel {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 1,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+            holes: room_holes,
+            ..Default::default()
+        });
+        for (i, w) in wells.into_iter().enumerate() {
+            let mut stair = cadcraft_doc::arch::Stair::default();
+            stair.id = ArchId(200 + i as u32);
+            stair.to_level = 1;
+            stair.well = w;
+            model.stairs.push(stair);
+        }
+        model
+    }
+
+    fn sq(x: f64, y: f64, s: f64) -> Vec<Vec2> {
+        vec![Vec2::new(x, y), Vec2::new(x + s, y), Vec2::new(x + s, y + s), Vec2::new(x, y + s)]
+    }
+
+    #[test]
+    fn well_hole_merged_with_room_holes() {
+        let model = well_test_model(vec![sq(7.0, 5.0, 2.0)], vec![sq(1.0, 1.0, 3.0)]);
+        let room = &model.rooms[0];
+        assert_eq!(well_holes_for(&model, room).len(), 2);
+        let scene = Scene3d::build(&model);
+        assert!(scene.probe(Vec3::new(2.5, 2.5, 2.55)).is_none(), "well should be open");
+        assert!(scene.probe(Vec3::new(8.0, 6.0, 2.55)).is_none(), "stored hole should stay open");
+        assert!(scene.probe(Vec3::new(5.0, 3.0, 2.55)).is_some(), "solid slab should remain");
+    }
+
+    #[test]
+    fn same_well_not_added_twice() {
+        let model = well_test_model(vec![sq(1.0, 1.0, 3.0)], vec![sq(1.0, 1.0, 3.0), sq(1.0, 1.0, 3.0)]);
+        let room = &model.rooms[0];
+        assert_eq!(well_holes_for(&model, room).len(), 1);
+        let none = well_test_model(vec![], vec![]);
+        assert!(well_holes_for(&none, &none.rooms[0]).is_empty());
     }
 
     #[test]
