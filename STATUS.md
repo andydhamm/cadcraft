@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-28 23:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-28 23:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 5 of 13: Stairs, railings and decks — 19 of 19 segments merged · 3 of 9 acceptance checks**
+**Phase 5 of 13: Stairs, railings and decks — 19 of 24 segments merged · 3 of 9 acceptance checks**
 
-4,673 workspace tests passing at the last merge · 417 segments merged in all · 0 of 12 seats working
+4,673 workspace tests passing at the last merge · 417 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -15,7 +15,7 @@ Updated 2026-10-28 23:30 UTC. This page and the card in the README are regenerat
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
-| 5 | Stairs, railings and decks | building | 3 / 9 | 10.5 h so far · expected done Oct 29 04:09–Oct 29 09:12 UTC |
+| 5 | Stairs, railings and decks | building | 3 / 9 | 10.8 h so far · expected done Oct 29 05:17–Oct 29 10:57 UTC |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
@@ -27,8 +27,14 @@ Updated 2026-10-28 23:30 UTC. This page and the card in the README are regenerat
 
 ## Phase 5 segments
 
-19 merged
+19 merged, 2 merging, 2 gate, 1 queued
 
+| Segment | What | State | Seat |
+|---|---|---|---|
+| `p5f-stair-stepped-profile` | Stair flight profile: real steps, not a ramp | merging | claude-sonnet-b |
+| `p5f-build-merge-well-holes` | Room slabs merge stored holes with stair wells | merging | claude-sonnet-a |
+| `p5f-inspect-holes-are-rings` | arch.inspect reports room holes as rings, not a count | gate | mai-flash |
+| `p5f-dxf-deck-height-roundtrip` | Deck rooms and room holes survive the DXF arch record | gate | bonsai-a |
 
 ## Recent merges
 
@@ -51,15 +57,16 @@ Updated 2026-10-28 23:30 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | idle | 590 |
-| bonsai-b | bonsai2-27b | idle | 540 |
+| bonsai-a | bonsai2-27b | gate | 590 |
+| bonsai-b | bonsai2-27b | agent | 541 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
-| claude-sonnet-a | sonnet | idle | 25 |
-| claude-sonnet-b | sonnet | idle | 22 |
+| claude-sonnet-a | sonnet | merging | 26 |
+| claude-sonnet-b | sonnet | merging | 23 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 418 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 71 |
-| mai-flash | mai-code-1.1-flash | idle | 1 |
+| mai-flash | mai-code-1.1-flash | gate | 1 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
-| tturbo-mac | tturbo-ultraheretic | agent | 381 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 232 |
+| tturbo-mac | tturbo-ultraheretic | gate | 381 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 233 |
