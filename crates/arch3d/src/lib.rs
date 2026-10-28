@@ -298,7 +298,7 @@ impl Scene3d {
         for room in &model.rooms {
             if room.room_type == cadcraft_doc::arch::RoomType::Deck {
                 let level = level_for(model, room.level);
-                if let Some(m) = floors::floor_slab(room, &level, "deck") {
+                if let Some(m) = floors::floor_slab(room, &level, "floor") {
                     meshes.push(m);
                     decks_count += 1;
                     floors += 1;
@@ -586,14 +586,14 @@ impl Scene3d {
             }
             if dirty.contains(&room.id) {
                 let level = level_for(model, room.level);
-                if let Some(m) = floors::floor_slab(room, &level, "deck") {
+                if let Some(m) = floors::floor_slab(room, &level, "floor") {
                     meshes.push(m);
                     decks_count += 1;
                     floors += 1;
                 }
             } else {
                 if let Some(om) = prev_by_object.get(&room.id) {
-                    let deck_meshes: Vec<Mesh> = om.iter().filter(|m| m.material == "deck" && !m.positions.is_empty()).cloned().collect();
+                    let deck_meshes: Vec<Mesh> = om.iter().filter(|m| m.material == "floor" && !m.positions.is_empty()).cloned().collect();
                     if !deck_meshes.is_empty() {
                         decks_count += 1;
                         floors += 1;
@@ -2769,7 +2769,7 @@ mod tests {
 
         let hit = scene.probe(Vec3::new(2.0, 1.5, -0.025));
         assert!(hit.is_some(), "probe inside deck should hit");
-        assert_eq!(hit.unwrap().part, "deck", "probe inside deck should hit deck part");
+        assert_eq!(hit.unwrap().part, "floor", "probe inside deck should hit floor part");
     }
 
     #[test]
