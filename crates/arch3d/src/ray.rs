@@ -61,16 +61,17 @@ fn point_in_triangle2(pp: Vec3, pa: Vec3, pb: Vec3, pc: Vec3) -> bool {
     }
 
     // Exactly on a shared edge → half-open: count only the triangle whose edge
-    // is oriented "upward" (v_i.y < v_j.y). Two same-face triangles sharing the
-    // diagonal are oppositely wound, so exactly one counts.
+    // is oriented "upward" (v_i.y < v_j.y). For horizontal edges, break ties by
+    // x (v_i.x < v_j.x). Two same-face triangles sharing the diagonal are
+    // oppositely wound, so exactly one counts.
     if on_segment2(pp, pa, pb) {
-        return pa.y < pb.y;
+        return pa.y < pb.y || (pa.y == pb.y && pa.x < pb.x);
     }
     if on_segment2(pp, pb, pc) {
-        return pb.y < pc.y;
+        return pb.y < pc.y || (pb.y == pc.y && pb.x < pc.x);
     }
     if on_segment2(pp, pc, pa) {
-        return pc.y < pa.y;
+        return pc.y < pa.y || (pc.y == pa.y && pc.x < pa.x);
     }
 
     false
