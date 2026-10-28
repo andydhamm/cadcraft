@@ -925,4 +925,67 @@ mod tests {
         // Point at the center of a box at huge coordinates
         assert!(probe_mesh(&mesh, Vec3::new(1e6 + 0.5, 1e6 + 0.5, 1e6 + 0.5)), "jitter must work at huge coordinates");
     }
+
+    #[test]
+    fn part_of_empty_material_returns_wall() {
+        let mesh = box_mesh(0.0, 0.0, 0.0, 1.0, "", ArchId(1));
+        assert_eq!(part_of(&mesh), "wall", "empty material should map to wall");
+    }
+
+    #[test]
+    fn part_of_mixed_case_materials() {
+        let wall = box_mesh(0.0, 0.0, 0.0, 1.0, "Wall", ArchId(1));
+        assert_eq!(part_of(&wall), "wall");
+
+        let window_frame = box_mesh(0.0, 0.0, 0.0, 1.0, "WINDOW-FRAME", ArchId(2));
+        assert_eq!(part_of(&window_frame), "frame");
+
+        let glass = box_mesh(0.0, 0.0, 0.0, 1.0, "GLASS", ArchId(3));
+        assert_eq!(part_of(&glass), "glass");
+
+        let roof_deck = box_mesh(0.0, 0.0, 0.0, 1.0, "Roof-Deck", ArchId(4));
+        assert_eq!(part_of(&roof_deck), "roof");
+    }
+
+    #[test]
+    fn probe_mesh_point_on_bottom_face_is_inside() {
+        let mesh = box_mesh(0.0, 0.0, 0.0, 1.0, "wall", ArchId(1));
+        // Point on the bottom face (z=0)
+        assert!(probe_mesh(&mesh, Vec3::new(0.5, 0.5, 0.0)), "point on bottom face should be inside");
+    }
+
+    #[test]
+    fn probe_mesh_point_on_side_face_is_inside() {
+        let mesh = box_mesh(0.0, 0.0, 0.0, 1.0, "wall", ArchId(1));
+        // Point on the left face (x=0)
+        assert!(probe_mesh(&mesh, Vec3::new(0.0, 0.5, 0.5)), "point on side face should be inside");
+        // Point on the front face (y=0)
+        assert!(probe_mesh(&mesh, Vec3::new(0.5, 0.0, 0.5)), "point on front face should be inside");
+    }
+
+    #[test]
+    fn is_probeable_at_exact_z_extent_threshold() {
+        let mut m = Mesh::new("floor", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        // Exactly 1e-6 z-extent
+        m.push_prism(&outer, 0.0, 1e-6);
+        assert!(is_probeable(&m), "mesh with z-extent exactly 1e-6 should be probeable");
+    }
+
+    #[test]
+    fn is_probeable_just_below_z_extent_threshold() {
+        let mut m = Mesh::new("floor", ArchId(1));
+        let outer = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(0.0, 4.0)];
+        // Just below 1e-6 z-extent
+        m.push_prism(&outer, 0.0, 0.9e-6);
+        assert!(!is_probeable(&m), "mesh with z-extent below 1e-6 should not be probeable");
+    }
+
+    #[test]
+    fn mesh_level_uses_recorded_elevation_when_set() {
+        let mut m = Mesh::new("wall", ArchId(1));
+        m.push_prism(&[Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0), Vec2::new(0.0, 1.0)], 2.0, 3.0);
+        m.level_elevation = 5.0;
+        assert_eq!(mesh_level(&m), 5.0, "mesh_level should use recorded level_elevation when finite");
+    }
 }
