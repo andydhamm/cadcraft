@@ -9,7 +9,7 @@ use cadcraft_arch::symbol::opening_symbol;
 use cadcraft_arch::wall::{wall_layer_polygons, wall_polygon};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::Handle;
-use cadraft_doc::arch::{
+use cadcraft_doc::arch::{
     OpeningKind, ROOM_HANDLE_OFFSET, Railing, RailingStyle, Roof, RoofEdge, RoofEdgeKind, RoofPlane, RoomType, Stair, StairShape, railing_handle,
     railing_label, roof_handle, roof_label, room_label, stair_handle, stair_label, wall_label,
 };
