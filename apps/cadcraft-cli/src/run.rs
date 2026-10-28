@@ -156,6 +156,10 @@ enum Ready<'a> {
 pub(crate) fn run_cmds(a: &RunArgs, io: &mut Streams) -> Result {
     let framing = a.framing.framing();
     let (save, export_to) = (a.save.as_deref(), a.export.as_deref());
+    // --export without an input file (or --sample/--metric) has nothing to export.
+    if export_to.is_some() && a.drawings.is_empty() {
+        return Err(CliError::Engine(cadcraft_engine::EngineError::NoDocument));
+    }
     let mut s = Session::empty();
     for d in &a.drawings {
         match d {

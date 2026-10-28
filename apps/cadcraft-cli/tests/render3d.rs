@@ -175,3 +175,65 @@ fn render_projected_bounds_are_finite() {
         assert!(v.is_finite(), "PROJECTED component must be finite: {}", v);
     }
 }
+
+#[test]
+fn render_with_explicit_camera_params() {
+    let dir = temp_dir("render_with_explicit_camera_params");
+    let in_dxf = wall_plan(&dir);
+    let out_png = dir.join("view.png");
+
+    let out = run_cli(&[
+        "render".into(),
+        in_dxf.to_string_lossy().into(),
+        out_png.to_string_lossy().into(),
+        "--camera".into(),
+        "orbit,azimuth=45,elevation=30,distance=20,fov=60".into(),
+    ]);
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+    if out.status.success() {
+        assert!(is_png(&out_png), "render did not write a valid PNG with explicit camera params");
+        assert!(stderr.contains("PROJECTED "), "render did not print PROJECTED with explicit camera: {stderr}");
+    } else {
+        assert_eq!(out.status.code(), Some(3), "no-adapter must exit 3");
+        assert!(stderr.contains("NO_ADAPTER"));
+    }
+}
+
+#[test]
+fn render_with_size_option() {
+    let dir = temp_dir("render_with_size_option");
+    let in_dxf = wall_plan(&dir);
+    let out_png = dir.join("view.png");
+
+    let out = run_cli(&[
+        "render".into(),
+        in_dxf.to_string_lossy().into(),
+        out_png.to_string_lossy().into(),
+        "--camera".into(),
+        "orbit".into(),
+        "--size".into(),
+        "640x480".into(),
+    ]);
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+    if out.status.success() {
+        assert!(is_png(&out_png), "render did not write a valid PNG with --size");
+        assert!(stderr.contains("PROJECTED "), "render did not print PROJECTED with --size: {stderr}");
+    } else {
+        assert_eq!(out.status.code(), Some(3), "no-adapter must exit 3");
+        assert!(stderr.contains("NO_ADAPTER"));
+    }
+}
+
+#[test]
+fn render_camera_unknown_param_rejected() {
+    let dir = temp_dir("render_camera_unknown_param_rejected");
+    let in_dxf = wall_plan(&dir);
+    let out_png = dir.join("view.png");
+
+    let out =
+        run_cli(&["render".into(), in_dxf.to_string_lossy().into(), out_png.to_string_lossy().into(), "--camera".into(), "orbit,bogus=5".into()]);
+    assert!(!out.status.success(), "unknown camera parameter should be rejected");
+    assert!(!out_png.exists(), "no output should be written for unknown camera parameter");
+}
