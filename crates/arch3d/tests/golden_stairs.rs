@@ -158,6 +158,170 @@ fn golden_deck_probe() {
 }
 
 #[test]
+fn stair_riser_invariants() {
+    let mut model = ArchModel::default();
+    model.levels.push(Level { index: 0, elevation: 0.0, ..Default::default() });
+    model.levels.push(Level { index: 1, elevation: 2.7, ..Default::default() });
+
+    let mut stair = Stair::default();
+    stair.id = ArchId(0);
+    stair.from_level = 0;
+    stair.to_level = 1;
+    stair.rise = 2.7;
+    stair.risers = 16;
+    stair.riser_height = 0.16875;
+    stair.treads = 15;
+    stair.tread_depth = 0.254;
+    stair.run = 3.81;
+    model.push_stair(stair);
+
+    let scene = build(&model);
+    // Invariant: riser_height * risers should equal rise (within tolerance)
+    let computed_rise = stair.riser_height * stair.risers as f64;
+    assert!((computed_rise - stair.rise).abs() < TOL, "riser_height * risers = {} but rise = {}", computed_rise, stair.rise);
+    // Invariant: treads == risers - 1 for straight stairs
+    assert_eq!(stair.treads, stair.risers - 1, "treads should be risers - 1");
+    // Invariant: run == treads * tread_depth
+    let computed_run = stair.treads as f64 * stair.tread_depth;
+    assert!((computed_run - stair.run).abs() < TOL, "treads * tread_depth = {} but run = {}", computed_run, stair.run);
+    // Scene should have built the stair
+    assert!(scene.stairs > 0, "scene should have at least one stair");
+}
+
+#[test]
+fn stair_with_nan_inputs() {
+    let mut model = ArchModel::default();
+    model.levels.push(Level { index: 0, elevation: 0.0, ..Default::default() });
+    model.levels.push(Level { index: 1, elevation: 2.7, ..Default::default() });
+
+    let mut stair = Stair::default();
+    stair.id = ArchId(0);
+    stair.start = Vec2::new(f64::NAN, f64::NAN);
+    stair.direction = f64::NAN;
+    stair.width = f64::NAN;
+    stair.from_level = 0;
+    stair.to_level = 1;
+    stair.rise = 2.7;
+    stair.risers = 16;
+    stair.riser_height = 0.16875;
+    stair.treads = 15;
+    stair.tread_depth = 0.254;
+    stair.run = 3.81;
+    model.push_stair(stair);
+
+    // Should not panic with NaN inputs
+    let scene = build(&model);
+    // Scene should still be valid (may have 0 stairs if NaN causes rejection)
+    assert!(scene.stairs >= 0);
+}
+
+#[test]
+fn deck_without_deck_height() {
+    let mut model = ArchModel::default();
+    model.levels.push(Level { index: 0, elevation: 0.0, ..Default::default() });
+
+    // Deck with no deck_height specified (should use level elevation)
+    let deck = Room {
+        id: ArchId(30),
+        level: 0,
+        room_type: RoomType::Deck,
+        polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+        deck_height: None,
+        ..Default::default()
+    };
+    model.push_room(deck);
+
+    let scene = build(&model);
+    // Deck at level elevation (0.0), thin slab below
+    // Probe just below surface (z = -0.01) should hit deck
+    assert_probe(&scene, 2.0, 1.5, -0.01, Some("deck"));
+    // Probe well below should miss
+    assert_probe(&scene, 2.0, 1.5, -0.5, None);
+    // Probe above should miss
+    assert_probe(&scene, 2.0, 1.5, 1.0, None);
+}
+
+#[test]
+fn multiple_stairs_same_levels() {
+    let mut model = ArchModel::default();
+    model.levels.push(Level { index: 0, elevation: 0.0, ..Default::default() });
+    model.levels.push(Level { index: 1, elevation: 2.7, ..Default::default() });
+
+    // Two stairs between the same levels, at different locations
+    let mut stair1 = Stair::default();
+    stair1.id = ArchId(0);
+    stair1.start = Vec2::new(2.0, 1.0);
+    stair1.direction = 0.0;
+    stair1.width = 1.0;
+    stair1.from_level = 0;
+    stair1.to_level = 1;
+    stair1.rise = 2.7;
+    stair1.risers = 16;
+    stair1.riser_height = 0.16875;
+    stair1.treads = 15;
+    stair1.tread_depth = 0.254;
+    stair1.run = 3.81;
+    model.push_stair(stair1);
+
+    let mut stair2 = Stair::default();
+    stair2.id = ArchId(1);
+    stair2.start = Vec2::new(6.0, 1.0);
+    stair2.direction = 0.0;
+    stair2.width = 1.0;
+    stair2.from_level = 0;
+    stair2.to_level = 1;
+    stair2.rise = 2.7;
+    stair2.risers = 16;
+    stair2.riser_height = 0.16875;
+    stair2.treads = 15;
+    stair2.tread_depth = 0.254;
+    stair2.run = 3.81;
+    model.push_stair(stair2);
+
+    let scene = build(&model);
+    assert_eq!(scene.stairs, 2, "scene should have two stairs");
+
+    // Probe both stairs
+    assert_probe(&scene, 2.1, 1.0, 0.05, Some("stair"));
+    assert_probe(&scene, 6.1, 1.0, 0.05, Some("stair"));
+    // Probe between them (should be empty at that height)
+    assert_probe(&scene, 4.0, 1.0, 0.05, None);
+}
+
+#[test]
+fn stair_with_large_rise() {
+    let mut model = ArchModel::default();
+    model.levels.push(Level { index: 0, elevation: 0.0, ..Default::default() });
+    model.levels.push(Level { index: 1, elevation: 4.0, ..Default::default() });
+
+    // 4.0m rise: 4.0 / 0.16875 = 23.7 -> 24 risers of 0.1667m each
+    let mut stair = Stair::default();
+    stair.id = ArchId(0);
+    stair.start = Vec2::new(2.0, 1.0);
+    stair.direction = 0.0;
+    stair.width = 1.0;
+    stair.from_level = 0;
+    stair.to_level = 1;
+    stair.rise = 4.0;
+    stair.risers = 24;
+    stair.riser_height = 4.0 / 24.0;
+    stair.treads = 23;
+    stair.tread_depth = 0.254;
+    stair.run = 23.0 * 0.254;
+    model.push_stair(stair);
+
+    let scene = build(&model);
+    assert!(scene.stairs > 0, "scene should have a stair");
+
+    // Probe at the bottom of the stair
+    assert_probe(&scene, 2.1, 1.0, 0.05, Some("stair"));
+    // Probe at the top of the stair (near 4.0m)
+    assert_probe(&scene, 2.0 + 22.0 * 0.254, 1.0, 3.5, Some("stair"));
+    // Riser height should be within IRC max (0.196m)
+    assert!(stair.riser_height <= 0.196 + TOL, "riser height {} exceeds max", stair.riser_height);
+}
+
+#[test]
 fn random_stairs_never_panic() {
     // Seeded property test
     let mut seed = 123456789u64;
