@@ -80,13 +80,27 @@ fn run_railing(s: &mut Session, p: &Value) -> Result<Value> {
             return Err(bad("railing", "non-finite coordinate in `path`"));
         }
     }
+    // Reject coincident consecutive points (zero-length segments).
+    for i in 1..pts.len() {
+        if pts[i].near(pts[i - 1], 1e-9) {
+            return Err(bad("railing", "consecutive points in `path` are coincident"));
+        }
+    }
 
-    // --- Level: name or index, else 0; unknown is an error ---
+    // --- Level: name or index (string or number), else 0; unknown is an error ---
     let level = match p.get("level") {
         None => 0,
         Some(Value::Null) => 0,
         Some(Value::String(n)) => find_level(arch, n)?,
-        Some(other) => return Err(bad("railing", format!("`level` must be a string (a level name or index), got `{other}`"))),
+        Some(Value::Number(n)) => {
+            let i = n.as_u64().unwrap_or(0);
+            if i < arch.levels.len() as u64 {
+                i as usize
+            } else {
+                return Err(bad("railing", format!("`level` index {} out of range", i)));
+            }
+        }
+        Some(other) => return Err(bad("railing", format!("`level` must be a string or number, got `{other}`"))),
     };
 
     // --- Height: optional, must pass the guard-band check (never clamped) ---
@@ -271,6 +285,62 @@ mod tests {
             &json!({
                 "path": simple_path(),
                 "style": "bogus",
+            }),
+        );
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.railings.len(), 0);
+    }
+
+    #[test]
+    fn railing_accepts_numeric_level() {
+        let mut s = new_session();
+        let r = s
+            .execute(
+                "railing",
+                &json!({
+                    "path": simple_path(),
+                    "level": 0,
+                }),
+            )
+            .unwrap();
+        assert_eq!(r["id"].as_str().unwrap(), "ra0");
+        assert_eq!(s.doc().unwrap().arch.railings[0].level, 0);
+    }
+
+    #[test]
+    fn railing_refuses_coincident_consecutive_points() {
+        let mut s = new_session();
+        let r = s.execute(
+            "railing",
+            &json!({
+                "path": [[0.0, 0.0], [0.0, 0.0], [3.0, 0.0]],
+            }),
+        );
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.railings.len(), 0);
+    }
+
+    #[test]
+    fn railing_refuses_nan_in_path() {
+        let mut s = new_session();
+        let r = s.execute(
+            "railing",
+            &json!({
+                "path": [[0.0, 0.0], [f64::NAN, 1.0]],
+            }),
+        );
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.railings.len(), 0);
+    }
+
+    #[test]
+    fn railing_refuses_too_many_points() {
+        let mut s = new_session();
+        let pts: Vec<Value> = (0..=512).map(|i| json!([i as f64, 0.0])).collect();
+        let r = s.execute(
+            "railing",
+            &json!({
+                "path": pts,
             }),
         );
         assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));

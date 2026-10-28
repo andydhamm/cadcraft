@@ -103,12 +103,20 @@ fn run_deck(s: &mut Session, p: &Value) -> Result<Value> {
         }
     };
 
-    // --- Level: name or index, else 0; unknown is an error, never a silent default ---
+    // --- Level: name or index (string or number), else 0; unknown is an error ---
     let level = match p.get("level") {
         None => 0,
         Some(Value::Null) => 0,
         Some(Value::String(n)) => find_level(arch, n)?,
-        Some(other) => return Err(bad("deck", format!("`level` must be a string (a level name or index), got `{other}`"))),
+        Some(Value::Number(n)) => {
+            let i = n.as_u64().unwrap_or(0);
+            if i < arch.levels.len() as u64 {
+                i as usize
+            } else {
+                return Err(bad("deck", format!("`level` index {} out of range", i)));
+            }
+        }
+        Some(other) => return Err(bad("deck", format!("`level` must be a string or number, got `{other}`"))),
     };
 
     // --- Name ---
@@ -282,6 +290,63 @@ mod tests {
             "deck",
             &json!({
                 "points": [[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0]],
+            }),
+        );
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 0);
+    }
+
+    #[test]
+    fn deck_accepts_numeric_level() {
+        let mut s = new_session();
+        let r = s
+            .execute(
+                "deck",
+                &json!({
+                    "points": square_points(),
+                    "level": 0,
+                }),
+            )
+            .unwrap();
+        assert_eq!(r["id"].as_str().unwrap(), "r0");
+        assert_eq!(s.doc().unwrap().arch.rooms[0].level, 0);
+    }
+
+    #[test]
+    fn deck_refuses_nan_in_points() {
+        let mut s = new_session();
+        let r = s.execute(
+            "deck",
+            &json!({
+                "points": [[0.0, 0.0], [3.0, 0.0], [3.0, f64::NAN], [0.0, 3.0], [0.0, 0.0]],
+            }),
+        );
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 0);
+    }
+
+    #[test]
+    fn deck_refuses_self_intersecting_polygon() {
+        let mut s = new_session();
+        // Bowtie: (0,0)-(3,3)-(0,3)-(3,0)-(0,0)
+        let r = s.execute(
+            "deck",
+            &json!({
+                "points": [[0.0, 0.0], [3.0, 3.0], [0.0, 3.0], [3.0, 0.0], [0.0, 0.0]],
+            }),
+        );
+        assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
+        assert_eq!(s.doc().unwrap().arch.rooms.len(), 0);
+    }
+
+    #[test]
+    fn deck_refuses_area_below_min_room_area() {
+        let mut s = new_session();
+        // 0.1 x 0.1 m square = 0.01 m² < MIN_ROOM_AREA (0.05)
+        let r = s.execute(
+            "deck",
+            &json!({
+                "points": [[0.0, 0.0], [0.1, 0.0], [0.1, 0.1], [0.0, 0.1], [0.0, 0.0]],
             }),
         );
         assert!(matches!(r, Err(EngineError::BadParams { cmd: _, msg: _ })));
