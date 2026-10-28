@@ -210,13 +210,17 @@ fn random_stairs_never_panic() {
         stair.tread_depth = 0.254;
         stair.run = stair.treads as f64 * stair.tread_depth;
 
+        let risers_check = stair.risers;
+        let treads_check = stair.treads;
+        let riser_height_check = stair.riser_height;
+
         model.push_stair(stair);
 
         // Build should not panic
         let _scene = build(&model);
 
         // Check invariants
-        assert!(stair.riser_height <= 0.196 + TOL, "riser height {} too high", stair.riser_height);
-        assert_eq!(stair.treads, stair.risers.saturating_sub(1), "treads mismatch");
+        assert!(riser_height_check <= 0.196 + TOL, "riser height {} too high", riser_height_check);
+        assert_eq!(treads_check, risers_check.saturating_sub(1), "treads mismatch");
     }
 }
