@@ -133,6 +133,52 @@ pub fn roof_label(id: ArchId) -> String {
     format!("r{}", id.0)
 }
 
+/// Offset within the arch-handle range reserved for stair proxy handles.
+/// Stair handles occupy `[ARCH_HANDLE_BASE + STAIR_HANDLE_OFFSET, ...)`.
+pub const STAIR_HANDLE_OFFSET: u64 = 0x20000;
+
+/// Maximum number of stairs in a drawing.
+pub const MAX_STAIRS: usize = 512;
+
+/// The synthetic proxy handle for an architectural stair.
+pub fn stair_handle(id: ArchId) -> Handle {
+    Handle(ARCH_HANDLE_BASE.saturating_add(STAIR_HANDLE_OFFSET).saturating_add(u64::from(id.0)))
+}
+
+/// Whether `h` falls in the synthetic stair-handle range.
+pub fn is_stair_handle(h: Handle) -> bool {
+    h.0 >= ARCH_HANDLE_BASE.saturating_add(STAIR_HANDLE_OFFSET)
+        && h.0 < ARCH_HANDLE_BASE.saturating_add(STAIR_HANDLE_OFFSET).saturating_add(1u64 << 15)
+}
+
+/// Human-readable label for a stair id, e.g. `s0`, `s1`.
+pub fn stair_label(id: ArchId) -> String {
+    format!("s{}", id.0)
+}
+
+/// Offset within the arch-handle range reserved for railing proxy handles.
+/// Railing handles occupy `[ARCH_HANDLE_BASE + RAILING_HANDLE_OFFSET, ...)`.
+pub const RAILING_HANDLE_OFFSET: u64 = 0x28000;
+
+/// Maximum number of railings in a drawing.
+pub const MAX_RAILINGS: usize = 2048;
+
+/// The synthetic proxy handle for an architectural railing.
+pub fn railing_handle(id: ArchId) -> Handle {
+    Handle(ARCH_HANDLE_BASE.saturating_add(RAILING_HANDLE_OFFSET).saturating_add(u64::from(id.0)))
+}
+
+/// Whether `h` falls in the synthetic railing-handle range.
+pub fn is_railing_handle(h: Handle) -> bool {
+    h.0 >= ARCH_HANDLE_BASE.saturating_add(RAILING_HANDLE_OFFSET)
+        && h.0 < ARCH_HANDLE_BASE.saturating_add(RAILING_HANDLE_OFFSET).saturating_add(1u64 << 15)
+}
+
+/// Human-readable label for a railing id, e.g. `ra0`, `ra1`.
+pub fn railing_label(id: ArchId) -> String {
+    format!("ra{}", id.0)
+}
+
 /// Maximum number of walls in a drawing (caps join-stretch BFS and allocations).
 pub const MAX_WALLS: usize = 4096;
 
@@ -494,6 +540,30 @@ pub enum RoomType {
     Other,
 }
 
+/// The shape of a stair flight.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StairShape {
+    /// A straight run.
+    #[default]
+    Straight,
+    /// An L-shaped run with a landing.
+    L,
+    /// A U-shaped run with a landing.
+    U,
+}
+
+/// The style of a railing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RailingStyle {
+    /// A solid panel railing.
+    #[default]
+    Panel,
+    /// A railing with vertical balusters.
+    Balusters,
+}
+
 impl RoomType {
     /// Whether this room type counts as interior (excludes Garage/Porch/Deck/OpenBelow).
     pub fn is_interior(self) -> bool {
@@ -525,6 +595,8 @@ pub struct Room {
     pub floor_height: Option<f64>,
     pub interior_area: f64,
     pub standard_area: f64,
+    /// Height of the deck surface above the level elevation, if this is a deck room.
+    pub deck_height: Option<f64>,
 }
 
 impl Default for Room {
@@ -540,6 +612,7 @@ impl Default for Room {
             floor_height: None,
             interior_area: 0.0,
             standard_area: 0.0,
+            deck_height: None,
         }
     }
 }
@@ -647,6 +720,113 @@ pub struct Roof {
     pub edges: Vec<RoofEdge>,
 }
 
+/// An architectural stair.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Stair {
+    /// Stable identifier assigned by [`ArchModel::push_stair`].
+    pub id: ArchId,
+    /// Start point of the stair in plan.
+    pub start: Vec2,
+    /// Direction of the stair in radians (+x is 0, CCW).
+    pub direction: f64,
+    /// Width of the stair.
+    pub width: f64,
+    /// Level index the stair starts from.
+    pub from_level: u32,
+    /// Level index the stair goes to.
+    pub to_level: u32,
+    /// Total rise (elevation difference).
+    pub rise: f64,
+    /// Shape of the stair.
+    pub shape: StairShape,
+    /// Number of risers.
+    pub risers: usize,
+    /// Height of each riser.
+    pub riser_height: f64,
+    /// Depth of each tread.
+    pub tread_depth: f64,
+    /// Number of treads.
+    pub treads: usize,
+    /// Total horizontal run.
+    pub run: f64,
+    /// Depth of the landing (if L or U).
+    pub landing_depth: f64,
+    /// Polygon defining the stair well (hole in upper floor).
+    pub well: Vec<Vec2>,
+    /// Room ID of the OpenBelow room created for the well.
+    pub well_room: Option<ArchId>,
+    /// Layer name.
+    pub layer: String,
+}
+
+impl Default for Stair {
+    fn default() -> Self {
+        Stair {
+            id: ArchId(0),
+            start: Vec2::ZERO,
+            direction: 0.0,
+            width: 1.0,
+            from_level: 0,
+            to_level: 1,
+            rise: 2.7,
+            shape: StairShape::Straight,
+            risers: 16,
+            riser_height: 0.16875,
+            tread_depth: 0.254,
+            treads: 15,
+            run: 3.81,
+            landing_depth: 0.0,
+            well: Vec::new(),
+            well_room: None,
+            layer: "A-STAIR".into(),
+        }
+    }
+}
+
+/// An architectural railing.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Railing {
+    /// Stable identifier assigned by [`ArchModel::push_railing`].
+    pub id: ArchId,
+    /// Path of the railing in plan.
+    pub path: Vec<Vec2>,
+    /// Level index.
+    pub level: u32,
+    /// Height of the railing.
+    pub height: f64,
+    /// Style of the railing.
+    pub style: RailingStyle,
+    /// Thickness of the railing elements.
+    pub thickness: f64,
+    /// Gap between balusters.
+    pub baluster_gap: f64,
+    /// Spacing between posts.
+    pub post_spacing: f64,
+    /// ID of the stair this railing follows (if any).
+    pub follows: Option<ArchId>,
+    /// Layer name.
+    pub layer: String,
+}
+
+impl Default for Railing {
+    fn default() -> Self {
+        Railing {
+            id: ArchId(0),
+            path: Vec::new(),
+            level: 0,
+            height: 0.914,
+            style: RailingStyle::Panel,
+            thickness: 0.05,
+            baluster_gap: 0.099,
+            post_spacing: 1.2,
+            follows: None,
+            layer: "A-RAIL".into(),
+        }
+    }
+}
+
 impl Default for Roof {
     fn default() -> Self {
         Roof {
@@ -704,6 +884,14 @@ pub struct ArchModel {
     pub roofs: Vec<Roof>,
     #[serde(default)]
     pub next_roof_id: u32,
+    #[serde(default)]
+    pub stairs: Vec<Stair>,
+    #[serde(default)]
+    pub next_stair_id: u32,
+    #[serde(default)]
+    pub railings: Vec<Railing>,
+    #[serde(default)]
+    pub next_railing_id: u32,
 }
 
 impl Default for ArchModel {
@@ -717,6 +905,10 @@ impl Default for ArchModel {
             next_room_id: 0,
             roofs: Vec::new(),
             next_roof_id: 0,
+            stairs: Vec::new(),
+            next_stair_id: 0,
+            railings: Vec::new(),
+            next_railing_id: 0,
             levels: vec![Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 }],
             types: vec![
                 WallType {
@@ -893,6 +1085,54 @@ impl ArchModel {
     /// Iterate over all roof ids.
     pub fn roof_ids(&self) -> impl Iterator<Item = ArchId> + '_ {
         self.roofs.iter().map(|r| r.id)
+    }
+
+    /// Add a stair and return its new id.
+    pub fn push_stair(&mut self, mut s: Stair) -> ArchId {
+        let id = ArchId(self.next_stair_id);
+        self.next_stair_id = self.next_stair_id.saturating_add(1);
+        s.id = id;
+        self.stairs.push(s);
+        id
+    }
+
+    /// Look up a stair by id.
+    pub fn stair(&self, id: ArchId) -> Option<&Stair> {
+        self.stairs.iter().find(|s| s.id == id)
+    }
+
+    /// The index of a stair by id, or `None` if not found.
+    pub fn stair_index(&self, id: ArchId) -> Option<usize> {
+        self.stairs.iter().position(|s| s.id == id)
+    }
+
+    /// Iterate over all stair ids.
+    pub fn stair_ids(&self) -> impl Iterator<Item = ArchId> + '_ {
+        self.stairs.iter().map(|s| s.id)
+    }
+
+    /// Add a railing and return its new id.
+    pub fn push_railing(&mut self, mut r: Railing) -> ArchId {
+        let id = ArchId(self.next_railing_id);
+        self.next_railing_id = self.next_railing_id.saturating_add(1);
+        r.id = id;
+        self.railings.push(r);
+        id
+    }
+
+    /// Look up a railing by id.
+    pub fn railing(&self, id: ArchId) -> Option<&Railing> {
+        self.railings.iter().find(|r| r.id == id)
+    }
+
+    /// The index of a railing by id, or `None` if not found.
+    pub fn railing_index(&self, id: ArchId) -> Option<usize> {
+        self.railings.iter().position(|r| r.id == id)
+    }
+
+    /// Iterate over all railing ids.
+    pub fn railing_ids(&self) -> impl Iterator<Item = ArchId> + '_ {
+        self.railings.iter().map(|r| r.id)
     }
 
     /// Union of every wall's poché ring bounds.
@@ -1166,6 +1406,102 @@ impl ArchModel {
             messages.push(format!("duplicate roof id {}", id));
         }
 
+        if self.stairs.len() > MAX_STAIRS {
+            messages.push(format!("model has {} stairs, max {MAX_STAIRS}", self.stairs.len()));
+        }
+
+        for s in &self.stairs {
+            let id = format!("{}", s.id);
+            if !s.start.is_finite()
+                || !s.direction.is_finite()
+                || !s.width.is_finite()
+                || !s.rise.is_finite()
+                || !s.riser_height.is_finite()
+                || !s.tread_depth.is_finite()
+                || !s.run.is_finite()
+                || !s.landing_depth.is_finite()
+            {
+                messages.push(format!("{}: non-finite numeric value", id));
+            }
+            if s.width <= 0.0 {
+                messages.push(format!("{}: width {} must be positive", id, s.width));
+            }
+            if s.risers == 0 {
+                messages.push(format!("{}: risers must be > 0", id));
+            }
+            if s.riser_height <= 0.0 {
+                messages.push(format!("{}: riser height {} must be positive", id, s.riser_height));
+            }
+            if s.tread_depth <= 0.0 {
+                messages.push(format!("{}: tread depth {} must be positive", id, s.tread_depth));
+            }
+            if self.level(s.from_level).is_none() {
+                messages.push(format!("{}: unknown from_level {}", id, s.from_level));
+            }
+            if self.level(s.to_level).is_none() {
+                messages.push(format!("{}: unknown to_level {}", id, s.to_level));
+            }
+            for p in &s.well {
+                if !p.is_finite() {
+                    messages.push(format!("{}: non-finite well point", id));
+                    break;
+                }
+            }
+        }
+
+        let mut seen_stair = std::collections::HashSet::new();
+        let mut dupe_stairs = Vec::new();
+        for s in &self.stairs {
+            if seen_stair.contains(&s.id) {
+                if !dupe_stairs.contains(&s.id) {
+                    dupe_stairs.push(s.id);
+                }
+            } else {
+                seen_stair.insert(s.id);
+            }
+        }
+        for id in &dupe_stairs {
+            messages.push(format!("duplicate stair id {}", id));
+        }
+
+        if self.railings.len() > MAX_RAILINGS {
+            messages.push(format!("model has {} railings, max {MAX_RAILINGS}", self.railings.len()));
+        }
+
+        for r in &self.railings {
+            let id = format!("{}", r.id);
+            if !r.height.is_finite() || !r.thickness.is_finite() || !r.baluster_gap.is_finite() || !r.post_spacing.is_finite() {
+                messages.push(format!("{}: non-finite numeric value", id));
+            }
+            if r.height <= 0.0 {
+                messages.push(format!("{}: height {} must be positive", id, r.height));
+            }
+            if self.level(r.level).is_none() {
+                messages.push(format!("{}: unknown level {}", id, r.level));
+            }
+            for p in &r.path {
+                if !p.is_finite() {
+                    messages.push(format!("{}: non-finite path point", id));
+                    break;
+                }
+            }
+        }
+
+        let mut seen_railing = std::collections::HashSet::new();
+        let mut dupe_railings = Vec::new();
+        for r in &self.railings {
+            if seen_railing.contains(&r.id) {
+                if !dupe_railings.contains(&r.id) {
+                    dupe_railings.push(r.id);
+                }
+            } else {
+                seen_railing.insert(r.id);
+            }
+        }
+        for id in &dupe_railings {
+            messages.push(format!("duplicate railing id {}", id));
+        }
+
         // Stale id counters: the next id to assign must be above every id in use.
         if let Some(msg) = self.stale_next_id("next_id", self.next_id, self.walls.iter().map(|w| w.id.0).max()) {
             messages.push(msg);
@@ -1177,6 +1513,12 @@ impl ArchModel {
             messages.push(msg);
         }
         if let Some(msg) = self.stale_next_id("next_roof_id", self.next_roof_id, self.roofs.iter().map(|r| r.id.0).max()) {
+            messages.push(msg);
+        }
+        if let Some(msg) = self.stale_next_id("next_stair_id", self.next_stair_id, self.stairs.iter().map(|s| s.id.0).max()) {
+            messages.push(msg);
+        }
+        if let Some(msg) = self.stale_next_id("next_railing_id", self.next_railing_id, self.railings.iter().map(|r| r.id.0).max()) {
             messages.push(msg);
         }
 

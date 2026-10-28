@@ -23,9 +23,11 @@ pub mod join;
 pub mod label;
 pub mod opening;
 pub mod poly;
+pub mod railing;
 pub mod roof;
 pub mod roofedge;
 pub mod room;
+pub mod stair;
 pub mod symbol;
 pub mod wall;
 
