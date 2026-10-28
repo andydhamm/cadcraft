@@ -932,6 +932,64 @@ mod tests {
     }
 
     #[test]
+    fn brief_t_valley_count_stable_across_pitches() {
+        let mut m = ArchModel::default();
+        t_house_brief(&mut m);
+        for pitch in [2.0, 4.0, 6.0, 8.0, 12.0] {
+            let roof = Roof { pitch_rise: pitch, pitch_run: 12.0, overhang: 0.0, thickness: 0.0, ..Default::default() };
+            let g = crate::roof::roof_geometry(&m, 0, &roof).unwrap();
+            let edges = roof_edges_geom(&g);
+            let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+            assert_eq!(valleys.len(), 2, "T footprint should have 2 valleys at pitch {}/12", pitch);
+        }
+    }
+
+    #[test]
+    fn brief_l_valley_count_stable_across_pitches() {
+        let mut m = ArchModel::default();
+        l_house(&mut m);
+        for pitch in [2.0, 4.0, 6.0, 8.0, 12.0] {
+            let roof = Roof { pitch_rise: pitch, pitch_run: 12.0, overhang: 0.0, thickness: 0.0, ..Default::default() };
+            let g = crate::roof::roof_geometry(&m, 0, &roof).unwrap();
+            let edges = roof_edges_geom(&g);
+            let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+            assert_eq!(valleys.len(), 1, "L footprint should have 1 valley at pitch {}/12", pitch);
+        }
+    }
+
+    #[test]
+    fn brief_t_valleys_anchored_at_reflex_vertices() {
+        let mut m = ArchModel::default();
+        t_house_brief(&mut m);
+        let roof = Roof { pitch_rise: 6.0, pitch_run: 12.0, overhang: 0.0, thickness: 0.0, ..Default::default() };
+        let g = crate::roof::roof_geometry(&m, 0, &roof).unwrap();
+        let edges = roof_edges_geom(&g);
+        let valleys: Vec<_> = edges.iter().filter(|e| e.kind == RoofEdgeKind::Valley).collect();
+        assert_eq!(valleys.len(), 2);
+
+        // Find reflex vertices of the outer footprint ring (right turn in CCW ring)
+        let n = g.fp.outer.len();
+        let reflex_vertices: Vec<Vec2> = (0..n)
+            .filter(|&i| {
+                let prev = g.fp.outer[(i + n - 1) % n];
+                let curr = g.fp.outer[i];
+                let next = g.fp.outer[(i + 1) % n];
+                let d1 = curr - prev;
+                let d2 = next - curr;
+                (d1.x * d2.y - d1.y * d2.x) < 0.0
+            })
+            .map(|i| g.fp.outer[i])
+            .collect();
+
+        assert_eq!(reflex_vertices.len(), 2, "T footprint should have 2 reflex vertices");
+
+        for v in &valleys {
+            let at_reflex = reflex_vertices.iter().any(|rv| (v.a - *rv).len() < 1e-6 || (v.b - *rv).len() < 1e-6);
+            assert!(at_reflex, "Valley must have an endpoint at a reflex vertex: a={:?} b={:?}", v.a, v.b);
+        }
+    }
+
+    #[test]
     fn single_wall_is_not_a_closed_ring() {
         let mut m = ArchModel::default();
         m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
