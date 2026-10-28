@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-28 10:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-28 10:16 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 4 of 13: Automatic roofs — 85 of 86 segments merged · 10 of 11 acceptance checks**
 
@@ -14,7 +14,7 @@ Updated 2026-10-28 10:00 UTC. This page and the card in the README are regenerat
 | 1 | Walls and joins | done | 9 / 9 | 31.0 h |
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
-| 4 | Automatic roofs | building | 10 / 11 | 49.2 h so far · expected done Oct 28 12:11–Oct 29 05:21 UTC |
+| 4 | Automatic roofs | building | 10 / 11 | 49.4 h so far · expected done Oct 28 12:27–Oct 29 05:37 UTC |
 | 5 | Stairs, railings and decks | planned | — | — |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
@@ -27,11 +27,11 @@ Updated 2026-10-28 10:00 UTC. This page and the card in the README are regenerat
 
 ## Phase 4 segments
 
-85 merged, 8 replaced, 1 working
+85 merged, 8 replaced, 1 gate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `upstream-sync-565424072` | merge upstream upstream/main up to 565424072 (1 commits) | working | kimi-k31 |
+| `upstream-sync-565424072` | merge upstream upstream/main up to 565424072 (1 commits) | gate | kimi-k31 |
 
 ## Recent merges
 
@@ -61,9 +61,9 @@ Updated 2026-10-28 10:00 UTC. This page and the card in the README are regenerat
 | claude-sonnet-a | sonnet | idle | 19 |
 | claude-sonnet-b | sonnet | idle | 21 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 378 |
-| kimi-k31 | k3.1-pro-highspeed | agent | 69 |
+| kimi-k31 | k3.1-pro-highspeed | gate | 69 |
 | mai-flash | mai-code-1.1-flash | idle | 0 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
 | tturbo-mac | tturbo-ultraheretic | agent | 357 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 197 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 198 |
