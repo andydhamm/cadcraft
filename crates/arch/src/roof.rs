@@ -43,15 +43,10 @@ pub fn outer_footprint(model: &ArchModel, level: u32) -> Option<Footprint> {
         return None;
     }
 
-    // 2. Centre-line graph: drop dangling stubs (so they cannot distort the corner joins)
-    // and give each connected building its own centroid (centre of its bounds).
+    // 2. Centre-line graph: give each connected building its own centroid (centre of its bounds).
     let centre_lines: Vec<FootprintEdge> = candidates.iter().map(|w| FootprintEdge { wall: w.id, a: w.start, b: w.end }).collect();
     let centre_origin = ring_origin(&centre_lines);
-    let mut kept = centre_lines.clone();
-    prune_spurs(&mut kept, centre_origin);
-    if kept.len() < 3 {
-        return None;
-    }
+    let kept = centre_lines.clone();
     let mut centroids: std::collections::BTreeMap<ArchId, Vec2> = std::collections::BTreeMap::new();
     for group in components(&kept, centre_origin) {
         let (mut min_x, mut min_y, mut max_x, mut max_y) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
@@ -87,9 +82,27 @@ pub fn outer_footprint(model: &ArchModel, level: u32) -> Option<Footprint> {
     }
     let walls: Vec<&Wall> = candidates.iter().copied().filter(|w| centroids.contains_key(&w.id)).collect();
 
-    // 3. Solved poché rings, without the pruned stubs.
+    // 3. Solved poché rings. A dangling stub that does not run along another wall would
+    // only distort the corner joins, so it is left out; an overlapping wall stays.
+    let mut live = centre_lines.clone();
+    prune_spurs(&mut live, centre_origin);
+    let along_another = |w: &Wall| {
+        let mid = Vec2::new((w.start.x + w.end.x) / 2.0, (w.start.y + w.end.y) / 2.0);
+        candidates.iter().any(|o| {
+            o.id != w.id && {
+                let d = o.end - o.start;
+                let l2 = d.dot(d);
+                l2 > 1e-18 && {
+                    let t = ((mid - o.start).dot(d) / l2).clamp(0.0, 1.0);
+                    (o.start + d * t).dist(mid) < 1e-6
+                }
+            }
+        })
+    };
     let mut pruned = model.clone();
-    pruned.walls.retain(|w| w.base_level == level && (centroids.contains_key(&w.id) || !candidates.iter().any(|c| c.id == w.id)));
+    pruned
+        .walls
+        .retain(|w| w.base_level == level && (!candidates.iter().any(|c| c.id == w.id) || live.iter().any(|e| e.wall == w.id) || along_another(w)));
     let shapes = crate::join::solve_joins(&pruned);
 
     // 4. One outer-face edge per wall.
