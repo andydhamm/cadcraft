@@ -308,6 +308,11 @@ fn point_in_polygon(p: &Vec2, poly: &[Vec2]) -> bool {
 /// Builds the roof geometry and classifies its edges. Returns an error if the
 /// geometry cannot be built.
 pub fn roof_edges(model: &cadcraft_doc::ArchModel, level: u32, roof: &Roof) -> Result<Vec<RoofEdge>, RoofError> {
+    for w in &model.walls {
+        if (w.b - w.a).len() < 1e-9 {
+            return Err(RoofError::Degenerate);
+        }
+    }
     crate::roof::roof_geometry(model, level, roof).map(|g| roof_edges_geom(&g))
 }
 
