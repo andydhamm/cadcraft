@@ -388,8 +388,8 @@ mod tests {
 
     #[test]
     fn parse_arch_rejects_unknown_versions() {
-        // Versions 1..4 are understood; 0 and 5+ are unknown.
-        assert!(parse_arch(r#"{"version": 5, "model": { "walls": [] }}"#).is_none());
+        // Versions 1..=5 are understood; 0 and 6+ are unknown.
+        assert!(parse_arch(r#"{"version": 6, "model": { "walls": [] }}"#).is_none());
         assert!(parse_arch(r#"{"version": 0, "model": { "walls": [] }}"#).is_none());
     }
 
@@ -1015,10 +1015,10 @@ mod tests {
     }
 
     #[test]
-    fn arch_record_version_is_four() {
+    fn arch_record_version_is_five() {
         let chunks = arch_chunks(&one_wall_model()).unwrap();
         let obj: serde_json::Value = serde_json::from_str(&chunks.join("")).unwrap();
-        assert_eq!(obj["version"].as_u64(), Some(4), "written payload version");
+        assert_eq!(obj["version"].as_u64(), Some(5), "written payload version");
     }
 
     #[test]
@@ -1030,7 +1030,7 @@ mod tests {
         let parsed = parse_arch(&text).expect("a version-3 payload must still parse");
         assert_eq!(parsed.walls.len(), 1);
         assert!(parsed.roofs.is_empty(), "a v3 file predates roofs");
-        assert!(parse_arch(r#"{"version": 5, "model": {"walls": []}}"#).is_none());
+        assert!(parse_arch(r#"{"version": 6, "model": {"walls": []}}"#).is_none());
     }
 
     #[test]
