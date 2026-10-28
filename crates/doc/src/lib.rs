@@ -570,7 +570,7 @@ mod arch_layers_tests {
         let d = Drawing::new_imperial();
         let layer0 = d.layers.first();
         assert!(layer0.is_some(), "layer 0 must exist");
-        assert_eq!(layer0.unwrap().name.as_str(), "", "layer 0 must have an empty name");
+        assert_eq!(layer0.unwrap().name.as_str(), "0", "layer 0 must be named 0");
         assert!(layer0.unwrap().plot, "layer 0 must be plotting");
     }
 
