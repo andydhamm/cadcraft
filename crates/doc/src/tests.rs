@@ -775,3 +775,70 @@ fn roof_edge_sloped_heights_roundtrip() {
     // The height difference is preserved exactly.
     assert_eq!(back.zb - back.za, e.zb - e.za);
 }
+
+#[test]
+fn stair_defaults_are_usable() {
+    let s = crate::Stair::default();
+    assert_eq!(s.width, 1.0);
+    assert_eq!(s.tread_depth, 0.254);
+    assert_eq!(s.layer, "A-STAIR");
+    assert_eq!(s.shape, crate::StairShape::Straight);
+}
+
+#[test]
+fn stair_and_railing_handles_do_not_collide() {
+    let id = crate::ArchId(100);
+    let sh = crate::stair_handle(id);
+    let rh = crate::railing_handle(id);
+    let wh = crate::arch_handle(id);
+    let rhm = crate::room_handle(id);
+    let rooh = crate::roof_handle(id);
+    let oh = crate::opening_handle(id);
+
+    assert_ne!(sh, rh);
+    assert_ne!(sh, wh);
+    assert_ne!(sh, rhm);
+    assert_ne!(sh, rooh);
+    assert_ne!(sh, oh);
+
+    assert_ne!(rh, wh);
+    assert_ne!(rh, rhm);
+    assert_ne!(rh, rooh);
+    assert_ne!(rh, oh);
+
+    assert!(crate::is_stair_handle(sh));
+    assert!(crate::is_railing_handle(rh));
+    assert!(!crate::is_stair_handle(rh));
+    assert!(!crate::is_railing_handle(sh));
+}
+
+#[test]
+fn stair_label_is_s_n() {
+    assert_eq!(crate::stair_label(crate::ArchId(0)), "s0");
+    assert_eq!(crate::stair_label(crate::ArchId(12)), "s12");
+    assert_eq!(crate::railing_label(crate::ArchId(0)), "ra0");
+    assert_eq!(crate::railing_label(crate::ArchId(12)), "ra12");
+}
+
+#[test]
+fn room_deck_height_defaults_to_none() {
+    let r = crate::Room::default();
+    assert_eq!(r.deck_height, None);
+}
+
+#[test]
+fn arch_model_round_trips_stairs_and_railings() {
+    let mut m = crate::ArchModel::default();
+    let sid = m.push_stair(crate::Stair::default());
+    let rid = m.push_railing(crate::Railing::default());
+
+    let json = serde_json::to_string(&m).unwrap();
+    let back: crate::ArchModel = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(back.stairs.len(), 1);
+    assert_eq!(back.railings.len(), 1);
+    assert_eq!(back.stairs[0].id, sid);
+    assert_eq!(back.railings[0].id, rid);
+    assert_eq!(back.next_stair_id, 1);
+    assert_eq!(back.next_railing_id, 1);
+}
