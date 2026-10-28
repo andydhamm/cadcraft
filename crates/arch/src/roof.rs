@@ -1555,4 +1555,165 @@ mod tests {
         assert!((min_y + 0.005).abs() < 1e-6, "min_y {} != -0.005", min_y);
         assert!((max_y - 8.005).abs() < 1e-6, "max_y {} != 8.005", max_y);
     }
+
+    // --- hardening tests for the ring helpers ---
+
+    #[test]
+    fn ring_origin_empty_returns_zero() {
+        let edges: Vec<FootprintEdge> = Vec::new();
+        let origin = ring_origin(&edges);
+        assert!(origin.near(Vec2::ZERO, 1e-12), "empty edges should give Vec2::ZERO origin");
+    }
+
+    #[test]
+    fn ring_origin_ignores_nan_endpoints() {
+        let edges = vec![fe(0, (f64::NAN, f64::NAN), (f64::NAN, f64::NAN)), fe(1, (3.0, 4.0), (5.0, 6.0))];
+        let origin = ring_origin(&edges);
+        assert!((origin.x - 3.0).abs() < 1e-12, "origin.x {} != 3.0", origin.x);
+        assert!((origin.y - 4.0).abs() < 1e-12, "origin.y {} != 4.0", origin.y);
+    }
+
+    #[test]
+    fn walk_ring_rejects_figure_eight() {
+        // Two loops sharing a vertex: the shared vertex has 4 ends, so walk_ring must reject.
+        let edges = vec![
+            fe(0, (0.0, 0.0), (1.0, 0.0)),
+            fe(1, (1.0, 0.0), (1.0, 1.0)),
+            fe(2, (1.0, 1.0), (0.0, 0.0)),
+            fe(3, (0.0, 0.0), (0.0, 1.0)),
+            fe(4, (0.0, 1.0), (1.0, 1.0)),
+        ];
+        let origin = ring_origin(&edges);
+        let result = walk_ring(&edges, origin);
+        assert!(result.is_none(), "figure-8 (vertex with 4 ends) must be rejected");
+    }
+
+    #[test]
+    fn walk_ring_rejects_fewer_than_three_edges() {
+        let edges = vec![fe(0, (0.0, 0.0), (1.0, 0.0)), fe(1, (1.0, 0.0), (0.0, 0.0))];
+        let origin = ring_origin(&edges);
+        let result = walk_ring(&edges, origin);
+        assert!(result.is_none(), "fewer than 3 edges must be rejected");
+    }
+
+    #[test]
+    fn walk_ring_minimal_triangle() {
+        let edges = vec![fe(0, (0.0, 0.0), (1.0, 0.0)), fe(1, (1.0, 0.0), (0.5, 1.0)), fe(2, (0.5, 1.0), (0.0, 0.0))];
+        let origin = ring_origin(&edges);
+        let ring = walk_ring(&edges, origin).expect("triangle should walk");
+        assert_eq!(ring.len(), 3);
+        for i in 0..3 {
+            assert!(ring[i].b.near(ring[(i + 1) % 3].a, 1e-6), "edge {} does not meet the next", i);
+        }
+    }
+
+    #[test]
+    fn prune_spurs_drops_zero_length_edges() {
+        // A square with a zero-length edge at one corner.
+        let mut edges = vec![
+            fe(0, (0.0, 0.0), (4.0, 0.0)),
+            fe(1, (4.0, 0.0), (4.0, 4.0)),
+            fe(2, (4.0, 4.0), (0.0, 4.0)),
+            fe(3, (0.0, 4.0), (0.0, 0.0)),
+            fe(4, (4.0, 4.0), (4.0, 4.0)), // zero-length
+        ];
+        let origin = ring_origin(&edges);
+        prune_spurs(&mut edges, origin);
+        assert_eq!(edges.len(), 4, "zero-length edge should be pruned");
+        assert!(walk_ring(&edges, origin).is_some(), "ring should still walk after pruning");
+    }
+
+    #[test]
+    fn components_single_edge() {
+        let edges = vec![fe(0, (0.0, 0.0), (1.0, 0.0))];
+        let origin = ring_origin(&edges);
+        let comps = components(&edges, origin);
+        assert_eq!(comps.len(), 1, "one edge should give one component");
+        assert_eq!(comps[0], vec![0], "the component should contain edge 0");
+    }
+
+    #[test]
+    fn components_deterministic_order() {
+        // Two separate edges; components must be sorted by first index.
+        let edges = vec![fe(0, (10.0, 10.0), (11.0, 10.0)), fe(1, (0.0, 0.0), (1.0, 0.0))];
+        let origin = ring_origin(&edges);
+        let comps = components(&edges, origin);
+        assert_eq!(comps.len(), 2);
+        assert_eq!(comps[0], vec![0], "first component must be edge 0 (lower index)");
+        assert_eq!(comps[1], vec![1], "second component must be edge 1");
+    }
+
+    #[test]
+    fn merge_straight_does_not_collapse_256_gon() {
+        // A regular 256-gon of radius 10: turn angle ~0.0245 rad, far above the 1e-9 tolerance.
+        let mut ring = Vec::with_capacity(256);
+        for i in 0..256 {
+            let a = (i as f64) * (std::f64::consts::PI * 2.0 / 256.0);
+            let b = ((i + 1) as f64) * (std::f64::consts::PI * 2.0 / 256.0);
+            ring.push(fe(i as u32, (10.0 * a.cos(), 10.0 * a.sin()), (10.0 * b.cos(), 10.0 * b.sin())));
+        }
+        let origin = ring_origin(&ring);
+        merge_straight(&mut ring, origin);
+        assert_eq!(ring.len(), 256, "a 256-gon must not be collapsed by merge_straight");
+    }
+
+    #[test]
+    fn merge_straight_with_exact_collinear() {
+        // Three collinear edges: (0,0)-(1,0), (1,0)-(2,0), (2,0)-(3,0) plus two to close.
+        let mut ring = vec![
+            fe(0, (0.0, 0.0), (1.0, 0.0)),
+            fe(1, (1.0, 0.0), (2.0, 0.0)),
+            fe(2, (2.0, 0.0), (3.0, 0.0)),
+            fe(3, (3.0, 0.0), (3.0, 1.0)),
+            fe(4, (3.0, 1.0), (0.0, 1.0)),
+            fe(5, (0.0, 1.0), (0.0, 0.0)),
+        ];
+        let origin = ring_origin(&ring);
+        merge_straight(&mut ring, origin);
+        // The three bottom edges should merge into one.
+        assert_eq!(ring.len(), 4, "three collinear edges should merge into one");
+    }
+
+    #[test]
+    fn merge_straight_opposite_direction_not_merged() {
+        // Two edges that meet at a point but go in opposite directions (dot < 0).
+        // (0,0)-(1,0) and (1,0)-(0,0) would be degenerate; instead use a V shape.
+        let mut ring = vec![fe(0, (0.0, 0.0), (1.0, 0.0)), fe(1, (1.0, 0.0), (0.5, 1.0)), fe(2, (0.5, 1.0), (0.0, 0.0))];
+        let origin = ring_origin(&ring);
+        merge_straight(&mut ring, origin);
+        // None of these are collinear in the same direction, so no merge.
+        assert_eq!(ring.len(), 3, "non-collinear edges must not be merged");
+    }
+
+    #[test]
+    fn vkey_huge_coordinates_with_origin() {
+        // Georeferenced coordinates: origin at (5e6, 4e6), point at (5e6 + 1.5, 4e6 + 2.5).
+        let origin = Vec2::new(5_000_000.0, 4_000_000.0);
+        let p = Vec2::new(5_000_001.5, 4_000_002.5);
+        let key = vkey(p, origin);
+        assert_eq!(key, (1_500_000, 2_500_000), "huge coords with origin should quantise correctly");
+    }
+
+    #[test]
+    fn vkey_negative_coordinates() {
+        let origin = Vec2::new(-10.0, -10.0);
+        let p = Vec2::new(-9.999999, -9.999998);
+        let key = vkey(p, origin);
+        // (-9.999999 - (-10)) / 1e-6 = 1.0 -> 1
+        // (-9.999998 - (-10)) / 1e-6 = 2.0 -> 2
+        assert_eq!(key, (1, 2), "negative coords with origin should quantise correctly");
+    }
+
+    #[test]
+    fn walk_ring_rejects_equal_end_keys() {
+        // An edge whose two ends quantise to the same key (too short).
+        let edges = vec![
+            fe(0, (0.0, 0.0), (0.0, 0.0)), // zero-length
+            fe(1, (0.0, 0.0), (1.0, 0.0)),
+            fe(2, (1.0, 0.0), (0.0, 0.0)),
+        ];
+        let origin = ring_origin(&edges);
+        let result = walk_ring(&edges, origin);
+        assert!(result.is_none(), "edge with equal end keys must be rejected");
+    }
 }
