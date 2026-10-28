@@ -144,6 +144,9 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
             "fascia" => format!("roof-r{}-fascia", m.object.0),
             "soffit" => format!("roof-r{}-soffit", m.object.0),
             "wall" => format!("wall-{}", m.object),
+            "stair" => format!("stair-s{}", m.object.0),
+            "railing" => format!("railing-ra{}", m.object.0),
+            "deck" => format!("deck-r{}", m.object.0),
             _ => format!("{}-o{}", m.material, m.object.0),
         };
 
@@ -1278,5 +1281,49 @@ mod tests {
         for bv in json["bufferViews"].as_array().unwrap() {
             assert_eq!(bv["buffer"].as_u64().unwrap(), 0, "buffer view does not reference buffer 0");
         }
+    }
+
+    #[test]
+    fn glb_names_stair_nodes() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "stair".into();
+            m.object = ArchId(42);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert!(mesh_names.contains(&"stair-s42".to_string()), "missing stair-s42: {:?}", mesh_names);
+
+        let node_names: Vec<String> = json["nodes"].as_array().unwrap().iter().skip(1).filter_map(|n| n["name"].as_str()).map(String::from).collect();
+        assert!(node_names.contains(&"stair-s42".to_string()), "node missing stair-s42: {:?}", node_names);
+    }
+
+    #[test]
+    fn glb_names_railing_and_deck_nodes() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "railing".into();
+            m.object = ArchId(7);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "deck".into();
+            m.object = ArchId(9);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert!(mesh_names.contains(&"railing-ra7".to_string()), "missing railing-ra7: {:?}", mesh_names);
+        assert!(mesh_names.contains(&"deck-r9".to_string()), "missing deck-r9: {:?}", mesh_names);
+
+        let node_names: Vec<String> = json["nodes"].as_array().unwrap().iter().skip(1).filter_map(|n| n["name"].as_str()).map(String::from).collect();
+        assert!(node_names.contains(&"railing-ra7".to_string()), "node missing railing-ra7: {:?}", node_names);
+        assert!(node_names.contains(&"deck-r9".to_string()), "node missing deck-r9: {:?}", node_names);
     }
 }
