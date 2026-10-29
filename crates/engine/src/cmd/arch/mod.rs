@@ -17,6 +17,7 @@ pub mod deck;
 pub mod inspect;
 pub mod level;
 pub mod opening;
+pub mod pick;
 pub mod railing;
 pub mod roofauto;
 pub mod roofplane;
@@ -53,6 +54,7 @@ pub fn specs() -> Vec<CommandSpec> {
     v.extend(room::specs());
     v.extend(roomdetect::specs());
     v.extend(inspect::specs());
+    v.extend(pick::specs());
     v.extend(level::specs());
     v.extend(stair::specs());
     v.extend(build3d::specs());
