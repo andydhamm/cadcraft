@@ -9,6 +9,10 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use crate::Render3dError;
+use crate::adapter::{AdapterChoice, DeviceInfo, request_device};
+
+/// Alias of [`DeviceInfo`] for the accessor signature.
+type Info = DeviceInfo;
 use crate::camera::{Camera, view_proj};
 use crate::light::Light;
 use crate::pipeline::{COLOR_FORMAT, DEPTH_FORMAT, GpuMeshes, GpuPipeline, GpuUniform, UNIFORM_SIZE, uniform_stride, upload};
@@ -108,28 +112,42 @@ pub struct Offscreen {
     meshes: Option<(u64, GpuMeshes)>,
     uploads: u64,
     generation: u64,
+    info: DeviceInfo,
 }
 
 impl Offscreen {
     /// A renderer with its own device on the best available adapter.
     /// [`Render3dError::NoAdapter`] when there is none (headless, no GPU).
     pub async fn new(instance: &wgpu::Instance, size: (u32, u32)) -> Result<Self, Render3dError> {
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, ..Default::default() })
-            .await
-            .map_err(|_| Render3dError::NoAdapter)?;
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor { label: Some("render3d"), ..Default::default() })
-            .await
-            .map_err(|e| Render3dError::Wgpu(e.to_string()))?;
-        Ok(Self::with_device(device, queue, size))
+        Self::new_with(instance, AdapterChoice::Auto, size).await
+    }
+
+    /// [`Offscreen::new`] with an explicit adapter choice. The device always uses the
+    /// downlevel WebGL2 limits.
+    pub async fn new_with(instance: &wgpu::Instance, choice: AdapterChoice, size: (u32, u32)) -> Result<Self, Render3dError> {
+        let (device, queue, info) = request_device(instance, choice).await?;
+        let mut me = Self::with_device(device, queue, size);
+        me.info = info;
+        Ok(me)
     }
 
     /// Blocking form of [`Offscreen::new`] for the CLI and tests (native only: a browser
     /// cannot block on adapter requests).
     pub fn create(size: (u32, u32)) -> Result<Self, Render3dError> {
+        Self::create_with(AdapterChoice::Auto, size)
+    }
+
+    /// Blocking form of [`Offscreen::new_with`] (native only).
+    pub fn create_with(choice: AdapterChoice, size: (u32, u32)) -> Result<Self, Render3dError> {
         let instance = headless_instance();
-        futures::executor::block_on(Self::new(&instance, size))
+        futures::executor::block_on(Self::new_with(&instance, choice, size))
+    }
+
+    /// The device this renderer runs on. For a renderer built with [`Offscreen::with_device`]
+    /// the adapter is unknown, so the name is `unknown` and `downlevel` is whether the device's
+    /// limits equal the downlevel WebGL2 limits.
+    pub fn device_info(&self) -> &Info {
+        &self.info
     }
 
     /// A renderer on an existing device, e.g. the window's (eframe's render state).
@@ -138,7 +156,8 @@ impl Offscreen {
         let targets = Targets::new(&device, size);
         let gpu = GpuPipeline::new(&device, 1);
         let stride = uniform_stride(&device);
-        Offscreen { device, queue, targets, gpu, stride, slots: None, meshes: None, uploads: 0, generation: 1 }
+        let info = DeviceInfo::unknown(device.limits() == wgpu::Limits::downlevel_webgl2_defaults());
+        Offscreen { device, queue, targets, gpu, stride, slots: None, meshes: None, uploads: 0, generation: 1, info }
     }
 
     /// Current target size in pixels.
@@ -329,11 +348,8 @@ pub fn device_within(budget: Duration) -> Option<(wgpu::Device, wgpu::Queue)> {
     std::thread::spawn(move || {
         let instance = headless_instance();
         let got = futures::executor::block_on(async {
-            let adapter = instance
-                .request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, ..Default::default() })
-                .await
-                .ok()?;
-            adapter.request_device(&wgpu::DeviceDescriptor { label: Some("render3d"), ..Default::default() }).await.ok()
+            let (device, queue, _info) = request_device(&instance, AdapterChoice::Auto).await.ok()?;
+            Some((device, queue))
         });
         let _ = tx.send(got);
     });
