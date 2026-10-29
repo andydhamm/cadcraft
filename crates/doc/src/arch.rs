@@ -1372,6 +1372,18 @@ impl std::fmt::Display for CameraError {
     }
 }
 
+/// Deserialize views, dropping invalid entries and entries beyond the cap.
+///
+/// Some readers deserialize the model directly and do not call
+/// [`ArchModel::validate`], so read-time sanitisation must happen here as well.
+fn deserialize_views<'de, D>(deserializer: D) -> Result<Vec<ArchView>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let views = Vec::<ArchView>::deserialize(deserializer)?;
+    Ok(views.into_iter().take(MAX_VIEWS).filter(|v| v.validate().is_ok()).collect())
+}
+
 /// The architectural object model for a drawing.
 ///
 /// Stored on [`Drawing::arch`]; the 3D pane and incremental rebuilds key off
@@ -1410,7 +1422,7 @@ pub struct ArchModel {
     pub cameras: Vec<Camera3d>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_camera: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_views")]
     pub views: Vec<ArchView>,
     #[serde(default)]
     pub next_view_id: u32,
