@@ -640,8 +640,9 @@ mod tests {
         let sm = build(&device, &queue, &meshes, sun_from_south(), &s.bounds).expect("shadow map");
         let depths = read_depth(&device, &queue, &sm);
         // Sample a point within the fitted region but off the block.
-        // The fit margin (1.2x) extends ~1.2 units beyond the 2-unit block, so [99,99,0] is inside.
-        let far = depth_at(&sm, &depths, [99.0, 99.0, 0.0]);
+        // The fit margin (1.2x) extends the region beyond the block in light space;
+        // [101, 99.5, 1] is 0.5 m south of the block, well inside the fitted region.
+        let far = depth_at(&sm, &depths, [101.0, 99.5, 1.0]);
         assert!(far.is_finite(), "far point should be finite");
         // The far point should be near the clear depth of 1.0 (nothing drawn there).
         assert!((far - 1.0).abs() < 0.01, "far point depth should be ~1.0, got {far}");
