@@ -134,13 +134,13 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
 
     // Validate and filter cameras
     model.cameras.retain(|c| {
-        c.target.map_or(false, |t| t.iter().all(|v| v.is_finite()))
-            && c.azimuth_deg.map_or(false, |v| v.is_finite())
-            && c.elevation_deg.map_or(false, |v| v.is_finite())
-            && c.distance.map_or(false, |v| v.is_finite())
-            && c.eye.map_or(false, |e| e.iter().all(|v| v.is_finite()))
-            && c.eye_height.map_or(false, |v| v.is_finite())
-            && c.fov_deg.map_or(false, |v| v.is_finite())
+        c.target.map_or(true, |t| t.iter().all(|v| v.is_finite()))
+            && c.azimuth_deg.map_or(true, |v| v.is_finite())
+            && c.elevation_deg.map_or(true, |v| v.is_finite())
+            && c.distance.map_or(true, |v| v.is_finite())
+            && c.eye.map_or(true, |e| e.iter().all(|v| v.is_finite()))
+            && c.eye_height.map_or(true, |v| v.is_finite())
+            && c.fov_deg.map_or(true, |v| v.is_finite())
     });
     if model.cameras.len() > cadcraft_doc::arch::MAX_CAMERAS {
         return None;
