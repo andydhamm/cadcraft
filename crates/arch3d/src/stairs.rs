@@ -235,6 +235,7 @@ mod tests {
             tread_depth: 0.254,
             rise: 2.7,
             run: 3.81,
+            landing_depth: 1.0,
             ..Default::default()
         }
     }
