@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Stair well: the upper floor is holed where headroom under the slab is under 2.032 m.
 # Riser 3 top z=0.50625, slab underside 2.4, headroom 1.89375 < 2.032 -> well x 2.508..5.81, area 3.302.
+# Fixed 2026-10-28: `arch.inspect` reports `holes` as the legacy *count* (locked by
+# phase-3 check 03, which asserts south["holes"]==1) and the ring geometry as
+# `holeRings`; the old check read `holes` as a list and compared the ring's *first*
+# vertex, which is arbitrary for a CCW ring. Read `holeRings` and match the ring by
+# its bounding box instead.
 set -uo pipefail
 H='wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.7,"exterior":true}'
 H2='wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.7,"exterior":true,"level":"Level 2"}'
@@ -27,12 +32,19 @@ assert len(W)==1, f"the well must be one Open Below room on Level 2: {[(x['type'
 assert abs(W[0]["interiorArea"]-3.302)<1e-3, f"well area (5.81-2.508)*1.0 = 3.302: {W[0]['interiorArea']}"
 big=[x for x in d["rooms"] if x["level"]=="Level 2" and x["type"]!="openBelow"]
 assert len(big)==1, f"one enclosing room on Level 2: {[(x['type'],x['level']) for x in d['rooms']]}"
-H=big[0].get("holes",[])
-assert isinstance(H,list) and len(H)==1, f"the enclosing room gains the well as a hole: {big[0].get('holes')}"
-assert abs(H[0][0][0]-2.508)<1e-6, f"the hole is the well ring: {H[0]}"
-R=[x for x in d.get("railings",[]) if x.get("level")==1 and x.get("follows")]
-assert len(R)==1, f"a guard railing must ring the well: {d.get('railings')}"
-assert abs(R[0]["height"]-0.914)<1e-9, f"guards are 0.914 at wells: {R[0]['height']}"
+assert big[0]["holes"]==1, f"the enclosing room gains the well as a hole: {big[0].get('holes')}"
+R=big[0].get("holeRings",[])
+assert isinstance(R,list) and len(R)==1, f"one hole ring on the enclosing room: {big[0].get('holeRings')}"
+ring=R[0]
+assert len(ring)==4, f"the well ring is the flight rectangle: {ring}"
+xs=[p[0] for p in ring]; ys=[p[1] for p in ring]
+assert abs(min(xs)-2.508)<1e-6 and abs(max(xs)-5.81)<1e-6, f"hole ring x 2.508..5.81: {ring}"
+assert abs(min(ys)-0.5)<1e-6 and abs(max(ys)-1.5)<1e-6, f"hole ring y 0.5..1.5 (width 1.0): {ring}"
+# The enclosing room's interior shrinks by the well: 9.8 x 7.8 = 76.44 minus 3.302.
+assert abs(big[0]["interiorArea"]-(76.44-3.302))<1e-3, f"enclosing room area: {big[0]['interiorArea']}"
+RL=[x for x in d.get("railings",[]) if x.get("level")==1 and x.get("follows")]
+assert len(RL)==1, f"a guard railing must ring the well: {d.get('railings')}"
+assert abs(RL[0]["height"]-0.914)<1e-9, f"guards are 0.914 at wells: {RL[0]['height']}"
 print("ok: well room, hole and guard railing")
 PY
 echo "PASS 04"
