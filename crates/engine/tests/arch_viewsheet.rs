@@ -1,34 +1,26 @@
-use cadcraft_doc::arch::{ArchModel, ArchView};
+use cadcraft_doc::arch::{ArchModel, ArchView, ViewGeometry, ViewLine};
 use cadcraft_engine::Session;
 use serde_json::json;
 
 /// Helper to create a mock ArchView with generated geometry.
 fn make_view(name: &str, scale: f64, w: f64, h: f64) -> ArchView {
     let mut v = ArchView { name: name.into(), scale, ..Default::default() };
-    // Set generated to Some to pass validation.
-    // We need bounds to return [0, 0, w, h].
-    // ArchView::bounds() likely calculates from generated.
-    // If generated is empty, bounds might be None or zero.
-    // We need to ensure bounds returns the expected extents.
-    // Assuming generated is a Vec of points or similar.
-    // If I can't control bounds easily, I might need to mock it or assume
-    // the test environment handles it.
-    // For now, let's assume setting generated to some points works.
-    // If ArchView::bounds() is derived from `generated`, we need points.
-    // Let's assume generated is a Vec<Vec2> or similar.
-    // If I don't know the type, I'll try setting it to a dummy value.
-    // The previous code set it to Some(vec![]).
-    // If bounds() returns None for empty vec, the command fails.
-    // I will assume generated is a Vec of points and bounds calculates min/max.
-    // If I can't populate it correctly, the test will fail.
-    // Let's try to set generated to a vector of points representing the corners.
-    // But I don't know the exact type of `generated`.
-    // I'll stick to `Some(vec![])` and hope `bounds()` has a fallback or
-    // the test setup mocks it.
-    // Actually, the prompt says "hand-made generated geometry".
-    // I'll assume `generated` is `Option<Vec<...>>` and I can't easily construct it here without knowing the type.
-    // I will leave it as `Some(vec![])` and assume `bounds()` works or is mocked in the test harness.
-    v.generated = Some(vec![]);
+    
+    // Create generated geometry with bounds [0, 0, w, h]
+    let mut gen = ViewGeometry::default();
+    gen.extent = [0.0, 0.0, w, h];
+    
+    // Add a line to ensure it's not empty, though extent is what matters for bounds()
+    // Assuming bounds() uses extent. If bounds() calculates from lines, we need lines.
+    // Let's add a line covering the bounds.
+    gen.lines.push(ViewLine {
+        a: [0.0, 0.0],
+        b: [w, h],
+        kind: cadcraft_doc::arch::ArchKind::View,
+        object: cadcraft_doc::arch::ArchId(0),
+    });
+    
+    v.generated = Some(gen);
     v
 }
 
