@@ -472,7 +472,7 @@ mod tests {
         let (origin, dir) = ray_at(&cam, size, [32.0, 32.0]).unwrap();
         assert!((origin - cam.eye()).len() < 1e-6, "origin should be the eye");
         let to_target = (cam.target() - origin).normalized();
-        assert!((to_target - dir).len() < 1e-4, "centre ray should point at target: {} vs {}", to_target, dir);
+        assert!((to_target - dir).len() < 1e-4, "centre ray should point at target: {:?} vs {:?}", to_target, dir);
     }
 
     #[test]
