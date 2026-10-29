@@ -863,6 +863,11 @@ impl CadApp {
                         self.pane3d.sync_doc(st.uid, st.doc.arch_revision, Some(&st.doc.arch));
                     }
                     pane3d::draw(ui, &mut self.pane3d);
+                    // A 3D click becomes the 2D selection: take the struck handle and wake the
+                    // canvas so it repaints with the new selection.
+                    if pane3d::apply_pick(&mut self.pane3d, &mut self.session).is_some() {
+                        ui.ctx().request_repaint();
+                    }
                 } else {
                     docking::show(self, ui);
                 }
