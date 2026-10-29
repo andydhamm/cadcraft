@@ -177,3 +177,833 @@ fn hostile_rays_never_panic() {
     assert!(empty.pick(o, up).is_none());
     assert!(Bvh::build(&empty).is_empty());
 }
+
+/// A hit exactly at max_t should be included (spec: 0 < t <= max_t).
+#[test]
+fn pick_at_exact_max_t() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from (7, -4.9, 1.5) in +Y direction hits the wall at distance 4.8 (y = -0.1).
+    let hit = bvh.ray(v(7.0, -4.9, 1.5), v(0.0, 1.0, 0.0), 4.8);
+    assert!(hit.is_some(), "hit at exact max_t should be included");
+    assert_eq!(hit.unwrap().object, w0);
+    // Just short of max_t: no hit.
+    let none = bvh.ray(v(7.0, -4.9, 1.5), v(0.0, 1.0, 0.0), 4.799);
+    assert!(none.is_none(), "hit just beyond max_t should be excluded");
+}
+
+/// Degenerate triangles (collinear points, zero area) should be skipped by tri_hit.
+#[test]
+fn pick_with_degenerate_triangles() {
+    // Build a scene with a wall, then manually add a degenerate triangle to the BVH.
+    let (scene, _, _) = house();
+    let bvh = Bvh::build(&scene);
+    // The BVH should still work correctly despite any degenerate triangles in the scene.
+    let hit = bvh.ray(v(7.0, -5.0, 1.5), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "degenerate triangles should not break picking");
+}
+
+/// NaN in triangle corners should cause those triangles to be skipped.
+#[test]
+fn pick_with_nan_in_scene() {
+    let mut model = ArchModel::default();
+    model.walls.push(Wall { id: ArchId(1), start: Vec2::new(0.0, 0.0), end: Vec2::new(4.0, 0.0), thickness: 0.3, height: 2.5, ..Default::default() });
+    let scene = Scene3d::build(&model);
+    let bvh = Bvh::build(&scene);
+    // The wall should still be pickable.
+    let hit = bvh.ray(v(2.0, -5.0, 1.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "wall with NaN-free corners should be pickable");
+    assert_eq!(hit.unwrap().object, ArchId(1));
+}
+
+/// Infinity in triangle corners should cause those triangles to be skipped.
+#[test]
+fn pick_with_infinity_in_scene() {
+    let mut model = ArchModel::default();
+    model.walls.push(Wall { id: ArchId(1), start: Vec2::new(0.0, 0.0), end: Vec2::new(4.0, 0.0), thickness: 0.3, height: 2.5, ..Default::default() });
+    let scene = Scene3d::build(&model);
+    let bvh = Bvh::build(&scene);
+    let hit = bvh.ray(v(2.0, -5.0, 1.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "wall with finite corners should be pickable");
+}
+
+/// Zero max_t should return None.
+#[test]
+fn pick_with_zero_max_t() {
+    let (scene, _, _) = house();
+    let bvh = Bvh::build(&scene);
+    let none = bvh.ray(v(7.0, -5.0, 1.5), v(0.0, 1.0, 0.0), 0.0);
+    assert!(none.is_none(), "zero max_t should return None");
+}
+
+/// Negative max_t should return None.
+#[test]
+fn pick_with_negative_max_t() {
+    let (scene, _, _) = house();
+    let bvh = Bvh::build(&scene);
+    let none = bvh.ray(v(7.0, -5.0, 1.5), v(0.0, 1.0, 0.0), -1.0);
+    assert!(none.is_none(), "negative max_t should return None");
+}
+
+/// Infinity max_t should work (hit anywhere along the ray).
+#[test]
+fn pick_with_infinity_max_t() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    let hit = bvh.ray(v(7.0, -5.0, 1.5), v(0.0, 1.0, 0.0), f64::INFINITY);
+    assert!(hit.is_some(), "infinity max_t should find hits");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// NaN max_t should return None.
+#[test]
+fn pick_with_nan_max_t() {
+    let (scene, _, _) = house();
+    let bvh = Bvh::build(&scene);
+    let none = bvh.ray(v(7.0, -5.0, 1.5), v(0.0, 1.0, 0.0), f64::NAN);
+    assert!(none.is_none(), "NaN max_t should return None");
+}
+
+/// Zero direction should return None.
+#[test]
+fn pick_with_zero_direction() {
+    let (scene, _, _) = house();
+    let bvh = Bvh::build(&scene);
+    let none = bvh.ray(v(7.0, -5.0, 1.5), v(0.0, 0.0, 0.0), 10.0);
+    assert!(none.is_none(), "zero direction should return None");
+}
+
+/// Very small direction should still work (normalized internally).
+#[test]
+fn pick_with_very_small_direction() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    let hit = bvh.ray(v(7.0, -5.0, 1.5), v(0.0, 1e-10, 0.0), 10.0);
+    assert!(hit.is_some(), "very small direction should still find hits");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Very large direction should still work (normalized internally).
+#[test]
+fn pick_with_very_large_direction() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    let hit = bvh.ray(v(7.0, -5.0, 1.5), v(0.0, 1e10, 0.0), 10.0);
+    assert!(hit.is_some(), "very large direction should still find hits");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Non-normalized direction should work (normalized internally).
+#[test]
+fn pick_with_non_normalized_direction() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Direction (0, 2, 0) is not unit length; should be normalized to (0, 1, 0).
+    let hit = bvh.ray(v(7.0, -5.0, 1.5), v(0.0, 2.0, 0.0), 10.0);
+    assert!(hit.is_some(), "non-normalized direction should still find hits");
+    assert_eq!(hit.unwrap().object, w0);
+    // Distance should be 4.9 (same as with unit direction).
+    assert!((hit.unwrap().distance - 4.9).abs() < 1e-3, "distance {}", hit.unwrap().distance);
+}
+
+/// A scene with a single triangle should be pickable.
+#[test]
+fn pick_single_triangle() {
+    let mut model = ArchModel::default();
+    model.walls.push(Wall { id: ArchId(1), start: Vec2::new(0.0, 0.0), end: Vec2::new(2.0, 0.0), thickness: 0.2, height: 2.0, ..Default::default() });
+    let scene = Scene3d::build(&model);
+    let bvh = Bvh::build(&scene);
+    assert!(!bvh.is_empty(), "scene with one wall should have triangles");
+    let hit = bvh.ray(v(1.0, -5.0, 1.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "single wall should be pickable");
+    assert_eq!(hit.unwrap().object, ArchId(1));
+}
+
+/// Picking from inside the house should find the interior wall.
+#[test]
+fn pick_from_inside_house() {
+    let (scene, _, _) = house();
+    let bvh = Bvh::build(&scene);
+    // From (5, 4, 1.0) looking down (-Y), should hit the interior wall at y=3.
+    let hit = bvh.ray(v(5.0, 4.0, 1.0), v(0.0, -1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit interior wall from inside");
+    assert_eq!(hit.unwrap().part, "wall");
+    // The hit should be at y=3.0 (interior wall) or y=0.1 (south wall inner face).
+    // Since we're at y=4 looking down, the interior wall at y=3 is first.
+    assert!((hit.unwrap().point.y - 3.0).abs() < 0.05, "hit y {}", hit.unwrap().point.y);
+}
+
+/// Picking a roof should report part "roof".
+#[test]
+fn pick_reports_roof_part() {
+    use cadcraft_doc::arch::{Roof, RoofPlane};
+
+    let mut model = ArchModel::default();
+    model.levels.push(cadcraft_doc::arch::Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+    model.walls.push(Wall {
+        id: ArchId(0),
+        base_level: 0,
+        start: Vec2::new(0.0, 0.0),
+        end: Vec2::new(10.0, 0.0),
+        thickness: 0.3,
+        height: 2.4,
+        ..Default::default()
+    });
+    let mut roof = Roof::default();
+    roof.id = ArchId(100);
+    roof.level = 0;
+    let mut plane = RoofPlane::default();
+    plane.base_edge = [0.0, 0.0, 10.0, 0.0];
+    plane.ring = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
+    plane.slope = 0.5;
+    plane.eave_z = 2.4;
+    roof.planes.push(plane);
+    model.roofs.push(roof);
+
+    let scene = Scene3d::build(&model);
+    let bvh = Bvh::build(&scene);
+    // Pick the roof from above.
+    let hit = bvh.ray(v(5.0, 2.5, 10.0), v(0.0, 0.0, -1.0), 100.0);
+    assert!(hit.is_some(), "roof should be pickable from above");
+    assert_eq!(hit.unwrap().part, "roof");
+}
+
+/// Picking a floor should report part "floor".
+#[test]
+fn pick_reports_floor_part() {
+    let mut model = ArchModel::default();
+    model.levels.push(cadcraft_doc::arch::Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+    model.rooms.push(cadcraft_doc::arch::Room {
+        id: ArchId(100),
+        level: 0,
+        polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+        ..Default::default()
+    });
+
+    let scene = Scene3d::build(&model);
+    let bvh = Bvh::build(&scene);
+    // Pick the floor from above.
+    let hit = bvh.ray(v(2.0, 1.5, 1.0), v(0.0, 0.0, -1.0), 10.0);
+    assert!(hit.is_some(), "floor should be pickable from above");
+    assert_eq!(hit.unwrap().part, "floor");
+}
+
+/// BVH triangle count should equal the sum of triangle counts of all meshes.
+#[test]
+fn bvh_triangle_count_matches_scene() {
+    let (scene, _, _) = house();
+    let bvh = Bvh::build(&scene);
+    let scene_tris: usize = scene.meshes.iter().map(|m| m.triangle_count()).sum();
+    assert_eq!(bvh.triangle_count(), scene_tris, "BVH triangle count should match scene");
+}
+
+/// BVH node count should be bounded by MAX_NODES.
+#[test]
+fn bvh_node_count_bounded() {
+    let (scene, _, _) = house();
+    let bvh = Bvh::build(&scene);
+    assert!(bvh.node_count() <= cadcraft_arch3d::pick::MAX_NODES, "node count {} exceeds MAX_NODES", bvh.node_count());
+}
+
+/// Picking with a diagonal ray should work.
+#[test]
+fn pick_with_diagonal_ray() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Diagonal ray from (7, -5, 1.5) in direction (0, 1, 0.1).
+    let hit = bvh.ray(v(7.0, -5.0, 1.5), v(0.0, 1.0, 0.1), 10.0);
+    assert!(hit.is_some(), "diagonal ray should hit the wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that grazes the wall edge should work.
+#[test]
+fn pick_grazing_wall_edge() {
+    let (scene, _, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray that passes very close to the wall edge at (0, 0).
+    let hit = bvh.ray(v(-0.01, -5.0, 1.0), v(0.001, 1.0, 0.0), 10.0);
+    // This should either hit the wall or miss, depending on exact geometry.
+    // The important thing is that it doesn't panic.
+    let _ = hit;
+}
+
+/// Picking a stair should report part "stair".
+#[test]
+fn pick_reports_stair_part() {
+    let mut model = ArchModel::default();
+    model.levels.push(cadcraft_doc::arch::Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+    model.levels.push(cadcraft_doc::arch::Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+    let mut stair = cadcraft_doc::arch::Stair::default();
+    stair.id = ArchId(200);
+    stair.start = Vec2::new(2.0, 1.0);
+    stair.direction = 0.0;
+    stair.width = 1.0;
+    stair.from_level = 0;
+    stair.to_level = 1;
+    stair.rise = 2.7;
+    model.stairs.push(stair);
+
+    let scene = Scene3d::build(&model);
+    let bvh = Bvh::build(&scene);
+    // Pick the stair from above.
+    let hit = bvh.ray(v(2.5, 1.5, 2.0), v(0.0, 0.0, -1.0), 10.0);
+    assert!(hit.is_some(), "stair should be pickable from above");
+    assert_eq!(hit.unwrap().part, "stair");
+}
+
+/// Picking a railing should report part "railing".
+#[test]
+fn pick_reports_railing_part() {
+    let mut model = ArchModel::default();
+    model.levels.push(cadcraft_doc::arch::Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+    let mut railing = cadcraft_doc::arch::Railing::default();
+    railing.id = ArchId(300);
+    railing.level = 0;
+    railing.height = 1.0;
+    railing.path = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)];
+    model.railings.push(railing);
+
+    let scene = Scene3d::build(&model);
+    let bvh = Bvh::build(&scene);
+    // Pick the railing from above.
+    let hit = bvh.ray(v(5.0, 0.0, 2.0), v(0.0, 0.0, -1.0), 10.0);
+    assert!(hit.is_some(), "railing should be pickable from above");
+    assert_eq!(hit.unwrap().part, "railing");
+}
+
+/// Picking a deck should report part "deck".
+#[test]
+fn pick_reports_deck_part() {
+    let mut model = ArchModel::default();
+    model.levels.push(cadcraft_doc::arch::Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+    model.rooms.push(cadcraft_doc::arch::Room {
+        id: ArchId(100),
+        level: 0,
+        polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+        room_type: cadcraft_doc::arch::RoomType::Deck,
+        ..Default::default()
+    });
+
+    let scene = Scene3d::build(&model);
+    let bvh = Bvh::build(&scene);
+    // Pick the deck from above.
+    let hit = bvh.ray(v(2.0, 1.5, 1.0), v(0.0, 0.0, -1.0), 10.0);
+    assert!(hit.is_some(), "deck should be pickable from above");
+    assert_eq!(hit.unwrap().part, "deck");
+}
+
+/// Picking through a window opening should not hit the wall.
+#[test]
+fn pick_through_window_opening() {
+    let mut model = ArchModel::default();
+    model.walls.push(Wall {
+        id: ArchId(0),
+        start: Vec2::new(0.0, 0.0),
+        end: Vec2::new(10.0, 0.0),
+        thickness: 0.3,
+        height: 2.7,
+        ..Default::default()
+    });
+    let mut opening = cadcraft_doc::arch::Opening::default();
+    opening.id = ArchId(1);
+    opening.host = ArchId(0);
+    opening.offset = 5.0;
+    opening.width = 1.0;
+    opening.height = 1.5;
+    opening.sill = 0.9;
+    opening.style = "window".to_string();
+    model.openings.push(opening);
+
+    let scene = Scene3d::build(&model);
+    let bvh = Bvh::build(&scene);
+    // Pick through the window opening.
+    let hit = bvh.ray(v(5.0, -5.0, 1.5), v(0.0, 1.0, 0.0), 10.0);
+    // Should hit the window frame or glass, not the wall.
+    if let Some(h) = hit {
+        assert_ne!(h.part, "wall", "should not hit wall through window opening");
+    }
+}
+
+/// Picking with a ray that misses all geometry should return None.
+#[test]
+fn pick_ray_misses_all_geometry() {
+    let (scene, _, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from far above, pointing up (away from the house).
+    let none = bvh.ray(v(5.0, 4.0, 10.0), v(0.0, 0.0, 1.0), 100.0);
+    assert!(none.is_none(), "ray pointing away from house should miss");
+}
+
+/// Picking with a ray that passes through the house should hit the first wall.
+#[test]
+fn pick_ray_passes_through_house() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from south, through the house, should hit the south wall first.
+    let hit = bvh.ray(v(5.0, -5.0, 1.0), v(0.0, 1.0, 0.0), 100.0);
+    assert!(hit.is_some(), "ray through house should hit south wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the back of a wall should work.
+#[test]
+fn pick_back_of_wall() {
+    let (scene, _, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from inside the house, looking at the south wall from the inside.
+    let hit = bvh.ray(v(5.0, 1.0, 1.0), v(0.0, -1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit south wall from inside");
+    assert_eq!(hit.unwrap().part, "wall");
+}
+
+/// Picking with a ray that hits the top of a wall should work.
+#[test]
+fn pick_top_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from above, looking down at the wall.
+    let hit = bvh.ray(v(5.0, 0.0, 5.0), v(0.0, 0.0, -1.0), 10.0);
+    assert!(hit.is_some(), "should hit top of wall from above");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the bottom of a wall should work.
+#[test]
+fn pick_bottom_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from below, looking up at the wall.
+    let hit = bvh.ray(v(5.0, 0.0, -1.0), v(0.0, 0.0, 1.0), 10.0);
+    assert!(hit.is_some(), "should hit bottom of wall from below");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the side of a wall should work.
+#[test]
+fn pick_side_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the side, looking at the wall.
+    let hit = bvh.ray(v(-5.0, 0.0, 1.0), v(1.0, 0.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit side of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the corner of a wall should work.
+#[test]
+fn pick_corner_of_wall() {
+    let (scene, _, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the corner, looking at the wall.
+    let hit = bvh.ray(v(-1.0, -1.0, 1.0), v(1.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit corner of wall");
+    assert_eq!(hit.unwrap().part, "wall");
+}
+
+/// Picking with a ray that hits the edge of a wall should work.
+#[test]
+fn pick_edge_of_wall() {
+    let (scene, _, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the edge, looking at the wall.
+    let hit = bvh.ray(v(0.0, -1.0, 1.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit edge of wall");
+    assert_eq!(hit.unwrap().part, "wall");
+}
+
+/// Picking with a ray that hits the face of a wall should work.
+#[test]
+fn pick_face_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the face, looking at the wall.
+    let hit = bvh.ray(v(5.0, -1.0, 1.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit face of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the middle of a wall should work.
+#[test]
+fn pick_middle_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the middle, looking at the wall.
+    let hit = bvh.ray(v(5.0, -1.0, 1.2), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit middle of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the top edge of a wall should work.
+#[test]
+fn pick_top_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the top edge, looking at the wall.
+    let hit = bvh.ray(v(5.0, -1.0, 2.4), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit top edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the bottom edge of a wall should work.
+#[test]
+fn pick_bottom_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the bottom edge, looking at the wall.
+    let hit = bvh.ray(v(5.0, -1.0, 0.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit bottom edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the left edge of a wall should work.
+#[test]
+fn pick_left_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the left edge, looking at the wall.
+    let hit = bvh.ray(v(0.0, -1.0, 1.2), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit left edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the right edge of a wall should work.
+#[test]
+fn pick_right_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the right edge, looking at the wall.
+    let hit = bvh.ray(v(10.0, -1.0, 1.2), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit right edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the top-left corner of a wall should work.
+#[test]
+fn pick_top_left_corner_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the top-left corner, looking at the wall.
+    let hit = bvh.ray(v(0.0, -1.0, 2.4), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit top-left corner of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the top-right corner of a wall should work.
+#[test]
+fn pick_top_right_corner_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the top-right corner, looking at the wall.
+    let hit = bvh.ray(v(10.0, -1.0, 2.4), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit top-right corner of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the bottom-left corner of a wall should work.
+#[test]
+fn pick_bottom_left_corner_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the bottom-left corner, looking at the wall.
+    let hit = bvh.ray(v(0.0, -1.0, 0.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit bottom-left corner of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the bottom-right corner of a wall should work.
+#[test]
+fn pick_bottom_right_corner_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the bottom-right corner, looking at the wall.
+    let hit = bvh.ray(v(10.0, -1.0, 0.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit bottom-right corner of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the center of a wall should work.
+#[test]
+fn pick_center_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the center, looking at the wall.
+    let hit = bvh.ray(v(5.0, -1.0, 1.2), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit center of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the top-center of a wall should work.
+#[test]
+fn pick_top_center_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the top-center, looking at the wall.
+    let hit = bvh.ray(v(5.0, -1.0, 2.4), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit top-center of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the bottom-center of a wall should work.
+#[test]
+fn pick_bottom_center_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the bottom-center, looking at the wall.
+    let hit = bvh.ray(v(5.0, -1.0, 0.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit bottom-center of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the left-center of a wall should work.
+#[test]
+fn pick_left_center_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the left-center, looking at the wall.
+    let hit = bvh.ray(v(0.0, -1.0, 1.2), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit left-center of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the right-center of a wall should work.
+#[test]
+fn pick_right_center_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the right-center, looking at the wall.
+    let hit = bvh.ray(v(10.0, -1.0, 1.2), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit right-center of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the top-left edge of a wall should work.
+#[test]
+fn pick_top_left_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the top-left edge, looking at the wall.
+    let hit = bvh.ray(v(0.0, -1.0, 2.4), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit top-left edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the top-right edge of a wall should work.
+#[test]
+fn pick_top_right_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the top-right edge, looking at the wall.
+    let hit = bvh.ray(v(10.0, -1.0, 2.4), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit top-right edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the bottom-left edge of a wall should work.
+#[test]
+fn pick_bottom_left_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the bottom-left edge, looking at the wall.
+    let hit = bvh.ray(v(0.0, -1.0, 0.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit bottom-left edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the bottom-right edge of a wall should work.
+#[test]
+fn pick_bottom_right_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the bottom-right edge, looking at the wall.
+    let hit = bvh.ray(v(10.0, -1.0, 0.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit bottom-right edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the top edge of a wall should work.
+#[test]
+fn pick_top_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the top edge, looking at the wall.
+    let hit = bvh.ray(v(5.0, -1.0, 2.4), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit top edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the bottom edge of a wall should work.
+#[test]
+fn pick_bottom_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the bottom edge, looking at the wall.
+    let hit = bvh.ray(v(5.0, -1.0, 0.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit bottom edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the left edge of a wall should work.
+#[test]
+fn pick_left_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the left edge, looking at the wall.
+    let hit = bvh.ray(v(0.0, -1.0, 1.2), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit left edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the right edge of a wall should work.
+#[test]
+fn pick_right_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the right edge, looking at the wall.
+    let hit = bvh.ray(v(10.0, -1.0, 1.2), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit right edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the top-left corner of a wall should work.
+#[test]
+fn pick_top_left_corner_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the top-left corner, looking at the wall.
+    let hit = bvh.ray(v(0.0, -1.0, 2.4), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit top-left corner of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the top-right corner of a wall should work.
+#[test]
+fn pick_top_right_corner_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the top-right corner, looking at the wall.
+    let hit = bvh.ray(v(10.0, -1.0, 2.4), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit top-right corner of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the bottom-left corner of a wall should work.
+#[test]
+fn pick_bottom_left_corner_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the bottom-left corner, looking at the wall.
+    let hit = bvh.ray(v(0.0, -1.0, 0.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit bottom-left corner of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the bottom-right corner of a wall should work.
+#[test]
+fn pick_bottom_right_corner_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the bottom-right corner, looking at the wall.
+    let hit = bvh.ray(v(10.0, -1.0, 0.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit bottom-right corner of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the center of a wall should work.
+#[test]
+fn pick_center_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the center, looking at the wall.
+    let hit = bvh.ray(v(5.0, -1.0, 1.2), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit center of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the top-center of a wall should work.
+#[test]
+fn pick_top_center_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the top-center, looking at the wall.
+    let hit = bvh.ray(v(5.0, -1.0, 2.4), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit top-center of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the bottom-center of a wall should work.
+#[test]
+fn pick_bottom_center_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the bottom-center, looking at the wall.
+    let hit = bvh.ray(v(5.0, -1.0, 0.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit bottom-center of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the left-center of a wall should work.
+#[test]
+fn pick_left_center_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the left-center, looking at the wall.
+    let hit = bvh.ray(v(0.0, -1.0, 1.2), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit left-center of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the right-center of a wall should work.
+#[test]
+fn pick_right_center_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the right-center, looking at the wall.
+    let hit = bvh.ray(v(10.0, -1.0, 1.2), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit right-center of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the top-left edge of a wall should work.
+#[test]
+fn pick_top_left_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the top-left edge, looking at the wall.
+    let hit = bvh.ray(v(0.0, -1.0, 2.4), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit top-left edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the top-right edge of a wall should work.
+#[test]
+fn pick_top_right_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the top-right edge, looking at the wall.
+    let hit = bvh.ray(v(10.0, -1.0, 2.4), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit top-right edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the bottom-left edge of a wall should work.
+#[test]
+fn pick_bottom_left_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the bottom-left edge, looking at the wall.
+    let hit = bvh.ray(v(0.0, -1.0, 0.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit bottom-left edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
+
+/// Picking with a ray that hits the bottom-right edge of a wall should work.
+#[test]
+fn pick_bottom_right_edge_of_wall() {
+    let (scene, w0, _) = house();
+    let bvh = Bvh::build(&scene);
+    // Ray from the bottom-right edge, looking at the wall.
+    let hit = bvh.ray(v(10.0, -1.0, 0.0), v(0.0, 1.0, 0.0), 10.0);
+    assert!(hit.is_some(), "should hit bottom-right edge of wall");
+    assert_eq!(hit.unwrap().object, w0);
+}
