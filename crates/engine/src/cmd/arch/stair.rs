@@ -245,7 +245,7 @@ fn run_stair(s: &mut Session, p: &Value) -> Result<Value> {
 
     Ok(json!({
         "id": format!("s{}", stair_id.0),
-        "handle": format!("{:016X}", stair_handle(stair_id).0),
+        "handle": cadcraft_doc::arch::handle_json(stair_handle(stair_id)),
         "risers": plan.risers,
         "riserHeight": plan.riser_height,
         "run": plan.run,
