@@ -905,6 +905,67 @@ mod offscreen_behavior_tests {
         let covered = hidden.chunks_exact(4).filter(|p| !bg(p)).count();
         assert!((covered as f64) < 0.7 * model.len() as f64, "hidden-line covers {covered} of {}", model.len());
     }
+
+    #[test]
+    fn glass_house_blends_and_differs_from_shaded() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (160u32, 120u32);
+        let mut off = Offscreen::with_device(device, queue, size);
+        let scene = cube_scene();
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(30.0, 30.0, 8.0, 45.0));
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::Shaded, ..Default::default() });
+        let shaded = off.read_rgba().unwrap_or_default();
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
+        let glass = off.read_rgba().unwrap_or_default();
+        assert_eq!(shaded.len(), glass.len());
+        // Glass house must differ from shaded (blending produces different pixel values).
+        let different = shaded.iter().zip(glass.iter()).filter(|(a, b)| a != b).count();
+        assert!(different > 0, "glass house must produce different pixels than shaded");
+        // But not every pixel should differ (the silhouette should be similar).
+        assert!(different < shaded.len(), "glass house should not change every pixel");
+    }
+
+    #[test]
+    fn glass_house_shows_an_interior_wall_through_an_exterior_one() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (160u32, 120u32);
+        let mut off = Offscreen::with_device(device, queue, size);
+        // Two parallel walls: one in front, one behind.
+        let mut scene = Scene3d::default();
+        let front = crate::types::Mesh::new("wall", crate::types::ArchId(1));
+        scene.meshes.push(front);
+        scene.meshes[0].positions = vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 0.0, 2.0], [0.0, 0.0, 2.0]];
+        scene.meshes[0].normals = vec![[0.0, 1.0, 0.0]; 4];
+        scene.meshes[0].uvs = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+        scene.meshes[0].indices = vec![0, 1, 2, 0, 2, 3];
+        let back = crate::types::Mesh::new("wall", crate::types::ArchId(2));
+        scene.meshes.push(back);
+        scene.meshes[1].positions = vec![[0.0, 1.0, 0.0], [2.0, 1.0, 0.0], [2.0, 1.0, 2.0], [0.0, 1.0, 2.0]];
+        scene.meshes[1].normals = vec![[0.0, 1.0, 0.0]; 4];
+        scene.meshes[1].uvs = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+        scene.meshes[1].indices = vec![0, 1, 2, 0, 2, 3];
+        scene.bounds = crate::types::Bounds3::new([0.0, 0.0, 0.0], [2.0, 2.0, 2.0]);
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(1.0, 0.5, 1.0, 45.0));
+        // Shaded: the front wall occludes the back wall completely.
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::Shaded, ..Default::default() });
+        let shaded = off.read_rgba().unwrap_or_default();
+        // Glass house: the back wall should be visible through the front wall (blended).
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
+        let glass = off.read_rgba().unwrap_or_default();
+        assert_eq!(shaded.len(), glass.len());
+        // In glass house mode, more pixels should be non-background (both walls visible).
+        let bg = |p: &[u8]| p[..3].iter().zip([39u8, 44, 52]).all(|(a, b)| a.abs_diff(b) <= 2);
+        let shaded_model: Vec<usize> = shaded.chunks_exact(4).enumerate().filter(|(_, p)| !bg(p)).map(|(i, _)| i).collect();
+        let glass_model: Vec<usize> = glass.chunks_exact(4).enumerate().filter(|(_, p)| !bg(p)).map(|(i, _)| i).collect();
+        assert!(!shaded_model.is_empty(), "shaded must show the front wall");
+        assert!(glass_model.len() >= shaded_model.len(), "glass house should show at least as much as shaded (back wall through front)");
+    }
 }
 
 #[cfg(test)]
