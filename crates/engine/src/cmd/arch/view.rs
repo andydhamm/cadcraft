@@ -196,8 +196,34 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
         }
         cam.distance = Some(d);
     }
-    let eye_3d = opt_vec::<3>(params, "eye")?;
-    let eye_2d = if eye_3d.is_some() { None } else { opt_vec::<2>(params, "eye")? };
+    let eye_param = params.get("eye").filter(|v| !v.is_null());
+    let eye_3d: Option<[f64; 3]>;
+    let eye_2d: Option<[f64; 2]>;
+
+    if let Some(v) = eye_param {
+        let a = v.as_array().ok_or_else(|| bad("camera", "`eye` must be an array"))?;
+        if a.len() == 3 {
+            let mut e = [0.0; 3];
+            for (o, x) in e.iter_mut().zip(a) {
+                *o = x.as_f64().filter(|n| n.is_finite()).ok_or_else(|| bad("camera", "`eye` components must be finite numbers"))?;
+            }
+            eye_3d = Some(e);
+            eye_2d = None;
+        } else if a.len() == 2 {
+            let mut e = [0.0; 2];
+            for (o, x) in e.iter_mut().zip(a) {
+                *o = x.as_f64().filter(|n| n.is_finite()).ok_or_else(|| bad("camera", "`eye` components must be finite numbers"))?;
+            }
+            eye_2d = Some(e);
+            eye_3d = None;
+        } else {
+            return Err(bad("camera", "`eye` must be an array of 2 or 3 finite numbers"));
+        }
+    } else {
+        eye_3d = None;
+        eye_2d = None;
+    }
+
     let eye_height_param = opt_f64(params, "eyeHeight")?;
 
     if let Some(e) = eye_3d {
@@ -216,6 +242,11 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
         }
     } else if let Some(h) = eye_height_param {
         cam.eye_height = Some(h);
+    } else if kind == CameraKind::Orbit {
+        // Ensure orbit cameras without explicit eye have no eye stored,
+        // overriding any default from Camera3d::default().
+        cam.eye = None;
+        cam.eye_height = None;
     }
 
     if let Some(f) = opt_f64(params, "fov")? {
@@ -225,6 +256,9 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
         cam.fov_deg = Some(f);
     }
     if kind == CameraKind::Full {
+        if eye_3d.is_none() && eye_2d.is_none() {
+            return Err(bad("camera", "a `full` camera needs `eye`"));
+        }
         let e = cam.eye.ok_or_else(|| bad("camera", "a `full` camera needs `eye`"))?;
         let t = cam.target.unwrap_or([0.0; 3]);
         if e == [t[0], t[1]] {
