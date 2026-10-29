@@ -305,9 +305,10 @@ fn probe_on_eave_wall_top_face_is_outside() {
     let scene = Scene3d::build(&model);
 
     // The south eave wall top face is at z=2.4. The z nudge (1e-6) pushes
-    // a point on the top face above the wall, so it reads as outside.
+    // a point on the top face above the wall, so it reads as outside the wall.
+    // The corrected soffit also occupies this point, so a roof hit is valid.
     let hit = scene.probe(cadcraft_geom::Vec3::new(5.0, 0.0, 2.4));
-    assert!(hit.is_none(), "probe at eave wall top face (5,0,2.4) should be None");
+    assert!(hit.is_none_or(|hit| hit.part != "wall"), "probe at eave wall top face (5,0,2.4) should not hit a wall");
 }
 
 #[test]

@@ -10,6 +10,33 @@ use cadcraft_doc::ArchId;
 use cadcraft_doc::arch::{Roof, RoofPlane};
 use cadcraft_geom::{Vec2, Vec3};
 
+fn dist_to_base_edge_line(plane: &RoofPlane, p: Vec2) -> f64 {
+    let a = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
+    let b = Vec2::new(plane.base_edge[2], plane.base_edge[3]);
+    let ab = b - a;
+    let len_sq = ab.x * ab.x + ab.y * ab.y;
+    if !len_sq.is_finite() || len_sq < 1e-12 {
+        return 0.0;
+    }
+    let len = len_sq.sqrt();
+    let dir = Vec2::new(ab.x / len, ab.y / len);
+    // Preserve roof_plane_mesh's established base-edge orientation. In particular,
+    // a zero overhang must produce exactly the same heights as before this fix.
+    let normal_xy = Vec2::new(-dir.y, dir.x);
+    let v = p - a;
+    v.x * normal_xy.x + v.y * normal_xy.y
+}
+
+/// The underside elevation of a roof plane at plan point `p`.
+///
+/// The eave sits `overhang` inside from the roof outline, so the underside is
+/// `eave_z + slope * (dist_to_base_edge_line(p) - overhang)`. `overhang` is
+/// treated as zero when it is non-finite or negative.
+pub fn underside_z(plane: &RoofPlane, eave_z: f64, p: Vec2) -> f64 {
+    let overhang = if plane.overhang.is_finite() && plane.overhang >= 0.0 { plane.overhang } else { 0.0 };
+    eave_z + plane.slope * (dist_to_base_edge_line(plane, p) - overhang)
+}
+
 /// Generate a mesh for a single roof plane.
 ///
 /// The underside is defined by lifting the plane's ring vertices by `z = eave_z + slope * dist`,
@@ -35,20 +62,11 @@ pub fn roof_plane_mesh(plane: &RoofPlane, eave_z: f64, material: &str, id: ArchI
     let dx = p1.x - p0.x;
     let dy = p1.y - p0.y;
     let len_sq = dx * dx + dy * dy;
-    if len_sq < 1e-12 {
+    if !len_sq.is_finite() || len_sq < 1e-12 {
         return None;
     }
     let len = len_sq.sqrt();
     let dir = Vec2::new(dx / len, dy / len);
-
-    // Normal in XY plane (perpendicular to base edge, pointing "up" the slope)
-    // If slope is positive, we go "up" from the eave.
-    // The normal should point away from the base edge into the roof area.
-    // Assuming standard orientation, the normal is (-dir.y, dir.x) or (dir.y, -dir.x).
-    // We need to determine which side the ring vertices are on.
-    // For simplicity, we assume the ring is on the side of the normal (-dir.y, dir.x).
-    // If the ring is on the other side, the distance calculation will be negative, which might be wrong for "distance".
-    // Let's calculate signed distance.
     let normal_xy = Vec2::new(-dir.y, dir.x);
 
     // Calculate bottom ring (underside)
@@ -56,20 +74,7 @@ pub fn roof_plane_mesh(plane: &RoofPlane, eave_z: f64, material: &str, id: ArchI
     let mut bottom_z: Vec<f64> = Vec::with_capacity(plane.ring.len());
 
     for &v in &plane.ring {
-        // Signed distance from line p0->p1
-        // Vector from p0 to v
-        let vx = v.x - p0.x;
-        let vy = v.y - p0.y;
-        // Dot product with normal_xy gives signed distance
-        let dist = vx * normal_xy.x + vy * normal_xy.y;
-
-        // If dist is negative, the vertex is on the "wrong" side of the base edge relative to the normal.
-        // However, the roof plane is defined by the ring. The base edge is just one edge.
-        // The "distance from the base edge's line" is what matters for the slope.
-        // z = eave_z + slope * dist.
-        // If dist is negative, z goes down. This is correct for a plane extending in both directions from the base line.
-
-        let z = eave_z + plane.slope * dist;
+        let z = underside_z(plane, eave_z, v);
         if !z.is_finite() {
             return None;
         }
@@ -202,7 +207,7 @@ pub fn fascia_mesh(plane: &RoofPlane, eave_z: f64, depth: f64, id: ArchId) -> Op
     let dx = p1.x - p0.x;
     let dy = p1.y - p0.y;
     let len_sq = dx * dx + dy * dy;
-    if len_sq < 1e-12 {
+    if !len_sq.is_finite() || len_sq < 1e-12 {
         return None;
     }
     let len = len_sq.sqrt();
@@ -230,8 +235,8 @@ pub fn fascia_mesh(plane: &RoofPlane, eave_z: f64, depth: f64, id: ArchId) -> Op
     let p0_in = Vec2::new(p0.x + normal_xy.x * t, p0.y + normal_xy.y * t);
     let p1_in = Vec2::new(p1.x + normal_xy.x * t, p1.y + normal_xy.y * t);
 
-    let z_top = eave_z;
-    let z_bot = eave_z - depth;
+    let z_top = underside_z(plane, eave_z, p0);
+    let z_bot = z_top - depth;
 
     let mut mesh = Mesh::new("fascia", id);
 
@@ -327,7 +332,7 @@ pub fn soffit_mesh(plane: &RoofPlane, eave_z: f64, depth: f64, id: ArchId) -> Op
     let dx = p1.x - p0.x;
     let dy = p1.y - p0.y;
     let len_sq = dx * dx + dy * dy;
-    if len_sq < 1e-12 {
+    if !len_sq.is_finite() || len_sq < 1e-12 {
         return None;
     }
     let len = len_sq.sqrt();
@@ -351,7 +356,7 @@ pub fn soffit_mesh(plane: &RoofPlane, eave_z: f64, depth: f64, id: ArchId) -> Op
     // Let's say the soffit top is at eave_z - plane.thickness.
     // And it is 0.02 thick, so bottom is eave_z - plane.thickness - 0.02.
 
-    let z_top = eave_z - plane.thickness;
+    let z_top = underside_z(plane, eave_z, p0);
     let z_bot = z_top - thickness;
 
     let mut mesh = Mesh::new("soffit", id);
@@ -1219,21 +1224,22 @@ mod tests {
         roof.id = ArchId(1);
         let mut plane = simple_plane();
         plane.eave_z = 2.4;
+        plane.overhang = 0.5;
         plane.fascia_depth = 0.12;
         plane.soffit_depth = 0.2;
         roof.planes.push(plane);
 
         let meshes = roof_meshes(&roof, 0.0);
 
-        // Fascia top should be at eave_z = 2.4
+        // At the overhang outline the underside is eave_z - slope * overhang.
+        let outline_z = 2.4 - 0.5 * 0.5;
         let fascia = meshes.iter().find(|m| m.material == "fascia").expect("fascia mesh");
         let fb = fascia.bounds();
-        assert!((fb.max[2] - 2.4).abs() < 0.01, "fascia top should be at 2.4, got {}", fb.max[2]);
+        assert!((fb.max[2] - outline_z).abs() < 0.01, "fascia top should be at {outline_z}, got {}", fb.max[2]);
 
-        // Soffit top should be at eave_z - thickness = 2.4 - 0.2 = 2.2
         let soffit = meshes.iter().find(|m| m.material == "soffit").expect("soffit mesh");
         let sb = soffit.bounds();
-        assert!((sb.max[2] - 2.2).abs() < 0.01, "soffit top should be at 2.2, got {}", sb.max[2]);
+        assert!((sb.max[2] - outline_z).abs() < 0.01, "soffit top should be at {outline_z}, got {}", sb.max[2]);
     }
 
     #[test]
