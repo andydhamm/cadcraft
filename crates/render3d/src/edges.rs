@@ -194,4 +194,72 @@ mod tests {
         assert_eq!(std::mem::size_of::<LineUniform>(), 80);
         assert_eq!(LINE_UNIFORM_SIZE, 80);
     }
+
+    #[test]
+    fn edge_lines_of_empty_scene_are_empty() {
+        let scene = Scene3d::default();
+        assert!(edge_lines(&scene).is_empty());
+    }
+
+    #[test]
+    fn edge_lines_of_single_triangle_are_three_edges() {
+        let p = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        let lines = edge_lines(&mesh_of(p, vec![0, 1, 2]));
+        assert_eq!(lines.len(), 6);
+    }
+
+    #[test]
+    fn edge_lines_handle_nan_coordinates() {
+        let p = vec![[f32::NAN, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let lines = edge_lines(&mesh_of(p, vec![0, 1, 2, 0, 2, 3]));
+        // Should not crash; the number of edges depends on NaN handling in the weld step
+        assert!(lines.len() % 2 == 0);
+    }
+
+    #[test]
+    fn edge_lines_handle_huge_coordinates() {
+        let big = 1e10_f32;
+        let p = vec![[0.0, 0.0, 0.0], [big, 0.0, 0.0], [big, big, 0.0], [0.0, big, 0.0]];
+        let lines = edge_lines(&mesh_of(p, vec![0, 1, 2, 0, 2, 3]));
+        assert_eq!(lines.len(), 8);
+    }
+
+    #[test]
+    fn edge_lines_of_two_disconnected_meshes() {
+        let mut m1 = Mesh::new("m1", ArchId(1));
+        m1.normals = vec![[0.0, 0.0, 1.0]; 3];
+        m1.uvs = vec![[0.0, 0.0]; 3];
+        m1.positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        m1.indices = vec![0, 1, 2];
+
+        let mut m2 = Mesh::new("m2", ArchId(2));
+        m2.normals = vec![[0.0, 0.0, 1.0]; 3];
+        m2.uvs = vec![[0.0, 0.0]; 3];
+        m2.positions = vec![[10.0, 0.0, 0.0], [11.0, 0.0, 0.0], [10.0, 1.0, 0.0]];
+        m2.indices = vec![0, 1, 2];
+
+        let scene = Scene3d { meshes: vec![m1, m2], ..Default::default() };
+        let lines = edge_lines(&scene);
+        // Two triangles, each with 3 boundary edges = 6 edges = 12 vertices
+        assert_eq!(lines.len(), 12);
+    }
+
+    #[test]
+    fn edge_lines_of_degenerate_triangle() {
+        // Collinear points form a degenerate triangle
+        let p = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
+        let lines = edge_lines(&mesh_of(p, vec![0, 1, 2]));
+        // Should not crash; a degenerate triangle may produce 0 or 3 edges
+        assert!(lines.len() % 2 == 0);
+    }
+
+    #[test]
+    fn edge_lines_of_mesh_with_no_indices_are_empty() {
+        let mut m = Mesh::new("m", ArchId(1));
+        m.positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        m.normals = vec![[0.0, 0.0, 1.0]; 3];
+        m.uvs = vec![[0.0, 0.0]; 3];
+        let scene = Scene3d { meshes: vec![m], ..Default::default() };
+        assert!(edge_lines(&scene).is_empty());
+    }
 }
