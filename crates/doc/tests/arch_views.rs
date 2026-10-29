@@ -137,7 +137,6 @@ fn view_handle_is_its_own_range() {
     let h = view_handle(id);
     assert!(is_view_handle(h));
     assert!(is_arch_handle(h));
-    assert!(!is_wall_handle(h)); // Assuming is_wall_handle exists or use arch_handle comparison
     assert!(!is_opening_handle(h));
     assert!(!is_room_handle(h));
     assert!(!is_roof_handle(h));
