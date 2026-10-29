@@ -1250,6 +1250,67 @@ impl ArchModel {
         if pts.is_empty() { Bounds2::EMPTY } else { Bounds2::from_points(pts.iter().copied()) }
     }
 
+    /// The index of a saved camera by name, or `None` if not found.
+    pub fn camera_index(&self, name: &str) -> Option<usize> {
+        self.cameras.iter().position(|c| c.name == name)
+    }
+
+    /// Look up a saved camera by name.
+    pub fn camera_by_name(&self, name: &str) -> Option<&Camera3d> {
+        self.cameras.iter().find(|c| c.name == name)
+    }
+
+    /// Whether every numeric field of a camera is finite.
+    fn camera_is_finite(c: &Camera3d) -> bool {
+        c.azimuth_deg.is_finite()
+            && c.elevation_deg.is_finite()
+            && c.distance.is_finite()
+            && c.eye_height.is_finite()
+            && c.fov_deg.is_finite()
+            && c.target.iter().all(|v| v.is_finite())
+            && c.eye.iter().all(|v| v.is_finite())
+    }
+
+    /// Add or update a saved camera, storing it on the model so that it
+    /// participates in undo, autosave, AUDIT and round-trip (decision 1).
+    ///
+    /// Refuses — never clamps — when the name is empty or whitespace, when a
+    /// camera with that name already exists, when adding would exceed
+    /// [`MAX_CAMERAS`], or when any numeric field is non-finite (decision 12).
+    pub fn set_camera(&mut self, c: Camera3d) -> Result<(), CameraError> {
+        if c.name.trim().is_empty() {
+            return Err(CameraError::EmptyName);
+        }
+        if self.camera_by_name(&c.name).is_some() {
+            return Err(CameraError::Duplicate);
+        }
+        if self.cameras.len() >= MAX_CAMERAS {
+            return Err(CameraError::TooMany);
+        }
+        if !Self::camera_is_finite(&c) {
+            return Err(CameraError::NotFinite);
+        }
+        self.cameras.push(c);
+        Ok(())
+    }
+
+    /// Remove a saved camera by name. Returns `true` if it was found.
+    ///
+    /// Clears [`ArchModel::active_camera`] when it pointed at the removed
+    /// camera.
+    pub fn remove_camera(&mut self, name: &str) -> bool {
+        if let Some(pos) = self.camera_index(name) {
+            let was_active = self.active_camera.as_deref() == Some(name);
+            self.cameras.remove(pos);
+            if was_active {
+                self.active_camera = None;
+            }
+            true
+        } else {
+            false
+        }
+    }
+
     /// A message when `counter` is at or below the largest id already in use, or
     /// `None` when nothing is in use or the in-use ids are at [`u32::MAX`].
     fn stale_next_id(&self, counter_name: &str, counter: u32, max_in_use: Option<u32>) -> Option<String> {
