@@ -138,12 +138,12 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     }
     model.cameras.retain(|c| {
         c.target.iter().all(|v| v.is_finite())
-            && c.azimuth.is_finite()
-            && c.elevation.is_finite()
+            && c.azimuth_deg.is_finite()
+            && c.elevation_deg.is_finite()
             && c.distance.is_finite()
             && c.eye.iter().all(|v| v.is_finite())
             && c.eye_height.is_finite()
-            && c.fov.is_finite()
+            && c.fov_deg.is_finite()
     });
 
     // If active_camera points to a dropped camera, clear it
@@ -1079,12 +1079,12 @@ mod tests {
             name: "Front".into(),
             kind: cadcraft_doc::arch::CameraKind::Orbit,
             target: [0.0, 0.0, 1.0],
-            azimuth: 0.0,
-            elevation: 0.0,
+            azimuth_deg: 0.0,
+            elevation_deg: 0.0,
             distance: 10.0,
             eye: [0.0, -10.0],
             eye_height: 1.5,
-            fov: 45.0,
+            fov_deg: 45.0,
         });
         d.arch.active_camera = Some("Front".into());
 
@@ -1096,12 +1096,12 @@ mod tests {
         assert_eq!(got.name, "Front");
         assert_eq!(got.kind, cadcraft_doc::arch::CameraKind::Orbit);
         assert_eq!(got.target, [0.0, 0.0, 1.0]);
-        assert_eq!(got.azimuth, 0.0);
-        assert_eq!(got.elevation, 0.0);
+        assert_eq!(got.azimuth_deg, 0.0);
+        assert_eq!(got.elevation_deg, 0.0);
         assert_eq!(got.distance, 10.0);
         assert_eq!(got.eye, [0.0, -10.0]);
         assert_eq!(got.eye_height, 1.5);
-        assert_eq!(got.fov, 45.0);
+        assert_eq!(got.fov_deg, 45.0);
         assert_eq!(back.arch.active_camera, Some("Front".into()));
     }
 
