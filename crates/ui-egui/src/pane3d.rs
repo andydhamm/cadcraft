@@ -677,7 +677,7 @@ mod tests {
         let _walls = session
             .execute(
                 "wall",
-                json!({
+                &json!({
                     "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0], [0.0, 0.0]],
                     "thickness": 0.2,
                     "height": 2.4,
@@ -688,7 +688,7 @@ mod tests {
         let _door = session
             .execute(
                 "door",
-                json!({
+                &json!({
                     "wall": "w0",
                     "offset": 3.0,
                     "width": 0.9,
