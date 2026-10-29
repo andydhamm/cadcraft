@@ -198,7 +198,7 @@ pub(crate) fn render(a: &RenderArgs, io: &mut Streams) -> Result<(), RenderError
             let sun =
                 cadcraft_arch::sun::sun_position(*lat, date, time).ok_or_else(|| RenderError::Sun(format!("lat={lat},date={date},time={time}")))?;
             let [x, y, z] = cadcraft_arch::sun::sun_dir(&sun);
-            Light::from_sun(&Sun { dir: [x as f32, y as f32, z as f32], intensity: 1.0 }, Light::DEFAULT.ambient)
+            Light::from_sun(&Sun { dir: [x as f32, y as f32, z as f32], ..Sun::default() }, Light::DEFAULT.ambient)
         }
         None => Light::DEFAULT,
     };
@@ -209,7 +209,7 @@ pub(crate) fn render(a: &RenderArgs, io: &mut Streams) -> Result<(), RenderError
     let mut off = Offscreen::create_with(a.adapter, size).map_err(gpu)?;
     io.errln(format_args!("{}", off.device_info().line()));
     let map = if a.sun.is_some() || a.ground { off.build_shadow(&scene, scene.revision, &light, a.ground) } else { None };
-    let opts = RenderOptions { shadow: map.as_ref(), style: a.style, ground: a.ground };
+    let opts = RenderOptions { shadow: map.as_ref(), style: a.style, ground: a.ground, ..RenderOptions::default() };
     off.render_with(&scene, scene.revision, &camera, &light, &opts);
     let png = off.read_png().map_err(gpu)?;
     if map.is_some() {
