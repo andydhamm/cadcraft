@@ -1177,7 +1177,7 @@ impl ArchView {
 
     /// Validate the view definition.
     pub fn validate(&self) -> Result<(), ViewError> {
-        if self.name.is_empty() {
+        if self.name.trim().is_empty() {
             return Err(ViewError::EmptyName);
         }
         if self.name.len() > 128 {
