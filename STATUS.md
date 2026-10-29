@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-29 20:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 20:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 7 of 13: Generated elevations and sections — 3 of 12 segments merged · 1 of 9 acceptance checks**
 
@@ -17,7 +17,7 @@ Updated 2026-10-29 20:15 UTC. This page and the card in the README are regenerat
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
-| 7 | Generated elevations and sections | building | 1 / 9 | 3.1 h so far · expected done Oct 30 06:46–Oct 31 05:49 UTC |
+| 7 | Generated elevations and sections | building | 1 / 9 | 3.3 h so far · expected done Oct 30 07:54–Oct 31 08:51 UTC |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
@@ -55,14 +55,14 @@ Updated 2026-10-29 20:15 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 636 |
-| bonsai-b | bonsai2-27b | agent | 596 |
+| bonsai-a | bonsai2-27b | agent | 637 |
+| bonsai-b | bonsai2-27b | gate | 597 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | idle | 40 |
 | claude-sonnet-b | sonnet | idle | 34 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 482 |
-| kimi-k31 | k3.1-pro-highspeed | gate | 77 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 483 |
+| kimi-k31 | k3.1-pro-highspeed | gate | 78 |
 | mai-flash | mai-code-1.1-flash | agent | 11 |
-| tturbo-mac | tturbo-ultraheretic | gate | 428 |
+| tturbo-mac | tturbo-ultraheretic | gate | 429 |
 | tturbo-mac2 | tturbo-ultraheretic | idle | 264 |
