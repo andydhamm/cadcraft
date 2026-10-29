@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-29 06:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 06:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 6 of 13: The 3D view, properly — 0 of 14 segments merged · 0 of 9 acceptance checks**
+**Phase 6 of 13: The 3D view, properly — 0 of 14 segments merged · 1 of 9 acceptance checks**
 
-4,743 workspace tests passing at the last merge · 432 segments merged in all · 0 of 13 seats working
+4,767 workspace tests passing at the last merge · 434 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -16,7 +16,7 @@ Updated 2026-10-29 06:30 UTC. This page and the card in the README are regenerat
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
-| 6 | The 3D view, properly | building | 0 / 9 | 1.4 h so far · expected done Oct 29 12:56–Oct 30 20:38 UTC |
+| 6 | The 3D view, properly | building | 1 / 9 | 1.6 h so far · expected done Oct 29 13:12–Oct 30 20:53 UTC |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
@@ -37,6 +37,8 @@ Updated 2026-10-29 06:30 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 29 06:39 | `harden-p1-arch-crate` | merged | 4,767 pass | tturbo-mac2 |
+| Oct 29 06:32 | `harden-p5f-inspect-holes-are-rings` | merged | 4,751 pass | tturbo-mac |
 | Oct 29 05:27 | `harden-p1-render-arch-hook` | merged | 4,743 pass | tturbo-mac2 |
 | Oct 29 05:17 | `harden-p5f-inspect-holes-are-rings` | refused | 4,747 pass | tturbo-mac |
 | Oct 29 04:40 | `harden-p5-arch3d-stairs` | merged | 4,739 pass | tturbo-mac |
@@ -47,8 +49,6 @@ Updated 2026-10-29 06:30 UTC. This page and the card in the README are regenerat
 | Oct 29 03:33 | `p5f-inspect-holes-are-rings` | refused | 4,720 pass | darwin-ws3 |
 | Oct 29 03:26 | `harden-p5-arch3d-railing-deck` | merged | 4,719 pass | tturbo-mac |
 | Oct 29 03:14 | `p5f-inspect-holes-are-rings` | refused | 4,708 pass | bonsai-a |
-| Oct 29 03:05 | `p5f-inspect-holes-are-rings` | refused | 4,708 pass | darwin-ws3 |
-| Oct 29 02:52 | `p5f-inspect-holes-are-rings` | refused | 4,708 pass | mai-flash |
 
 ## Seats active in the last hour
 
@@ -65,5 +65,5 @@ Updated 2026-10-29 06:30 UTC. This page and the card in the README are regenerat
 | mai-flash | mai-code-1.1-flash | held | 6 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
-| tturbo-mac | tturbo-ultraheretic | merging | 393 |
-| tturbo-mac2 | tturbo-ultraheretic | merging | 251 |
+| tturbo-mac | tturbo-ultraheretic | held | 393 |
+| tturbo-mac2 | tturbo-ultraheretic | held | 251 |
