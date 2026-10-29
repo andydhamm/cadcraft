@@ -56,8 +56,9 @@ def stats(k):
                 lum=lum/(3*n) if n else 0,rows=rows)
 s={k:stats(k) for k in ["shaded","shaded-edges","hidden-line","glass-house"]}
 for k,v in s.items():
-    assert 0.05<v["frac"]<0.85, f"{k}: fraction {v['frac']:.3f} (blank/zero-filled?)"
-    assert v["uniq"]>3, f"{k}: flat fill"
+    lo = 0.002 if k == "hidden-line" else 0.05     # hidden line: visible edges on the background, faces in the clear colour
+    assert lo<v["frac"]<0.85, f"{k}: fraction {v['frac']:.3f} (blank/zero-filled?)"
+    assert v["uniq"]>(1 if k == "hidden-line" else 3), f"{k}: flat fill"   # hidden line: background + edge colour
     px=[float(x) for x in open(f"{tmp}/{k}.log").read().split('PROJECTED')[1].split('\n')[0].replace(',',' ').split()[:4]]
     x0,x1,y0,y1=v["bbox"]
     assert abs(x0-px[0])<=3 and abs(x1-px[2])<=3 and abs(y0-px[1])<=3 and abs(y1-px[3])<=3, \
@@ -65,7 +66,9 @@ for k,v in s.items():
 b=s["shaded"]
 for k in ["shaded-edges","hidden-line","glass-house"]:
     assert s[k]["rows"]!=b["rows"], f"--style {k} identical to shaded: flag ignored"
-assert s["shaded-edges"]["uniq"]>b["uniq"], "shaded-edges adds no edge pixels"
+e=s["shaded-edges"]["rows"]; n_=len(e[0])//480   # edge lines replace face colours, so count changed pixels, not colours
+changed=sum(1 for y in range(len(e)) for x in range(0,len(e[y]),n_) if max(abs(e[y][x+k]-b["rows"][y][x+k]) for k in range(3))>24)
+assert changed>300, f"shaded-edges adds no edge pixels ({changed} pixels differ from shaded)"
 assert s["shaded-edges"]["lum"]<b["lum"], "feature edges must darken"
 assert s["hidden-line"]["frac"]<0.7*b["frac"], f"hidden-line {s['hidden-line']['frac']:.3f} vs shaded {b['frac']:.3f}"
 assert s["glass-house"]["uniq"]>b["uniq"], "glass-house produces no blended colours"

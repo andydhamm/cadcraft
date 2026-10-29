@@ -7,18 +7,20 @@ cargo run -q -p cadcraft-cli -- run --metric \
 out=$(cargo run -q -p cadcraft-cli -- run --metric \
   --cmd 'walkthrough {"eye":[5,-10,1.6],"yaw":0,"forward":2,"strafe":0,"turn":0}' \
   --cmd 'walkthrough {"eye":[5,-10,1.6],"yaw":0,"forward":0,"strafe":1,"turn":0}' \
-  --cmd 'walkthrough {"eye":[5,-10,1.6],"yaw":0,"forward":0,"strafe":0,"turn":90}' \
-  --cmd 'walkthrough {"eye":[5,-10,1.6],"yaw":0,"forward":1e308,"strafe":0,"turn":0}' 2>/dev/null | tail -n 4)
+  --cmd 'walkthrough {"eye":[5,-10,1.6],"yaw":0,"forward":0,"strafe":0,"turn":90}' 2>/dev/null | tail -n 3)
+cargo run -q -p cadcraft-cli -- run --metric \
+  --cmd 'walkthrough {"eye":[5,-10,1.6],"yaw":0,"forward":1e308,"strafe":0,"turn":0}' >"$tmp/bad.out" 2>"$tmp/bad.err"
+[ $? -ne 0 ] || { echo "FAIL: a 1e308 step was accepted: $(cat "$tmp/bad.out")"; exit 1; }
+grep -q '"ok":true' "$tmp/bad.out" && { echo "FAIL: a 1e308 step replied ok"; exit 1; }
 python3 - "$out" <<'PY' || exit 1
 import json,sys
 rows=[json.loads(l) for l in sys.argv[1].splitlines() if l.strip().startswith('{')]
-assert len(rows)==4, rows
-f,s,t,bad=rows
-assert f["eye"][1]>-8, f"forward at yaw 0 (+Y) must move north: {f}"
+assert len(rows)==3, rows
+f,s,t=rows
+assert abs(f["eye"][1]-(-8))<1e-9, f"forward 2 at yaw 0 (+Y) must move north to y=-8: {f}"
 assert abs(f["eye"][0]-5)<1e-9 and abs(f["eye"][2]-1.6)<1e-9, f
 assert s["eye"][0]>5.9, f"strafe must move east: {s}"
 assert abs(t["yaw"]-90)<1e-9, f"turn must add to yaw: {t}"
-assert bad.get("ok") is not True, f"1e308 step must be refused: {bad}"
 print("ok: walkthrough")
 PY
 i=0
