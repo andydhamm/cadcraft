@@ -41,6 +41,22 @@ pub(crate) const ARCH_ROOF_LAYER: &str = "A-ROOF";
 /// reader drops it while the arch record is present (the roof's model data is the source of truth).
 pub(crate) const ARCH_ROOF_MARKER: &str = "CADCRAFT-ROOF";
 
+/// `CADCRAFT` xdata marker identifying a save-time view proxy entity, so the reader drops it
+/// while the arch record is present and the generated geometry is regenerated on open.
+pub(crate) const ARCH_VIEW_MARKER: &str = "CADCRAFT-VIEW";
+
+/// Layer for generated elevation view linework.
+pub(crate) const ARCH_ELEV_LAYER: &str = "A-ELEV";
+
+/// Layer for generated section view linework.
+pub(crate) const ARCH_SECT_LAYER: &str = "A-SECT";
+
+/// Layer for generated section cut-fill ring proxies.
+pub(crate) const ARCH_SECT_MCUT_LAYER: &str = "A-SECT-MCUT";
+
+/// Layer for generated dimension linework and text.
+pub(crate) const ARCH_ANNO_DIMS_LAYER: &str = "A-ANNO-DIMS";
+
 /// Rejects payloads larger than this before they are even parsed.
 const MAX_ARCH_PAYLOAD: usize = 8 << 20;
 
@@ -68,22 +84,24 @@ pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
         && m.stairs.is_empty()
         && m.railings.is_empty()
         && m.cameras.is_empty()
+        && m.views.is_empty()
     {
         return None;
     }
-    let json = serde_json::to_string(&Payload { version: 6, model: m.clone() }).ok()?;
+    let json = serde_json::to_string(&Payload { version: 7, model: m.clone() }).ok()?;
     Some(crate::dxf_ext::json_chunks(&json))
 }
 
 /// Parse an architectural XRECORD payload; `None` when it is not a payload we understand.
 ///
-/// Accepts schema versions 1 through 6:
+/// Accepts schema versions 1 through 7:
 /// - v1: no openings (cleared).
 /// - v2: openings present.
 /// - v3: rooms/levels present, no roofs (cleared).
 /// - v4: roofs present.
 /// - v5: stairs and railings present.
-/// - v6: cameras present.
+/// - v6: cameras present; generated views were not yet saved.
+/// - v7: saved generated views present in the model.
 ///
 /// All versions are bounded — the wall count against [`MAX_WALLS`], the opening count
 /// against [`MAX_OPENINGS`], the roof count against [`MAX_ROOFS`], the stair count against
@@ -95,7 +113,7 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
         return None;
     }
     let p: Payload = serde_json::from_str(text).ok()?;
-    if !(1..=6).contains(&p.version) {
+    if !(1..=7).contains(&p.version) {
         return None;
     }
     if p.model.walls.len() > cadcraft_doc::MAX_WALLS {
@@ -115,6 +133,10 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     if p.version <= 5 {
         model.cameras.clear();
         model.active_camera = None;
+    }
+    if p.version <= 6 {
+        model.views.clear();
+        model.next_view_id = 0;
     }
     if model.openings.len() > cadcraft_doc::arch::MAX_OPENINGS {
         return None;
@@ -160,12 +182,16 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     Some(model)
 }
 
-/// True when an entity's `CADCRAFT` xdata carries the [`ARCH_PROXY_MARKER`] or
-/// [`ARCH_OPENING_MARKER`] marker, i.e. the record is a save-time proxy (wall or opening)
-/// polyline to be dropped on read.
+/// True when an entity's `CADCRAFT` xdata carries one of the legacy save-time arch proxy
+/// markers (wall, opening or view). These records are redundant when the arch model is present.
 pub(crate) fn is_arch_proxy(tags: &[Tag]) -> bool {
-    let markers = [ARCH_PROXY_MARKER, ARCH_OPENING_MARKER];
+    let markers = [ARCH_PROXY_MARKER, ARCH_OPENING_MARKER, ARCH_VIEW_MARKER];
     crate::dxf_ext::xdata(tags, crate::dxf_ext::APP).iter().any(|t| t.code == 1000 && markers.iter().any(|m| t.str().trim() == *m))
+}
+
+/// True when an entity's `CADCRAFT` xdata marks it as a save-time view proxy.
+pub(crate) fn is_view_proxy(tags: &[Tag]) -> bool {
+    crate::dxf_ext::xdata(tags, crate::dxf_ext::APP).iter().any(|t| t.code == 1000 && t.str().trim() == ARCH_VIEW_MARKER)
 }
 ///
 /// Returns `None` for a degenerate wall: a non-finite endpoint, `thickness <= 0`, or a
@@ -303,6 +329,71 @@ pub(crate) fn proxy_opening_polylines(m: &ArchModel) -> Vec<(String, Vec<Tag>)> 
         .collect()
 }
 
+/// Emit the save-time view proxy geometry: generated linework and dimensions must not persist in
+/// the model when the arch record is present.
+pub(crate) fn proxy_view_entities(m: &ArchModel) -> Vec<(String, String, Vec<Tag>)> {
+    let mut out = Vec::new();
+    for view in &m.views {
+        let Some(g) = &view.generated else { continue };
+        let label = cadcraft_doc::arch::view_label(view.id);
+        let line = |a: [f64; 2], b: [f64; 2]| -> Vec<Tag> {
+            let mut tags = Vec::new();
+            tags.push(Tag::f(10, a[0]));
+            tags.push(Tag::f(20, a[1]));
+            tags.push(Tag::f(11, b[0]));
+            tags.push(Tag::f(21, b[1]));
+            tags.push(Tag::s(1001, crate::dxf_ext::APP));
+            tags.push(Tag::s(1000, ARCH_VIEW_MARKER));
+            tags.push(Tag::s(1000, &label));
+            tags
+        };
+        for part in &g.lines {
+            let a = view.placed(part.a);
+            let b = view.placed(part.b);
+            out.push(("LINE".into(), view.layer.clone(), line(a, b)));
+        }
+        for ring in &g.rings {
+            if ring.points.len() < 3 {
+                continue;
+            }
+            let mut tags = Vec::new();
+            let n = i64::try_from(ring.points.len()).unwrap_or_default();
+            tags.push(Tag::i(90, n));
+            tags.push(Tag::i(70, 1));
+            for p in &ring.points {
+                let v = view.placed(*p);
+                tags.push(Tag::f(10, v[0]));
+                tags.push(Tag::f(20, v[1]));
+            }
+            tags.push(Tag::s(1001, crate::dxf_ext::APP));
+            tags.push(Tag::s(1000, ARCH_VIEW_MARKER));
+            tags.push(Tag::s(1000, &label));
+            out.push(("LWPOLYLINE".into(), ARCH_SECT_MCUT_LAYER.to_string(), tags));
+        }
+        for dim in &g.dims {
+            let a = view.placed(dim.a);
+            let b = view.placed(dim.b);
+            let mut line_tags = line(a, b);
+            out.push(("LINE".into(), ARCH_ANNO_DIMS_LAYER.to_string(), line_tags));
+
+            let at = view.placed(dim.at);
+            let height = 2.5 * view.scale / 1000.0;
+            let mut txt = Vec::new();
+            txt.push(Tag::f(10, at[0]));
+            txt.push(Tag::f(20, at[1]));
+            txt.push(Tag::f(30, 0.0));
+            txt.push(Tag::s(1, &dim.text));
+            txt.push(Tag::f(40, height));
+            txt.push(Tag::s(7, "Standard"));
+            txt.push(Tag::s(1001, crate::dxf_ext::APP));
+            txt.push(Tag::s(1000, ARCH_VIEW_MARKER));
+            txt.push(Tag::s(1000, &label));
+            out.push(("TEXT".into(), ARCH_ANNO_DIMS_LAYER.to_string(), txt));
+        }
+    }
+    out
+}
+
 /// True when an entity's `CADCRAFT` xdata marks it as a save-time room proxy polyline.
 pub(crate) fn is_room_proxy(tags: &[Tag]) -> bool {
     crate::dxf_ext::xdata(tags, crate::dxf_ext::APP).iter().any(|t| t.code == 1000 && t.str().trim() == ARCH_ROOM_MARKER)
@@ -430,9 +521,10 @@ mod tests {
 
     #[test]
     fn parse_arch_rejects_unknown_versions() {
-        // Versions 1..=6 are understood; 0 and 7+ are unknown.
-        assert!(parse_arch(r#"{"version": 7, "model": { "walls": [] }}"#).is_none());
+        // Versions 1..=7 are understood; 0 and 8+ are unknown.
+        assert!(parse_arch(r#"{"version": 8, "model": { "walls": [] }}"#).is_none());
         assert!(parse_arch(r#"{"version": 0, "model": { "walls": [] }}"#).is_none());
+        assert!(parse_arch(r#"{"version": 7, "model": { "walls": [] }}"#).is_some());
     }
 
     #[test]
