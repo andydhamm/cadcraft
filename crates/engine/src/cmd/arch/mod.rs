@@ -24,6 +24,7 @@ pub mod roofplane;
 pub mod room;
 pub mod roomdetect;
 pub mod sample;
+pub mod sheet;
 pub mod stair;
 pub mod stretch;
 pub mod sun;
@@ -65,5 +66,6 @@ pub fn specs() -> Vec<CommandSpec> {
     v.extend(deck::specs());
     v.extend(railing::specs());
     v.extend(sun::specs());
+    v.extend(sheet::specs());
     v
 }
