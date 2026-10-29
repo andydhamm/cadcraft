@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-29 00:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 00:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 5 of 13: Stairs, railings and decks — 21 of 24 segments merged · 7 of 9 acceptance checks**
 
@@ -15,7 +15,7 @@ Updated 2026-10-29 00:30 UTC. This page and the card in the README are regenerat
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
-| 5 | Stairs, railings and decks | building | 7 / 9 | 11.5 h so far · expected done Oct 29 04:59–Oct 29 09:58 UTC |
+| 5 | Stairs, railings and decks | building | 7 / 9 | 11.8 h so far · expected done Oct 29 05:20–Oct 29 10:26 UTC |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
@@ -27,11 +27,11 @@ Updated 2026-10-29 00:30 UTC. This page and the card in the README are regenerat
 
 ## Phase 5 segments
 
-21 merged, 2 merging, 1 gate
+21 merged, 3 merging
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p5f-stair-cmd-optional-levels` | stair: levels optional, and the well holes the upper room | gate | claude-sonnet-a |
+| `p5f-stair-cmd-optional-levels` | stair: levels optional, and the well holes the upper room | merging | claude-sonnet-a |
 | `p5f-inspect-holes-are-rings` | arch.inspect reports room holes as rings, not a count | merging | mai-flash |
 | `p5f-dxf-deck-height-roundtrip` | Deck rooms and room holes survive the DXF arch record | merging | bonsai-a |
 
@@ -57,15 +57,15 @@ Updated 2026-10-29 00:30 UTC. This page and the card in the README are regenerat
 | Seat | Model | State | Rounds |
 |---|---|---|---|
 | bonsai-a | bonsai2-27b | merging | 592 |
-| bonsai-b | bonsai2-27b | gate | 542 |
+| bonsai-b | bonsai2-27b | gate | 543 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
-| claude-sonnet-a | sonnet | gate | 26 |
+| claude-sonnet-a | sonnet | merging | 27 |
 | claude-sonnet-b | sonnet | idle | 23 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 419 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | merging | 420 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 71 |
 | mai-flash | mai-code-1.1-flash | merging | 3 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
 | tturbo-mac | tturbo-ultraheretic | merging | 383 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 234 |
+| tturbo-mac2 | tturbo-ultraheretic | gate | 234 |
