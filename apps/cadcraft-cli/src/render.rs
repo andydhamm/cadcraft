@@ -154,7 +154,7 @@ fn parse_camera(spec: &str, base: Orbit) -> Result<Camera, RenderError> {
         Some("full") => return parse_full_camera(tokens),
         _ => return Err(RenderError::CameraStart),
     }
-    let it = tokens.filter(|t| !t.is_empty());
+    let mut it = tokens.filter(|t| !t.is_empty());
     let mut o = base;
     while let Some(t) = it.next() {
         let (name, val) = t.split_once('=').map(|(k, v)| (k.trim(), v.trim())).ok_or_else(|| RenderError::CameraField(t.to_string()))?;
