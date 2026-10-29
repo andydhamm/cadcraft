@@ -1735,4 +1735,174 @@ mod tests {
         assert_eq!(got.holes, want.holes, "room holes lost on round trip");
         assert_eq!(got.polygon, want.polygon);
     }
+
+    /// A room with multiple hole rings survives a DXF round trip.
+    #[test]
+    fn room_with_multiple_holes_round_trips() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-ROOM");
+        let rid = d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+            name: "Room with two holes".into(),
+            holes: vec![
+                vec![Vec2::new(1.0, 1.0), Vec2::new(3.0, 1.0), Vec2::new(3.0, 3.0), Vec2::new(1.0, 3.0)],
+                vec![Vec2::new(6.0, 4.0), Vec2::new(9.0, 4.0), Vec2::new(9.0, 7.0), Vec2::new(6.0, 7.0)],
+            ],
+            ..Room::default()
+        });
+        let want = d.arch.rooms[0].clone();
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.rooms.len(), 1, "room lost on the DXF round trip");
+        let got = &back.arch.rooms[0];
+        assert_eq!(got.id, rid, "room id changed on round trip");
+        assert_eq!(got.name, want.name);
+        assert_eq!(got.holes.len(), 2, "hole count changed on round trip");
+        assert_eq!(got.holes, want.holes, "room holes lost on round trip");
+        assert_eq!(got.polygon, want.polygon);
+    }
+
+    /// A Deck room with `deck_height: None` survives a DXF round trip.
+    #[test]
+    fn deck_height_none_round_trips() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-ROOM");
+        let rid = d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Deck no height".into(),
+            room_type: RoomType::Deck,
+            deck_height: None,
+            ..Room::default()
+        });
+        let want = d.arch.rooms[0].clone();
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.rooms.len(), 1, "deck room lost on the DXF round trip");
+        let got = &back.arch.rooms[0];
+        assert_eq!(got.id, rid, "room id changed on round trip");
+        assert_eq!(got.name, want.name);
+        assert_eq!(got.room_type, want.room_type, "room type lost on round trip");
+        assert_eq!(got.deck_height, want.deck_height, "deck height (None) lost on round trip");
+        assert_eq!(got.polygon, want.polygon);
+    }
+
+    /// A room with a NaN deck height survives a DXF round trip without panicking.
+    #[test]
+    fn deck_height_nan_round_trips() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-ROOM");
+        d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Room NaN height".into(),
+            deck_height: Some(f64::NAN),
+            ..Room::default()
+        });
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes());
+        assert!(back.is_ok(), "NaN deck height must not break DXF round trip");
+        let back = back.unwrap();
+        assert_eq!(back.arch.rooms.len(), 1, "room lost on the DXF round trip");
+    }
+
+    /// Multiple rooms with different combinations of room_type, deck_height and holes
+    /// all survive a DXF round trip.
+    #[test]
+    fn multiple_rooms_mixed_attributes_round_trip() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-ROOM");
+
+        // Room 1: Deck with height and one hole
+        d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Deck".into(),
+            room_type: RoomType::Deck,
+            deck_height: Some(0.9),
+            holes: vec![vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(1.0, 2.0)]],
+            ..Room::default()
+        });
+
+        // Room 2: Bedroom with no height and no holes
+        d.arch.push_room(Room {
+            polygon: vec![Vec2::new(5.0, 0.0), Vec2::new(9.0, 0.0), Vec2::new(9.0, 3.0), Vec2::new(5.0, 3.0)],
+            name: "Bedroom".into(),
+            room_type: RoomType::Bedroom,
+            deck_height: None,
+            ..Room::default()
+        });
+
+        // Room 3: Living room with holes but no deck height
+        d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 4.0), Vec2::new(6.0, 4.0), Vec2::new(6.0, 8.0), Vec2::new(0.0, 8.0)],
+            name: "Living".into(),
+            room_type: RoomType::Living,
+            deck_height: None,
+            holes: vec![vec![Vec2::new(1.0, 5.0), Vec2::new(3.0, 5.0), Vec2::new(3.0, 7.0), Vec2::new(1.0, 7.0)]],
+            ..Room::default()
+        });
+
+        let want = d.arch.rooms.clone();
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.rooms.len(), 3, "rooms lost on the DXF round trip");
+        for (i, (got, w)) in back.arch.rooms.iter().zip(want.iter()).enumerate() {
+            assert_eq!(got.id, w.id, "room {} id changed on round trip", i);
+            assert_eq!(got.name, w.name, "room {} name changed on round trip", i);
+            assert_eq!(got.room_type, w.room_type, "room {} type changed on round trip", i);
+            assert_eq!(got.deck_height, w.deck_height, "room {} deck_height changed on round trip", i);
+            assert_eq!(got.holes, w.holes, "room {} holes changed on round trip", i);
+            assert_eq!(got.polygon, w.polygon, "room {} polygon changed on round trip", i);
+        }
+    }
+
+    /// Every RoomType variant survives a DXF round trip.
+    #[test]
+    fn all_room_types_round_trip() {
+        let types = [
+            RoomType::Living,
+            RoomType::Bedroom,
+            RoomType::Kitchen,
+            RoomType::Bath,
+            RoomType::Closet,
+            RoomType::Utility,
+            RoomType::Garage,
+            RoomType::Porch,
+            RoomType::Deck,
+            RoomType::OpenBelow,
+            RoomType::Other,
+        ];
+
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-ROOM");
+        for (i, t) in types.iter().enumerate() {
+            d.arch.push_room(Room {
+                polygon: vec![
+                    Vec2::new(i as f64 * 5.0, 0.0),
+                    Vec2::new((i as f64 + 1.0) * 5.0, 0.0),
+                    Vec2::new((i as f64 + 1.0) * 5.0, 4.0),
+                    Vec2::new(i as f64 * 5.0, 4.0),
+                ],
+                name: format!("Room {:?}", t),
+                room_type: *t,
+                ..Room::default()
+            });
+        }
+
+        let want = d.arch.rooms.clone();
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.rooms.len(), types.len(), "rooms lost on the DXF round trip");
+        for (i, (got, w)) in back.arch.rooms.iter().zip(want.iter()).enumerate() {
+            assert_eq!(got.id, w.id, "room {} id changed on round trip", i);
+            assert_eq!(got.room_type, w.room_type, "room {} type changed on round trip", i);
+        }
+    }
 }
