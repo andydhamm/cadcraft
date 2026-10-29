@@ -400,31 +400,34 @@ impl Offscreen {
         pass.set_index_buffer(meshes.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         let shadow = opts.shadow.zip(self.shadowed.as_ref());
         let draw_indices: Vec<usize> = if style_is_glass_house {
-            let mut ground = Vec::new();
-            let mut translucent = Vec::new();
-            for (idx, mesh) in filtered_meshes.iter().enumerate() {
-                if mesh.material.eq_ignore_ascii_case("ground") {
-                    ground.push(idx);
-                } else {
-                    translucent.push(idx);
+            let mut draw_index_by_scene_mesh = Vec::new();
+            let mut draw_index = 0usize;
+            for mesh in &scene.meshes {
+                if !mesh.positions.is_empty() && !mesh.indices.is_empty() {
+                    draw_index_by_scene_mesh.push((draw_index, mesh));
+                    draw_index += 1;
                 }
             }
-            translucent.sort_by(|&a, &b| {
-                let bounds_a = filtered_meshes[a].bounds();
-                let bounds_b = filtered_meshes[b].bounds();
-                let center_a =
-                    [(bounds_a.min[0] + bounds_a.max[0]) * 0.5, (bounds_a.min[1] + bounds_a.max[1]) * 0.5, (bounds_a.min[2] + bounds_a.max[2]) * 0.5];
-                let center_b =
-                    [(bounds_b.min[0] + bounds_b.max[0]) * 0.5, (bounds_b.min[1] + bounds_b.max[1]) * 0.5, (bounds_b.min[2] + bounds_b.max[2]) * 0.5];
+            let ground_draw = if opts.ground && meshes.draws.len() > draw_index { Some(draw_index) } else { None };
+
+            let mut order = Vec::new();
+            if let Some(ground_draw) = ground_draw {
+                order.push(ground_draw);
+            }
+            let mut translucent = Vec::new();
+            for (draw_index, mesh) in draw_index_by_scene_mesh {
+                if mesh.material.eq_ignore_ascii_case("ground") {
+                    continue;
+                }
+                let bounds = mesh.bounds();
+                let center = [(bounds.min[0] + bounds.max[0]) * 0.5, (bounds.min[1] + bounds.max[1]) * 0.5, (bounds.min[2] + bounds.max[2]) * 0.5];
                 let eye_f64 = [f64::from(eye[0]), f64::from(eye[1]), f64::from(eye[2])];
-                let da =
-                    (center_a[0] as f64 - eye_f64[0]).powi(2) + (center_a[1] as f64 - eye_f64[1]).powi(2) + (center_a[2] as f64 - eye_f64[2]).powi(2);
-                let db =
-                    (center_b[0] as f64 - eye_f64[0]).powi(2) + (center_b[1] as f64 - eye_f64[1]).powi(2) + (center_b[2] as f64 - eye_f64[2]).powi(2);
-                db.partial_cmp(&da).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            let mut order = ground;
-            order.extend(translucent);
+                let dist_sq =
+                    (center[0] as f64 - eye_f64[0]).powi(2) + (center[1] as f64 - eye_f64[1]).powi(2) + (center[2] as f64 - eye_f64[2]).powi(2);
+                translucent.push((draw_index, dist_sq));
+            }
+            translucent.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            order.extend(translucent.into_iter().map(|(draw_index, _)| draw_index));
             order
         } else {
             (0..meshes.draws.len()).collect()
@@ -436,14 +439,20 @@ impl Offscreen {
             (None, true) => &self.gpu.pipeline,
         };
         if style_is_glass_house {
+            let mut scene_draw_count = 0usize;
+            for mesh in &scene.meshes {
+                if !mesh.positions.is_empty() && !mesh.indices.is_empty() {
+                    scene_draw_count += 1;
+                }
+            }
+            let ground_draw = if opts.ground && meshes.draws.len() > scene_draw_count { Some(scene_draw_count) } else { None };
             let mut opaque = Vec::new();
             let mut translucent = Vec::new();
-            for idx in &draw_indices {
-                let mesh = filtered_meshes.get(*idx).unwrap_or_else(|| filtered_meshes.first().unwrap());
-                if mesh.material.eq_ignore_ascii_case("ground") {
-                    opaque.push(*idx);
+            for &i in &draw_indices {
+                if ground_draw == Some(i) {
+                    opaque.push(i);
                 } else {
-                    translucent.push(*idx);
+                    translucent.push(i);
                 }
             }
             for (pipeline, list) in [(draw_pipeline(true), &opaque as &[usize]), (draw_pipeline(false), &translucent as &[usize])] {
