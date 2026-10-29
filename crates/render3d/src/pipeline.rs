@@ -79,10 +79,13 @@ impl PbrUniform {
     /// clamping `metallic`, `roughness`, `alpha` to 0..=1 and `ambient` to 0..=1.
     pub fn new(light: &crate::light::Light, sun_intensity: f32, draw: &Draw, style: u32, camera_pos: [f32; 3]) -> Self {
         let l = light.normalized();
-        let fin = |v: f32, d: f32| if v.is_finite() { v } else { d };
+        // Replace only NaN; infinity is allowed through to be clamped by the caller.
+        let fin = |v: f32, d: f32| if v.is_nan() { d } else { v };
         let mut cam = camera_pos;
         for c in cam.iter_mut() {
-            *c = fin(*c, 0.0);
+            if !c.is_finite() {
+                *c = 0.0;
+            }
         }
         PbrUniform {
             light_dir: l.dir,
@@ -829,5 +832,139 @@ mod tests {
         let meshes = upload(&device, &scene);
         assert_eq!(meshes.vertex_count, 3);
         assert_eq!(meshes.index_count, 3);
+    }
+
+    #[test]
+    fn pbr_uniform_new_sanitizes_hostile_inputs() {
+        let light = crate::light::Light::new([f32::NAN, f32::INFINITY, 0.0], f32::NAN);
+        let draw = Draw {
+            first_index: 0,
+            index_count: 0,
+            albedo: [f32::NAN, f32::NAN, f32::NAN],
+            metallic: f32::INFINITY,
+            roughness: f32::NAN,
+            alpha: f32::NEG_INFINITY,
+        };
+        let cam = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY];
+        let p = PbrUniform::new(&light, f32::NAN, &draw, u32::MAX, cam);
+
+        // Non-finite light dir components zeroed, then normalised to [0,0,1] fallback.
+        assert_eq!(p.light_dir, [0.0, 0.0, 1.0]);
+        // NaN sun intensity falls back to 1.0.
+        assert_eq!(p.sun_intensity, 1.0);
+        // NaN ambient falls back to 0.0.
+        assert_eq!(p.ambient, 0.0);
+        // Inf metallic clamped to 1.0.
+        assert_eq!(p.metallic, 1.0);
+        // NaN roughness falls back to 0.5.
+        assert_eq!(p.roughness, 0.5);
+        // -Inf alpha clamped to 0.0.
+        assert_eq!(p.alpha, 0.0);
+        // u32::MAX style clamped to STYLE_GLASS_HOUSE.
+        assert_eq!(p.style, STYLE_GLASS_HOUSE);
+        // Non-finite camera components zeroed.
+        assert_eq!(p.camera_pos, [0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn draw_is_blended_only_when_alpha_below_one() {
+        let opaque = Draw { alpha: 1.0, ..Default::default() };
+        assert!(!opaque.is_blended());
+
+        let glass = Draw { alpha: 0.35, ..Default::default() };
+        assert!(glass.is_blended());
+
+        let fully_transparent = Draw { alpha: 0.0, ..Default::default() };
+        assert!(fully_transparent.is_blended());
+
+        let almost_opaque = Draw { alpha: 0.999, ..Default::default() };
+        assert!(almost_opaque.is_blended());
+    }
+
+    #[test]
+    fn material_pbr_prefix_matching_works() {
+        // "glass-pane" matches the "glass" prefix → glass properties.
+        let (_, m, r, a) = material_pbr("glass-pane");
+        assert_eq!((m, r, a), (0.0, 0.05, 0.35));
+
+        // "wall-exterior" matches the "wall" prefix.
+        let (_, m, r, a) = material_pbr("wall-exterior");
+        assert_eq!((m, a), (0.0, 1.0));
+        assert!((0.6..=0.95).contains(&r));
+
+        // Matching is case-insensitive.
+        let (_, m, r, a) = material_pbr("GLASS");
+        assert_eq!((m, r, a), (0.0, 0.05, 0.35));
+
+        // "ceiling-tile" matches the "ceiling" prefix.
+        let (_, m, r, a) = material_pbr("ceiling-tile");
+        assert_eq!((m, r, a), (0.0, 0.9, 1.0));
+    }
+
+    #[test]
+    fn glass_alpha_matches_shader_constant() {
+        let (_, _, _, alpha) = material_pbr("glass");
+        // The Rust-side glass alpha must match the WGSL GLASS_ALPHA constant.
+        assert!(SHADER.contains("const GLASS_ALPHA: f32 = 0.35;"), "shader GLASS_ALPHA constant missing or changed");
+        assert_eq!(alpha, 0.35);
+    }
+
+    #[test]
+    fn pbr_uniform_style_clamped_to_maximum() {
+        let light = crate::light::Light::DEFAULT;
+        let draw = Draw::default();
+
+        let p0 = PbrUniform::new(&light, 1.0, &draw, 0, [0.0; 3]);
+        assert_eq!(p0.style, STYLE_SHADED);
+
+        let p3 = PbrUniform::new(&light, 1.0, &draw, 3, [0.0; 3]);
+        assert_eq!(p3.style, STYLE_GLASS_HOUSE);
+
+        // Any value above the max style is clamped down.
+        let p100 = PbrUniform::new(&light, 1.0, &draw, 100, [0.0; 3]);
+        assert_eq!(p100.style, STYLE_GLASS_HOUSE);
+    }
+
+    #[test]
+    fn pbr_uniform_finite_values_pass_through_unchanged() {
+        let light = crate::light::Light::new([1.0, 0.0, 0.0], 0.3);
+        let draw = Draw { first_index: 0, index_count: 3, albedo: [1.0, 0.5, 0.25], metallic: 0.8, roughness: 0.4, alpha: 0.9 };
+        let p = PbrUniform::new(&light, 2.5, &draw, STYLE_SHADED_EDGES, [10.0, 20.0, 30.0]);
+        // Normalised light dir: [1,0,0] is already unit length.
+        assert_eq!(p.light_dir, [1.0, 0.0, 0.0]);
+        assert_eq!(p.sun_intensity, 2.5);
+        assert_eq!(p.ambient, 0.3);
+        assert_eq!(p.metallic, 0.8);
+        assert_eq!(p.roughness, 0.4);
+        assert_eq!(p.alpha, 0.9);
+        assert_eq!(p.style, STYLE_SHADED_EDGES);
+        assert_eq!(p.camera_pos, [10.0, 20.0, 30.0]);
+    }
+
+    #[test]
+    fn pbr_uniform_negative_sun_intensity_clamped_to_zero() {
+        let light = crate::light::Light::DEFAULT;
+        let draw = Draw::default();
+        let p = PbrUniform::new(&light, -5.0, &draw, STYLE_SHADED, [0.0; 3]);
+        assert_eq!(p.sun_intensity, 0.0);
+    }
+
+    #[test]
+    fn pbr_uniform_infinity_values_clamped_not_replaced() {
+        let light = crate::light::Light::DEFAULT;
+        let draw = Draw {
+            first_index: 0,
+            index_count: 0,
+            albedo: [f32::INFINITY, f32::NEG_INFINITY, 0.0],
+            metallic: f32::INFINITY,
+            roughness: f32::INFINITY,
+            alpha: f32::NEG_INFINITY,
+        };
+        let p = PbrUniform::new(&light, f32::INFINITY, &draw, STYLE_SHADED, [0.0; 3]);
+        // Infinity is clamped, not replaced with the NaN default.
+        assert_eq!(p.metallic, 1.0);
+        assert_eq!(p.roughness, 1.0);
+        assert_eq!(p.alpha, 0.0);
+        assert_eq!(p.sun_intensity, f32::INFINITY);
     }
 }
