@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-29 10:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 11:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 6 of 13: The 3D view, properly — 5 of 15 segments merged · 2 of 9 acceptance checks**
 
@@ -16,7 +16,7 @@ Updated 2026-10-29 10:45 UTC. This page and the card in the README are regenerat
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
-| 6 | The 3D view, properly | building | 2 / 9 | 5.6 h so far · expected done Oct 30 01:16–Oct 30 21:10 UTC |
+| 6 | The 3D view, properly | building | 2 / 9 | 5.9 h so far · expected done Oct 30 02:10–Oct 30 22:58 UTC |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
@@ -27,12 +27,12 @@ Updated 2026-10-29 10:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 6 segments
 
-8 queued, 5 merged, 1 working, 1 gate
+8 queued, 5 merged, 1 working, 1 merging
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p6-arch3d-camera` | arch3d::camera — orbit + full camera, projection, pixel rays | working | kimi-k31 |
-| `p6-io-cameras` | DXF round-trip for cameras | gate | darwin-ws3 |
+| `p6-io-cameras` | DXF round-trip for cameras | merging | darwin-ws3 |
 
 ## Recent merges
 
@@ -55,14 +55,14 @@ Updated 2026-10-29 10:45 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 605 |
-| bonsai-b | bonsai2-27b | agent | 559 |
+| bonsai-a | bonsai2-27b | gate | 605 |
+| bonsai-b | bonsai2-27b | gate | 560 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | idle | 32 |
 | claude-sonnet-b | sonnet | idle | 26 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 441 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | merging | 443 |
 | kimi-k31 | k3.1-pro-highspeed | agent | 74 |
 | mai-flash | mai-code-1.1-flash | idle | 6 |
-| tturbo-mac | tturbo-ultraheretic | agent | 399 |
+| tturbo-mac | tturbo-ultraheretic | agent | 400 |
 | tturbo-mac2 | tturbo-ultraheretic | idle | 251 |
