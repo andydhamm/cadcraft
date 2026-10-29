@@ -329,7 +329,8 @@ impl Scene3d {
         for room in &model.rooms {
             if room.room_type == cadcraft_doc::arch::RoomType::Deck {
                 let level = level_for(model, room.level);
-                if let Some(m) = floors::floor_slab(room, &level, "floor") {
+                let material = if room.deck_height.map_or(false, |h| h > 0.0 && h.is_finite()) { "deck" } else { "floor" };
+                if let Some(m) = floors::floor_slab(room, &level, material) {
                     meshes.push(m);
                     decks_count += 1;
                     floors += 1;
@@ -616,14 +617,16 @@ impl Scene3d {
             }
             if dirty.contains(&room.id) {
                 let level = level_for(model, room.level);
-                if let Some(m) = floors::floor_slab(room, &level, "floor") {
+                let material = if room.deck_height.map_or(false, |h| h > 0.0 && h.is_finite()) { "deck" } else { "floor" };
+                if let Some(m) = floors::floor_slab(room, &level, material) {
                     meshes.push(m);
                     decks_count += 1;
                     floors += 1;
                 }
             } else {
                 if let Some(om) = prev_by_object.get(&room.id) {
-                    let deck_meshes: Vec<Mesh> = om.iter().filter(|m| m.material == "floor" && !m.positions.is_empty()).cloned().collect();
+                    let deck_meshes: Vec<Mesh> =
+                        om.iter().filter(|m| (m.material == "floor" || m.material == "deck") && !m.positions.is_empty()).cloned().collect();
                     if !deck_meshes.is_empty() {
                         decks_count += 1;
                         floors += 1;
@@ -2926,15 +2929,17 @@ mod tests {
             level: 0,
             polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
             room_type: cadcraft_doc::arch::RoomType::Deck,
+            deck_height: Some(0.9),
             ..Default::default()
         });
 
         let scene = Scene3d::build(&model);
         assert!(scene.decks > 0, "deck should be built");
 
-        let hit = scene.probe(Vec3::new(2.0, 1.5, -0.025));
+        // Deck board top is at level.elevation + deck_height = 0.9, slab is 0.05 thick (0.85–0.9).
+        let hit = scene.probe(Vec3::new(2.0, 1.5, 0.875));
         assert!(hit.is_some(), "probe inside deck should hit");
-        assert_eq!(hit.unwrap().part, "floor", "probe inside deck should hit floor part");
+        assert_eq!(hit.unwrap().part, "deck", "probe inside deck should hit deck part");
     }
 
     #[test]
