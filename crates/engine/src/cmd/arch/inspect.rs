@@ -10,8 +10,8 @@ use cadcraft_arch::wall::{wall_layer_polygons, wall_polygon};
 use cadcraft_doc::ArchId;
 use cadcraft_doc::Handle;
 use cadcraft_doc::arch::{
-    OpeningKind, ROOM_HANDLE_OFFSET, Railing, RailingStyle, Roof, RoofEdge, RoofEdgeKind, RoofPlane, RoomType, Stair, StairShape, railing_handle,
-    railing_label, roof_handle, roof_label, room_label, stair_handle, stair_label, wall_label,
+    OpeningKind, Railing, RailingStyle, Roof, RoofEdge, RoofEdgeKind, RoofPlane, RoomType, Stair, StairShape, arch_handle, handle_json,
+    opening_handle, railing_handle, railing_label, roof_handle, roof_label, room_handle, room_label, stair_handle, stair_label, wall_label,
 };
 use std::f64::consts::PI;
 // RoofId might be ArchId or a new type. If it's not found, we might need to use ArchId or import it if it exists.
@@ -89,12 +89,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
         } else {
             obj.insert("id".to_string(), json!(w.id));
         }
-        if walls_flag {
-            // Same lower-case unpadded form as opening and room proxy handles (what `pick3d` reports).
-            obj.insert("handle".to_string(), json!(format!("{:x}", 0xA000_0000u64 + u64::from(w.id.0))));
-        } else {
-            obj.insert("handle".to_string(), json!(format!("{:016X}", 0xA000_0000u64 + u64::from(w.id.0))));
-        }
+        obj.insert("handle".to_string(), json!(handle_json(arch_handle(w.id))));
         obj.insert("start".to_string(), json!([w.start.x, w.start.y]));
         obj.insert("end".to_string(), json!([w.end.x, w.end.y]));
         obj.insert("thickness".to_string(), json!(w.thickness));
@@ -158,10 +153,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
             let level = d.arch.level(r.level);
             let mut obj = JsonMap::new();
             obj.insert("id".to_string(), json!(room_label(r.id)));
-            obj.insert(
-                "handle".to_string(),
-                json!(format!("{:x}", 0xa000_0000u64.saturating_add(ROOM_HANDLE_OFFSET).saturating_add(u64::from(r.id.0)))),
-            );
+            obj.insert("handle".to_string(), json!(handle_json(room_handle(r.id))));
             obj.insert("name".to_string(), json!(r.name));
             obj.insert("type".to_string(), json!(room_type_key(r.room_type)));
             obj.insert("level".to_string(), json!(level.map(|l| l.name.clone()).unwrap_or_default()));
@@ -191,7 +183,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
         for o in &d.arch.openings {
             let mut obj = JsonMap::new();
             obj.insert("id".to_string(), json!(format!("o{}", o.id.0)));
-            obj.insert("handle".to_string(), json!(format!("{:x}", 0xA000_0000u64 + o.id.0 as u64)));
+            obj.insert("handle".to_string(), json!(handle_json(opening_handle(o.id))));
             obj.insert("host".to_string(), json!(format!("w{}", o.host.0)));
             obj.insert("kind".to_string(), json!(kind_label(o.kind)));
             obj.insert("style".to_string(), json!(o.style));
@@ -245,7 +237,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
         for r in &d.arch.roofs {
             let mut obj = JsonMap::new();
             obj.insert("id".to_string(), json!(roof_label(r.id)));
-            obj.insert("handle".to_string(), json!(roof_handle(r.id).hex().to_lowercase()));
+            obj.insert("handle".to_string(), json!(handle_json(roof_handle(r.id))));
             obj.insert("level".to_string(), json!(r.level));
             obj.insert("pitchRise".to_string(), json!(r.pitch_rise));
             obj.insert("pitchRun".to_string(), json!(r.pitch_run));
@@ -311,7 +303,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
         for st in &d.arch.stairs {
             let mut obj = JsonMap::new();
             obj.insert("id".to_string(), json!(stair_label(st.id)));
-            obj.insert("handle".to_string(), json!(stair_handle(st.id).hex().to_lowercase()));
+            obj.insert("handle".to_string(), json!(handle_json(stair_handle(st.id))));
             obj.insert("start".to_string(), json!([st.start.x, st.start.y]));
             let direction_deg = if st.direction.is_finite() { st.direction * 180.0 / PI } else { 0.0 };
             obj.insert("direction".to_string(), json!(direction_deg));
@@ -340,7 +332,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
         for rl in &d.arch.railings {
             let mut obj = JsonMap::new();
             obj.insert("id".to_string(), json!(railing_label(rl.id)));
-            obj.insert("handle".to_string(), json!(railing_handle(rl.id).hex().to_lowercase()));
+            obj.insert("handle".to_string(), json!(handle_json(railing_handle(rl.id))));
             obj.insert("path".to_string(), json_points(&rl.path));
             obj.insert("level".to_string(), json!(rl.level));
             obj.insert("height".to_string(), json!(rl.height));
@@ -666,6 +658,22 @@ mod tests {
         assert_eq!(walls[0]["handle"], "a0000000");
         assert!(walls[0]["thickness"].is_number());
         assert!(walls[0]["exterior"].is_boolean());
+    }
+
+    #[test]
+    fn inspect_and_command_replies_spell_handles_the_same_way() {
+        let mut s = Session::new();
+        let w = s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]]})).expect("wall");
+        let d = s.execute("door", &json!({"wall": "w0", "offset": 3.0, "width": 0.9, "height": 2.1})).expect("door");
+        assert_eq!(w["walls"][0]["handle"], "a0000000");
+        assert_eq!(d["openings"][0]["handle"], "a0008000");
+        let v = exec(&mut s, "arch.inspect", &json!({ "walls": true, "openings": true }));
+        assert_eq!(v["walls"][0]["handle"], w["walls"][0]["handle"]);
+        assert_eq!(v["openings"][0]["handle"], d["openings"][0]["handle"]);
+        let plain = exec(&mut s, "arch.inspect", &json!({}));
+        if let Some(h) = plain["walls"][0]["handle"].as_str() {
+            assert_eq!(h, "a0000000");
+        }
     }
 
     #[test]
@@ -1477,7 +1485,7 @@ mod tests {
         let v = exec(&mut s, "arch.inspect", &json!({ "roofs": true }));
         let roofs = v["roofs"].as_array().expect("roofs array missing");
         let handle = roofs[0]["handle"].as_str().expect("handle must be a string");
-        assert!(handle.starts_with("ffffffff"), "handle must start with 'ffffffff' (arch-proxy base): {handle}");
+        assert!(handle.starts_with("a001"), "handle must start with 'a001' (roof proxy range): {handle}");
         assert!(handle.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "handle must be lowercase hex: {handle}");
     }
 
