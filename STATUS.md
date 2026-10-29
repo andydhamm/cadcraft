@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-29 21:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 22:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 7 of 13: Generated elevations and sections — 6 of 12 segments merged · 1 of 9 acceptance checks**
 
@@ -17,7 +17,7 @@ Updated 2026-10-29 21:45 UTC. This page and the card in the README are regenerat
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
-| 7 | Generated elevations and sections | building | 1 / 9 | 4.6 h so far · expected done Oct 30 06:30–Oct 30 20:12 UTC |
+| 7 | Generated elevations and sections | building | 1 / 9 | 4.8 h so far · expected done Oct 30 07:13–Oct 30 21:40 UTC |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
@@ -27,13 +27,13 @@ Updated 2026-10-29 21:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 7 segments
 
-6 merged, 3 queued, 2 working, 1 merging
+6 merged, 3 queued, 2 merging, 1 gate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p7-roof-eave-at-the-wall` | Roof underside meets the eave wall top with an overhang (walls no longer stretched into the roof) | working | kimi-k31 |
+| `p7-roof-eave-at-the-wall` | Roof underside meets the eave wall top with an overhang (walls no longer stretched into the roof) | merging | kimi-k31 |
 | `p7-render-views` | Draw linked views in the plan: linework, filled poche, overall dimensions; template layers | merging | claude-sonnet-b |
-| `p7-engine-viewsheet` | viewsheet: linked views on a layout at their scale (ARCH D at 1:50) | working | darwin-ws3 |
+| `p7-engine-viewsheet` | viewsheet: linked views on a layout at their scale (ARCH D at 1:50) | gate | darwin-ws3 |
 
 ## Recent merges
 
@@ -56,14 +56,14 @@ Updated 2026-10-29 21:45 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 642 |
-| bonsai-b | bonsai2-27b | gate | 602 |
+| bonsai-a | bonsai2-27b | gate | 642 |
+| bonsai-b | bonsai2-27b | gate | 603 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | idle | 41 |
 | claude-sonnet-b | sonnet | merging | 37 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 487 |
-| kimi-k31 | k3.1-pro-highspeed | agent | 84 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 487 |
+| kimi-k31 | k3.1-pro-highspeed | merging | 85 |
 | mai-flash | mai-code-1.1-flash | idle | 14 |
-| tturbo-mac | tturbo-ultraheretic | agent | 432 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 264 |
+| tturbo-mac | tturbo-ultraheretic | gate | 432 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 265 |
