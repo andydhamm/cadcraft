@@ -653,9 +653,77 @@ pub fn zoom_by_wheel(pane: &mut Pane3d, delta: f64) {
     pane.orbit.distance = (pane.orbit.distance * (1.0 - 0.1 * delta)).clamp(0.5, 1000.0);
 }
 
+/// Apply the last 3D pick as the drawing's selection, so a click in the 3D pane selects the
+/// same proxy handle as a click in the 2D pane (phase-6 carry-over). Takes the pending handle
+/// and replaces the selection with it, returning it so the caller can repaint. A miss (or no
+/// pending pick) leaves the selection alone.
+pub fn apply_pick(pane: &mut Pane3d, session: &mut cadcraft_engine::Session) -> Option<cadcraft_doc::Handle> {
+    let h = pane.take_picked()?;
+    session.set_selection(vec![h]);
+    Some(h)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use cadcraft_engine::Session;
+    use serde_json::json;
+
+    /// The phase-1 house (four exterior walls) with the phase-2 front door on `w0` at offset
+    /// 3.0 — the same two commands as `tests/acceptance/phase-7/p7lib.inc::HOUSE`.
+    fn house_session() -> Session {
+        let mut session = Session::new();
+        let _walls = session
+            .execute(
+                "wall",
+                &json!({
+                    "points": [[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0], [0.0, 0.0]],
+                    "thickness": 0.2,
+                    "height": 2.4,
+                    "exterior": true
+                }),
+            )
+            .expect("the phase-1 house walls");
+        let _door = session
+            .execute(
+                "door",
+                &json!({
+                    "wall": "w0",
+                    "offset": 3.0,
+                    "width": 0.9,
+                    "height": 2.1,
+                    "style": "hinged"
+                }),
+            )
+            .expect("the front door on w0");
+        session
+    }
+
+    /// The selection's handles as hex strings, for assertions independent of `Handle`'s derives.
+    fn sel_handles(s: &Session) -> Vec<String> {
+        s.selection().iter().map(|h| h.hex()).collect()
+    }
+
+    /// The phase-6 front camera: eye [3,-8,1.6] -> target [3,0,1.05], fov 60, view 480x320.
+    /// The 0.9 m door at offset 3.0 on the south wall is dead-centre; [8,8] is sky.
+    fn front_camera() -> (cadcraft_render3d::camera::FullCamera, (u32, u32)) {
+        let size = (480u32, 320u32);
+        (cadcraft_render3d::camera::FullCamera::new(cadcraft_geom::Vec3::new(3.0, -8.0, 1.6), cadcraft_geom::Vec3::new(3.0, 0.0, 1.05), 60.0), size)
+    }
+
+    /// A `Pane3d` with the phase-1 house scene synced and the front camera installed.
+    fn house_pane() -> (Pane3d, Session) {
+        let mut session = house_session();
+        let mut pane = Pane3d::new();
+        {
+            let st = session.state().expect("session state");
+            assert!(pane.sync_doc(st.uid, st.doc.arch_revision, Some(&st.doc.arch)), "the phase-1 house scene must build");
+        }
+        let (cam, _) = front_camera();
+        pane.full = Some(cam);
+        (pane, session)
+    }
 
     #[test]
     fn pane3d_builds_without_an_adapter() {
@@ -1238,5 +1306,135 @@ mod tests {
             }
             other => panic!("expected an orbit camera, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_3d_pick_becomes_the_2d_selection() {
+        let (mut pane, mut session) = house_pane();
+        let (_, size) = front_camera();
+        let center = [240.0, 160.0];
+
+        // The centre pixel strikes the door; its proxy handle is the opening's (0x8000 range),
+        // not the wall's.
+        assert!(pane.pick(size, center).is_some(), "the centre pixel strikes the door");
+        assert!(apply_pick(&mut pane, &mut session).is_some(), "the door pick must be applied to the selection");
+        assert_eq!(
+            sel_handles(&session),
+            vec![cadcraft_doc::arch::opening_handle(cadcraft_doc::ArchId(0)).hex()],
+            "a 3D door pick selects the opening handle"
+        );
+    }
+
+    #[test]
+    fn a_3d_miss_leaves_the_selection_alone() {
+        let (mut pane, mut session) = house_pane();
+        let (_, size) = front_camera();
+        let center = [240.0, 160.0];
+        let sky = [8.0, 8.0];
+
+        // Establish a baseline selection via a real 3D pick.
+        assert!(pane.pick(size, center).is_some(), "the centre pixel strikes the door");
+        assert!(apply_pick(&mut pane, &mut session).is_some());
+        let before = sel_handles(&session);
+        assert_eq!(
+            before,
+            vec![cadcraft_doc::arch::opening_handle(cadcraft_doc::ArchId(0)).hex()],
+            "the baseline 3D pick selects the opening handle"
+        );
+
+        // A sky pick strikes nothing and must leave that selection exactly as it was.
+        assert!(pane.pick(size, sky).is_none(), "a sky pixel must strike nothing");
+        assert!(apply_pick(&mut pane, &mut session).is_none(), "a miss has no handle to apply");
+        assert_eq!(sel_handles(&session), before, "a sky pick leaves the selection alone");
+    }
+
+    #[test]
+    fn a_second_3d_pick_replaces_the_first() {
+        let (mut pane, mut session) = house_pane();
+        let (_, size) = front_camera();
+        let center = [240.0, 160.0];
+
+        // First pick: the door at the centre.
+        let door_handle = pane.pick(size, center).expect("first pick hits the door");
+        apply_pick(&mut pane, &mut session).expect("first pick applied");
+        assert_eq!(sel_handles(&session), vec![cadcraft_doc::arch::opening_handle(cadcraft_doc::ArchId(0)).hex()], "first pick selects the door");
+
+        // Second pick: to the right, hitting the wall (not the door).
+        let wall_pixel = [350.0, 160.0];
+        let wall_handle = pane.pick(size, wall_pixel).expect("second pick hits the wall");
+        apply_pick(&mut pane, &mut session).expect("second pick applied");
+        let handles = sel_handles(&session);
+        assert_eq!(handles.len(), 1, "selection should have exactly one handle");
+        assert_eq!(handles[0], wall_handle.hex(), "selection should be the wall handle");
+        assert_ne!(handles[0], door_handle.hex(), "selection should not still be the door");
+        assert_eq!(
+            cadcraft_engine::grips::arch_id_from_handle(wall_handle),
+            Some(cadcraft_engine::grips::ArchTarget::Wall(cadcraft_doc::ArchId(0))),
+            "second pick should select the wall"
+        );
+    }
+
+    #[test]
+    fn apply_pick_with_nothing_picked_leaves_selection_alone() {
+        let (mut pane, mut session) = house_pane();
+        let (_, size) = front_camera();
+        let center = [240.0, 160.0];
+
+        // Establish a selection.
+        pane.pick(size, center).expect("pick hits the door");
+        apply_pick(&mut pane, &mut session).expect("pick applied");
+        let before = sel_handles(&session);
+
+        // Calling apply_pick without a new pick is a no-op.
+        assert!(apply_pick(&mut pane, &mut session).is_none(), "no pick, no apply");
+        assert_eq!(sel_handles(&session), before, "selection unchanged");
+    }
+
+    #[test]
+    fn a_3d_pick_replaces_a_multi_selection() {
+        let (mut pane, mut session) = house_pane();
+        let (_, size) = front_camera();
+        let center = [240.0, 160.0];
+
+        // Establish a 2D multi-selection.
+        let wall0 = cadcraft_doc::arch::arch_handle(cadcraft_doc::ArchId(0));
+        let wall1 = cadcraft_doc::arch::arch_handle(cadcraft_doc::ArchId(1));
+        session.set_selection(vec![wall0, wall1]);
+        assert_eq!(sel_handles(&session).len(), 2, "two handles selected");
+
+        // A 3D pick replaces the multi-selection with a single handle.
+        pane.pick(size, center).expect("pick hits the door");
+        apply_pick(&mut pane, &mut session).expect("pick applied");
+        let handles = sel_handles(&session);
+        assert_eq!(handles.len(), 1, "3D pick replaces multi-selection with single");
+        assert_eq!(handles[0], cadcraft_doc::arch::opening_handle(cadcraft_doc::ArchId(0)).hex(), "the single selection is the picked opening");
+    }
+
+    #[test]
+    fn a_3d_pick_round_trips_through_arch_id_from_handle() {
+        let (mut pane, mut session) = house_pane();
+        let (_, size) = front_camera();
+        let center = [240.0, 160.0];
+
+        pane.pick(size, center).expect("pick hits the door");
+        let handle = apply_pick(&mut pane, &mut session).expect("pick applied");
+
+        // The handle must resolve back to the opening through the single disambiguator.
+        let target = cadcraft_engine::grips::arch_id_from_handle(handle);
+        assert_eq!(
+            target,
+            Some(cadcraft_engine::grips::ArchTarget::Opening(cadcraft_doc::ArchId(0))),
+            "the picked handle must resolve back to the opening"
+        );
+    }
+
+    #[test]
+    fn a_pick_with_no_scene_returns_none() {
+        let mut pane = Pane3d::new();
+        let mut session = Session::new();
+
+        // No scene built: pick and apply are both no-ops.
+        assert!(pane.pick((100, 100), [50.0, 50.0]).is_none(), "no scene, no pick");
+        assert!(apply_pick(&mut pane, &mut session).is_none(), "no pick, no apply");
     }
 }

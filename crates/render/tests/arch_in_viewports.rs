@@ -1,6 +1,7 @@
 //! Arch linework shows through paper-space viewports and layout plots, at the viewport's scale,
 //! clipped to it, following its layer state.
 
+use cadcraft_color::Color;
 use cadcraft_doc::arch::Wall;
 use cadcraft_doc::{Common, Drawing, EntityKind, Space, Viewport};
 use cadcraft_geom::{Bounds2, Vec2};
@@ -96,4 +97,180 @@ fn a_viewport_that_is_off_shows_no_arch_linework() {
     assert!(wall_bounds(&l, &d).is_none());
     let l = build_plot(&d, &paper(), &Options::default());
     assert!(wall_bounds(&l, &d).is_none());
+}
+
+#[test]
+fn two_viewports_with_independent_layer_freezes() {
+    let pts = [Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)];
+    let walls: Vec<Wall> = (0..4).map(|i| Wall { start: pts[i], end: pts[(i + 1) % 4], thickness: 0.2, height: 2.7, ..Wall::default() }).collect();
+
+    // Both viewports show walls (no freeze)
+    let mut d1 = Drawing::new_imperial();
+    for w in &walls {
+        d1.arch.push_wall(w.clone());
+    }
+    let vp1 = Viewport {
+        center: Vec2::new(100.0, 100.0).to3(0.0),
+        width: 200.0,
+        height: 160.0,
+        view_center: Vec2::new(5.0, 4.0),
+        view_height: 160.0 / SCALE,
+        id: 2,
+        locked: false,
+        frozen_layers: Vec::new(),
+        layer_colors: Vec::new(),
+        clip: None,
+        on: true,
+    };
+    let vp2 = Viewport {
+        center: Vec2::new(400.0, 100.0).to3(0.0),
+        width: 200.0,
+        height: 160.0,
+        view_center: Vec2::new(5.0, 4.0),
+        view_height: 160.0 / SCALE,
+        id: 3,
+        locked: false,
+        frozen_layers: Vec::new(),
+        layer_colors: Vec::new(),
+        clip: None,
+        on: true,
+    };
+    d1.add(&paper(), Common::default(), EntityKind::Viewport(vp1.clone())).unwrap();
+    d1.add(&paper(), Common::default(), EntityKind::Viewport(vp2.clone())).unwrap();
+    let l1 = build(&d1, &paper(), &Options::default());
+    let count_both = l1.prims.iter().filter(|p| is_wall(p, &d1)).count();
+    assert!(count_both > 0, "both viewports should show walls");
+
+    // Second viewport freezes A-WALL
+    let mut d2 = Drawing::new_imperial();
+    for w in &walls {
+        d2.arch.push_wall(w.clone());
+    }
+    let vp2_frozen = Viewport { frozen_layers: vec!["A-WALL".to_string()], ..vp2 };
+    d2.add(&paper(), Common::default(), EntityKind::Viewport(vp1)).unwrap();
+    d2.add(&paper(), Common::default(), EntityKind::Viewport(vp2_frozen)).unwrap();
+    let l2 = build(&d2, &paper(), &Options::default());
+    let count_one = l2.prims.iter().filter(|p| is_wall(p, &d2)).count();
+    assert!(count_one > 0, "viewport 1 should still show walls");
+    assert!(count_one < count_both, "freezing A-WALL in viewport 2 should reduce wall prims");
+}
+
+#[test]
+fn empty_arch_model_shows_nothing_in_viewport() {
+    let mut d = Drawing::new_imperial();
+    let vp = Viewport {
+        center: Vec2::new(150.0, 120.0).to3(0.0),
+        width: 300.0,
+        height: 250.0,
+        view_center: Vec2::new(5.0, 4.0),
+        view_height: 250.0 / SCALE,
+        id: 2,
+        locked: false,
+        frozen_layers: Vec::new(),
+        layer_colors: Vec::new(),
+        clip: None,
+        on: true,
+    };
+    d.add(&paper(), Common::default(), EntityKind::Viewport(vp)).unwrap();
+    let l = build(&d, &paper(), &Options::default());
+    assert!(wall_bounds(&l, &d).is_none(), "empty arch model should show no walls in viewport");
+}
+
+#[test]
+fn viewport_with_zero_width_shows_nothing() {
+    let d = house(true, &[]);
+    let vp = Viewport {
+        width: 0.0,
+        ..Viewport {
+            center: Vec2::new(150.0, 120.0).to3(0.0),
+            width: 300.0,
+            height: 250.0,
+            view_center: Vec2::new(5.0, 4.0),
+            view_height: 250.0 / SCALE,
+            id: 2,
+            locked: false,
+            frozen_layers: Vec::new(),
+            layer_colors: Vec::new(),
+            clip: None,
+            on: true,
+        }
+    };
+    let mut d2 = Drawing::new_imperial();
+    for w in &d.arch.walls {
+        d2.arch.push_wall(w.clone());
+    }
+    d2.add(&paper(), Common::default(), EntityKind::Viewport(vp)).unwrap();
+    let l = build(&d2, &paper(), &Options::default());
+    assert!(wall_bounds(&l, &d2).is_none(), "zero-width viewport should show nothing");
+}
+
+#[test]
+fn viewport_with_nan_center_shows_nothing() {
+    let d = house(true, &[]);
+    let vp = Viewport {
+        center: Vec2::new(f64::NAN, 120.0).to3(0.0),
+        ..Viewport {
+            center: Vec2::new(150.0, 120.0).to3(0.0),
+            width: 300.0,
+            height: 250.0,
+            view_center: Vec2::new(5.0, 4.0),
+            view_height: 250.0 / SCALE,
+            id: 2,
+            locked: false,
+            frozen_layers: Vec::new(),
+            layer_colors: Vec::new(),
+            clip: None,
+            on: true,
+        }
+    };
+    let mut d2 = Drawing::new_imperial();
+    for w in &d.arch.walls {
+        d2.arch.push_wall(w.clone());
+    }
+    d2.add(&paper(), Common::default(), EntityKind::Viewport(vp)).unwrap();
+    let l = build(&d2, &paper(), &Options::default());
+    assert!(wall_bounds(&l, &d2).is_none(), "viewport with NaN center should show nothing");
+}
+
+#[test]
+fn per_viewport_layer_color_changes_arch_linework_color() {
+    let pts = [Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)];
+    let walls: Vec<Wall> = (0..4).map(|i| Wall { start: pts[i], end: pts[(i + 1) % 4], thickness: 0.2, height: 2.7, ..Wall::default() }).collect();
+
+    // No layer color override
+    let mut d1 = Drawing::new_imperial();
+    for w in &walls {
+        d1.arch.push_wall(w.clone());
+    }
+    let vp1 = Viewport {
+        center: Vec2::new(150.0, 120.0).to3(0.0),
+        width: 300.0,
+        height: 250.0,
+        view_center: Vec2::new(5.0, 4.0),
+        view_height: 250.0 / SCALE,
+        id: 2,
+        locked: false,
+        frozen_layers: Vec::new(),
+        layer_colors: Vec::new(),
+        clip: None,
+        on: true,
+    };
+    d1.add(&paper(), Common::default(), EntityKind::Viewport(vp1.clone())).unwrap();
+    let l1 = build(&d1, &paper(), &Options::default());
+    let wall_prims1: Vec<_> = l1.prims.iter().filter(|p| is_wall(p, &d1)).collect();
+    let color1 = wall_prims1.first().map(|p| p.color);
+
+    // Layer color override: A-WALL -> red (ACI 1)
+    let mut d2 = Drawing::new_imperial();
+    for w in &walls {
+        d2.arch.push_wall(w.clone());
+    }
+    let vp2 = Viewport { layer_colors: vec![("A-WALL".to_string(), Color::Index(1))], ..vp1 };
+    d2.add(&paper(), Common::default(), EntityKind::Viewport(vp2)).unwrap();
+    let l2 = build(&d2, &paper(), &Options::default());
+    let wall_prims2: Vec<_> = l2.prims.iter().filter(|p| is_wall(p, &d2)).collect();
+    let color2 = wall_prims2.first().map(|p| p.color);
+
+    assert!(color1.is_some() && color2.is_some(), "wall prims should exist in both cases");
+    assert_ne!(color1, color2, "layer color override should change wall color");
 }

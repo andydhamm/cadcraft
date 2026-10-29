@@ -1004,4 +1004,11 @@ mod tests {
         assert_eq!(p.alpha, 0.0);
         assert_eq!(p.sun_intensity, f32::INFINITY);
     }
+
+    #[test]
+    fn glass_house_pipeline_writes_no_depth() {
+        let desc = glass_pipeline_descriptor(1);
+        assert!(!desc.depth_write, "glass pipeline must not write depth");
+        assert_eq!(desc.blend, Some(BlendMode::GlassHouse), "glass pipeline must blend");
+    }
 }
