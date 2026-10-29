@@ -383,7 +383,7 @@ fn merge_collinear_empty_and_single() {
 
 #[test]
 fn section_rings_distinguish_wall_and_room_same_id() {
-    let (mut m, _) = house();
+    let (mut m, [_, e, _, w]) = house();
     m.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
     m.rooms.push(Room {
         id: ArchId(0),
@@ -392,8 +392,11 @@ fn section_rings_distinguish_wall_and_room_same_id() {
         ..Default::default()
     });
     let cut = section_cut(&build(&m), &y4(), &front());
-    let wall0 = cut.rings.iter().filter(|r| r.kind == ArchKind::Wall && r.object == ArchId(0)).count();
+    // The section at y=4 cuts the east (ArchId(1)) and west (ArchId(3)) walls, not the south (ArchId(0)).
+    let wall_e = cut.rings.iter().filter(|r| r.kind == ArchKind::Wall && r.object == e).count();
+    let wall_w = cut.rings.iter().filter(|r| r.kind == ArchKind::Wall && r.object == w).count();
     let room0 = cut.rings.iter().filter(|r| r.kind == ArchKind::Room && r.object == ArchId(0)).count();
-    assert!(wall0 >= 1, "no wall ring for ArchId(0): {:?}", cut.rings);
+    assert!(wall_e >= 1, "no wall ring for east wall: {:?}", cut.rings);
+    assert!(wall_w >= 1, "no wall ring for west wall: {:?}", cut.rings);
     assert!(room0 >= 1, "no room ring for ArchId(0): {:?}", cut.rings);
 }
