@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-29 12:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 12:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 6 of 13: The 3D view, properly — 6 of 15 segments merged · 2 of 9 acceptance checks**
+**Phase 6 of 13: The 3D view, properly — 7 of 15 segments merged · 2 of 9 acceptance checks**
 
-4,814 workspace tests passing at the last merge · 442 segments merged in all · 0 of 11 seats working
+4,814 workspace tests passing at the last merge · 443 segments merged in all · 0 of 11 seats working
 
 ## Phases
 
@@ -16,7 +16,7 @@ Updated 2026-10-29 12:00 UTC. This page and the card in the README are regenerat
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
-| 6 | The 3D view, properly | building | 2 / 9 | 6.9 h so far · expected done Oct 30 02:28–Oct 30 20:18 UTC |
+| 6 | The 3D view, properly | building | 2 / 9 | 7.1 h so far · expected done Oct 30 02:17–Oct 30 20:13 UTC |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
@@ -27,11 +27,12 @@ Updated 2026-10-29 12:00 UTC. This page and the card in the README are regenerat
 
 ## Phase 6 segments
 
-8 queued, 6 merged, 1 escalate
+7 merged, 6 queued, 2 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p6-arch3d-camera` | arch3d::camera — orbit + full camera, projection, pixel rays | escalate |  |
+| `p6-arch3d-pick` | arch3d::pick — BVH ray cast | working | claude-sonnet-a |
+| `p6-r3d-pbr` | PBR pipeline with MSAA | working | claude-sonnet-b |
 
 ## Recent merges
 
@@ -54,14 +55,14 @@ Updated 2026-10-29 12:00 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 606 |
-| bonsai-b | bonsai2-27b | agent | 563 |
+| bonsai-a | bonsai2-27b | agent | 608 |
+| bonsai-b | bonsai2-27b | agent | 564 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
-| claude-sonnet-a | sonnet | idle | 32 |
-| claude-sonnet-b | sonnet | idle | 26 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 443 |
+| claude-sonnet-a | sonnet | agent | 32 |
+| claude-sonnet-b | sonnet | agent | 26 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 443 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 75 |
 | mai-flash | mai-code-1.1-flash | idle | 6 |
-| tturbo-mac | tturbo-ultraheretic | agent | 403 |
+| tturbo-mac | tturbo-ultraheretic | agent | 404 |
 | tturbo-mac2 | tturbo-ultraheretic | idle | 251 |
