@@ -1183,7 +1183,7 @@ mod tests {
     fn arch_record_version_is_six() {
         let chunks = arch_chunks(&one_wall_model()).unwrap();
         let obj: serde_json::Value = serde_json::from_str(&chunks.join("")).unwrap();
-        assert_eq!(obj["version"].as_u64(), Some(6), "written payload version");
+        assert_eq!(obj["version"].as_u64(), Some(7), "written payload version");
     }
 
     #[test]
@@ -1816,7 +1816,7 @@ mod tests {
         assert_eq!(polylines, 0, "proxy linework survived the read");
     }
 
-    /// A model with stairs and a railing survives a DXF round trip as a v6 payload.
+    /// A model with stairs and a railing survives a DXF round trip as a v7 payload.
     #[test]
     fn arch_v5_round_trips_stairs() {
         let mut d = Drawing::new_metric();
@@ -1829,11 +1829,11 @@ mod tests {
         assert_eq!(back.arch.stairs.len(), 1, "stair lost on DXF round trip");
         assert_eq!(back.arch.railings.len(), 1, "railing lost on DXF round trip");
 
-        // The record should carry version 6.
+        // The record should carry version 7.
         let chunks = arch_chunks(&d.arch);
-        assert!(chunks.is_some(), "arch_chunks should produce a v6 record with stairs/railings");
+        assert!(chunks.is_some(), "arch_chunks should produce a v7 record with stairs/railings");
         let obj: serde_json::Value = serde_json::from_str(&chunks.unwrap().join("")).unwrap();
-        assert_eq!(obj["version"].as_u64(), Some(6), "written payload version should be 6");
+        assert_eq!(obj["version"].as_u64(), Some(7), "written payload version should be 7");
     }
 
     /// A v4 payload that carries stairs/railings clears them on parse.

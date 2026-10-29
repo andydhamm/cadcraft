@@ -3,22 +3,31 @@ use cadcraft_doc::arch::{ArchId, ArchKind, ArchView, DimKind, ViewDim, ViewGeome
 use cadcraft_io::{read_dxf, write_dxf};
 
 fn view_geometry() -> ViewGeometry {
-    ViewGeometry {
-        revision: 1,
-        extent: [0.0, 0.0, 10.0, 8.0],
-        lines: vec![
-            ViewLine { a: [0.0, 0.0], b: [10.0, 0.0], kind: ArchKind::Wall, object: ArchId(0), ..Default::default() },
-            ViewLine { a: [0.0, 0.0], b: [0.0, 8.0], kind: ArchKind::Wall, object: ArchId(1), ..Default::default() },
-        ],
-        rings: vec![ViewRing {
-            kind: ArchKind::Room,
-            object: ArchId(2),
-            material: "cut".into(),
-            points: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0]],
-        }],
-        dims: vec![ViewDim { kind: DimKind::Width, a: [0.0, -1.0], b: [10.0, -1.0], at: [5.0, -2.0], value: 10.0, text: "10.0".into() }],
-        error: None,
-    }
+    let mut g = ViewGeometry::default();
+    g.revision = 1;
+    g.extent = [0.0, 0.0, 10.0, 8.0];
+    g.lines = vec![
+        ViewLine { a: [0.0, 0.0], b: [10.0, 0.0], kind: ArchKind::Wall, object: ArchId(0), ..Default::default() },
+        ViewLine { a: [0.0, 0.0], b: [0.0, 8.0], kind: ArchKind::Wall, object: ArchId(1), ..Default::default() },
+    ];
+    g.rings = vec![ViewRing {
+        kind: ArchKind::Room,
+        object: ArchId(2),
+        material: "cut".into(),
+        points: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 8.0], [0.0, 8.0]],
+        ..Default::default()
+    }];
+    g.dims = vec![ViewDim {
+        kind: DimKind::Width,
+        a: [0.0, -1.0],
+        b: [10.0, -1.0],
+        at: [5.0, -2.0],
+        value: 10.0,
+        text: "10.0".into(),
+        ..Default::default()
+    }];
+    g.error = None;
+    g
 }
 
 fn view_drawing() -> Drawing {
