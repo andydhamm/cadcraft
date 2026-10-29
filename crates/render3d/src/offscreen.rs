@@ -308,6 +308,9 @@ impl Offscreen {
         }
         let Some((_, meshes)) = self.meshes.as_ref() else { return };
         let draws = meshes.draws.len() as u64;
+        let filtered_meshes: Vec<&crate::types::Mesh> =
+            scene.meshes.iter().filter(|mesh| !mesh.positions.is_empty() && !mesh.indices.is_empty()).collect();
+        let style_is_glass_house = matches!(opts.style, Style::GlassHouse);
         if draws > 0 && self.slots.as_ref().is_none_or(|s| s.capacity < draws) {
             let capacity = draws.next_power_of_two();
             let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -340,6 +343,8 @@ impl Offscreen {
         let aspect = f64::from(self.targets.width) / f64::from(self.targets.height);
         let vp = view_proj(camera, aspect);
         let l = light.normalized();
+        let eye = camera.eye();
+        let eye = [eye.x as f32, eye.y as f32, eye.z as f32];
         if let Some(slots) = &self.slots {
             let mut bytes = vec![0u8; (draws * self.stride) as usize];
             for (i, d) in meshes.draws.iter().enumerate() {
@@ -347,11 +352,16 @@ impl Offscreen {
                 let at = i * self.stride as usize;
                 bytes[at..at + UNIFORM_SIZE as usize].copy_from_slice(bytemuck::bytes_of(&u));
             }
-            let eye = camera.eye();
-            let eye = [eye.x as f32, eye.y as f32, eye.z as f32];
             let mut pbr_bytes = vec![0u8; bytes.len()];
             for (i, d) in meshes.draws.iter().enumerate() {
-                let p = PbrUniform::new(&l, 1.0, d, opts.style.code(), eye);
+                let mut draw = *d;
+                if style_is_glass_house {
+                    let material = filtered_meshes.get(i).map(|mesh| mesh.material.as_str()).unwrap_or("");
+                    if !material.eq_ignore_ascii_case("ground") {
+                        draw.alpha = 0.35;
+                    }
+                }
+                let p = PbrUniform::new(&l, 1.0, &draw, opts.style.code(), eye);
                 let at = i * self.stride as usize;
                 pbr_bytes[at..at + PBR_SIZE as usize].copy_from_slice(bytemuck::bytes_of(&p));
             }
@@ -388,24 +398,85 @@ impl Offscreen {
         }
         pass.set_vertex_buffer(0, meshes.vertex_buffer.slice(..));
         pass.set_index_buffer(meshes.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        // Opaque draws first, then the blended ones (glass) over them without writing depth.
         let shadow = opts.shadow.zip(self.shadowed.as_ref());
-        for blended in [false, true] {
-            let pipeline = match (shadow, blended) {
-                (Some((_, sp)), false) => &sp.opaque,
-                (Some((_, sp)), true) => &sp.glass,
-                (None, false) => &self.gpu.pipeline,
-                (None, true) => &self.gpu.glass_pipeline,
-            };
-            pass.set_pipeline(pipeline);
-            if let Some((map, _)) = shadow {
-                pass.set_bind_group(2, &map.bind_group, &[]);
+        let draw_indices: Vec<usize> = if style_is_glass_house {
+            let mut ground = Vec::new();
+            let mut translucent = Vec::new();
+            for (idx, mesh) in filtered_meshes.iter().enumerate() {
+                if mesh.material.eq_ignore_ascii_case("ground") {
+                    ground.push(idx);
+                } else {
+                    translucent.push(idx);
+                }
             }
-            for (i, d) in meshes.draws.iter().enumerate().filter(|(_, d)| d.is_blended() == blended) {
-                let offset = [(i as u64 * self.stride) as u32];
-                pass.set_bind_group(0, &slots.bind_group, &offset);
-                pass.set_bind_group(1, &slots.pbr_bind_group, &offset);
-                pass.draw_indexed(d.first_index..d.first_index + d.index_count, 0, 0..1);
+            translucent.sort_by(|&a, &b| {
+                let bounds_a = filtered_meshes[a].bounds();
+                let bounds_b = filtered_meshes[b].bounds();
+                let center_a =
+                    [(bounds_a.min[0] + bounds_a.max[0]) * 0.5, (bounds_a.min[1] + bounds_a.max[1]) * 0.5, (bounds_a.min[2] + bounds_a.max[2]) * 0.5];
+                let center_b =
+                    [(bounds_b.min[0] + bounds_b.max[0]) * 0.5, (bounds_b.min[1] + bounds_b.max[1]) * 0.5, (bounds_b.min[2] + bounds_b.max[2]) * 0.5];
+                let eye_f64 = [f64::from(eye[0]), f64::from(eye[1]), f64::from(eye[2])];
+                let da =
+                    (center_a[0] as f64 - eye_f64[0]).powi(2) + (center_a[1] as f64 - eye_f64[1]).powi(2) + (center_a[2] as f64 - eye_f64[2]).powi(2);
+                let db =
+                    (center_b[0] as f64 - eye_f64[0]).powi(2) + (center_b[1] as f64 - eye_f64[1]).powi(2) + (center_b[2] as f64 - eye_f64[2]).powi(2);
+                db.partial_cmp(&da).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let mut order = ground;
+            order.extend(translucent);
+            order
+        } else {
+            (0..meshes.draws.len()).collect()
+        };
+        let draw_pipeline = |is_ground: bool| match (shadow, is_ground) {
+            (Some((_, sp)), false) => &sp.glass,
+            (Some((_, sp)), true) => &sp.opaque,
+            (None, false) => &self.gpu.glass_pipeline,
+            (None, true) => &self.gpu.pipeline,
+        };
+        if style_is_glass_house {
+            let mut opaque = Vec::new();
+            let mut translucent = Vec::new();
+            for idx in &draw_indices {
+                let mesh = filtered_meshes.get(*idx).unwrap_or_else(|| filtered_meshes.first().unwrap());
+                if mesh.material.eq_ignore_ascii_case("ground") {
+                    opaque.push(*idx);
+                } else {
+                    translucent.push(*idx);
+                }
+            }
+            for (pipeline, list) in [(draw_pipeline(true), &opaque as &[usize]), (draw_pipeline(false), &translucent as &[usize])] {
+                pass.set_pipeline(pipeline);
+                if let Some((map, _)) = shadow {
+                    pass.set_bind_group(2, &map.bind_group, &[]);
+                }
+                for &i in list {
+                    let d = &meshes.draws[i];
+                    let offset = [(i as u64 * self.stride) as u32];
+                    pass.set_bind_group(0, &slots.bind_group, &offset);
+                    pass.set_bind_group(1, &slots.pbr_bind_group, &offset);
+                    pass.draw_indexed(d.first_index..d.first_index + d.index_count, 0, 0..1);
+                }
+            }
+        } else {
+            for blended in [false, true] {
+                let pipeline = match (shadow, blended) {
+                    (Some((_, sp)), false) => &sp.opaque,
+                    (Some((_, sp)), true) => &sp.glass,
+                    (None, false) => &self.gpu.pipeline,
+                    (None, true) => &self.gpu.glass_pipeline,
+                };
+                pass.set_pipeline(pipeline);
+                if let Some((map, _)) = shadow {
+                    pass.set_bind_group(2, &map.bind_group, &[]);
+                }
+                for (i, d) in meshes.draws.iter().enumerate().filter(|(_, d)| d.is_blended() == blended) {
+                    let offset = [(i as u64 * self.stride) as u32];
+                    pass.set_bind_group(0, &slots.bind_group, &offset);
+                    pass.set_bind_group(1, &slots.pbr_bind_group, &offset);
+                    pass.draw_indexed(d.first_index..d.first_index + d.index_count, 0, 0..1);
+                }
             }
         }
         if with_edges && let Some(edges) = &self.edges {
