@@ -179,39 +179,40 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
     };
     let mut cam = Camera3d { name, kind, ..Camera3d::default() };
     if let Some(t) = opt_vec::<3>(params, "target")? {
-        cam.target = t;
+        cam.target = Some(t);
     }
     if let Some(a) = opt_f64(params, "azimuth")? {
-        cam.azimuth_deg = a;
+        cam.azimuth_deg = Some(a);
     }
     if let Some(e) = opt_f64(params, "elevation")? {
         if !(-89.0..=89.0).contains(&e) {
             return Err(bad("camera", "`elevation` must be within [-89, 89] degrees"));
         }
-        cam.elevation_deg = e;
+        cam.elevation_deg = Some(e);
     }
     if let Some(d) = opt_f64(params, "distance")? {
         if !(d > 0.0 && d <= MAX_DISTANCE) {
             return Err(bad("camera", format!("`distance` must be in (0, {MAX_DISTANCE}]")));
         }
-        cam.distance = d;
+        cam.distance = Some(d);
     }
     let eye = opt_vec::<2>(params, "eye")?;
     if let Some(e) = eye {
-        cam.eye = e;
+        cam.eye = Some(e);
     }
     if let Some(h) = opt_f64(params, "eyeHeight")? {
-        cam.eye_height = h;
+        cam.eye_height = Some(h);
     }
     if let Some(f) = opt_f64(params, "fov")? {
         if !(f > 0.0 && f < 180.0) {
             return Err(bad("camera", "`fov` must be within (0, 180) degrees"));
         }
-        cam.fov_deg = f;
+        cam.fov_deg = Some(f);
     }
     if kind == CameraKind::Full {
         let Some(e) = eye else { return Err(bad("camera", "a `full` camera needs `eye`")) };
-        if e == [cam.target[0], cam.target[1]] {
+        let t = cam.target.unwrap_or([0.0; 3]);
+        if e == [t[0], t[1]] {
             return Err(bad("camera", "`eye` must differ from `target`"));
         }
     }
