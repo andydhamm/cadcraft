@@ -310,6 +310,26 @@ fn huge_coordinate_wall_builds_without_error() {
     assert_eq!(scene.meshes.len(), 1, "huge wall should produce one mesh");
 }
 
+/// A wall with zero thickness builds without crashing (degenerate but valid).
+#[test]
+fn zero_thickness_wall_builds_without_crash() {
+    let mut model = ArchModel::default();
+    model.add_wall(Wall {
+        start: Vec2::new(0.0, 0.0),
+        end: Vec2::new(3.0, 0.0),
+        thickness: 0.0,
+        height: 2.5,
+        exterior: true,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    });
+
+    let scene = build(&model);
+    // A zero-thickness wall may or may not produce a mesh depending on the
+    // implementation, but it must not crash.
+    assert!(scene.meshes.len() <= 1, "zero-thickness wall produced too many meshes");
+}
+
 /// A wall with NaN coordinates is handled gracefully (no mesh, no crash).
 #[test]
 fn nan_coordinate_wall_is_handled() {

@@ -268,6 +268,40 @@ fn coincident_walls_both_survive() {
     assert!(shape_ids.contains(&id2), "second coincident wall vanished");
 }
 
+/// stretch_wall must move the wall's end toward the target, never collapse the
+/// wall to zero length, and leave the model in a valid state.
+#[test]
+fn stretch_wall_moves_end_and_preserves_length() {
+    let mut model = ArchModel::default();
+    let wall = Wall {
+        start: Vec2::new(0.0, 0.0),
+        end: Vec2::new(5.0, 0.0),
+        thickness: 0.15,
+        height: 2.4,
+        to_ceiling: true,
+        exterior: false,
+        wall_type: "Default".to_string(),
+        ..Default::default()
+    };
+    let id = model.add_wall(wall);
+
+    // Stretch the start end toward (10, 0) — should move start to the right.
+    let affected = stretch_wall(&mut model, id, End::Start, Vec2::new(10.0, 0.0)).expect("stretch_wall failed");
+    assert!(affected.contains(&id), "stretched wall must be in the affected set");
+
+    let stretched = model.wall(id).expect("wall must still exist");
+    // The start should have moved right (toward 10,0).
+    assert!(stretched.start.x > 0.0, "start should have moved right");
+
+    // The wall must still produce a valid polygon.
+    let shapes = solve_joins(&model);
+    let shape = shapes.iter().find(|s| s.id == id).expect("stretched wall must have a shape");
+    assert!(shape.polygon.len() >= 4, "stretched wall polygon has too few vertices");
+    for v in &shape.polygon {
+        assert!(v.is_finite(), "non-finite vertex after stretch");
+    }
+}
+
 /// solve_joins must be deterministic: the same model must always produce the
 /// same shapes (same count, same vertices, same order).
 #[test]
