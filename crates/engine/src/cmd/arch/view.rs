@@ -779,4 +779,62 @@ mod tests {
         assert_eq!(r2["cameras"][1]["eye"], json!([1e308, 1e308, 1e308]));
         assert_eq!(cam_count(&s), 2);
     }
+
+    /// Saving a camera is an undoable drawing mutation.
+    #[test]
+    fn camera_save_can_be_undone() {
+        let mut s = Session::new();
+        s.execute("camera", &json!({ "save": "a", "distance": 5.0 })).unwrap();
+        assert_eq!(cam_count(&s), 1);
+        s.execute("u", &json!({})).unwrap();
+        assert_eq!(cam_count(&s), 0);
+    }
+
+    /// The `step` parameter scales both forward and strafe movement.
+    #[test]
+    fn walkthrough_step_scales_movement() {
+        let mut s = Session::new();
+        // step=2 doubles the forward movement (yaw 0 = +Y)
+        let r = s.execute("walkthrough", &json!({ "eye": [0.0, 0.0, 0.0], "yaw": 0.0, "forward": 1.0, "step": 2.0 })).unwrap();
+        assert!((r["eye"][1].as_f64().unwrap() - 2.0).abs() < 1e-9);
+        // step=0.5 halves the strafe (yaw 0, strafe = +X)
+        let r2 = s.execute("walkthrough", &json!({ "eye": [0.0, 0.0, 0.0], "yaw": 0.0, "strafe": 1.0, "step": 0.5 })).unwrap();
+        assert!((r2["eye"][0].as_f64().unwrap() - 0.5).abs() < 1e-9);
+    }
+
+    /// An orbit camera may store an explicit 2D eye position.
+    #[test]
+    fn orbit_camera_can_have_explicit_eye() {
+        let mut s = Session::new();
+        let r = s.execute("camera", &json!({ "save": "a", "kind": "orbit", "eye": [1.0, 2.0], "distance": 5.0 })).unwrap();
+        assert_eq!(r["active"], json!("a"));
+        assert_eq!(r["cameras"][0]["eye"], json!([1.0, 2.0]));
+        assert_eq!(r["cameras"][0]["kind"], json!("orbit"));
+    }
+
+    /// Cameras appear in the list in the order they were saved.
+    #[test]
+    fn camera_list_preserves_save_order() {
+        let mut s = Session::new();
+        s.execute("camera", &json!({ "save": "first" })).unwrap();
+        s.execute("camera", &json!({ "save": "second" })).unwrap();
+        s.execute("camera", &json!({ "save": "third" })).unwrap();
+        let l = s.execute("camera", &json!({ "list": true })).unwrap();
+        let names: Vec<String> = l["cameras"].as_array().unwrap().iter().map(|c| c["name"].as_str().unwrap().to_string()).collect();
+        assert_eq!(names, vec!["first", "second", "third"]);
+    }
+
+    /// `use` changes the active camera and is itself an undo step.
+    #[test]
+    fn camera_use_sets_active_and_is_undone() {
+        let mut s = Session::new();
+        s.execute("camera", &json!({ "save": "a" })).unwrap();
+        s.execute("camera", &json!({ "save": "b" })).unwrap();
+        // active is now "b"
+        let u = s.execute("camera", &json!({ "use": "a" })).unwrap();
+        assert_eq!(u["active"], json!("a"));
+        s.execute("u", &json!({})).unwrap();
+        let l = s.execute("camera", &json!({ "list": true })).unwrap();
+        assert_eq!(l["active"], json!("b"));
+    }
 }
