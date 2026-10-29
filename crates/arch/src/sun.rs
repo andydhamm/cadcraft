@@ -270,4 +270,83 @@ mod tests {
         assert_eq!(day_of_year("2024-12-31"), Some(366));
         assert_eq!(day_of_year("2023-12-31"), Some(365));
     }
+
+    #[test]
+    fn equator_on_equinox_sun_is_overhead() {
+        // At the equator on the spring equinox, the sun is directly overhead at solar noon.
+        let sun = sun_position(0.0, "2026-03-20", "solar-noon").unwrap();
+        assert!((sun.elevation_deg - 90.0).abs() < 0.1, "Elevation at equator on equinox should be ~90°, got {}", sun.elevation_deg);
+    }
+
+    #[test]
+    fn north_pole_summer_solstice_sun_is_above_horizon() {
+        // At the North Pole on the summer solstice, the sun is above the horizon 24 hours.
+        let sun_noon = sun_position(90.0, "2026-06-21", "solar-noon").unwrap();
+        assert!(sun_noon.elevation_deg > 0.0, "Noon elevation at North Pole on summer solstice should be > 0°, got {}", sun_noon.elevation_deg);
+
+        let sun_midnight = sun_position(90.0, "2026-06-21", "00:00").unwrap();
+        assert!(
+            sun_midnight.elevation_deg > 0.0,
+            "Midnight elevation at North Pole on summer solstice should be > 0°, got {}",
+            sun_midnight.elevation_deg
+        );
+    }
+
+    #[test]
+    fn sun_is_below_horizon_at_night() {
+        // At night, the sun should be below the horizon (negative elevation).
+        let sun = sun_position(51.05, "2026-06-21", "00:00").unwrap();
+        assert!(sun.elevation_deg < 0.0, "Elevation at midnight should be negative, got {}", sun.elevation_deg);
+    }
+
+    #[test]
+    fn sun_dir_cardinal_directions() {
+        // South (azimuth 180°)
+        let sun_south = Sun { elevation_deg: 45.0, azimuth_deg: 180.0 };
+        let dir_south = sun_dir(&sun_south);
+        assert!((dir_south[0]).abs() < 1e-6, "X should be near 0 for South");
+        assert!(dir_south[1] < 0.0, "Y should be negative for South");
+        assert!(dir_south[2] > 0.0, "Z should be positive");
+
+        // North (azimuth 0°)
+        let sun_north = Sun { elevation_deg: 45.0, azimuth_deg: 0.0 };
+        let dir_north = sun_dir(&sun_north);
+        assert!((dir_north[0]).abs() < 1e-6, "X should be near 0 for North");
+        assert!(dir_north[1] > 0.0, "Y should be positive for North");
+        assert!(dir_north[2] > 0.0, "Z should be positive");
+
+        // West (azimuth 270°)
+        let sun_west = Sun { elevation_deg: 45.0, azimuth_deg: 270.0 };
+        let dir_west = sun_dir(&sun_west);
+        assert!(dir_west[0] < 0.0, "X should be negative for West");
+        assert!((dir_west[1]).abs() < 1e-6, "Y should be near 0 for West");
+        assert!(dir_west[2] > 0.0, "Z should be positive");
+    }
+
+    #[test]
+    fn time_format_with_single_digit_hour() {
+        // "0:00" should be accepted as midnight.
+        let sun = sun_position(51.05, "2026-06-21", "0:00").unwrap();
+        assert!(sun.elevation_deg < 0.0, "Midnight elevation should be negative, got {}", sun.elevation_deg);
+    }
+
+    #[test]
+    fn century_leap_year_rules() {
+        // Year 2000 is a leap year (divisible by 400).
+        assert_eq!(day_of_year("2000-02-29"), Some(60));
+        // Year 1900 is not a leap year (divisible by 100 but not 400).
+        assert_eq!(day_of_year("1900-02-29"), None);
+        // Year 2400 is a leap year (divisible by 400).
+        assert_eq!(day_of_year("2400-02-29"), Some(60));
+    }
+
+    #[test]
+    fn sun_dir_overhead_is_straight_up() {
+        // When the sun is directly overhead (elevation 90°), direction should be [0, 0, 1].
+        let sun = Sun { elevation_deg: 90.0, azimuth_deg: 0.0 };
+        let dir = sun_dir(&sun);
+        assert!((dir[0]).abs() < 1e-6, "X should be near 0 for overhead sun");
+        assert!((dir[1]).abs() < 1e-6, "Y should be near 0 for overhead sun");
+        assert!((dir[2] - 1.0).abs() < 1e-6, "Z should be 1 for overhead sun, got {}", dir[2]);
+    }
 }
