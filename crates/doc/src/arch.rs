@@ -2436,4 +2436,89 @@ mod tests {
         assert_ne!(opening, roof);
         assert_ne!(room, roof);
     }
+
+    #[test]
+    fn room_json_roundtrips() {
+        let mut r = Room::default();
+        r.id = ArchId(7);
+        r.name = "Kitchen".into();
+        r.room_type = RoomType::Kitchen;
+        r.level = 1;
+        r.polygon = vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)];
+        r.holes = vec![vec![Vec2::new(1.0, 1.0), Vec2::new(2.0, 1.0), Vec2::new(2.0, 2.0), Vec2::new(1.0, 2.0)]];
+        r.ceiling_height = Some(2.6);
+        r.floor_height = Some(0.0);
+        r.interior_area = 12.0;
+        r.standard_area = 13.5;
+        let json = serde_json::to_string(&r).unwrap();
+        let back: Room = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, ArchId(7));
+        assert_eq!(back.name, "Kitchen");
+        assert_eq!(back.room_type, RoomType::Kitchen);
+        assert_eq!(back.level, 1);
+        assert_eq!(back.polygon.len(), 4);
+        assert_eq!(back.holes.len(), 1);
+        assert_eq!(back.holes[0].len(), 4);
+        assert_eq!(back.ceiling_height, Some(2.6));
+        assert_eq!(back.floor_height, Some(0.0));
+        assert!((back.interior_area - 12.0).abs() < 1e-12);
+        assert!((back.standard_area - 13.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn validate_rejects_negative_and_nan_room_areas() {
+        let mut m = ArchModel::default();
+        // Negative interior area
+        m.push_room(Room { polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0)], interior_area: -1.0, ..Room::default() });
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("invalid interior area")), "negative interior area not reported: {msgs:?}");
+
+        // NaN standard area
+        let mut m2 = ArchModel::default();
+        m2.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0)],
+            standard_area: f64::NAN,
+            ..Room::default()
+        });
+        let msgs2 = m2.validate();
+        assert!(msgs2.iter().any(|m| m.contains("invalid standard area")), "NaN standard area not reported: {msgs2:?}");
+    }
+
+    #[test]
+    fn validate_rejects_room_on_unknown_level() {
+        let mut m = ArchModel::default();
+        m.push_room(Room { polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0)], level: 99, ..Room::default() });
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("unknown level")), "room on unknown level not reported: {msgs:?}");
+    }
+
+    #[test]
+    fn validate_flags_duplicate_room_ids() {
+        let mut m = ArchModel::default();
+        m.push_room(Room::default());
+        m.push_room(Room::default());
+        m.rooms[1].id = m.rooms[0].id;
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("duplicate room id")), "duplicate room id not reported: {msgs:?}");
+    }
+
+    #[test]
+    fn validate_rejects_too_many_rooms() {
+        let mut m = ArchModel::default();
+        for _ in 0..MAX_ROOMS + 1 {
+            m.push_room(Room::default());
+        }
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("max") && m.contains("rooms")), "too many rooms not reported: {msgs:?}");
+    }
+
+    #[test]
+    fn level_floor_to_floor_rejects_negative_components() {
+        let l = Level { ceiling_height: 2.4, structure: -0.1, ..Level::default() };
+        assert_eq!(l.floor_to_floor(), 0.0, "negative structure should give 0.0");
+        let l2 = Level { ceiling_height: -2.4, structure: 0.3, ..Level::default() };
+        assert_eq!(l2.floor_to_floor(), 0.0, "negative ceiling height should give 0.0");
+        let l3 = Level { ceiling_height: 0.0, structure: 0.0, ..Level::default() };
+        assert_eq!(l3.floor_to_floor(), 0.0, "zero components should give 0.0");
+    }
 }
