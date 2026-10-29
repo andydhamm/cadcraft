@@ -1,6 +1,7 @@
 //! Wall extrusion: turns a solved 2D `WallShape` into a 3D extruded mesh.
 
 use crate::mesh::Mesh;
+use crate::roof::underside_z;
 
 use cadcraft_arch::join::WallShape;
 use cadcraft_arch::opening::ROUGH_ALLOWANCE;
@@ -378,10 +379,31 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
     }
     let edge_mid = Vec2::new(sum_x / (edges.len() as f64 * 2.0), sum_y / (edges.len() as f64 * 2.0));
     let wall_mid = Vec2::new((wall.start.x + wall.end.x) / 2.0, (wall.start.y + wall.end.y) / 2.0);
-    let out_vec = edge_mid - wall_mid;
-    let out_len = (out_vec.x * out_vec.x + out_vec.y * out_vec.y).sqrt();
+    let mut out_vec = edge_mid - wall_mid;
+    let mut out_len = (out_vec.x * out_vec.x + out_vec.y * out_vec.y).sqrt();
     if out_len < 1e-9 {
-        return None;
+        let mut roof_center = Vec2::ZERO;
+        let mut count = 0usize;
+        for roof in &model.roofs {
+            if roof.level != wall.base_level {
+                continue;
+            }
+            for plane in &roof.planes {
+                for q in &plane.ring {
+                    roof_center += *q;
+                    count += 1;
+                }
+            }
+        }
+        if count == 0 {
+            return None;
+        }
+        let roof_center = roof_center / count as f64;
+        out_vec = roof_center - wall_mid;
+        out_len = (out_vec.x * out_vec.x + out_vec.y * out_vec.y).sqrt();
+        if out_len < 1e-9 {
+            return None;
+        }
     }
     let out = Vec2::new(out_vec.x / out_len, out_vec.y / out_len);
 
@@ -409,62 +431,72 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
         }
     }
 
-    // Evaluate the top height at each candidate `u`.
+    // Sample both wall faces. Under an overhang the opposite face can still lie
+    // inside the footprint, so the clipped roof-top must follow the roof-covered
+    // maximum height rather than a single preselected side.
     let mut points: Vec<Vec2> = Vec::new();
+    let top_v = top - base;
     for &u in &unique_us {
-        let p = wall.start + dir * u + out * (wall.thickness / 2.0);
-        let mut z = top;
+        let mut z_best = f64::NEG_INFINITY;
         let mut covered = false;
-        for roof in &model.roofs {
-            if roof.level != wall.base_level {
-                continue;
-            }
-            for plane in &roof.planes {
-                let a = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
-                let b = Vec2::new(plane.base_edge[2], plane.base_edge[3]);
-                let edge_len = ((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y)).sqrt();
-                if edge_len < 1e-12 || plane.ring.len() < 3 {
+        for side in [-1.0, 1.0] {
+            let p = wall.start + dir * u + out * (wall.thickness / 2.0) * side;
+            for roof in &model.roofs {
+                if roof.level != wall.base_level {
                     continue;
                 }
-                let perp = Vec2::new(-(b.y - a.y), b.x - a.x);
-                let perp_len = (perp.x * perp.x + perp.y * perp.y).sqrt();
-                if perp_len < 1e-12 {
-                    continue;
-                }
-                let mut n = Vec2::new(perp.x / perp_len, perp.y / perp_len);
-                let mut cx = 0.0;
-                let mut cy = 0.0;
-                for q in &plane.ring {
-                    cx += q.x;
-                    cy += q.y;
-                }
-                let c = Vec2::new(cx / plane.ring.len() as f64, cy / plane.ring.len() as f64);
-                if (c - a).dot(n) < 0.0 {
-                    n = Vec2::new(-n.x, -n.y);
-                }
-                let d = (p - a).dot(n);
-                let mut is_covered = point_in_polygon(&plane.ring, p);
-                if !is_covered {
-                    let to_c = c - p;
-                    let to_c_len = (to_c.x * to_c.x + to_c.y * to_c.y).sqrt();
-                    if to_c_len >= 1e-12 {
-                        let nudged = p + to_c / to_c_len * 1e-6;
-                        is_covered = point_in_polygon(&plane.ring, nudged);
+                for plane in &roof.planes {
+                    let a = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
+                    let b = Vec2::new(plane.base_edge[2], plane.base_edge[3]);
+                    let edge_len = ((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y)).sqrt();
+                    if edge_len < 1e-12 || plane.ring.len() < 3 {
+                        continue;
                     }
-                }
-                if is_covered {
-                    let z_plane = plane.eave_z + plane.slope * d;
-                    if z_plane.is_finite() {
-                        if !covered || z_plane < z {
-                            z = z_plane;
+                    let mut is_covered = point_in_polygon(&plane.ring, p);
+                    if !is_covered {
+                        let mut cx = 0.0;
+                        let mut cy = 0.0;
+                        for q in &plane.ring {
+                            cx += q.x;
+                            cy += q.y;
                         }
-                        covered = true;
+                        let c = Vec2::new(cx / plane.ring.len() as f64, cy / plane.ring.len() as f64);
+                        let to_c = c - p;
+                        let to_c_len = (to_c.x * to_c.x + to_c.y * to_c.y).sqrt();
+                        if to_c_len >= 1e-12 {
+                            let nudged = p + to_c / to_c_len * 1e-6;
+                            is_covered = point_in_polygon(&plane.ring, nudged);
+                        }
+                    }
+                    if is_covered {
+                        let a = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
+                        let b = Vec2::new(plane.base_edge[2], plane.base_edge[3]);
+                        let ab = b - a;
+                        let len_sq = ab.x * ab.x + ab.y * ab.y;
+                        let dist = if len_sq > 1e-12 {
+                            let len = len_sq.sqrt();
+                            let dir = Vec2::new(ab.x / len, ab.y / len);
+                            let normal = Vec2::new(-dir.y, dir.x);
+                            let v = p - a;
+                            (v.x * normal.x + v.y * normal.y).abs()
+                        } else {
+                            0.0
+                        };
+                        let overhang = if plane.overhang.is_finite() && plane.overhang >= 0.0 { plane.overhang } else { 0.0 };
+                        if dist <= overhang + 1e-9 {
+                            continue;
+                        }
+                        let z_plane = underside_z(plane, plane.eave_z, p);
+                        if z_plane.is_finite() {
+                            z_best = z_best.max(z_plane);
+                            covered = true;
+                        }
                     }
                 }
             }
         }
-        let v = z - base;
-        if v.is_finite() {
+        let v = z_best - base;
+        if covered && v.is_finite() && v > top_v + 1e-9 {
             points.push(Vec2::new(u, v));
         }
     }
