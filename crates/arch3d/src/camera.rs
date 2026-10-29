@@ -312,6 +312,11 @@ pub fn projected_scene_bounds(camera: &Camera, scene: &Scene3d, size: (u32, u32)
     project_points(camera, points, size)
 }
 
+/// A full camera framing `b` from −Y at `eye_height` (the spec's free function; see [`FullCamera::fit`]).
+pub fn fit_full_camera(b: &Bounds3, eye_height: f64) -> FullCamera {
+    FullCamera::fit(b, eye_height)
+}
+
 /// Project a single world point `p` into viewport pixels `[x, y]` (y-down).
 ///
 /// Returns `None` when the point is behind the eye (`w_clip <= 1e-9`), when any value is
@@ -526,6 +531,13 @@ mod tests {
             let r = project_point(cam, size, [t.x + right.x, t.y + right.y, t.z + right.z]).unwrap();
             assert!(r[0] > c[0] && (r[1] - c[1]).abs() < 1e-3, "the eye's right is not the screen's right: {c:?} -> {r:?}");
         }
+    }
+
+    #[test]
+    fn fit_full_camera_is_full_camera_fit() {
+        let b = Bounds3::new([0.0, 0.0, 0.0], [10.0, 8.0, 2.4]);
+        let (a, f) = (fit_full_camera(&b, 1.6), FullCamera::fit(&b, 1.6));
+        assert!((a.eye - f.eye).len() < 1e-12 && (a.target - f.target).len() < 1e-12);
     }
 
     #[test]
