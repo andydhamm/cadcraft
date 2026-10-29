@@ -230,14 +230,11 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
         let h = s.doc_mut()?.new_handle();
         let entity = Entity::new(h, EntityKind::Viewport(vp));
 
-        // Insert entity using model.push on Drawing
-        s.doc_mut()?.model.push(entity);
-        handles.push(h);
-
         // Add to layout
         if let Some(layout) = s.doc_mut()?.layouts.last_mut() {
-            layout.entities.push(h);
+            layout.entities.push(entity);
         }
+        handles.push(h);
 
         resp.push(json!({
             "handle": format!("{:x}", h.0),
