@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-29 00:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 00:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 5 of 13: Stairs, railings and decks — 20 of 24 segments merged · 6 of 9 acceptance checks**
 
@@ -15,7 +15,7 @@ Updated 2026-10-29 00:00 UTC. This page and the card in the README are regenerat
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
-| 5 | Stairs, railings and decks | building | 6 / 9 | 11.0 h so far · expected done Oct 29 04:57–Oct 29 10:13 UTC |
+| 5 | Stairs, railings and decks | building | 6 / 9 | 11.3 h so far · expected done Oct 29 05:18–Oct 29 10:41 UTC |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
@@ -27,14 +27,14 @@ Updated 2026-10-29 00:00 UTC. This page and the card in the README are regenerat
 
 ## Phase 5 segments
 
-20 merged, 2 working, 1 merging, 1 gate
+20 merged, 3 gate, 1 merging
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p5f-stair-stepped-profile` | Stair flight profile: real steps, not a ramp | merging | claude-sonnet-b |
-| `p5f-stair-cmd-optional-levels` | stair: levels optional, and the well holes the upper room | working | claude-sonnet-a |
+| `p5f-stair-cmd-optional-levels` | stair: levels optional, and the well holes the upper room | gate | claude-sonnet-a |
 | `p5f-inspect-holes-are-rings` | arch.inspect reports room holes as rings, not a count | gate | mai-flash |
-| `p5f-dxf-deck-height-roundtrip` | Deck rooms and room holes survive the DXF arch record | working | bonsai-a |
+| `p5f-dxf-deck-height-roundtrip` | Deck rooms and room holes survive the DXF arch record | gate | bonsai-a |
 
 ## Recent merges
 
@@ -57,16 +57,16 @@ Updated 2026-10-29 00:00 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 591 |
-| bonsai-b | bonsai2-27b | gate | 541 |
+| bonsai-a | bonsai2-27b | gate | 591 |
+| bonsai-b | bonsai2-27b | gate | 542 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
-| claude-sonnet-a | sonnet | agent | 26 |
+| claude-sonnet-a | sonnet | gate | 26 |
 | claude-sonnet-b | sonnet | merging | 23 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | merging | 419 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 71 |
 | mai-flash | mai-code-1.1-flash | gate | 2 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
-| tturbo-mac | tturbo-ultraheretic | agent | 382 |
+| tturbo-mac | tturbo-ultraheretic | gate | 382 |
 | tturbo-mac2 | tturbo-ultraheretic | gate | 233 |
