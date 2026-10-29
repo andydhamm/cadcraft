@@ -10,6 +10,9 @@ use std::time::Duration;
 
 use crate::Render3dError;
 use crate::adapter::{AdapterChoice, DeviceInfo, request_device};
+
+/// Alias of [`DeviceInfo`] for the accessor signature.
+type Info = DeviceInfo;
 use crate::camera::{Camera, view_proj};
 use crate::light::Light;
 use crate::pipeline::{COLOR_FORMAT, DEPTH_FORMAT, GpuMeshes, GpuPipeline, GpuUniform, UNIFORM_SIZE, uniform_stride, upload};
@@ -143,7 +146,7 @@ impl Offscreen {
     /// The device this renderer runs on. For a renderer built with [`Offscreen::with_device`]
     /// the adapter is unknown, so the name is `unknown` and `downlevel` is whether the device's
     /// limits equal the downlevel WebGL2 limits.
-    pub fn device_info(&self) -> &DeviceInfo {
+    pub fn device_info(&self) -> &Info {
         &self.info
     }
 
