@@ -283,6 +283,35 @@ fn render_prints_device_and_shadow_lines() {
 }
 
 #[test]
+fn render_with_an_orbit_target() {
+    let dir = temp_dir("render_with_an_orbit_target");
+    let in_dxf = wall_plan(&dir);
+    let out_png = dir.join("view.png");
+
+    let out = run_cli(&[
+        "render".into(),
+        in_dxf.to_string_lossy().into(),
+        out_png.to_string_lossy().into(),
+        "--camera".into(),
+        "orbit,azimuth=0,elevation=89,distance=40,target=5,4,0".into(),
+    ]);
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+    if out.status.success() {
+        // Adapter available: a real PNG must be written, and both the rendered-bounds and
+        // "wrote" lines are reported to stderr.
+        assert!(is_png(&out_png), "render did not write a valid PNG with orbit target: {}", out_png.display());
+        assert!(fs::metadata(&out_png).unwrap().len() > 8, "{:?}", out_png);
+        assert!(stderr.contains("PROJECTED "), "render did not print the PROJECTED bounds to stderr: {stderr}");
+        assert!(stderr.contains("wrote "), "render did not print the wrote line to stderr: {stderr}");
+    } else {
+        // No adapter (headless CI): exit 3 with the NO_ADAPTER message on stderr.
+        assert_eq!(out.status.code(), Some(3), "no-adapter must exit 3, stderr: {stderr}");
+        assert!(stderr.contains("NO_ADAPTER"), "no-adapter case did not report 'NO_ADAPTER': {stderr}");
+    }
+}
+
+#[test]
 fn render_camera_unknown_param_rejected() {
     let dir = temp_dir("render_camera_unknown_param_rejected");
     let in_dxf = wall_plan(&dir);
