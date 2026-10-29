@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-29 15:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 15:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 6 of 13: The 3D view, properly — 16 of 20 segments merged · 5 of 9 acceptance checks**
 
@@ -16,7 +16,7 @@ Updated 2026-10-29 15:00 UTC. This page and the card in the README are regenerat
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
-| 6 | The 3D view, properly | building | 5 / 9 | 9.9 h so far · expected done Oct 29 18:54–Oct 30 02:43 UTC |
+| 6 | The 3D view, properly | building | 5 / 9 | 10.1 h so far · expected done Oct 29 19:16–Oct 30 03:17 UTC |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
@@ -27,14 +27,14 @@ Updated 2026-10-29 15:00 UTC. This page and the card in the README are regenerat
 
 ## Phase 6 segments
 
-16 merged, 2 gate, 2 working
+16 merged, 4 gate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p6f-cmd-camera-full-eye` | camera: a full camera takes and reports a 3D eye [x, y, eye height] | gate | darwin-ws3 |
-| `p6f-cli-orbit-target` | render --camera: the orbit form takes target=x,y,z | working | bonsai-b |
+| `p6f-cli-orbit-target` | render --camera: the orbit form takes target=x,y,z | gate | bonsai-b |
 | `p6f-r3d-shadow-reach` | The sun's shadow map covers the ground the shadows fall on | gate | claude-sonnet-a |
-| `p6f-r3d-glass-house` | glass-house style really blends (today it is pixel-identical to shaded) | working | mai-flash |
+| `p6f-r3d-glass-house` | glass-house style really blends (today it is pixel-identical to shaded) | gate | mai-flash |
 
 ## Recent merges
 
@@ -57,14 +57,14 @@ Updated 2026-10-29 15:00 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 618 |
-| bonsai-b | bonsai2-27b | agent | 574 |
+| bonsai-a | bonsai2-27b | agent | 619 |
+| bonsai-b | bonsai2-27b | gate | 574 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
-| claude-sonnet-a | sonnet | gate | 37 |
+| claude-sonnet-a | sonnet | gate | 38 |
 | claude-sonnet-b | sonnet | idle | 33 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 461 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 462 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 75 |
-| mai-flash | mai-code-1.1-flash | agent | 7 |
-| tturbo-mac | tturbo-ultraheretic | agent | 411 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 255 |
+| mai-flash | mai-code-1.1-flash | gate | 7 |
+| tturbo-mac | tturbo-ultraheretic | gate | 411 |
+| tturbo-mac2 | tturbo-ultraheretic | gate | 255 |
