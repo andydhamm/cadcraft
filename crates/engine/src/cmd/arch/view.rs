@@ -302,7 +302,7 @@ fn cameras_json(s: &Session) -> Result<Value, EngineError> {
             json!({
                 "name": c.name,
                 "kind": kind,
-                "target": c.target,
+                "target": c.target.unwrap_or([0.0, 0.0, 0.0]),
                 "azimuth": c.azimuth_deg,
                 "elevation": c.elevation_deg,
                 "distance": c.distance,
@@ -776,7 +776,7 @@ mod tests {
         assert_eq!(r["cameras"][0]["eye"], json!([-100.0, -200.0, -50.0]));
 
         let r2 = s.execute("camera", &json!({ "save": "big", "kind": "full", "eye": [1e308, 1e308, 1e308] })).unwrap();
-        assert_eq!(r2["cameras"][0]["eye"], json!([1e308, 1e308, 1e308]));
+        assert_eq!(r2["cameras"][1]["eye"], json!([1e308, 1e308, 1e308]));
         assert_eq!(cam_count(&s), 2);
     }
 }
