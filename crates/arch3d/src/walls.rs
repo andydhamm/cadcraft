@@ -27,8 +27,10 @@ pub struct RoofClip {
     pub base_edge: [f64; 4],
     /// The slope (rise / run).
     pub slope: f64,
-    /// The height of the roof at the base edge.
+    /// The roof underside height at the eave line.
     pub eave_z: f64,
+    /// The plan overhang from the roof outline to the eave line.
+    pub overhang: f64,
 }
 
 /// A wall's elevation profile in wall-local coordinates.
@@ -263,8 +265,9 @@ pub fn elevation_profile(
         let dist0 = point_to_line_dist(p0_world, Vec2::new(c.base_edge[0], c.base_edge[1]), Vec2::new(c.base_edge[2], c.base_edge[3]));
         let dist1 = point_to_line_dist(p1_world, Vec2::new(c.base_edge[0], c.base_edge[1]), Vec2::new(c.base_edge[2], c.base_edge[3]));
 
-        let z0 = c.eave_z + c.slope * dist0;
-        let z1 = c.eave_z + c.slope * dist1;
+        let overhang = if c.overhang.is_finite() && c.overhang >= 0.0 { c.overhang } else { 0.0 };
+        let z0 = c.eave_z + c.slope * (dist0 - overhang);
+        let z1 = c.eave_z + c.slope * (dist1 - overhang);
 
         v0 = z0 - base;
         v1 = z1 - base;
@@ -431,9 +434,8 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
         }
     }
 
-    // Sample both wall faces. Under an overhang the opposite face can still lie
-    // inside the footprint, so the clipped roof-top must follow the roof-covered
-    // maximum height rather than a single preselected side.
+    // Sample both wall faces. The roof may cover either side of a gable wall, but
+    // the overhang band itself must not be treated as roof cover.
     let mut points: Vec<Vec2> = Vec::new();
     let top_v = top - base;
     for &u in &unique_us {
@@ -468,27 +470,48 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
                             is_covered = point_in_polygon(&plane.ring, nudged);
                         }
                     }
+                    if !is_covered {
+                        is_covered = plane.ring.windows(2).any(|w| {
+                            let a = w[0];
+                            let b = w[1];
+                            let dx = b.x - a.x;
+                            let dy = b.y - a.y;
+                            let len_sq = dx * dx + dy * dy;
+                            if len_sq < 1e-12 {
+                                return false;
+                            }
+                            let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq;
+                            let t = t.clamp(0.0, 1.0);
+                            let closest = Vec2::new(a.x + t * dx, a.y + t * dy);
+                            let d2 = (p.x - closest.x) * (p.x - closest.x) + (p.y - closest.y) * (p.y - closest.y);
+                            d2 <= 1e-12
+                        }) || (plane.ring.len() >= 2 && {
+                            let a = plane.ring[0];
+                            let b = plane.ring[plane.ring.len() - 1];
+                            let dx = b.x - a.x;
+                            let dy = b.y - a.y;
+                            let len_sq = dx * dx + dy * dy;
+                            if len_sq < 1e-12 {
+                                false
+                            } else {
+                                let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq;
+                                let t = t.clamp(0.0, 1.0);
+                                let closest = Vec2::new(a.x + t * dx, a.y + t * dy);
+                                let d2 = (p.x - closest.x) * (p.x - closest.x) + (p.y - closest.y) * (p.y - closest.y);
+                                d2 <= 1e-12
+                            }
+                        });
+                    }
                     if is_covered {
                         let dist = line_dist_to_base_edge(plane, p);
                         let overhang = if plane.overhang.is_finite() && plane.overhang >= 0.0 { plane.overhang } else { 0.0 };
-                        if (p.x - 0.1).abs() < 1e-8 && (p.y - 4.0).abs() < 1e-8 {
-                            println!(
-                                "DBG wall sample p={:?} plane base={:?} overhang={} dist={} eave_z={} underside={}",
-                                p,
-                                plane.base_edge,
-                                overhang,
-                                dist,
-                                plane.eave_z,
-                                underside_z(plane, plane.eave_z, p)
-                            );
-                        }
-                        // The roof underside is evaluated on the true eave line, inset from the
-                        // overhang outline by `overhang`. Wall samples still in that offset band
-                        // belong to the overhang itself and must not generate a clipped roof top.
-                        if !dist.is_finite() || dist <= overhang + 1e-9 {
+                        let z_plane = underside_z(plane, plane.eave_z, p);
+                        // The roof overhang band itself is not roof cover: the eave is `overhang`
+                        // inside from the roof ring. Ignore only that band, not the wall thickness.
+                        let wall_band = overhang;
+                        if !dist.is_finite() || dist <= wall_band + 1e-9 {
                             continue;
                         }
-                        let z_plane = underside_z(plane, plane.eave_z, p);
                         if !z_plane.is_finite() || z_plane <= plane.eave_z + 1e-9 {
                             continue;
                         }
@@ -1343,7 +1366,7 @@ mod tests {
             base_level: 0,
             ..Default::default()
         };
-        let clip = RoofClip { base_edge: [0.0, 0.0, 10.0, 0.0], slope: 0.5, eave_z: 2.4 };
+        let clip = RoofClip { base_edge: [0.0, 0.0, 10.0, 0.0], slope: 0.5, eave_z: 2.4, overhang: 0.0 };
         let profile = elevation_profile(&shape, &wall, 0.0, 2.4, Some(&clip), None, &[]).unwrap();
         assert_eq!(profile.outer.len(), 4, "perpendicular wall with roof clip should have 4 vertices");
         assert!((profile.outer[0].y - 0.0).abs() < 1e-9);
@@ -1786,7 +1809,7 @@ mod tests {
             ..Default::default()
         };
         // Roof with eave_z well above the wall top (2.4)
-        let clip = RoofClip { base_edge: [0.0, 0.0, 10.0, 0.0], slope: 0.5, eave_z: 5.0 };
+        let clip = RoofClip { base_edge: [0.0, 0.0, 10.0, 0.0], slope: 0.5, eave_z: 5.0, overhang: 0.0 };
         let profile = elevation_profile(&shape, &wall, 0.0, 2.4, Some(&clip), None, &[]).unwrap();
         // The roof is above the wall, so the profile should still be a rectangle at height 2.4
         assert_eq!(profile.outer.len(), 4, "roof above wall should not change profile");
