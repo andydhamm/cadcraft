@@ -887,16 +887,15 @@ mod tests {
 
         let mesh = soffit_mesh(&plane, 2.5, 0.3, ArchId(1)).unwrap();
 
-        // Soffit is horizontal at z = 2.5 - 0.2 = 2.3 (top), bottom at 2.28
-        // Width 0.3 in +y direction from y=0
-        // Probe at (5, 0.15, 2.29) - inside the soffit
-        assert!(probe_mesh(&mesh, Vec3::new(5.0, 0.15, 2.29)), "point inside soffit should hit");
+        // The soffit top meets the roof underside at z = 2.5; its bottom is at 2.48.
+        // Width 0.3 in +y direction from y=0.
+        assert!(probe_mesh(&mesh, Vec3::new(5.0, 0.15, 2.49)), "point inside soffit should hit");
 
         // Above the soffit
-        assert!(!probe_mesh(&mesh, Vec3::new(5.0, 0.15, 2.4)), "point above soffit should not hit");
+        assert!(!probe_mesh(&mesh, Vec3::new(5.0, 0.15, 2.6)), "point above soffit should not hit");
 
         // Below the soffit
-        assert!(!probe_mesh(&mesh, Vec3::new(5.0, 0.15, 2.2)), "point below soffit should not hit");
+        assert!(!probe_mesh(&mesh, Vec3::new(5.0, 0.15, 2.4)), "point below soffit should not hit");
     }
 
     #[test]
