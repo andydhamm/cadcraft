@@ -161,6 +161,22 @@ fn run_pspace(s: &mut Session, _p: &Value) -> Result<Value> {
 /// Characters AutoCAD does not allow in layout names.
 const BAD_CHARS: &[char] = &['<', '>', '/', '\\', '"', ':', ';', '?', '*', '|', ',', '=', '`'];
 
+/// Create a new layout with no default viewport and set its page setup.
+pub(crate) fn new_bare_layout(s: &mut Session, name: &str, paper: &str, landscape: bool) -> Result<()> {
+    run_new(s, &json!({"name": name, "viewport": false}))?;
+    run_pagesetup(s, &json!({"layout": name, "paper": paper, "landscape": landscape}))?;
+    Ok(())
+}
+
+/// Add a single viewport to a layout, scaled and centered on a model point.
+pub(crate) fn add_scaled_viewport(s: &mut Session, layout: &str, rect: Bounds2, view_center: Vec2, k: f64) -> Result<Handle> {
+    let space = Space::Paper(layout.to_string());
+    let handles = add_viewports(s, &space, rect, 1, "")?;
+    let h = handles.first().copied().ok_or_else(|| bad("viewport", "failed to create viewport"))?;
+    run_viewport_set(s, &json!({"handle": h.hex(), "scale": k, "center": [view_center.x, view_center.y], "locked": true}))?;
+    Ok(h)
+}
+
 fn check_name(cmd: &str, d: &Drawing, name: &str, except: Option<&str>) -> Result<String> {
     let n = name.trim();
     if n.is_empty() {
