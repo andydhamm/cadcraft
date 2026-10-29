@@ -374,6 +374,22 @@ pub fn build(device: &wgpu::Device, queue: &wgpu::Queue, meshes: &GpuMeshes, lig
     })
 }
 
+/// The bounds that receive shadows: `scene`, joined with the extent of the
+/// [`ground_mesh`] quad when `ground` is drawn. Fit the sun's frustum to this so ground beyond
+/// the scene's own box (where a low sun throws long shadows) lands inside the shadow map.
+/// Non-finite `scene` bounds are returned unchanged.
+pub(crate) fn receiver_bounds(scene: &Bounds3, ground: bool) -> Bounds3 {
+    let mut b = Bounds3::new(scene.min, scene.max);
+    if !ground {
+        return b;
+    }
+    for p in ground_mesh(scene).positions {
+        let q = Bounds3::new([f64::from(p[0]), f64::from(p[1]), f64::from(p[2])], [f64::from(p[0]), f64::from(p[1]), f64::from(p[2])]);
+        b.extend(&q);
+    }
+    b
+}
+
 /// One upward-facing quad at `z = bounds.min[2]` spanning `bounds` expanded by twice its largest
 /// side on every edge, material `"ground"`, object [`GROUND_OBJECT`]. Empty for non-finite bounds.
 pub fn ground_mesh(bounds: &Bounds3) -> Mesh {
@@ -553,6 +569,85 @@ mod tests {
         let plain = off.read_rgba().expect("readback");
         let sum = |p: &[u8]| p.iter().map(|&b| u64::from(b)).sum::<u64>();
         assert!(sum(&lit) < sum(&plain), "the shadow must darken the image");
+    }
+
+    #[test]
+    fn receiver_bounds_include_the_ground_quad() {
+        let b = Bounds3::new([0.0, 0.0, 0.5], [10.0, 4.0, 3.0]);
+        let plain = receiver_bounds(&b, false);
+        assert_eq!((plain.min, plain.max), (b.min, b.max));
+        let r = receiver_bounds(&b, true);
+        assert_eq!((r.min, r.max), ([-20.0, -20.0, 0.5], [30.0, 24.0, 3.0]));
+        let nan = Bounds3::new([f64::NAN; 3], [1.0; 3]);
+        assert!(receiver_bounds(&nan, true).min[0].is_nan());
+    }
+
+    /// Mean brightness of the pixels covering the world rectangle `x0..x1`, `y0..y1` at z = 0.
+    fn mean_brightness(rgba: &[u8], camera: &crate::camera::Camera, size: (u32, u32), x: (f64, f64), y: (f64, f64)) -> f64 {
+        let px = |wx: f64, wy: f64| crate::camera::project_point(camera, size, [wx, wy, 0.0]).expect("on screen");
+        let (a, b) = (px(x.0, y.0), px(x.1, y.1));
+        let (u0, u1) = (a[0].min(b[0]) as u32, a[0].max(b[0]) as u32);
+        let (v0, v1) = (a[1].min(b[1]) as u32, a[1].max(b[1]) as u32);
+        let (mut sum, mut n) = (0.0f64, 0.0f64);
+        for v in v0..=v1 {
+            for u in u0..=u1 {
+                let i = (v * size.0 + u) as usize * 4;
+                if let Some(p) = rgba.get(i..i + 3) {
+                    sum += p.iter().map(|&c| f64::from(c)).sum::<f64>() / 3.0;
+                    n += 1.0;
+                }
+            }
+        }
+        sum / n.max(1.0)
+    }
+
+    /// The check-03 house: 10 × 8 m, 2.4 m walls, as one block on the ground.
+    fn house_scene() -> Scene3d {
+        let mut s = Scene3d::default();
+        s.meshes.push(cuboid("wall", [0.0, 0.0, 0.0], [10.0, 8.0, 2.4]));
+        s.bounds = Bounds3::new([0.0, 0.0, 0.0], [10.0, 8.0, 2.4]);
+        s
+    }
+
+    /// Mean ground brightness (north, south) of the house, top-down, for a sun due south at
+    /// `elevation` degrees.
+    fn house_ground_brightness(device: wgpu::Device, queue: wgpu::Queue, elevation: f32) -> (f64, f64) {
+        use crate::camera::{Camera, Orbit};
+        use cadcraft_geom::Vec3;
+        let size = (256, 256);
+        let mut off = Offscreen::with_device(device, queue, size);
+        let scene = house_scene();
+        let e = elevation.to_radians();
+        // A low ambient: a shadow only removes the direct term, and a 15 degree sun's is small.
+        let light = crate::light::Light::new([0.0, -e.cos(), e.sin()], 0.1);
+        let camera = Camera::Orbit(Orbit::new(Vec3::new(5.0, 4.0, 0.0), 0.0, 89.0, 60.0, 45.0));
+        let map = off.build_shadow(&scene, 1, &light, true).expect("shadow map");
+        off.render_with(&scene, 1, &camera, &light, &crate::offscreen::RenderOptions { shadow: Some(&map), ground: true, ..Default::default() });
+        let rgba = off.read_rgba().expect("readback");
+        let north = mean_brightness(&rgba, &camera, size, (2.0, 8.0), (9.0, 10.0));
+        let south = mean_brightness(&rgba, &camera, size, (2.0, 8.0), (-2.0, -1.0));
+        (north, south)
+    }
+
+    #[test]
+    fn a_low_winter_sun_shadows_the_ground_north_of_the_house() {
+        let Some((device, queue)) = crate::gputest::shared_device() else { return };
+        // Lat 51.05, 21 December, solar noon: about 15.5 degrees above the south horizon.
+        let (north, south) = house_ground_brightness(device, queue, 15.5);
+        assert!(north < 0.75 * south, "north {north} should be well under south {south}");
+    }
+
+    #[test]
+    fn a_high_sun_still_shadows_inside_the_house_bounds() {
+        let Some((device, queue)) = crate::gputest::shared_device() else { return };
+        let mut off = Offscreen::with_device(device.clone(), queue.clone(), (96, 96));
+        let scene = block_scene();
+        let light = crate::light::Light::new(sun_from_south(), 0.25);
+        let map = off.build_shadow(&scene, 1, &light, true).expect("shadow map");
+        let depths = read_depth(&device, &queue, &map);
+        let north = depth_at(&map, &depths, [0.0, 2.5, 0.0]);
+        let south = depth_at(&map, &depths, [0.0, -2.5, 0.0]);
+        assert!(north < south - 0.01, "north {north} should hold nearer (blocker) depth than south {south}");
     }
 
     #[test]
