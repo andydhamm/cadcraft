@@ -16,9 +16,10 @@ type Info = DeviceInfo;
 use crate::camera::{Camera, view_proj};
 use crate::light::Light;
 use crate::pipeline::{
-    COLOR_FORMAT, DEPTH_FORMAT, GpuMeshes, GpuPipeline, GpuUniform, PBR_SIZE, PbrUniform, STYLE_SHADED, UNIFORM_SIZE, pbr_bind_group, uniform_stride,
-    upload,
+    COLOR_FORMAT, DEPTH_FORMAT, GpuMeshes, GpuPipeline, GpuUniform, PBR_SIZE, PbrUniform, STYLE_GLASS_HOUSE, STYLE_HIDDEN_LINE, STYLE_SHADED,
+    STYLE_SHADED_EDGES, UNIFORM_SIZE, pbr_bind_group, uniform_stride, upload,
 };
+use crate::shadow::{ShadowMap, ShadowPipelines};
 use crate::types::Scene3d;
 use image::ImageEncoder;
 
@@ -97,6 +98,44 @@ impl Targets {
     }
 }
 
+/// How faces are shaded (the `STYLE_*` constants of the pipeline).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Style {
+    /// PBR-shaded faces.
+    #[default]
+    Shaded,
+    /// Shaded; the edge lines come from `arch3d::edges`.
+    ShadedEdges,
+    /// Faces in the clear colour with depth written.
+    HiddenLine,
+    /// Translucent faces without depth writes.
+    GlassHouse,
+}
+
+impl Style {
+    fn code(self) -> u32 {
+        match self {
+            Style::Shaded => STYLE_SHADED,
+            Style::ShadedEdges => STYLE_SHADED_EDGES,
+            Style::HiddenLine => STYLE_HIDDEN_LINE,
+            Style::GlassHouse => STYLE_GLASS_HOUSE,
+        }
+    }
+}
+
+/// Options of one render. The default is shaded, without a shadow, without a ground plane.
+#[derive(Clone, Copy, Default)]
+pub struct RenderOptions<'a> {
+    /// A map from [`Offscreen::build_shadow`] of the same renderer: fragments behind its depth get
+    /// ambient light only. For [`render_png_with`] only whether it is `Some` matters (a map belongs
+    /// to one device, so that function builds its own).
+    pub shadow: Option<&'a ShadowMap>,
+    /// Face shading.
+    pub style: Style,
+    /// Draw a [`crate::shadow::ground_mesh`] under the scene.
+    pub ground: bool,
+}
+
 /// Per-draw uniform slots: one buffer, one bind group, addressed by dynamic offset.
 struct Slots {
     capacity: u64,
@@ -114,7 +153,9 @@ pub struct Offscreen {
     gpu: GpuPipeline,
     stride: u64,
     slots: Option<Slots>,
-    meshes: Option<(u64, GpuMeshes)>,
+    meshes: Option<((u64, bool), GpuMeshes)>,
+    shadowed: Option<ShadowPipelines>,
+    shadows_built: u64,
     uploads: u64,
     generation: u64,
     info: DeviceInfo,
@@ -162,7 +203,20 @@ impl Offscreen {
         let gpu = GpuPipeline::new(&device, 1);
         let stride = uniform_stride(&device);
         let info = DeviceInfo::unknown(device.limits() == wgpu::Limits::downlevel_webgl2_defaults());
-        Offscreen { device, queue, targets, gpu, stride, slots: None, meshes: None, uploads: 0, generation: 1, info }
+        Offscreen {
+            device,
+            queue,
+            targets,
+            gpu,
+            stride,
+            slots: None,
+            meshes: None,
+            shadowed: None,
+            shadows_built: 0,
+            uploads: 0,
+            generation: 1,
+            info,
+        }
     }
 
     /// Current target size in pixels.
@@ -197,12 +251,57 @@ impl Offscreen {
         self.uploads
     }
 
-    /// Record a lit, depth-tested draw of `scene` into `encoder`. `scene_key` identifies the
-    /// scene's content (e.g. its arch revision): meshes are uploaded again only when it changes.
-    pub fn encode(&mut self, encoder: &mut wgpu::CommandEncoder, scene: &Scene3d, scene_key: u64, camera: &Camera, light: &Light) {
-        if self.meshes.as_ref().is_none_or(|(k, _)| *k != scene_key) {
-            self.meshes = Some((scene_key, upload(&self.device, scene)));
+    /// Upload `scene` (plus the ground quad when `ground`) unless `scene_key` is already resident.
+    fn ensure_meshes(&mut self, scene: &Scene3d, scene_key: u64, ground: bool) {
+        if self.meshes.as_ref().is_none_or(|(k, _)| *k != (scene_key, ground)) {
+            let uploaded = if ground {
+                let mut with_ground = scene.clone();
+                with_ground.meshes.push(crate::shadow::ground_mesh(&scene.bounds));
+                upload(&self.device, &with_ground)
+            } else {
+                upload(&self.device, scene)
+            };
+            self.meshes = Some(((scene_key, ground), uploaded));
             self.uploads += 1;
+        }
+    }
+
+    /// How many shadow maps [`Offscreen::build_shadow`] has built.
+    pub fn shadow_maps_built(&self) -> u64 {
+        self.shadows_built
+    }
+
+    /// Build the sun shadow map of `scene` for `light` (see [`crate::shadow::build`]); `None` when
+    /// the sun is at or below the horizon or the bounds are empty. `ground` must match the
+    /// [`RenderOptions::ground`] it will be rendered with, so the ground casts and receives alike.
+    pub fn build_shadow(&mut self, scene: &Scene3d, scene_key: u64, light: &Light, ground: bool) -> Option<ShadowMap> {
+        self.ensure_meshes(scene, scene_key, ground);
+        let (_, meshes) = self.meshes.as_ref()?;
+        let map = crate::shadow::build(&self.device, &self.queue, meshes, light.normalized().dir, &scene.bounds)?;
+        self.shadows_built += 1;
+        Some(map)
+    }
+
+    /// Record a lit, depth-tested draw of `scene` into `encoder` with default [`RenderOptions`].
+    /// `scene_key` identifies the scene's content (e.g. its arch revision): meshes are uploaded
+    /// again only when it changes.
+    pub fn encode(&mut self, encoder: &mut wgpu::CommandEncoder, scene: &Scene3d, scene_key: u64, camera: &Camera, light: &Light) {
+        self.encode_with(encoder, scene, scene_key, camera, light, &RenderOptions::default());
+    }
+
+    /// [`Offscreen::encode`] with a shadow map, a shading style and an optional ground plane.
+    pub fn encode_with(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        scene: &Scene3d,
+        scene_key: u64,
+        camera: &Camera,
+        light: &Light,
+        opts: &RenderOptions,
+    ) {
+        self.ensure_meshes(scene, scene_key, opts.ground);
+        if opts.shadow.is_some() && self.shadowed.is_none() {
+            self.shadowed = ShadowPipelines::new(&self.device, &self.gpu);
         }
         let Some((_, meshes)) = self.meshes.as_ref() else { return };
         let draws = meshes.draws.len() as u64;
@@ -249,7 +348,7 @@ impl Offscreen {
             let eye = [eye.x as f32, eye.y as f32, eye.z as f32];
             let mut pbr_bytes = vec![0u8; bytes.len()];
             for (i, d) in meshes.draws.iter().enumerate() {
-                let p = PbrUniform::new(&l, 1.0, d, STYLE_SHADED, eye);
+                let p = PbrUniform::new(&l, 1.0, d, opts.style.code(), eye);
                 let at = i * self.stride as usize;
                 pbr_bytes[at..at + PBR_SIZE as usize].copy_from_slice(bytemuck::bytes_of(&p));
             }
@@ -282,8 +381,18 @@ impl Offscreen {
         pass.set_vertex_buffer(0, meshes.vertex_buffer.slice(..));
         pass.set_index_buffer(meshes.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         // Opaque draws first, then the blended ones (glass) over them without writing depth.
+        let shadow = opts.shadow.zip(self.shadowed.as_ref());
         for blended in [false, true] {
-            pass.set_pipeline(if blended { &self.gpu.glass_pipeline } else { &self.gpu.pipeline });
+            let pipeline = match (shadow, blended) {
+                (Some((_, sp)), false) => &sp.opaque,
+                (Some((_, sp)), true) => &sp.glass,
+                (None, false) => &self.gpu.pipeline,
+                (None, true) => &self.gpu.glass_pipeline,
+            };
+            pass.set_pipeline(pipeline);
+            if let Some((map, _)) = shadow {
+                pass.set_bind_group(2, &map.bind_group, &[]);
+            }
             for (i, d) in meshes.draws.iter().enumerate().filter(|(_, d)| d.is_blended() == blended) {
                 let offset = [(i as u64 * self.stride) as u32];
                 pass.set_bind_group(0, &slots.bind_group, &offset);
@@ -297,6 +406,13 @@ impl Offscreen {
     pub fn render(&mut self, scene: &Scene3d, scene_key: u64, camera: &Camera, light: &Light) {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("render3d") });
         self.encode(&mut encoder, scene, scene_key, camera, light);
+        self.queue.submit([encoder.finish()]);
+    }
+
+    /// [`Offscreen::render`] with [`RenderOptions`].
+    pub fn render_with(&mut self, scene: &Scene3d, scene_key: u64, camera: &Camera, light: &Light, opts: &RenderOptions) {
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("render3d") });
+        self.encode_with(&mut encoder, scene, scene_key, camera, light, opts);
         self.queue.submit([encoder.finish()]);
     }
 
@@ -387,6 +503,16 @@ pub fn device_within(budget: Duration) -> Option<(wgpu::Device, wgpu::Queue)> {
 pub fn render_png(scene: &Scene3d, camera: &Camera, light: &Light, size: (u32, u32)) -> Result<Vec<u8>, Render3dError> {
     let mut offscreen = Offscreen::create(size)?;
     offscreen.render(scene, scene.revision, camera, light);
+    offscreen.read_png()
+}
+
+/// [`render_png`] with [`RenderOptions`]. A `Some` shadow in `opts` asks for the sun shadow of
+/// `light` (built on this renderer's own device); the ground plane and style apply as given.
+pub fn render_png_with(scene: &Scene3d, camera: &Camera, light: &Light, size: (u32, u32), opts: &RenderOptions) -> Result<Vec<u8>, Render3dError> {
+    let mut offscreen = Offscreen::create(size)?;
+    let map = if opts.shadow.is_some() { offscreen.build_shadow(scene, scene.revision, light, opts.ground) } else { None };
+    let own = RenderOptions { shadow: map.as_ref(), style: opts.style, ground: opts.ground };
+    offscreen.render_with(scene, scene.revision, camera, light, &own);
     offscreen.read_png()
 }
 
