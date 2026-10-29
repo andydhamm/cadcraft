@@ -177,7 +177,16 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
         Some(Value::String(k)) if k == "full" => CameraKind::Full,
         Some(_) => return Err(bad("camera", "`kind` must be \"orbit\" or \"full\"")),
     };
-    let mut cam = Camera3d { name, kind, ..Camera3d::default() };
+    let mut cam = Camera3d { name, kind, ..Default::default() };
+    // Reset optional fields to None to avoid inheriting invalid defaults (e.g. NaN)
+    cam.target = None;
+    cam.azimuth_deg = None;
+    cam.elevation_deg = None;
+    cam.distance = None;
+    cam.fov_deg = None;
+    cam.eye = None;
+    cam.eye_height = None;
+
     if let Some(t) = opt_vec::<3>(params, "target")? {
         cam.target = Some(t);
     }
@@ -196,13 +205,59 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
         }
         cam.distance = Some(d);
     }
-    let eye = opt_vec::<2>(params, "eye")?;
-    if let Some(e) = eye {
+    let eye_param = params.get("eye").filter(|v| !v.is_null());
+    let eye_3d: Option<[f64; 3]>;
+    let eye_2d: Option<[f64; 2]>;
+
+    if let Some(v) = eye_param {
+        let a = v.as_array().ok_or_else(|| bad("camera", "`eye` must be an array"))?;
+        if a.len() == 3 {
+            let mut e = [0.0; 3];
+            for (o, x) in e.iter_mut().zip(a) {
+                *o = x.as_f64().filter(|n| n.is_finite()).ok_or_else(|| bad("camera", "`eye` components must be finite numbers"))?;
+            }
+            eye_3d = Some(e);
+            eye_2d = None;
+        } else if a.len() == 2 {
+            let mut e = [0.0; 2];
+            for (o, x) in e.iter_mut().zip(a) {
+                *o = x.as_f64().filter(|n| n.is_finite()).ok_or_else(|| bad("camera", "`eye` components must be finite numbers"))?;
+            }
+            eye_2d = Some(e);
+            eye_3d = None;
+        } else {
+            return Err(bad("camera", "`eye` must be an array of 2 or 3 finite numbers"));
+        }
+    } else {
+        eye_3d = None;
+        eye_2d = None;
+    }
+
+    let eye_height_param = opt_f64(params, "eyeHeight")?;
+
+    if let Some(e) = eye_3d {
+        if kind != CameraKind::Full {
+            return Err(bad("camera", "`eye` with 3 components requires `kind`: \"full\""));
+        }
+        if eye_height_param.is_some() {
+            return Err(bad("camera", "`eye` with 3 components cannot be combined with `eyeHeight`"));
+        }
+        cam.eye = Some([e[0], e[1]]);
+        cam.eye_height = Some(e[2]);
+    } else if let Some(e) = eye_2d {
         cam.eye = Some(e);
-    }
-    if let Some(h) = opt_f64(params, "eyeHeight")? {
+        if let Some(h) = eye_height_param {
+            cam.eye_height = Some(h);
+        }
+    } else if let Some(h) = eye_height_param {
         cam.eye_height = Some(h);
+    } else if kind == CameraKind::Orbit {
+        // Ensure orbit cameras without explicit eye have no eye stored,
+        // overriding any default from Camera3d::default().
+        cam.eye = None;
+        cam.eye_height = None;
     }
+
     if let Some(f) = opt_f64(params, "fov")? {
         if !(f > 0.0 && f < 180.0) {
             return Err(bad("camera", "`fov` must be within (0, 180) degrees"));
@@ -210,7 +265,10 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
         cam.fov_deg = Some(f);
     }
     if kind == CameraKind::Full {
-        let Some(e) = eye else { return Err(bad("camera", "a `full` camera needs `eye`")) };
+        if eye_3d.is_none() && eye_2d.is_none() {
+            return Err(bad("camera", "a `full` camera needs `eye`"));
+        }
+        let e = cam.eye.ok_or_else(|| bad("camera", "a `full` camera needs `eye`"))?;
         let t = cam.target.unwrap_or([0.0; 3]);
         if e == [t[0], t[1]] {
             return Err(bad("camera", "`eye` must differ from `target`"));
@@ -232,6 +290,15 @@ fn cameras_json(s: &Session) -> Result<Value, EngineError> {
         .iter()
         .map(|c| {
             let kind = if c.kind == CameraKind::Full { "full" } else { "orbit" };
+            let eye = if c.kind == CameraKind::Full {
+                match (c.eye, c.eye_height) {
+                    (Some([x, y]), Some(z)) => json!([x, y, z]),
+                    (Some([x, y]), None) => json!([x, y, 0.0]),
+                    _ => json!(null),
+                }
+            } else {
+                json!(c.eye)
+            };
             json!({
                 "name": c.name,
                 "kind": kind,
@@ -239,7 +306,7 @@ fn cameras_json(s: &Session) -> Result<Value, EngineError> {
                 "azimuth": c.azimuth_deg,
                 "elevation": c.elevation_deg,
                 "distance": c.distance,
-                "eye": c.eye,
+                "eye": eye,
                 "eyeHeight": c.eye_height,
                 "fov": c.fov_deg,
             })
@@ -550,5 +617,105 @@ mod tests {
         assert_eq!(r3["elevation"].as_f64().unwrap(), 0.3);
         assert_eq!(r3["distance"].as_f64().unwrap(), 5.0);
         assert_eq!(r3["target"], json!([1.0, 2.0, 3.0]));
+    }
+
+    #[test]
+    fn camera_save_full_accepts_a_3d_eye() {
+        let mut s = Session::new();
+        let r = s
+            .execute(
+                "camera",
+                &json!({
+                    "save": "front",
+                    "kind": "full",
+                    "eye": [3.0, -8.0, 1.6],
+                    "target": [3.0, 0.0, 1.05],
+                    "fov": 60.0
+                }),
+            )
+            .unwrap();
+        assert_eq!(r["active"], json!("front"));
+        assert_eq!(r["cameras"][0]["kind"], json!("full"));
+        assert_eq!(r["cameras"][0]["eye"], json!([3.0, -8.0, 1.6]));
+        assert_eq!(r["cameras"][0]["eyeHeight"], json!(1.6));
+        assert_eq!(r["cameras"][0]["target"], json!([3.0, 0.0, 1.05]));
+        assert_eq!(r["cameras"][0]["fov"], json!(60.0));
+    }
+
+    #[test]
+    fn camera_save_full_still_accepts_eye_xy_with_eye_height() {
+        let mut s = Session::new();
+        let r = s
+            .execute(
+                "camera",
+                &json!({
+                    "save": "front",
+                    "kind": "full",
+                    "eye": [3.0, -8.0],
+                    "eyeHeight": 1.6,
+                    "target": [3.0, 0.0, 1.05],
+                    "fov": 60.0
+                }),
+            )
+            .unwrap();
+        assert_eq!(r["active"], json!("front"));
+        assert_eq!(r["cameras"][0]["kind"], json!("full"));
+        assert_eq!(r["cameras"][0]["eye"], json!([3.0, -8.0, 1.6]));
+        assert_eq!(r["cameras"][0]["eyeHeight"], json!(1.6));
+    }
+
+    #[test]
+    fn camera_reply_reports_a_full_eye_with_its_height() {
+        let mut s = Session::new();
+        s.execute(
+            "camera",
+            &json!({
+                "save": "front",
+                "kind": "full",
+                "eye": [3.0, -8.0, 1.6],
+                "target": [3.0, 0.0, 1.05]
+            }),
+        )
+        .unwrap();
+        s.execute(
+            "camera",
+            &json!({
+                "save": "overview",
+                "kind": "orbit",
+                "distance": 20.0
+            }),
+        )
+        .unwrap();
+
+        let l = s.execute("camera", &json!({ "list": true })).unwrap();
+        let cams = l["cameras"].as_array().unwrap();
+        assert_eq!(cams.len(), 2);
+
+        // Find front
+        let front = cams.iter().find(|c| c["name"] == json!("front")).unwrap();
+        assert_eq!(front["kind"], json!("full"));
+        assert_eq!(front["eye"], json!([3.0, -8.0, 1.6]));
+        assert_eq!(front["eyeHeight"], json!(1.6));
+
+        // Find overview
+        let overview = cams.iter().find(|c| c["name"] == json!("overview")).unwrap();
+        assert_eq!(overview["kind"], json!("orbit"));
+        assert!(overview["eye"].is_null());
+    }
+
+    #[test]
+    fn camera_save_full_refuses_a_3d_eye_with_eye_height() {
+        let mut s = Session::new();
+        let r = s.execute(
+            "camera",
+            &json!({
+                "save": "front",
+                "kind": "full",
+                "eye": [3.0, -8.0, 1.6],
+                "eyeHeight": 2.0
+            }),
+        );
+        assert!(matches!(r, Err(EngineError::BadParams { .. })));
+        assert_eq!(cam_count(&s), 0);
     }
 }

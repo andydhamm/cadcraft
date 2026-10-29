@@ -1266,13 +1266,13 @@ impl ArchModel {
 
     /// Whether every numeric field of a camera is finite.
     fn camera_is_finite(c: &Camera3d) -> bool {
-        c.azimuth_deg.is_some_and(|v| v.is_finite())
-            && c.elevation_deg.is_some_and(|v| v.is_finite())
-            && c.distance.is_some_and(|v| v.is_finite())
-            && c.eye_height.is_some_and(|v| v.is_finite())
-            && c.fov_deg.is_some_and(|v| v.is_finite())
-            && c.target.map_or(false, |t| t.iter().all(|v| v.is_finite()))
-            && c.eye.map_or(false, |e| e.iter().all(|v| v.is_finite()))
+        c.azimuth_deg.map_or(true, |v| v.is_finite())
+            && c.elevation_deg.map_or(true, |v| v.is_finite())
+            && c.distance.map_or(true, |v| v.is_finite())
+            && c.eye_height.map_or(true, |v| v.is_finite())
+            && c.fov_deg.map_or(true, |v| v.is_finite())
+            && c.target.map_or(true, |t| t.iter().all(|v| v.is_finite()))
+            && c.eye.map_or(true, |e| e.iter().all(|v| v.is_finite()))
     }
 
     /// Add or update a saved camera, storing it on the model so that it
