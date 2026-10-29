@@ -153,6 +153,10 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
         }
     }
 
+    // Validate the model to drop invalid views and enforce caps, matching the
+    // read-time validation pattern used for cameras and other entities.
+    model.validate();
+
     Some(model)
 }
 

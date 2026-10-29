@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 /// A stable identifier for an architectural object.
 ///
 /// Assigned by [`ArchModel::add_wall`]; monotonically increasing within a drawing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ArchId(pub u32);
 
 impl ArchId {
@@ -200,6 +200,104 @@ pub fn is_railing_handle(h: Handle) -> bool {
 /// Human-readable label for a railing id, e.g. `ra0`, `ra1`.
 pub fn railing_label(id: ArchId) -> String {
     format!("ra{}", id.0)
+}
+
+/// Offset within the arch-handle range reserved for view proxy handles.
+/// View handles occupy `[ARCH_HANDLE_BASE + VIEW_HANDLE_OFFSET, ...)`.
+pub const VIEW_HANDLE_OFFSET: u64 = 0x30000;
+
+/// Maximum number of views in a drawing.
+pub const MAX_VIEWS: usize = 64;
+
+/// Maximum number of lines + ring points per view geometry.
+pub const MAX_VIEW_LINES: usize = 200_000;
+
+/// The synthetic proxy handle for an architectural view.
+pub fn view_handle(id: ArchId) -> Handle {
+    Handle(ARCH_HANDLE_BASE.saturating_add(VIEW_HANDLE_OFFSET).saturating_add(u64::from(id.0)))
+}
+
+/// Whether `h` falls in the synthetic view-handle range.
+pub fn is_view_handle(h: Handle) -> bool {
+    h.0 >= ARCH_HANDLE_BASE.saturating_add(VIEW_HANDLE_OFFSET) && h.0 < ARCH_HANDLE_BASE.saturating_add(VIEW_HANDLE_OFFSET).saturating_add(1u64 << 15)
+}
+
+/// Human-readable label for a view id, e.g. `v0`, `v1`.
+pub fn view_label(id: ArchId) -> String {
+    format!("v{}", id.0)
+}
+
+/// The kind of an architectural object, used to disambiguate IDs and map parts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default)]
+pub enum ArchKind {
+    /// A wall.
+    #[default]
+    Wall,
+    /// An opening (door, window, etc.).
+    Opening,
+    /// A room.
+    Room,
+    /// A roof.
+    Roof,
+    /// A stair.
+    Stair,
+    /// A railing.
+    Railing,
+    /// A view (elevation or section).
+    View,
+}
+
+impl ArchKind {
+    /// Map a part string (from `arch3d::probe::part_of`) to an `ArchKind`.
+    pub fn from_part(part: &str) -> ArchKind {
+        match part {
+            "leaf" | "frame" | "casing" | "glass" | "sill" | "header" => ArchKind::Opening,
+            "floor" | "ceiling" | "deck" => ArchKind::Room,
+            "roof" => ArchKind::Roof,
+            "stair" => ArchKind::Stair,
+            "railing" => ArchKind::Railing,
+            _ => ArchKind::Wall,
+        }
+    }
+
+    /// The JSON spelling of this kind.
+    pub fn key(self) -> &'static str {
+        match self {
+            ArchKind::Wall => "wall",
+            ArchKind::Opening => "opening",
+            ArchKind::Room => "room",
+            ArchKind::Roof => "roof",
+            ArchKind::Stair => "stair",
+            ArchKind::Railing => "railing",
+            ArchKind::View => "view",
+        }
+    }
+
+    /// The synthetic proxy handle for an object of this kind.
+    pub fn handle(self, id: ArchId) -> Handle {
+        match self {
+            ArchKind::Wall => arch_handle(id),
+            ArchKind::Opening => opening_handle(id),
+            ArchKind::Room => room_handle(id),
+            ArchKind::Roof => roof_handle(id),
+            ArchKind::Stair => stair_handle(id),
+            ArchKind::Railing => railing_handle(id),
+            ArchKind::View => view_handle(id),
+        }
+    }
+
+    /// The human-readable label for an object of this kind.
+    pub fn label(self, id: ArchId) -> String {
+        match self {
+            ArchKind::Wall => wall_label(id),
+            ArchKind::Opening => opening_label(id),
+            ArchKind::Room => room_label(id),
+            ArchKind::Roof => roof_label(id),
+            ArchKind::Stair => stair_label(id),
+            ArchKind::Railing => railing_label(id),
+            ArchKind::View => view_label(id),
+        }
+    }
 }
 
 /// Maximum number of walls in a drawing (caps join-stretch BFS and allocations).
@@ -894,6 +992,315 @@ pub enum CameraKind {
     Full,
 }
 
+/// The kind of an architectural view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ViewKind {
+    /// An elevation view (looking in a direction).
+    #[default]
+    Elevation,
+    /// A section view (cutting through a line).
+    Section,
+}
+
+/// A line segment in a generated view geometry.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ViewLine {
+    /// Start point (u, v) in view coordinates (metres).
+    pub a: [f64; 2],
+    /// End point (u, v) in view coordinates (metres).
+    pub b: [f64; 2],
+    /// The kind of object this line belongs to.
+    pub kind: ArchKind,
+    /// The ID of the object this line belongs to.
+    pub object: ArchId,
+}
+
+/// A closed ring in a generated view geometry (e.g. poché fill).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ViewRing {
+    /// The kind of object this ring belongs to.
+    pub kind: ArchKind,
+    /// The ID of the object this ring belongs to.
+    pub object: ArchId,
+    /// Material name for fill.
+    pub material: String,
+    /// Points (u, v) in view coordinates (metres).
+    pub points: Vec<[f64; 2]>,
+}
+
+impl ViewRing {
+    /// Absolute area of the ring (shoelace formula).
+    pub fn area(&self) -> f64 {
+        let mut area = 0.0;
+        let n = self.points.len();
+        if n < 3 {
+            return 0.0;
+        }
+        for i in 0..n {
+            let p1 = self.points[i];
+            let p2 = self.points[(i + 1) % n];
+            area += p1[0] * p2[1] - p2[0] * p1[1];
+        }
+        (area / 2.0).abs()
+    }
+}
+
+/// The kind of dimension.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum DimKind {
+    /// Horizontal dimension.
+    #[default]
+    Width,
+    /// Vertical dimension.
+    Height,
+}
+
+/// A dimension annotation in a generated view geometry.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ViewDim {
+    /// The kind of dimension.
+    pub kind: DimKind,
+    /// Measured point A (u, v).
+    pub a: [f64; 2],
+    /// Measured point B (u, v).
+    pub b: [f64; 2],
+    /// A point on the dimension line (u, v).
+    pub at: [f64; 2],
+    /// The measured value.
+    pub value: f64,
+    /// Text label.
+    pub text: String,
+}
+
+/// Generated geometry for a view, regenerated on revision change.
+///
+/// Coordinates are in view space (u right, v up, metres).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ViewGeometry {
+    /// The `arch_revision` this geometry was generated for.
+    pub revision: u64,
+    /// Bounds of lines and ring points: [u0, v0, u1, v1].
+    pub extent: [f64; 4],
+    /// Line segments.
+    pub lines: Vec<ViewLine>,
+    /// Closed rings (fills).
+    pub rings: Vec<ViewRing>,
+    /// Dimensions.
+    pub dims: Vec<ViewDim>,
+    /// Error message if generation failed.
+    pub error: Option<String>,
+}
+
+/// An architectural view object (Elevation or Section).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ArchView {
+    /// Stable identifier assigned by [`ArchModel::push_view`].
+    pub id: ArchId,
+    /// Name of the view.
+    pub name: String,
+    /// Kind of view (Elevation or Section).
+    pub kind: ViewKind,
+    /// Unit plan direction the viewer looks (x, y).
+    pub look: [f64; 2],
+    /// Section cut line in plan (start, end). `Some` for Section, `None` for Elevation.
+    pub cut: Option<[[f64; 2]; 2]>,
+    /// Depth beyond the cut to show (None = unlimited).
+    pub depth: Option<f64>,
+    /// Plan rectangle [[x0, y0], [x1, y1]] to scope objects. None = all.
+    pub scope: Option<[[f64; 2]; 2]>,
+    /// Drawing scale denominator (e.g. 50 for 1:50).
+    pub scale: f64,
+    /// Model-space point where the view's lower-left is placed.
+    pub insert: [f64; 2],
+    /// Whether to generate dimensions.
+    pub dimensions: bool,
+    /// Layer name ("A-ELEV" or "A-SECT").
+    pub layer: String,
+    /// Generated geometry, not serialized. Regenerated by engine.
+    #[serde(skip)]
+    pub generated: Option<ViewGeometry>,
+}
+
+impl Default for ArchView {
+    fn default() -> Self {
+        ArchView {
+            id: ArchId(0),
+            name: String::new(),
+            kind: ViewKind::default(),
+            look: [0.0, 1.0],
+            cut: None,
+            depth: None,
+            scope: None,
+            scale: 50.0,
+            insert: [0.0, 0.0],
+            dimensions: false,
+            layer: "A-ELEV".into(),
+            generated: None,
+        }
+    }
+}
+
+impl ArchView {
+    /// Place a view-space point into model space using the generated extent.
+    pub fn placed(&self, p: [f64; 2]) -> [f64; 2] {
+        if let Some(g) = &self.generated {
+            let u0 = g.extent[0];
+            let v0 = g.extent[1];
+            [self.insert[0] + (p[0] - u0), self.insert[1] + (p[1] - v0)]
+        } else {
+            self.insert
+        }
+    }
+
+    /// The model-space bounds of the view geometry, if generated.
+    pub fn bounds(&self) -> Option<[f64; 4]> {
+        let g = self.generated.as_ref()?;
+        let u0 = g.extent[0];
+        let v0 = g.extent[1];
+        let u1 = g.extent[2];
+        let v1 = g.extent[3];
+        Some([self.insert[0] + (u0 - u0), self.insert[1] + (v0 - v0), self.insert[0] + (u1 - u0), self.insert[1] + (v1 - v0)])
+    }
+
+    /// Whether the generated geometry is missing or stale for the given revision.
+    pub fn is_stale(&self, revision: u64) -> bool {
+        match &self.generated {
+            Some(g) => g.revision != revision,
+            None => true,
+        }
+    }
+
+    /// Validate the view definition.
+    pub fn validate(&self) -> Result<(), ViewError> {
+        if self.name.trim().is_empty() {
+            return Err(ViewError::EmptyName);
+        }
+        if self.name.len() > 128 {
+            return Err(ViewError::NameTooLong);
+        }
+        if !self.look[0].is_finite() || !self.look[1].is_finite() {
+            return Err(ViewError::NonFiniteLook);
+        }
+        let len_sq = self.look[0] * self.look[0] + self.look[1] * self.look[1];
+        if len_sq <= 0.25 || len_sq >= 4.0 {
+            return Err(ViewError::BadLookLength);
+        }
+
+        if self.kind == ViewKind::Section {
+            let cut = self.cut.ok_or(ViewError::MissingCut)?;
+            if !cut[0][0].is_finite() || !cut[0][1].is_finite() || !cut[1][0].is_finite() || !cut[1][1].is_finite() {
+                return Err(ViewError::NonFiniteCut);
+            }
+            if cut[0][0].abs() > 1e6 || cut[0][1].abs() > 1e6 || cut[1][0].abs() > 1e6 || cut[1][1].abs() > 1e6 {
+                return Err(ViewError::CutTooLarge);
+            }
+            let dx = cut[1][0] - cut[0][0];
+            let dy = cut[1][1] - cut[0][1];
+            if dx * dx + dy * dy <= 1e-12 {
+                return Err(ViewError::CutTooShort);
+            }
+            // Cross product of cut direction and look direction
+            let cross = dx * self.look[1] - dy * self.look[0];
+            if cross.abs() <= 1e-6 {
+                return Err(ViewError::LookParallelToCut);
+            }
+        } else {
+            if self.cut.is_some() {
+                return Err(ViewError::UnexpectedCut);
+            }
+        }
+
+        if let Some(d) = self.depth {
+            if !d.is_finite() || d <= 0.0 {
+                return Err(ViewError::BadDepth);
+            }
+        }
+
+        if let Some(s) = self.scope {
+            if !s[0][0].is_finite() || !s[0][1].is_finite() || !s[1][0].is_finite() || !s[1][1].is_finite() {
+                return Err(ViewError::NonFiniteScope);
+            }
+            if s[0][0].abs() > 1e6 || s[0][1].abs() > 1e6 || s[1][0].abs() > 1e6 || s[1][1].abs() > 1e6 {
+                return Err(ViewError::ScopeTooLarge);
+            }
+            if s[0][0] >= s[1][0] || s[0][1] >= s[1][1] {
+                return Err(ViewError::BadScope);
+            }
+        }
+
+        if !self.scale.is_finite() || self.scale < 1.0 || self.scale > 10000.0 {
+            return Err(ViewError::BadScale);
+        }
+
+        if !self.insert[0].is_finite() || !self.insert[1].is_finite() {
+            return Err(ViewError::NonFiniteInsert);
+        }
+        if self.insert[0].abs() > 1e6 || self.insert[1].abs() > 1e6 {
+            return Err(ViewError::InsertTooLarge);
+        }
+
+        if self.layer.is_empty() {
+            return Err(ViewError::EmptyLayer);
+        }
+
+        Ok(())
+    }
+}
+
+/// Errors returned by [`ArchView::validate`] and [`ArchModel::push_view`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ViewError {
+    /// The view name was empty.
+    EmptyName,
+    /// The view name was too long.
+    NameTooLong,
+    /// The look direction was non-finite.
+    NonFiniteLook,
+    /// The look direction length was out of bounds.
+    BadLookLength,
+    /// A section view was missing a cut line.
+    MissingCut,
+    /// The cut line had non-finite coordinates.
+    NonFiniteCut,
+    /// The cut line coordinates were too large.
+    CutTooLarge,
+    /// The cut line endpoints were too close.
+    CutTooShort,
+    /// The look direction was parallel to the cut line.
+    LookParallelToCut,
+    /// An elevation view had a cut line.
+    UnexpectedCut,
+    /// The depth was invalid.
+    BadDepth,
+    /// The scope had non-finite coordinates.
+    NonFiniteScope,
+    /// The scope coordinates were too large.
+    ScopeTooLarge,
+    /// The scope rectangle was invalid.
+    BadScope,
+    /// The scale was invalid.
+    BadScale,
+    /// The insert point had non-finite coordinates.
+    NonFiniteInsert,
+    /// The insert point coordinates were too large.
+    InsertTooLarge,
+    /// The layer name was empty.
+    EmptyLayer,
+    /// Adding the view would exceed [`MAX_VIEWS`].
+    TooMany,
+}
+
+impl std::fmt::Display for ViewError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 /// A saved 3D camera, stored on [`ArchModel::cameras`] so that it participates in
 /// undo, autosave, AUDIT and round-trip (decision 1).
 ///
@@ -965,6 +1372,22 @@ impl std::fmt::Display for CameraError {
     }
 }
 
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+
+/// Deserialize views with the same read-time filtering as [`ArchModel::validate`]:
+/// invalid definitions and entries beyond [`MAX_VIEWS`] are dropped.
+fn deserialize_views<'de, D>(deserializer: D) -> Result<Vec<ArchView>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let mut views = Vec::<ArchView>::deserialize(deserializer)?;
+    views.retain(|view| view.validate().is_ok());
+    views.truncate(MAX_VIEWS);
+    Ok(views)
+}
+
 /// The architectural object model for a drawing.
 ///
 /// Stored on [`Drawing::arch`]; the 3D pane and incremental rebuilds key off
@@ -1003,6 +1426,11 @@ pub struct ArchModel {
     pub cameras: Vec<Camera3d>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_camera: Option<String>,
+    // Skipped when empty, so a model without views writes the same payload it did before views existed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "deserialize_views")]
+    pub views: Vec<ArchView>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub next_view_id: u32,
 }
 
 impl Default for ArchModel {
@@ -1022,6 +1450,8 @@ impl Default for ArchModel {
             next_railing_id: 0,
             cameras: Vec::new(),
             active_camera: None,
+            views: Vec::new(),
+            next_view_id: 0,
             levels: vec![Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 }],
             types: vec![
                 WallType {
@@ -1088,9 +1518,16 @@ impl ArchModel {
         self.walls.iter().map(|w| w.id)
     }
 
-    /// Whether the model has no walls.
+    /// Whether the model has no walls, openings, rooms, roofs, stairs, railings, cameras or views.
     pub fn is_empty(&self) -> bool {
         self.walls.is_empty()
+            && self.openings.is_empty()
+            && self.rooms.is_empty()
+            && self.roofs.is_empty()
+            && self.stairs.is_empty()
+            && self.railings.is_empty()
+            && self.cameras.is_empty()
+            && self.views.is_empty()
     }
 
     /// Look up a wall type by name (case-insensitive).
@@ -1248,6 +1685,41 @@ impl ArchModel {
         self.railings.iter().map(|r| r.id)
     }
 
+    /// Add a view and return its new id.
+    ///
+    /// Validates the view and refuses if it exceeds [`MAX_VIEWS`].
+    pub fn push_view(&mut self, mut v: ArchView) -> Result<ArchId, ViewError> {
+        if self.views.len() >= MAX_VIEWS {
+            return Err(ViewError::TooMany);
+        }
+        v.validate()?;
+        let id = ArchId(self.next_view_id);
+        self.next_view_id = self.next_view_id.saturating_add(1);
+        v.id = id;
+        self.views.push(v);
+        Ok(id)
+    }
+
+    /// Look up a view by id.
+    pub fn view(&self, id: ArchId) -> Option<&ArchView> {
+        self.views.iter().find(|v| v.id == id)
+    }
+
+    /// Look up a mutable view by id.
+    pub fn view_mut(&mut self, id: ArchId) -> Option<&mut ArchView> {
+        self.views.iter_mut().find(|v| v.id == id)
+    }
+
+    /// Remove a view by id.
+    pub fn remove_view(&mut self, id: ArchId) -> Option<ArchView> {
+        if let Some(pos) = self.views.iter().position(|v| v.id == id) { Some(self.views.remove(pos)) } else { None }
+    }
+
+    /// Look up a view by its label (e.g. "v0").
+    pub fn view_by_label(&self, label: &str) -> Option<&ArchView> {
+        self.views.iter().find(|v| view_label(v.id) == label)
+    }
+
     /// Union of every wall's poché ring bounds.
     ///
     /// Computed as `Bounds2::from_points` over each wall's four offset corners
@@ -1357,7 +1829,7 @@ impl ArchModel {
     /// - Per-kind id caps and no duplicate ids per kind.
     /// - Each `next_*_id` counter is above the largest id already in use for
     ///   its kind (skipped when the in-use ids reach [`u32::MAX`]).
-    pub fn validate(&self) -> Vec<String> {
+    pub fn validate(&mut self) -> Vec<String> {
         let mut messages = Vec::new();
 
         if self.walls.len() > MAX_WALLS {
@@ -1743,6 +2215,24 @@ impl ArchModel {
         if let Some(msg) = self.stale_next_id("next_railing_id", self.next_railing_id, self.railings.iter().map(|r| r.id.0).max()) {
             messages.push(msg);
         }
+        if let Some(msg) = self.stale_next_id("next_view_id", self.next_view_id, self.views.iter().map(|v| v.id.0).max()) {
+            messages.push(msg);
+        }
+
+        // Validate views and drop invalid ones or those past the cap.
+        if self.views.len() > MAX_VIEWS {
+            messages.push(format!("model has {} views, max {MAX_VIEWS}", self.views.len()));
+            self.views.truncate(MAX_VIEWS);
+        }
+        let mut valid_views = Vec::new();
+        for v in self.views.drain(..) {
+            if v.validate().is_ok() {
+                valid_views.push(v);
+            } else {
+                messages.push(format!("view `{}`: invalid definition", v.name));
+            }
+        }
+        self.views = valid_views;
 
         messages
     }
@@ -1940,7 +2430,7 @@ mod tests {
 
     #[test]
     fn validate_accepts_a_clean_model() {
-        let m = ArchModel::default();
+        let mut m = ArchModel::default();
         assert!(m.validate().is_empty());
 
         let mut m = ArchModel::default();
