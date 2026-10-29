@@ -378,7 +378,17 @@ pub fn ray_at(camera: &Camera, size: (u32, u32), pixel: [f32; 2]) -> Option<(Vec
     let right = Vec3::new(view.m[0][0], view.m[1][0], view.m[2][0]);
     let up = Vec3::new(view.m[0][1], view.m[1][1], view.m[2][1]);
     let fw = Vec3::new(-view.m[0][2], -view.m[1][2], -view.m[2][2]);
-    let dir_world = right * ((nx * aspect * tan_half) as f64) + up * ((ny * tan_half) as f64) + fw;
+    // Reconstruct the view-space direction from NDC.  The projection matrix maps
+    // `view_x -> clip_x = view_x / (aspect * tan_half)` and `view_y -> clip_y =
+    // view_y / tan_half`, with `clip_w = -view_z`.  For a ray (direction, no
+    // translation) we set `view_z = -1`, giving:
+    //   view_x = ndc_x * aspect * tan_half
+    //   view_y = ndc_y * tan_half
+    //   view_z = -1
+    let d_view_x = (nx * aspect * tan_half) as f64;
+    let d_view_y = (ny * tan_half) as f64;
+    let d_view_z = -1.0;
+    let dir_world = right * d_view_x + up * d_view_y + Vec3::new(-fw.x, -fw.y, -fw.z) * d_view_z;
     if !dir_world.is_finite() {
         return None;
     }
