@@ -1073,9 +1073,9 @@ mod tests {
 
     #[test]
     fn cameras_round_trip_through_dxf() {
-        use cadcraft_doc::arch::Camera;
+        use cadcraft_doc::arch::Camera3d;
         let mut d = Drawing::new_metric();
-        d.arch.cameras.push(Camera {
+        d.arch.cameras.push(Camera3d {
             name: "Front".into(),
             kind: cadcraft_doc::arch::CameraKind::Orbit,
             target: [0.0, 0.0, 1.0],
@@ -1122,10 +1122,10 @@ mod tests {
 
     #[test]
     fn a_camera_list_over_the_cap_is_dropped_not_panicked() {
-        use cadcraft_doc::arch::Camera;
+        use cadcraft_doc::arch::Camera3d;
         let mut m = one_wall_model();
         for i in 0..(cadcraft_doc::arch::MAX_CAMERAS + 1) {
-            m.cameras.push(Camera { name: format!("Cam{}", i), ..Default::default() });
+            m.cameras.push(Camera3d { name: format!("Cam{}", i), ..Default::default() });
         }
         let json = serde_json::json!({ "version": 6, "model": m }).to_string();
         let text = crate::dxf_ext::json_chunks(&json).join("");
@@ -1134,10 +1134,10 @@ mod tests {
 
     #[test]
     fn non_finite_camera_numbers_are_dropped() {
-        use cadcraft_doc::arch::Camera;
+        use cadcraft_doc::arch::Camera3d;
         let mut m = one_wall_model();
-        m.cameras.push(Camera { name: "Bad".into(), target: [f64::NAN, 0.0, 0.0], ..Default::default() });
-        m.cameras.push(Camera { name: "Good".into(), target: [0.0, 0.0, 0.0], ..Default::default() });
+        m.cameras.push(Camera3d { name: "Bad".into(), target: [f64::NAN, 0.0, 0.0], ..Default::default() });
+        m.cameras.push(Camera3d { name: "Good".into(), target: [0.0, 0.0, 0.0], ..Default::default() });
 
         let json = serde_json::json!({ "version": 6, "model": m }).to_string();
         let text = crate::dxf_ext::json_chunks(&json).join("");
