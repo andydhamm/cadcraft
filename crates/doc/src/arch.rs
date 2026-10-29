@@ -1671,6 +1671,32 @@ impl ArchModel {
             messages.push(format!("duplicate railing id {}", id));
         }
 
+        // Deserialization bypasses set_camera(), so apply the same checks here.
+        if self.cameras.len() > MAX_CAMERAS {
+            messages.push(format!("model has {} cameras, max {MAX_CAMERAS}", self.cameras.len()));
+        }
+
+        let mut seen_camera = std::collections::HashSet::new();
+        let mut dupe_cameras = Vec::new();
+        for c in &self.cameras {
+            if c.name.trim().is_empty() {
+                messages.push(format!("camera `{}`: empty name", c.name));
+            }
+            if !Self::camera_is_finite(c) {
+                messages.push(format!("camera `{}`: non-finite numeric value", c.name));
+            }
+            if seen_camera.contains(&c.name) {
+                if !dupe_cameras.contains(&c.name) {
+                    dupe_cameras.push(c.name.clone());
+                }
+            } else {
+                seen_camera.insert(c.name.clone());
+            }
+        }
+        for name in &dupe_cameras {
+            messages.push(format!("duplicate camera name `{name}`"));
+        }
+
         // Stale id counters: the next id to assign must be above every id in use.
         if let Some(msg) = self.stale_next_id("next_id", self.next_id, self.walls.iter().map(|w| w.id.0).max()) {
             messages.push(msg);
