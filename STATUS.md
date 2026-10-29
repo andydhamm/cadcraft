@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-29 05:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 05:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 6 of 13: The 3D view, properly**
 
-4,743 workspace tests passing at the last merge · 432 segments merged in all · 0 of 13 seats working
+4,743 workspace tests passing at the last merge · 432 segments merged in all · 0 of 13 seats working · PAUSED
 
 ## Phases
 
@@ -16,7 +16,7 @@ Updated 2026-10-29 05:30 UTC. This page and the card in the README are regenerat
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
-| 6 | The 3D view, properly | planning | — | 0.4 h so far · expected done Oct 29 10:59–Nov 04 22:33 UTC |
+| 6 | The 3D view, properly | planning | — | 0.6 h so far · expected done Oct 29 10:59–Nov 04 22:33 UTC |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
@@ -62,5 +62,5 @@ none yet
 | mai-flash | mai-code-1.1-flash | idle | 6 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
-| tturbo-mac | tturbo-ultraheretic | agent | 392 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 249 |
+| tturbo-mac | tturbo-ultraheretic | gate | 392 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 250 |
