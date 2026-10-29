@@ -1,11 +1,12 @@
 #[cfg(not(target_arch = "wasm32"))]
 use super::display::append;
-use super::display::{DPrim, DisplayList, Kind, PlotText, VIEWPORT_CONTENT};
+use super::display::{DPrim, DisplayList, Kind, NO_LAYER, PlotText, VIEWPORT_CONTENT};
 use super::draw::entity;
 #[cfg(not(target_arch = "wasm32"))]
 use super::pipeline::PARALLEL_CHUNK;
 use super::pipeline::{Options, style_table, top_ctx, with_point_view};
 use super::{Bounds2, Builder, Ctx, Drawing, Entity, EntityKind, Handle, MAX_BLOCK_EXPANSION, Mat3, Space, Vec2, clip, paper, pen, plotstyle};
+use cadcraft_doc::{is_opening_handle, is_railing_handle, is_roof_handle, is_room_handle, is_stair_handle};
 
 /// Upper bound on viewports drawn per layout (hostile files).
 pub(crate) const MAX_VIEWPORTS: usize = 256;
@@ -160,6 +161,7 @@ fn contents(b: &mut Builder, d: &Drawing, vp: &cadcraft_doc::Viewport, area: Bou
             entity(&mut sub, &c, me);
         }
     }
+    append_arch_through(&mut sub.list, d, vp, &xf, b.opts, b.plotting);
     // Plotted text glyphs move to the layout's list; their outlines carry the glyph's index there
     // in their handle's high half until clipped (see `take_viewport_layers`).
     for t in std::mem::take(&mut sub.list.texts) {
@@ -175,6 +177,67 @@ fn contents(b: &mut Builder, d: &Drawing, vp: &cadcraft_doc::Viewport, area: Bou
     pen::apply(&mut sub.list, unit_mm);
     b.list.expanded = b.list.expanded.saturating_add(sub.list.expanded);
     append_clipped(&mut b.list, &sub.list, clip);
+}
+
+/// Arch linework seen through `vp`: the arch display list, built with the viewport's own layer
+/// state (layers frozen in it are skipped, its layer colours applied), moved to paper by `xf`
+/// and appended to `list`. Clipping and pens follow, as for model entities.
+fn append_arch_through(list: &mut DisplayList, d: &Drawing, vp: &cadcraft_doc::Viewport, xf: &Mat3, opts: &Options, plotting: bool) {
+    let a = &d.arch;
+    if a.walls.is_empty() && a.rooms.is_empty() && a.roofs.is_empty() && a.stairs.is_empty() && a.railings.is_empty() && a.openings.is_empty() {
+        return;
+    }
+    // Arch primitives carry no layer, so the viewport's layer overrides go on a copy of the
+    // drawing (entity stores are copy-on-write, so the copy is cheap).
+    let local;
+    let dv = if vp.frozen_layers.is_empty() && vp.layer_colors.is_empty() {
+        d
+    } else {
+        let mut c = d.clone();
+        for name in &vp.frozen_layers {
+            c.ensure_layer(name);
+            if let Some(l) = c.layer_mut(name) {
+                l.frozen = true;
+            }
+        }
+        for (name, color) in &vp.layer_colors {
+            c.ensure_layer(name);
+            if let Some(l) = c.layer_mut(name) {
+                l.color = *color;
+            }
+        }
+        local = c;
+        &local
+    };
+    let src = crate::arch::build_arch(dv, opts, plotting);
+    let (verts, tris) = (list.verts.len() as u32, list.tris.len() as u32);
+    // Plots carry each viewport primitive's layer index in its handle's low half (see
+    // `take_viewport_layers`), for PDF layers.
+    let layer_of =
+        |name: &str| d.layers.iter().position(|l| l.name.eq_ignore_ascii_case(name)).and_then(|i| u32::try_from(i).ok()).unwrap_or(NO_LAYER);
+    list.prims.extend(src.prims.into_iter().map(|mut p| {
+        p.start += if matches!(p.kind, Kind::Tris | Kind::Mask) { tris } else { verts };
+        if plotting {
+            let h = p.handle;
+            let layer = if is_room_handle(h) {
+                layer_of("A-ROOM")
+            } else if is_roof_handle(h) {
+                layer_of("A-ROOF")
+            } else if is_stair_handle(h) {
+                layer_of("A-STAIR")
+            } else if is_railing_handle(h) {
+                layer_of("A-RAIL")
+            } else if is_opening_handle(h) {
+                NO_LAYER
+            } else {
+                layer_of("A-WALL")
+            };
+            p.handle = Handle(u64::from(layer));
+        }
+        p
+    }));
+    list.verts.extend(src.verts.into_iter().map(|q| xf.apply(q)));
+    list.tris.extend(src.tris.into_iter().map(|q| xf.apply(q)));
 }
 
 /// The clip region of a clipped viewport: the outline of its clip boundary entity, when that
