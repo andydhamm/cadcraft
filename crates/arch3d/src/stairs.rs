@@ -48,9 +48,7 @@ pub fn landing_mesh(s: &Stair, base: f64) -> Option<crate::mesh::Mesh> {
     if !stair_valid(s) || !base.is_finite() {
         return None;
     }
-    if !s.landing_depth.is_finite() || s.landing_depth <= 0.0 {
-        return None;
-    }
+    let landing_depth = if s.landing_depth.is_finite() && s.landing_depth > 0.0 { s.landing_depth } else { s.width };
     let dir = Vec2::from_angle(s.direction);
     let perp = dir.perp();
     let top = base + s.rise;
@@ -58,8 +56,8 @@ pub fn landing_mesh(s: &Stair, base: f64) -> Option<crate::mesh::Mesh> {
     let start_u = s.run;
     let mut ring = vec![
         Vec2::new(start_u, 0.0),
-        Vec2::new(start_u + s.landing_depth, 0.0),
-        Vec2::new(start_u + s.landing_depth, s.width),
+        Vec2::new(start_u + landing_depth, 0.0),
+        Vec2::new(start_u + landing_depth, s.width),
         Vec2::new(start_u, s.width),
     ];
     if ring.iter().any(|p| !p.is_finite()) {
@@ -397,9 +395,9 @@ mod tests {
     fn drop_collinear_keeps_non_collinear_vertices() {
         let ring = vec![
             Vec2::new(0.0, 0.0),
-            Vec2::new(1.0, 0.0),
             Vec2::new(2.0, 0.0), // collinear with neighbours
-            Vec2::new(2.0, 1.0),
+            Vec2::new(4.0, 0.0),
+            Vec2::new(4.0, 1.0),
             Vec2::new(0.0, 1.0),
         ];
         let result = drop_collinear(&ring);
