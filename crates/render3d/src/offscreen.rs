@@ -805,15 +805,15 @@ mod offscreen_behavior_tests {
 
         // Two parallel walls: exterior at x=0, interior at x=1
         let mut ext = crate::types::Mesh::new("wall", crate::types::ArchId(1));
-        ext.positions.extend_from_slice(&[-0.1, 0.0, 0.0, 0.1, 0.0, 0.0, 0.1, 2.0, 0.0, -0.1, 2.0, 0.0]);
-        ext.normals.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
-        ext.uvs.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 1.0, 2.0, 0.0, 2.0]);
+        ext.positions.extend_from_slice(&[[-0.1, 0.0, 0.0], [0.1, 0.0, 0.0], [0.1, 2.0, 0.0], [-0.1, 2.0, 0.0]]);
+        ext.normals.extend_from_slice(&[[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]);
+        ext.uvs.extend_from_slice(&[[0.0, 0.0], [1.0, 0.0], [1.0, 2.0], [0.0, 2.0]]);
         ext.indices = vec![0, 1, 2, 0, 2, 3];
 
         let mut int = crate::types::Mesh::new("wall", crate::types::ArchId(2));
-        int.positions.extend_from_slice(&[0.9, 0.0, 0.0, 1.1, 0.0, 0.0, 1.1, 2.0, 0.0, 0.9, 2.0, 0.0]);
-        int.normals.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
-        int.uvs.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 1.0, 2.0, 0.0, 2.0]);
+        int.positions.extend_from_slice(&[[0.9, 0.0, 0.0], [1.1, 0.0, 0.0], [1.1, 2.0, 0.0], [0.9, 2.0, 0.0]]);
+        int.normals.extend_from_slice(&[[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]);
+        int.uvs.extend_from_slice(&[[0.0, 0.0], [1.0, 0.0], [1.0, 2.0], [0.0, 2.0]]);
         int.indices = vec![0, 1, 2, 0, 2, 3];
 
         let scene = Scene3d { meshes: vec![ext, int], bounds: crate::types::Bounds3::new([-0.1, 0.0, 0.0], [1.1, 2.0, 0.0]), ..Default::default() };
@@ -858,9 +858,9 @@ mod offscreen_behavior_tests {
         let mut off = Offscreen::with_device(device, queue, size);
 
         let mut mesh = crate::types::Mesh::new("wall", crate::types::ArchId(1));
-        mesh.positions.extend_from_slice(&[f32::NAN, 0.0, 0.0, 1.0, f32::INFINITY, 0.0, 0.0, 0.0, f32::NEG_INFINITY]);
-        mesh.normals.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
-        mesh.uvs.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
+        mesh.positions.extend_from_slice(&[[f32::NAN, 0.0, 0.0], [1.0, f32::INFINITY, 0.0], [0.0, 0.0, f32::NEG_INFINITY]]);
+        mesh.normals.extend_from_slice(&[[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]);
+        mesh.uvs.extend_from_slice(&[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]);
         mesh.indices = vec![0, 1, 2];
 
         let scene = Scene3d { meshes: vec![mesh], ..Default::default() };
