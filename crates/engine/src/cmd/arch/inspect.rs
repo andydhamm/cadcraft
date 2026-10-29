@@ -72,6 +72,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     let labels_flag = p.get("labels").and_then(Value::as_bool).unwrap_or(false);
     let roofs_flag = p.get("roofs").and_then(Value::as_bool).unwrap_or(false);
     let stairs_flag = p.get("stairs").and_then(Value::as_bool).unwrap_or(false);
+    let walls_flag = p.get("walls").and_then(Value::as_bool).unwrap_or(false);
     let railings_flag = p.get("railings").and_then(Value::as_bool).unwrap_or(false);
 
     let shapes = solve_joins(&d.arch);
@@ -83,8 +84,17 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     let mut walls = Vec::new();
     for w in &d.arch.walls {
         let mut obj = JsonMap::new();
-        obj.insert("id".to_string(), json!(w.id));
-        obj.insert("handle".to_string(), json!(format!("{:016X}", 0xA000_0000u64 + u64::from(w.id.0))));
+        if walls_flag {
+            obj.insert("id".to_string(), json!(wall_label(w.id)));
+        } else {
+            obj.insert("id".to_string(), json!(w.id));
+        }
+        if walls_flag {
+            // Same lower-case unpadded form as opening and room proxy handles (what `pick3d` reports).
+            obj.insert("handle".to_string(), json!(format!("{:x}", 0xA000_0000u64 + u64::from(w.id.0))));
+        } else {
+            obj.insert("handle".to_string(), json!(format!("{:016X}", 0xA000_0000u64 + u64::from(w.id.0))));
+        }
         obj.insert("start".to_string(), json!([w.start.x, w.start.y]));
         obj.insert("end".to_string(), json!([w.end.x, w.end.y]));
         obj.insert("thickness".to_string(), json!(w.thickness));
@@ -644,6 +654,18 @@ mod tests {
             Err(_) => {}
         }
         s
+    }
+
+    #[test]
+    fn inspect_walls_reports_handles() {
+        let mut s = session_with_one_wall_and_opening();
+        let v = exec(&mut s, "arch.inspect", &json!({ "walls": true }));
+        let walls = v["walls"].as_array().expect("walls array missing");
+        assert_eq!(walls.len(), 1);
+        assert_eq!(walls[0]["id"], "w0");
+        assert_eq!(walls[0]["handle"], "a0000000");
+        assert!(walls[0]["thickness"].is_number());
+        assert!(walls[0]["exterior"].is_boolean());
     }
 
     #[test]
