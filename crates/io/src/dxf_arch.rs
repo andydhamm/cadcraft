@@ -79,8 +79,8 @@ pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
 ///
 /// All versions are bounded — the wall count against [`MAX_WALLS`], the opening count
 /// against [`MAX_OPENINGS`], the roof count against [`MAX_ROOFS`], the stair count against
-/// [`MAX_STAIRS`], and the railing count against [`MAX_RAILINGS`] — so hostile payloads can
-/// not overflow allocations.
+/// [`MAX_STAIRS`], the railing count against [`MAX_RAILINGS`], and the room count against
+/// [`MAX_ROOMS`] — so hostile payloads can not overflow allocations.
 pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     if text.len() > MAX_ARCH_PAYLOAD {
         return None;
@@ -113,6 +113,9 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
         return None;
     }
     if model.railings.len() > cadcraft_doc::arch::MAX_RAILINGS {
+        return None;
+    }
+    if model.rooms.len() > cadcraft_doc::arch::MAX_ROOMS {
         return None;
     }
     Some(model)
@@ -341,7 +344,7 @@ pub(crate) fn proxy_roof_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
 mod tests {
     use super::*;
     use crate::{read_dxf, write_dxf};
-    use cadcraft_doc::arch::{Opening, OpeningKind, Railing, Roof, RoofEdge, RoofEdgeKind, RoofPlane, Room, Stair};
+    use cadcraft_doc::arch::{Opening, OpeningKind, Railing, Roof, RoofEdge, RoofEdgeKind, RoofPlane, Room, RoomType, Stair};
     use cadcraft_doc::{ArchModel, Drawing, EntityKind, Wall};
     use cadcraft_geom::Vec2;
 
@@ -1679,5 +1682,57 @@ mod tests {
 
         assert_eq!(back.arch.stairs.len(), 2, "stairs lost on DXF round trip");
         assert_eq!(back.arch.railings.len(), 2, "railings lost on DXF round trip");
+    }
+
+    /// A deck room's `room_type`, `deck_height` and `holes` survive a DXF round trip
+    /// through the arch XRECORD.
+    #[test]
+    fn deck_height_round_trips() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-ROOM");
+        let rid = d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
+            name: "Deck".into(),
+            room_type: RoomType::Deck,
+            deck_height: Some(0.9),
+            ..Room::default()
+        });
+        let want = d.arch.rooms[0].clone();
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.rooms.len(), 1, "deck room lost on the DXF round trip");
+        let got = &back.arch.rooms[0];
+        assert_eq!(got.id, rid, "room id changed on round trip");
+        assert_eq!(got.name, want.name);
+        assert_eq!(got.room_type, want.room_type, "room type lost on round trip");
+        assert_eq!(got.deck_height, want.deck_height, "deck height lost on round trip");
+        assert_eq!(got.holes, want.holes);
+        assert_eq!(got.polygon, want.polygon);
+    }
+
+    /// A room's `holes` ring survives a DXF round trip through the arch XRECORD.
+    #[test]
+    fn room_holes_round_trip() {
+        let mut d = Drawing::new_metric();
+        d.ensure_layer("A-ROOM");
+        let rid = d.arch.push_room(Room {
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(6.0, 0.0), Vec2::new(6.0, 4.0), Vec2::new(0.0, 4.0)],
+            name: "Room with hole".into(),
+            holes: vec![vec![Vec2::new(1.0, 1.0), Vec2::new(3.0, 1.0), Vec2::new(3.0, 2.0), Vec2::new(1.0, 2.0)]],
+            ..Room::default()
+        });
+        let want = d.arch.rooms[0].clone();
+
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+
+        assert_eq!(back.arch.rooms.len(), 1, "room lost on the DXF round trip");
+        let got = &back.arch.rooms[0];
+        assert_eq!(got.id, rid, "room id changed on round trip");
+        assert_eq!(got.name, want.name);
+        assert_eq!(got.holes, want.holes, "room holes lost on round trip");
+        assert_eq!(got.polygon, want.polygon);
     }
 }
