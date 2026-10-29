@@ -95,6 +95,29 @@ pub fn is_opening_handle(h: Handle) -> bool {
         && h.0 < ARCH_HANDLE_BASE.saturating_add(OPENING_HANDLE_OFFSET).saturating_add(1u64 << 15)
 }
 
+/// The one JSON spelling of a handle: for an arch proxy, its low bits over
+/// `0xA000_0000`, lower-case hex (`w3` -> `a0000003`, `o0` -> `a0008000`);
+/// any other handle is plain lower-case hex.
+pub fn handle_json(h: Handle) -> String {
+    match h.0.checked_sub(ARCH_HANDLE_BASE) {
+        Some(low) => format!("{:x}", 0xA000_0000u64.saturating_add(low)),
+        None => format!("{:x}", h.0),
+    }
+}
+
+/// Proxy handle of the object a 3D probe `part` (see `arch3d::probe::part_of`)
+/// belongs to; unknown parts are walls.
+pub fn part_handle(id: ArchId, part: &str) -> Handle {
+    match part {
+        "leaf" | "frame" | "casing" | "glass" | "sill" | "header" => opening_handle(id),
+        "floor" | "ceiling" | "deck" => room_handle(id),
+        "roof" => roof_handle(id),
+        "stair" => stair_handle(id),
+        "railing" => railing_handle(id),
+        _ => arch_handle(id),
+    }
+}
+
 /// Human-readable label for an opening id, e.g. `o0`, `o1`.
 pub fn opening_label(id: ArchId) -> String {
     format!("o{}", id.0)
@@ -1730,6 +1753,23 @@ mod tests {
     use super::*;
     use crate::Drawing;
     use cadcraft_geom::Vec2;
+
+    #[test]
+    fn handle_json_is_the_low_bits_over_a000_0000_for_every_kind() {
+        assert_eq!(handle_json(arch_handle(ArchId(3))), "a0000003");
+        assert_eq!(handle_json(opening_handle(ArchId(0))), "a0008000");
+        assert_eq!(handle_json(room_handle(ArchId(0))), "a0010000");
+        assert_eq!(handle_json(roof_handle(ArchId(0))), "a0018000");
+        assert_eq!(handle_json(stair_handle(ArchId(0))), "a0020000");
+        assert_eq!(handle_json(railing_handle(ArchId(0))), "a0028000");
+        assert_eq!(handle_json(Handle(0x2F)), "2f");
+        assert_eq!(part_handle(ArchId(1), "glass"), opening_handle(ArchId(1)));
+        assert_eq!(part_handle(ArchId(1), "deck"), room_handle(ArchId(1)));
+        assert_eq!(part_handle(ArchId(1), "roof"), roof_handle(ArchId(1)));
+        assert_eq!(part_handle(ArchId(1), "stair"), stair_handle(ArchId(1)));
+        assert_eq!(part_handle(ArchId(1), "railing"), railing_handle(ArchId(1)));
+        assert_eq!(part_handle(ArchId(1), "wall"), arch_handle(ArchId(1)));
+    }
 
     fn test_wall() -> Wall {
         Wall { start: Vec2::new(0.0, 0.0), end: Vec2::new(10.0, 0.0), thickness: 2.0, height: 3.0, ..Wall::default() }

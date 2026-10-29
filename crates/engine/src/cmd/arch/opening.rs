@@ -18,7 +18,7 @@ use crate::cmd::CommandSpec;
 use crate::prompt::{Accept, Input, Interactive, Prompt, Step};
 use cadcraft_arch::opening::{place_opening, project_to_wall, validate_placement};
 use cadcraft_doc::ArchId;
-use cadcraft_doc::arch::{Hinge, MAX_OPENINGS, Opening, OpeningKind, Swing, arch_handle, opening_handle, opening_label, wall_label};
+use cadcraft_doc::arch::{Hinge, MAX_OPENINGS, Opening, OpeningKind, Swing, arch_handle, handle_json, opening_handle, opening_label, wall_label};
 use cadcraft_doc::{ARCH_HANDLE_BASE, Handle, is_arch_handle};
 use cadcraft_geom::Vec2;
 
@@ -457,7 +457,7 @@ fn place_from_params(cmd: &'static str, kind: OpeningKind, s: &mut Session, p: &
         "openings": [
             {
                 "id": opening_label(id),
-                "handle": format!("{:x}", opening_handle(id).0),
+                "handle": handle_json(opening_handle(id)),
                 "host": wall_label(host),
                 "offset": offset,
                 "width": placed_width,
@@ -529,7 +529,7 @@ pub(crate) fn run_opening_move(s: &mut Session, p: &Value) -> Result<Value, Engi
 
     // 6. Summary.
     Ok(json!({
-        "moved": id.to_string(),
+        "moved": opening_label(id),
         "offset": new_offset,
         "revision": d.arch_revision,
     }))
@@ -584,7 +584,7 @@ mod tests {
         let one = &r["openings"].as_array().expect("openings")[0];
         assert_eq!(one["id"], json!("o0"), "id should be o0");
         let handle = one["handle"].as_str().expect("handle is a string");
-        assert!(handle.starts_with("ffffffff"), "handle should start with ffffffff (arch-proxy base), got {handle}");
+        assert!(handle == "a0008000", "handle should be a0008000, got {handle}");
         assert_eq!(one["host"], json!("w0"), "host should be w0");
     }
 
@@ -1003,6 +1003,13 @@ mod tests {
         let r = s.execute("arch.opening.move", &json!({"opening": "o0", "offset": null}));
         let err = r.expect_err("null offset should be rejected");
         assert!(!err.to_string().is_empty(), "expected an error, got empty");
+    }
+
+    #[test]
+    fn opening_move_reply_names_the_opening() {
+        let mut s = session_with_door();
+        let r = s.execute("arch.opening.move", &json!({"opening": "o0", "offset": 5.0})).expect("move");
+        assert_eq!(r["moved"], "o0");
     }
 
     /// The opening id can be a bare number (no prefix).

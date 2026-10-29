@@ -263,7 +263,7 @@ fn run_room(s: &mut Session, p: &Value) -> Result<Value> {
 
     Ok(json!({
         "id": format!("r{}", id.0),
-        "handle": format!("{:016X}", cadcraft_arch::room_handle(id).0),
+        "handle": cadcraft_doc::arch::handle_json(cadcraft_arch::room_handle(id)),
         "interiorArea": interior_area,
         "standardArea": standard_area,
     }))
@@ -376,7 +376,7 @@ mod tests {
         assert_eq!(r["id"].as_str().unwrap(), "r0");
         assert_eq!(r["interiorArea"].as_f64().unwrap(), 9.0);
         assert_eq!(r["standardArea"].as_f64().unwrap(), 9.0);
-        assert_eq!(r["handle"], "FFFFFFFF00010000");
+        assert_eq!(r["handle"], "a0010000");
         assert_eq!(d.arch.room(d.arch.rooms.last().unwrap().id).unwrap().polygon.len(), 4);
         assert_eq!(d.arch.room(d.arch.rooms.last().unwrap().id).unwrap().level, 0);
         assert_eq!(d.arch.room(d.arch.rooms.last().unwrap().id).unwrap().room_type, RoomType::Other);
