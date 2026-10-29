@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-29 07:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 07:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 6 of 13: The 3D view, properly — 1 of 14 segments merged · 1 of 9 acceptance checks**
 
@@ -16,7 +16,7 @@ Updated 2026-10-29 07:30 UTC. This page and the card in the README are regenerat
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
-| 6 | The 3D view, properly | building | 1 / 9 | 2.4 h so far · expected done Oct 30 02:23–Nov 04 21:50 UTC |
+| 6 | The 3D view, properly | building | 1 / 9 | 2.6 h so far · expected done Oct 30 04:34–Nov 05 14:20 UTC |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
@@ -27,12 +27,12 @@ Updated 2026-10-29 07:30 UTC. This page and the card in the README are regenerat
 
 ## Phase 6 segments
 
-9 queued, 2 gate, 2 merging, 1 merged
+9 queued, 2 working, 2 merging, 1 merged
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p6-arch3d-camera` | arch3d::camera — orbit + full camera, projection, pixel rays | gate | bonsai-a |
-| `p6-doc-cameras` | Camera3d on the arch model | gate | bonsai-b |
+| `p6-arch3d-camera` | arch3d::camera — orbit + full camera, projection, pixel rays | working | bonsai-a |
+| `p6-doc-cameras` | Camera3d on the arch model | working | bonsai-b |
 | `p6-cmd-sun` | sun command | merging | claude-sonnet-b |
 | `p6-r3d-limits` | Adapter choice + downlevel WebGL2 limits | merging | claude-sonnet-a |
 
@@ -57,13 +57,13 @@ Updated 2026-10-29 07:30 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | gate | 596 |
-| bonsai-b | bonsai2-27b | gate | 547 |
+| bonsai-a | bonsai2-27b | agent | 597 |
+| bonsai-b | bonsai2-27b | agent | 548 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | merging | 30 |
 | claude-sonnet-b | sonnet | merging | 25 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 428 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 429 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 72 |
 | mai-flash | mai-code-1.1-flash | idle | 6 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
