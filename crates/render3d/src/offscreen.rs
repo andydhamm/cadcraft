@@ -153,12 +153,7 @@ impl Offscreen {
         let targets = Targets::new(&device, size);
         let gpu = GpuPipeline::new(&device, 1);
         let stride = uniform_stride(&device);
-        let info = DeviceInfo {
-            name: "unknown".into(),
-            backend: "unknown".into(),
-            adapter_type: "unknown".into(),
-            downlevel: device.limits() == wgpu::Limits::downlevel_webgl2_defaults(),
-        };
+        let info = DeviceInfo::unknown(device.limits() == wgpu::Limits::downlevel_webgl2_defaults());
         Offscreen { device, queue, targets, gpu, stride, slots: None, meshes: None, uploads: 0, generation: 1, info }
     }
 

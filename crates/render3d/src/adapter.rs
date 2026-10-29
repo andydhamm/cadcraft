@@ -41,6 +41,12 @@ pub struct DeviceInfo {
 }
 
 impl DeviceInfo {
+    /// Describe a device whose adapter is not known (`unknown` name, backend and type).
+    pub fn unknown(downlevel: bool) -> Self {
+        let unknown = || "unknown".to_string();
+        DeviceInfo { name: unknown(), backend: unknown(), adapter_type: unknown(), downlevel }
+    }
+
     /// One-line report: `DEVICE name=… backend=… type=…`, plus ` limits=downlevel_webgl2` when
     /// the device uses the downlevel WebGL2 limits.
     pub fn line(&self) -> String {
