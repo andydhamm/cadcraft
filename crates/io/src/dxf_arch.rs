@@ -426,8 +426,8 @@ mod tests {
 
     #[test]
     fn parse_arch_rejects_unknown_versions() {
-        // Versions 1..=5 are understood; 0 and 6+ are unknown.
-        assert!(parse_arch(r#"{"version": 6, "model": { "walls": [] }}"#).is_none());
+        // Versions 1..=6 are understood; 0 and 7+ are unknown.
+        assert!(parse_arch(r#"{"version": 7, "model": { "walls": [] }}"#).is_none());
         assert!(parse_arch(r#"{"version": 0, "model": { "walls": [] }}"#).is_none());
     }
 
@@ -1085,6 +1085,7 @@ mod tests {
             eye: [0.0, -10.0],
             eye_height: 1.5,
             fov_deg: 45.0,
+            ..Default::default()
         });
         d.arch.active_camera = Some("Front".into());
 
@@ -1155,7 +1156,8 @@ mod tests {
         let parsed = parse_arch(&text).expect("a version-3 payload must still parse");
         assert_eq!(parsed.walls.len(), 1);
         assert!(parsed.roofs.is_empty(), "a v3 file predates roofs");
-        assert!(parse_arch(r#"{"version": 6, "model": {"walls": []}}"#).is_none());
+        // v6 is now the current version and should be accepted, not rejected.
+        assert!(parse_arch(r#"{"version": 6, "model": {"walls": []}}"#).is_some());
     }
 
     #[test]
@@ -1691,7 +1693,7 @@ mod tests {
         assert_eq!(polylines, 0, "proxy linework survived the read");
     }
 
-    /// A model with stairs and a railing survives a DXF round trip as a v5 payload.
+    /// A model with stairs and a railing survives a DXF round trip as a v6 payload.
     #[test]
     fn arch_v5_round_trips_stairs() {
         let mut d = Drawing::new_metric();
@@ -1704,11 +1706,11 @@ mod tests {
         assert_eq!(back.arch.stairs.len(), 1, "stair lost on DXF round trip");
         assert_eq!(back.arch.railings.len(), 1, "railing lost on DXF round trip");
 
-        // The record should carry version 5.
+        // The record should carry version 6.
         let chunks = arch_chunks(&d.arch);
-        assert!(chunks.is_some(), "arch_chunks should produce a v5 record with stairs/railings");
+        assert!(chunks.is_some(), "arch_chunks should produce a v6 record with stairs/railings");
         let obj: serde_json::Value = serde_json::from_str(&chunks.unwrap().join("")).unwrap();
-        assert_eq!(obj["version"].as_u64(), Some(5), "written payload version should be 5");
+        assert_eq!(obj["version"].as_u64(), Some(6), "written payload version should be 6");
     }
 
     /// A v4 payload that carries stairs/railings clears them on parse.
