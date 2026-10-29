@@ -817,7 +817,7 @@ mod offscreen_behavior_tests {
         int.indices = vec![0, 1, 2, 0, 2, 3];
 
         let scene = Scene3d { meshes: vec![ext, int], bounds: crate::types::Bounds3::new([-0.1, 0.0, 0.0], [1.1, 2.0, 0.0]), ..Default::default() };
-        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(5.0, 1.0, 3.0, 0.0));
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(5.0, 1.0, 3.0, 45.0));
 
         // Render with both walls
         off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
@@ -872,6 +872,88 @@ mod offscreen_behavior_tests {
         for chunk in pixels.chunks_exact(4) {
             assert!(chunk.iter().all(|&b| b <= 255), "pixel byte out of range");
         }
+    }
+
+    #[test]
+    fn glass_house_with_single_mesh() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (64u32, 64u32);
+        let mut off = Offscreen::with_device(device, queue, size);
+
+        let mut mesh = crate::types::Mesh::new("wall", crate::types::ArchId(1));
+        mesh.positions.extend_from_slice(&[[-0.5, 0.0, 0.0], [0.5, 0.0, 0.0], [0.5, 1.0, 0.0], [-0.5, 1.0, 0.0]]);
+        mesh.normals.extend_from_slice(&[[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]);
+        mesh.uvs.extend_from_slice(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
+        mesh.indices = vec![0, 1, 2, 0, 2, 3];
+
+        let scene = Scene3d { meshes: vec![mesh], bounds: crate::types::Bounds3::new([-0.5, 0.0, 0.0], [0.5, 1.0, 0.0]), ..Default::default() };
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(0.0, 0.0, 3.0, 45.0));
+
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
+        let pixels = off.read_rgba().expect("read single mesh");
+        let bg = |p: &[u8]| p[..3].iter().zip([39u8, 44, 52]).all(|(a, b)| a.abs_diff(b) <= 2);
+        let non_bg = pixels.chunks_exact(4).filter(|p| !bg(p)).count();
+        assert!(non_bg > 0, "single mesh should be visible in glass-house");
+    }
+
+    #[test]
+    fn glass_house_with_coincident_walls() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (64u32, 64u32);
+        let mut off = Offscreen::with_device(device, queue, size);
+
+        let mut w1 = crate::types::Mesh::new("wall", crate::types::ArchId(1));
+        w1.positions.extend_from_slice(&[[-0.5, 0.0, 0.0], [0.5, 0.0, 0.0], [0.5, 1.0, 0.0], [-0.5, 1.0, 0.0]]);
+        w1.normals.extend_from_slice(&[[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]);
+        w1.uvs.extend_from_slice(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
+        w1.indices = vec![0, 1, 2, 0, 2, 3];
+
+        let mut w2 = crate::types::Mesh::new("wall", crate::types::ArchId(2));
+        w2.positions.extend_from_slice(&[[-0.5, 0.0, 0.0], [0.5, 0.0, 0.0], [0.5, 1.0, 0.0], [-0.5, 1.0, 0.0]]);
+        w2.normals.extend_from_slice(&[[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]);
+        w2.uvs.extend_from_slice(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
+        w2.indices = vec![0, 1, 2, 0, 2, 3];
+
+        let scene = Scene3d { meshes: vec![w1, w2], bounds: crate::types::Bounds3::new([-0.5, 0.0, 0.0], [0.5, 1.0, 0.0]), ..Default::default() };
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(0.0, 0.0, 3.0, 45.0));
+
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
+        let pixels = off.read_rgba().expect("read coincident walls");
+        let bg = |p: &[u8]| p[..3].iter().zip([39u8, 44, 52]).all(|(a, b)| a.abs_diff(b) <= 2);
+        let non_bg = pixels.chunks_exact(4).filter(|p| !bg(p)).count();
+        assert!(non_bg > 0, "coincident walls should be visible in glass-house");
+    }
+
+    #[test]
+    fn glass_house_with_large_scene() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (64u32, 64u32);
+        let mut off = Offscreen::with_device(device, queue, size);
+
+        let mut mesh = crate::types::Mesh::new("wall", crate::types::ArchId(1));
+        mesh.positions.extend_from_slice(&[[-1000.0, 0.0, 0.0], [1000.0, 0.0, 0.0], [1000.0, 1000.0, 0.0], [-1000.0, 1000.0, 0.0]]);
+        mesh.normals.extend_from_slice(&[[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]);
+        mesh.uvs.extend_from_slice(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
+        mesh.indices = vec![0, 1, 2, 0, 2, 3];
+
+        let scene =
+            Scene3d { meshes: vec![mesh], bounds: crate::types::Bounds3::new([-1000.0, 0.0, 0.0], [1000.0, 1000.0, 0.0]), ..Default::default() };
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(0.0, 0.0, 5000.0, 45.0));
+
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
+        let pixels = off.read_rgba().expect("read large scene");
+        let bg = |p: &[u8]| p[..3].iter().zip([39u8, 44, 52]).all(|(a, b)| a.abs_diff(b) <= 2);
+        let non_bg = pixels.chunks_exact(4).filter(|p| !bg(p)).count();
+        assert!(non_bg > 0, "large scene should be visible in glass-house");
     }
 
     #[test]
