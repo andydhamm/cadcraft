@@ -67,7 +67,11 @@ pub(super) fn parse_entities(
             entity_extras(kind, tags, h, &mut k, rx);
             // A proxy we keep (record absent or unreadable) is remembered so the arch model
             // can drop it later if a valid record turns out to be present.
-            if crate::dxf_arch::is_arch_proxy(tags) || crate::dxf_arch::is_room_proxy(tags) || crate::dxf_arch::is_roof_proxy(tags) {
+            if crate::dxf_arch::is_arch_proxy(tags)
+                || crate::dxf_arch::is_view_proxy(tags)
+                || crate::dxf_arch::is_room_proxy(tags)
+                || crate::dxf_arch::is_roof_proxy(tags)
+            {
                 rx.arch_proxies.push(h);
             }
             let more: Vec<_> =
