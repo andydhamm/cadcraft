@@ -109,9 +109,6 @@ fn fresnel_schlick(vdh: f32, f0: vec3<f32>) -> vec3<f32> {
     let amb = u.albedo * p.ambient * (1.0 - metallic * 0.5);
     let c = amb + lit;
 
-    var alpha = clamp(p.alpha, 0.0, 1.0);
-    if (p.style == 3u) {
-        alpha = min(alpha, GLASS_ALPHA);
-    }
+    let alpha = clamp(p.alpha, 0.0, 1.0);
     return vec4<f32>(c, alpha);
 }
