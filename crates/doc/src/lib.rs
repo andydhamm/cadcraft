@@ -184,6 +184,11 @@ impl Drawing {
                 Layer { name: "A-GLAZ".into(), ..Layer::default() },
                 Layer { name: "A-ROOF".into(), ..Layer::default() },
                 Layer { name: "A-STAIR".into(), ..Layer::default() },
+                Layer { name: "A-RAIL".into(), ..Layer::default() },
+                Layer { name: "A-ELEV".into(), ..Layer::default() },
+                Layer { name: "A-SECT".into(), ..Layer::default() },
+                Layer { name: "A-SECT-MCUT".into(), ..Layer::default() },
+                Layer { name: "A-ANNO-DIMS".into(), ..Layer::default() },
             ],
             linetypes: vec![
                 Linetype { name: "ByBlock".into(), description: String::new(), pattern: Vec::new() },
@@ -492,7 +497,7 @@ mod arch_layers_tests {
         // After p1-arch-layers, a new drawing includes the five architectural layers.
         // The name is historical; the assertion reflects the current behaviour.
         let d = Drawing::new_imperial();
-        assert_eq!(d.layers.len(), 7, "a new drawing must have exactly 7 layers");
+        assert_eq!(d.layers.len(), 12, "a new drawing must have exactly 12 layers");
     }
 
     #[test]
@@ -528,7 +533,7 @@ mod arch_layers_tests {
         assert!(!created, "ensure_layer(A-WALL) must not create a duplicate");
         let created_lower = d.ensure_layer("a-wall");
         assert!(!created_lower, "ensure_layer(a-wall) must find A-WALL case-insensitively");
-        assert_eq!(d.layers.len(), 7, "layer count must remain 7 after ensure_layer on existing layers");
+        assert_eq!(d.layers.len(), 12, "layer count must remain 12 after ensure_layer on existing layers");
     }
 
     #[test]

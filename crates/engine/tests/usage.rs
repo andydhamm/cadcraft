@@ -148,7 +148,10 @@ fn layers_report_uses_and_where() {
     assert_eq!(current["name"], "0");
     assert_eq!((current["used"].clone(), current["unused"].clone(), current["current"].clone()), (json!(true), json!(false), json!(true)));
     // Empty and the five arch layers are unused; 0 is current and the others carry entities.
-    assert_eq!(names(&r, "layers"), ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR", "Empty"]);
+    assert_eq!(
+        names(&r, "layers"),
+        ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR", "A-RAIL", "A-ELEV", "A-SECT", "A-SECT-MCUT", "A-ANNO-DIMS", "Empty"]
+    );
 }
 
 /// Guards that a block's `used` follows reachability from model space — INNER, referenced only
@@ -212,7 +215,7 @@ fn styles_and_linetypes_report_uses() {
 
     // A layer's linetype is a reference to it; every layer here is Continuous.
     let continuous = item(&r, "linetype", "Continuous");
-    assert_eq!((continuous["entities"].clone(), continuous["references"].clone()), (json!(0), json!(10)));
+    assert_eq!((continuous["entities"].clone(), continuous["references"].clone()), (json!(0), json!(15)));
     assert_eq!((continuous["used"].clone(), continuous["unused"].clone()), (json!(true), json!(false)));
 }
 
@@ -261,8 +264,8 @@ fn paging_and_filters() {
     assert_eq!((offset["returned"].clone(), offset["truncated"].clone()), (json!(2), json!(total > 4)));
 
     let layers = usage(&mut s, json!({ "type": "layers" }));
-    // 0, Defpoints, A-WALL, A-DOOR, A-GLAZ, A-ROOF, A-STAIR, Used, Empty, InBlock.
-    assert_eq!(layers["count"], 10);
+    // 0, Defpoints, A-WALL, A-DOOR, A-GLAZ, A-ROOF, A-STAIR, A-RAIL, A-ELEV, A-SECT, A-SECT-MCUT, A-ANNO-DIMS, Used, Empty, InBlock.
+    assert_eq!(layers["count"], 15);
     assert!(layers["items"].as_array().unwrap().iter().all(|i| i["type"] == "layer"));
     let styles = usage(&mut s, json!({ "type": "textstyles" }));
     assert_eq!(styles["count"], 3);
