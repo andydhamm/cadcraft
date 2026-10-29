@@ -73,11 +73,13 @@ impl FullCamera {
         }
         let right = fw.cross(up).normalized();
         let new_up = right.cross(fw);
-        // Column-major 4x4 (matches a WGSL `matrix<float, 4x4>` uniform).
+        // Row i is camera axis i (right, up, back), applied as `m · p` (see `apply_col`); `view_proj` transposes
+        // the product for the WGSL uniform. 10-29: the rotation was stored transposed, so views off the axes drew
+        // rotated (a vertical edge horizontal at azimuth 90).
         let m = [
-            [right.x, new_up.x, -fw.x, -right.dot(self.eye)],
-            [right.y, new_up.y, -fw.y, -new_up.dot(self.eye)],
-            [right.z, new_up.z, -fw.z, fw.dot(self.eye)],
+            [right.x, right.y, right.z, -right.dot(self.eye)],
+            [new_up.x, new_up.y, new_up.z, -new_up.dot(self.eye)],
+            [-fw.x, -fw.y, -fw.z, fw.dot(self.eye)],
             [0.0, 0.0, 0.0, 1.0],
         ];
         Mat4 { m }
@@ -163,11 +165,13 @@ impl Orbit {
         }
         let right = fw.cross(up).normalized();
         let new_up = right.cross(fw);
-        // Column-major 4x4 (matches a WGSL `matrix<float, 4x4>` uniform).
+        // Row i is camera axis i (right, up, back), applied as `m · p` (see `apply_col`); `view_proj` transposes
+        // the product for the WGSL uniform. 10-29: the rotation was stored transposed, so views off the axes drew
+        // rotated (a vertical edge horizontal at azimuth 90).
         let m = [
-            [right.x, new_up.x, -fw.x, -right.dot(eye)],
-            [right.y, new_up.y, -fw.y, -new_up.dot(eye)],
-            [right.z, new_up.z, -fw.z, fw.dot(eye)],
+            [right.x, right.y, right.z, -right.dot(eye)],
+            [new_up.x, new_up.y, new_up.z, -new_up.dot(eye)],
+            [-fw.x, -fw.y, -fw.z, fw.dot(eye)],
             [0.0, 0.0, 0.0, 1.0],
         ];
         Mat4 { m }
@@ -370,14 +374,13 @@ pub fn ray_at(camera: &Camera, size: (u32, u32), pixel: [f32; 2]) -> Option<(Vec
     // Normalised pixel → NDC (y flipped to y-down).
     let nx = (pixel[0] / w_f) * 2.0 - 1.0;
     let ny = 1.0 - (pixel[1] / h_f) * 2.0;
-    // Inverse view rotation applied to the clip-space direction.
-    // View matrix columns are [right, new_up, -fw]; the inverse rotation uses
-    // those as rows, so d_world = right*d_x + new_up*d_y + (-fw)*d_z.
-    // With d_z = -1.0 this simplifies to right*d_x + new_up*d_y + fw.
+    // Inverse view rotation applied to the view-space direction. The view matrix's rows are the camera axes
+    // [right, new_up, -fw], so d_world = right*d_x + new_up*d_y + (-fw)*d_z; with d_z = -1 that is
+    // right*d_x + new_up*d_y + fw.
     let view = camera.view();
-    let right = Vec3::new(view.m[0][0], view.m[1][0], view.m[2][0]);
-    let up = Vec3::new(view.m[0][1], view.m[1][1], view.m[2][1]);
-    let fw = Vec3::new(-view.m[0][2], -view.m[1][2], -view.m[2][2]);
+    let right = Vec3::new(view.m[0][0], view.m[0][1], view.m[0][2]);
+    let up = Vec3::new(view.m[1][0], view.m[1][1], view.m[1][2]);
+    let fw = Vec3::new(-view.m[2][0], -view.m[2][1], -view.m[2][2]);
     // Reconstruct the view-space direction from NDC.  The projection matrix maps
     // `view_x -> clip_x = view_x / (aspect * tan_half)` and `view_y -> clip_y =
     // view_y / tan_half`, with `clip_w = -view_z`.  For a ray (direction, no
@@ -496,6 +499,33 @@ mod tests {
         let t = (p - origin).dot(dir);
         let on_ray = (p - (origin + dir * t)).len();
         assert!(on_ray < 1e-2, "projected point should lie on the ray: {} (t={})", on_ray, t);
+    }
+
+    /// The view has no roll: a vertical line through the target projects straight up the screen from any orbit or
+    /// full camera, and the eye's right-hand side is the screen's right. 10-29: the view matrix carried its rotation
+    /// transposed, so at azimuth 90 a wall's vertical edge drew horizontally and `ray_at` could not invert
+    /// `project_point`.
+    #[test]
+    fn world_up_projects_straight_up_the_screen() {
+        let size = (100u32, 100u32);
+        let cams = [
+            Camera::Orbit(Orbit::at_origin(0.0, 0.0, 20.0, 45.0)),
+            Camera::Orbit(Orbit::at_origin(30.0, 30.0, 20.0, 45.0)),
+            Camera::Orbit(Orbit::at_origin(90.0, 10.0, 20.0, 45.0)),
+            Camera::Orbit(Orbit::at_origin(215.0, -20.0, 15.0, 60.0)),
+            Camera::Full(FullCamera::new(Vec3::new(3.0, -8.0, 1.6), Vec3::new(3.0, 0.0, 1.05), 60.0)),
+        ];
+        for cam in &cams {
+            let t = cam.target();
+            let c = project_point(cam, size, [t.x, t.y, t.z]).unwrap();
+            let up = project_point(cam, size, [t.x, t.y, t.z + 1.0]).unwrap();
+            assert!((up[0] - c[0]).abs() < 1e-3, "world up leans sideways on screen: {c:?} -> {up:?}");
+            assert!(up[1] < c[1], "world up points down the screen: {c:?} -> {up:?}");
+            let fw = (t - cam.eye()).normalized();
+            let right = fw.cross(Vec3::new(0.0, 0.0, 1.0)).normalized();
+            let r = project_point(cam, size, [t.x + right.x, t.y + right.y, t.z + right.z]).unwrap();
+            assert!(r[0] > c[0] && (r[1] - c[1]).abs() < 1e-3, "the eye's right is not the screen's right: {c:?} -> {r:?}");
+        }
     }
 
     #[test]
