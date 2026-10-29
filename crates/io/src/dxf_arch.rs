@@ -133,18 +133,18 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
     }
 
     // Validate and filter cameras
+    model.cameras.retain(|c| {
+        c.target.map_or(false, |t| t.iter().all(|v| v.is_finite()))
+            && c.azimuth_deg.map_or(false, |v| v.is_finite())
+            && c.elevation_deg.map_or(false, |v| v.is_finite())
+            && c.distance.map_or(false, |v| v.is_finite())
+            && c.eye.map_or(false, |e| e.iter().all(|v| v.is_finite()))
+            && c.eye_height.map_or(false, |v| v.is_finite())
+            && c.fov_deg.map_or(false, |v| v.is_finite())
+    });
     if model.cameras.len() > cadcraft_doc::arch::MAX_CAMERAS {
         return None;
     }
-    model.cameras.retain(|c| {
-        c.target.iter().all(|v| v.is_finite())
-            && c.azimuth_deg.is_finite()
-            && c.elevation_deg.is_finite()
-            && c.distance.is_finite()
-            && c.eye.iter().all(|v| v.is_finite())
-            && c.eye_height.is_finite()
-            && c.fov_deg.is_finite()
-    });
 
     // If active_camera points to a dropped camera, clear it
     if let Some(ref name) = model.active_camera {
@@ -1078,13 +1078,13 @@ mod tests {
         d.arch.cameras.push(Camera3d {
             name: "Front".into(),
             kind: cadcraft_doc::arch::CameraKind::Orbit,
-            target: [0.0, 0.0, 1.0],
-            azimuth_deg: 0.0,
-            elevation_deg: 0.0,
-            distance: 10.0,
-            eye: [0.0, -10.0],
-            eye_height: 1.5,
-            fov_deg: 45.0,
+            target: Some([0.0, 0.0, 1.0]),
+            azimuth_deg: Some(0.0),
+            elevation_deg: Some(0.0),
+            distance: Some(10.0),
+            eye: Some([0.0, -10.0]),
+            eye_height: Some(1.5),
+            fov_deg: Some(45.0),
             ..Default::default()
         });
         d.arch.active_camera = Some("Front".into());
@@ -1096,13 +1096,13 @@ mod tests {
         let got = &back.arch.cameras[0];
         assert_eq!(got.name, "Front");
         assert_eq!(got.kind, cadcraft_doc::arch::CameraKind::Orbit);
-        assert_eq!(got.target, [0.0, 0.0, 1.0]);
-        assert_eq!(got.azimuth_deg, 0.0);
-        assert_eq!(got.elevation_deg, 0.0);
-        assert_eq!(got.distance, 10.0);
-        assert_eq!(got.eye, [0.0, -10.0]);
-        assert_eq!(got.eye_height, 1.5);
-        assert_eq!(got.fov_deg, 45.0);
+        assert_eq!(got.target, Some([0.0, 0.0, 1.0]));
+        assert_eq!(got.azimuth_deg, Some(0.0));
+        assert_eq!(got.elevation_deg, Some(0.0));
+        assert_eq!(got.distance, Some(10.0));
+        assert_eq!(got.eye, Some([0.0, -10.0]));
+        assert_eq!(got.eye_height, Some(1.5));
+        assert_eq!(got.fov_deg, Some(45.0));
         assert_eq!(back.arch.active_camera, Some("Front".into()));
     }
 
@@ -1137,8 +1137,8 @@ mod tests {
     fn non_finite_camera_numbers_are_dropped() {
         use cadcraft_doc::arch::Camera3d;
         let mut m = one_wall_model();
-        m.cameras.push(Camera3d { name: "Bad".into(), target: [f64::NAN, 0.0, 0.0], ..Default::default() });
-        m.cameras.push(Camera3d { name: "Good".into(), target: [0.0, 0.0, 0.0], ..Default::default() });
+        m.cameras.push(Camera3d { name: "Bad".into(), target: Some([f64::NAN, 0.0, 0.0]), ..Default::default() });
+        m.cameras.push(Camera3d { name: "Good".into(), target: Some([0.0, 0.0, 0.0]), ..Default::default() });
 
         let json = serde_json::json!({ "version": 6, "model": m }).to_string();
         let text = crate::dxf_ext::json_chunks(&json).join("");

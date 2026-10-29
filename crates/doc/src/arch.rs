@@ -877,6 +877,10 @@ pub enum CameraKind {
 /// `target`/`distance`/`azimuth_deg`/`elevation_deg` pose an orbit camera;
 /// `eye`/`eye_height` are the full-camera eye. `kind` selects which fields
 /// the consumer honours.
+///
+/// Numeric fields are `Option` to allow `null` in JSON (e.g. from non-finite values
+/// serialized as null) without failing deserialization; invalid cameras are dropped
+/// by `parse_arch`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Camera3d {
@@ -885,19 +889,19 @@ pub struct Camera3d {
     /// How the camera is posed.
     pub kind: CameraKind,
     /// Point the orbit camera revolves around, in metres.
-    pub target: [f64; 3],
+    pub target: Option<[f64; 3]>,
     /// Orbit azimuth, in degrees.
-    pub azimuth_deg: f64,
+    pub azimuth_deg: Option<f64>,
     /// Orbit elevation, in degrees.
-    pub elevation_deg: f64,
+    pub elevation_deg: Option<f64>,
     /// Orbit distance from the target, in metres.
-    pub distance: f64,
+    pub distance: Option<f64>,
     /// Full-camera eye position (x, y), in metres.
-    pub eye: [f64; 2],
+    pub eye: Option<[f64; 2]>,
     /// Full-camera eye height, in metres.
-    pub eye_height: f64,
+    pub eye_height: Option<f64>,
     /// Field of view, in degrees.
-    pub fov_deg: f64,
+    pub fov_deg: Option<f64>,
 }
 
 impl Default for Camera3d {
@@ -905,13 +909,13 @@ impl Default for Camera3d {
         Camera3d {
             name: String::new(),
             kind: CameraKind::default(),
-            target: [0.0; 3],
-            azimuth_deg: 0.0,
-            elevation_deg: 30.0,
-            distance: 10.0,
-            eye: [0.0, -10.0],
-            eye_height: 1.6,
-            fov_deg: 45.0,
+            target: Some([0.0; 3]),
+            azimuth_deg: Some(0.0),
+            elevation_deg: Some(30.0),
+            distance: Some(10.0),
+            eye: Some([0.0, -10.0]),
+            eye_height: Some(1.6),
+            fov_deg: Some(45.0),
         }
     }
 }
@@ -1262,13 +1266,13 @@ impl ArchModel {
 
     /// Whether every numeric field of a camera is finite.
     fn camera_is_finite(c: &Camera3d) -> bool {
-        c.azimuth_deg.is_finite()
-            && c.elevation_deg.is_finite()
-            && c.distance.is_finite()
-            && c.eye_height.is_finite()
-            && c.fov_deg.is_finite()
-            && c.target.iter().all(|v| v.is_finite())
-            && c.eye.iter().all(|v| v.is_finite())
+        c.azimuth_deg.is_some_and(|v| v.is_finite())
+            && c.elevation_deg.is_some_and(|v| v.is_finite())
+            && c.distance.is_some_and(|v| v.is_finite())
+            && c.eye_height.is_some_and(|v| v.is_finite())
+            && c.fov_deg.is_some_and(|v| v.is_finite())
+            && c.target.map_or(false, |t| t.iter().all(|v| v.is_finite()))
+            && c.eye.map_or(false, |e| e.iter().all(|v| v.is_finite()))
     }
 
     /// Add or update a saved camera, storing it on the model so that it
@@ -2700,13 +2704,13 @@ mod tests {
         let c = Camera3d::default();
         assert!(c.name.is_empty());
         assert_eq!(c.kind, CameraKind::Orbit);
-        assert_eq!(c.target, [0.0; 3]);
-        assert_eq!(c.azimuth_deg, 0.0);
-        assert_eq!(c.elevation_deg, 30.0);
-        assert_eq!(c.distance, 10.0);
-        assert_eq!(c.eye, [0.0, -10.0]);
-        assert_eq!(c.eye_height, 1.6);
-        assert_eq!(c.fov_deg, 45.0);
+        assert_eq!(c.target, Some([0.0; 3]));
+        assert_eq!(c.azimuth_deg, Some(0.0));
+        assert_eq!(c.elevation_deg, Some(30.0));
+        assert_eq!(c.distance, Some(10.0));
+        assert_eq!(c.eye, Some([0.0, -10.0]));
+        assert_eq!(c.eye_height, Some(1.6));
+        assert_eq!(c.fov_deg, Some(45.0));
     }
 
     #[test]
@@ -2730,9 +2734,12 @@ mod tests {
         assert_eq!(m.cameras.len(), 1);
 
         // A non-finite field is refused (never clamped).
-        assert_eq!(m.set_camera(Camera3d { name: "bad".into(), distance: f64::NAN, ..Camera3d::default() }), Err(CameraError::NotFinite));
-        assert_eq!(m.set_camera(Camera3d { name: "bad2".into(), target: [f64::NAN; 3], ..Camera3d::default() }), Err(CameraError::NotFinite));
-        assert_eq!(m.set_camera(Camera3d { name: "bad3".into(), eye: [0.0, f64::INFINITY], ..Camera3d::default() }), Err(CameraError::NotFinite));
+        assert_eq!(m.set_camera(Camera3d { name: "bad".into(), distance: Some(f64::NAN), ..Camera3d::default() }), Err(CameraError::NotFinite));
+        assert_eq!(m.set_camera(Camera3d { name: "bad2".into(), target: Some([f64::NAN; 3]), ..Camera3d::default() }), Err(CameraError::NotFinite));
+        assert_eq!(
+            m.set_camera(Camera3d { name: "bad3".into(), eye: Some([0.0, f64::INFINITY]), ..Camera3d::default() }),
+            Err(CameraError::NotFinite)
+        );
         assert_eq!(m.cameras.len(), 1);
     }
 
