@@ -15,7 +15,7 @@
 //! Returns `{"id":"ra0","handle":"...","height":h,"style":s,"balusterGap":g}`.
 
 use cadcraft_arch::railing::{GUARD_HEIGHT, baluster_spacing, path_length};
-use cadcraft_doc::arch::{ARCH_HANDLE_BASE, MAX_RAILINGS, RAILING_HANDLE_OFFSET, Railing, RailingStyle};
+use cadcraft_doc::arch::{MAX_RAILINGS, Railing, RailingStyle};
 use cadcraft_geom::Vec2;
 use serde_json::{Value, json};
 
@@ -144,7 +144,7 @@ fn run_railing(s: &mut Session, p: &Value) -> Result<Value> {
 
     Ok(json!({
         "id": format!("ra{}", id.0),
-        "handle": format!("{:016X}", ARCH_HANDLE_BASE + RAILING_HANDLE_OFFSET + id.0 as u64),
+        "handle": cadcraft_doc::arch::handle_json(cadcraft_doc::arch::railing_handle(id)),
         "height": height,
         "style": match style {
             RailingStyle::Panel => "panel",

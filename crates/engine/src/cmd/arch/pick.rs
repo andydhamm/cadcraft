@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use cadcraft_arch3d::Scene3d;
 use cadcraft_arch3d::camera::{Camera, FullCamera, MAX_DISTANCE, Orbit, ray_at};
-use cadcraft_doc::arch::{OPENING_HANDLE_OFFSET, ROOM_HANDLE_OFFSET, railing_handle, roof_handle, stair_handle};
+use cadcraft_doc::arch::{handle_json, part_handle};
 use cadcraft_doc::{ArchId, opening_label, railing_label, roof_label, room_label, stair_label, wall_label};
 use cadcraft_geom::Vec3;
 
@@ -126,15 +126,15 @@ fn parse_pixel(v: Option<&Value>, size: (u32, u32)) -> Result<[f32; 2], EngineEr
 
 /// Label and proxy handle (lower-case hex, as `arch.inspect` reports) of a hit object.
 fn label_and_handle(id: ArchId, part: &str) -> (String, String) {
-    let base = |off: u64| format!("{:x}", 0xA000_0000u64 + off + u64::from(id.0));
-    match part {
-        "floor" | "ceiling" | "deck" => (room_label(id), base(ROOM_HANDLE_OFFSET)),
-        "leaf" | "frame" | "glass" | "casing" | "sill" | "header" => (opening_label(id), base(0)),
-        "roof" => (roof_label(id), roof_handle(id).hex().to_lowercase()),
-        "stair" => (stair_label(id), stair_handle(id).hex().to_lowercase()),
-        "railing" => (railing_label(id), railing_handle(id).hex().to_lowercase()),
-        _ => (wall_label(id), base(0)),
-    }
+    let label = match part {
+        "floor" | "ceiling" | "deck" => room_label(id),
+        "leaf" | "frame" | "glass" | "casing" | "sill" | "header" => opening_label(id),
+        "roof" => roof_label(id),
+        "stair" => stair_label(id),
+        "railing" => railing_label(id),
+        _ => wall_label(id),
+    };
+    (label, handle_json(part_handle(id, part)))
 }
 
 /// Cast the ray through `pixel` of a `size` viewport and report the nearest object hit.
@@ -196,6 +196,16 @@ mod tests {
         assert!(hit["handle"].as_str().is_some_and(|h| h.starts_with("a000")), "{v}");
         assert!(hit["distance"].as_f64().is_some_and(|d| d > 0.0));
         assert_eq!(hit["point"].as_array().map(Vec::len), Some(3));
+    }
+
+    #[test]
+    fn pick3d_on_the_door_reports_the_opening_handle_not_the_walls() {
+        let mut s = session();
+        let v = s.execute("pick3d", &params(front(), json!([50, 50]))).unwrap_or(Value::Null);
+        let hit = &v["hit"];
+        assert_eq!(hit["id"], "o0", "{v}");
+        assert_eq!(hit["handle"], "a0008000", "{v}");
+        assert_ne!(hit["handle"], "a0000000", "{v}");
     }
 
     #[test]
