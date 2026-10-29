@@ -4,8 +4,7 @@ use crate::Session;
 use crate::cmd::CommandSpec;
 use crate::error::{EngineError, Result};
 use cadcraft_doc::arch::ArchView;
-use cadcraft_doc::{Drawing, Entity, EntityKind, Handle, Layout, PageSetup, Viewport};
-use cadcraft_geom::Vec2;
+use cadcraft_geom::{Bounds2, Vec2};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
@@ -16,23 +15,8 @@ const MAX_VIEWS: usize = 16;
 const MARGIN_MM: f64 = 25.0;
 /// Gap between viewports in paper units (mm).
 const GAP_MM: f64 = 20.0;
-
-/// Resolve paper dimensions from name.
-/// Returns (width_mm, height_mm, full_name).
-fn resolve_paper(name: &str) -> Option<(f64, f64, String)> {
-    match name.to_uppercase().as_str() {
-        "ARCH D" | "ARCH-D" => Some((36.0 * 25.4, 24.0 * 25.4, "ARCH D".to_string())),
-        "ARCH E" | "ARCH-E" => Some((48.0 * 25.4, 36.0 * 25.4, "ARCH E".to_string())),
-        "A4" => Some((210.0, 297.0, "A4".to_string())),
-        "A3" => Some((297.0, 420.0, "A3".to_string())),
-        "A2" => Some((420.0, 594.0, "A2".to_string())),
-        "A1" => Some((594.0, 841.0, "A1".to_string())),
-        "A0" => Some((841.0, 1189.0, "A0".to_string())),
-        "LETTER" => Some((8.5 * 25.4, 11.0 * 25.4, "Letter".to_string())),
-        "LEGAL" => Some((8.5 * 25.4, 14.0 * 25.4, "Legal".to_string())),
-        _ => None,
-    }
-}
+/// Growth of view bounds for dimensions (model units, m).
+const DIM_MARGIN_M: f64 = 1.5;
 
 /// Run the viewsheet command.
 pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
@@ -49,11 +33,8 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
     let paper_name = params.get("paper").and_then(Value::as_str).unwrap_or("ARCH D");
     let landscape = params.get("landscape").and_then(Value::as_bool).unwrap_or(true);
 
-    // Resolve paper
-    let (paper_w, paper_h, full_paper_name) = resolve_paper(paper_name).ok_or_else(|| EngineError::Other(format!("unknown paper: {paper_name}")))?;
-
     // Check layout name uniqueness
-    if s.doc()?.layouts.iter().any(|l| l.name == name) {
+    if s.doc()?.layouts.iter().any(|l| l.name.eq_ignore_ascii_case(name)) {
         return Err(EngineError::Other(format!("layout name already in use: {name}")));
     }
 
@@ -90,14 +71,14 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
         let max_y = bounds[3];
 
         // Grown bounds for dimensions
-        let grown_min = Vec2::new(min_x - 1.5, min_y - 1.5);
-        let grown_max = Vec2::new(max_x + 1.5, max_y + 1.5);
+        let grown_min = Vec2::new(min_x - DIM_MARGIN_M, min_y - DIM_MARGIN_M);
+        let grown_max = Vec2::new(max_x + DIM_MARGIN_M, max_y + DIM_MARGIN_M);
 
         view_data.push((v_name.to_string(), view.scale, grown_min, grown_max));
     }
 
     // Calculate layout
-    // k = paper units per model meter
+    // k = paper units per model meter (mm/m for metric)
     // Metric drawing assumed for now (mm).
     // k = 1000 / scale. e.g. scale 50 (1:50) -> 20 mm/m.
     // If imperial, k = 1000 / 25.4 / scale.
@@ -146,6 +127,27 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
     let col0_x = MARGIN_MM;
     let col1_x = MARGIN_MM + col0_w + GAP_MM;
 
+    // Resolve paper dimensions to check fit
+    // We use the same logic as pagesetup/run_pagesetup to get paper size
+    // But since we haven't created the layout yet, we need to resolve it here.
+    // The helper `new_bare_layout` will do this, but we need dimensions for layout calc.
+    // We can duplicate the resolution or use a helper.
+    // Let's use a simple match for common papers, falling back to error if unknown.
+    // The prompt says "resolve the name the way pagesetup does".
+    // pagesetup uses `cadcraft_render::paper_size`.
+    // We can't easily call that from here without importing render crate (L2) into engine (L4)?
+    // Wait, engine depends on render? Yes, L4 depends on L2.
+    // But `cadcraft_render::paper_size` is likely available.
+    // Let's check imports. `use cadcraft_render::paper_size` might work.
+
+    let ps = cadcraft_render::paper_size(paper_name).ok_or_else(|| EngineError::Other(format!("unknown paper: {paper_name}")))?;
+    let (paper_w, paper_h) = if landscape {
+        (ps.width_mm.max(ps.height_mm), ps.width_mm.min(ps.height_mm))
+    } else {
+        (ps.width_mm.min(ps.height_mm), ps.width_mm.max(ps.height_mm))
+    };
+    let full_paper_name = ps.name.to_string();
+
     // Check fit width
     let total_w = col1_x + col1_w + MARGIN_MM;
     if total_w > paper_w {
@@ -186,60 +188,31 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
         }
     }
 
-    // Now execute the changes
+    // Now execute the changes using helpers
 
     // 1. Create layout
-    let tab_order = s.doc()?.layouts.len() as u32;
-    let mut new_layout = Layout::new(name, tab_order);
-
-    // Set page setup
-    let mut page_setup = PageSetup::default();
-    // Try to set paper. If PageSetup has a `paper` field of type String or similar.
-    // If it's an enum, this will fail. We'll try setting it as a string first.
-    // If compilation fails, we might need to import PaperSize or similar.
-    // For now, assuming `paper` is a settable field.
-    page_setup.paper = full_paper_name.clone();
-    new_layout.page = page_setup;
-
-    // Add layout to doc
-    s.doc_mut()?.layouts.push(new_layout);
+    crate::cmd::layout::new_bare_layout(s, name, paper_name, landscape)?;
 
     // 2. Create viewports
-    let mut handles = Vec::new();
     let mut resp = Vec::new();
 
     for (v_name, scale, center_paper, w_mm, h_mm, center_model) in placed_viewports {
-        // Create viewport entity
-        // Viewport in paper space.
+        // Create viewport rectangle in paper space (mm)
+        // Viewport center is center_paper. Width/Height are w_mm/h_mm.
+        let rect = Bounds2::new(
+            Vec2::new(center_paper.x - w_mm / 2.0, center_paper.y - h_mm / 2.0),
+            Vec2::new(center_paper.x + w_mm / 2.0, center_paper.y + h_mm / 2.0),
+        );
 
-        let mut vp = Viewport {
-            center: cadcraft_geom::Vec3::new(center_paper.x, center_paper.y, 0.0),
-            width: w_mm,
-            height: h_mm,
-            view_center: center_model,            // Vec2 expected
-            view_height: h_mm / (1000.0 / scale), // Height in model units
-            id: 0,                                // Will be assigned by doc
-            frozen_layers: vec![],
-            layer_colors: vec![],
-            clip: None,
-            on: true,
-            locked: true,
-            ..Default::default()
-        };
+        // k = paper units per model unit
+        let k = if is_metric { 1000.0 / scale } else { 1000.0 / 25.4 / scale };
 
-        let h = s.doc_mut()?.new_handle();
-        let entity = Entity::new(h, EntityKind::Viewport(vp));
-
-        // Add to layout
-        if let Some(layout) = s.doc_mut()?.layouts.last_mut() {
-            layout.entities.push(entity);
-        }
-        handles.push(h);
+        let h = crate::cmd::layout::add_scaled_viewport(s, name, rect, center_model, k)?;
 
         resp.push(json!({
-            "handle": format!("{:x}", h.0),
+            "handle": h.hex(),
             "view": v_name,
-            "scale": 1000.0 / scale, // Return k (20.0 for 1:50)
+            "scale": k, // Return k (20.0 for 1:50)
             "center": [center_paper.x, center_paper.y],
             "width": w_mm,
             "height": h_mm

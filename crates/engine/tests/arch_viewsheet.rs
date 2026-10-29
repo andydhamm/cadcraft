@@ -121,11 +121,9 @@ fn viewsheet_adds_no_default_viewport() {
     let layout = s.doc().unwrap().layouts.iter().find(|l| l.name == "NoDefault").unwrap();
 
     // Count viewports
-    let vp_count = layout
-        .entities
-        .iter()
-        .filter(|h| s.doc().unwrap().entity(*h).map(|e| matches!(e.kind, cadcraft_doc::EntityKind::Viewport(_))).unwrap_or(false))
-        .count();
+    // layout.entities is an EntityStore, we need to iterate over handles or entities
+    // EntityStore iterates over &Arc<Entity>
+    let vp_count = layout.entities.iter().filter(|e| matches!(e.kind, cadcraft_doc::EntityKind::Viewport(_))).count();
 
     assert_eq!(vp_count, 4, "Should have exactly 4 viewports, no default");
 }
