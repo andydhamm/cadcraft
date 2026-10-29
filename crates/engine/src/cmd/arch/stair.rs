@@ -6,9 +6,10 @@
 //! - `direction`: required, degrees counter-clockwise from +x; stored in
 //!   radians on the model.
 //! - `width`: optional, metres; defaults to 1.0, must be finite in `(0, 5]`.
-//! - `fromLevel` / `toLevel`: required, a level name or its numeric index
-//!   (index tried first, then name, like the `level` command); unknown levels
-//!   are refused.
+//! - `fromLevel` / `toLevel`: optional, a level name or its numeric index
+//!   (index tried first, then name, like the `level` command). Absent (or
+//!   null) means the first level / the last level; a present but unknown
+//!   level is refused.
 //! - `rise`: optional, metres; when present must be finite and positive. When
 //!   absent it is derived as `to.elevation - from.elevation`, which must be
 //!   finite and positive.
@@ -17,11 +18,12 @@
 //! - `tread` / `maxRiser` / `minTread`: optional positive metres; default to
 //!   `MIN_TREAD` / `MAX_RISER` / `MIN_TREAD`.
 //!
-//! Headroom is measured against the upper level's slab underside
-//! (`to.elevation - to.structure`). When the upper floor lacks
-//! `MIN_HEADROOM` clear of the flight, the stair's well becomes an `Open
-//! Below` room on the upper level ringed by a guard railing that follows the
-//! stair.
+//! A well only exists when the flight climbs (`toLevel` above `fromLevel`); a
+//! deck stair to grade makes none. Headroom is measured against the upper
+//! level's slab underside (`to.elevation - to.structure`). When the upper
+//! floor lacks `MIN_HEADROOM` clear of the flight, the stair's well becomes an
+//! `Open Below` room on the upper level ringed by a guard railing that follows
+//! the stair, and is cut as a hole into the upper room that contains it.
 //!
 //! Returns `{"id":"s0","handle":"...","risers":n,"riserHeight":h,"run":r,
 //! "well":bool}`.
@@ -122,14 +124,20 @@ fn run_stair(s: &mut Session, p: &Value) -> Result<Value> {
         Some(_) => return Err(bad("stair", "shape must be a string")),
     };
 
-    // --- levels: both required; unknown -> error ---
-    let from_ref = p.get("fromLevel").ok_or_else(|| bad("stair", "`fromLevel` is required"))?;
-    let to_ref = p.get("toLevel").ok_or_else(|| bad("stair", "`toLevel` is required"))?;
+    // --- levels: optional (first / last); a present unknown level -> error ---
+    let from_ref = p.get("fromLevel").filter(|v| !v.is_null());
+    let to_ref = p.get("toLevel").filter(|v| !v.is_null());
 
     let d = s.doc_mut()?;
     let arch = &d.arch;
-    let from_i = find_level(arch, from_ref)?;
-    let to_i = find_level(arch, to_ref)?;
+    let from_i = match from_ref {
+        Some(v) => find_level(arch, v)?,
+        None => 0,
+    };
+    let to_i = match to_ref {
+        Some(v) => find_level(arch, v)?,
+        None => arch.levels.len().saturating_sub(1),
+    };
     let from_level = arch.levels.get(from_i).ok_or_else(|| bad("stair", "unknown fromLevel"))?;
     let to_level = arch.levels.get(to_i).ok_or_else(|| bad("stair", "unknown toLevel"))?;
 
@@ -183,7 +191,7 @@ fn run_stair(s: &mut Session, p: &Value) -> Result<Value> {
         ..Stair::default()
     };
     let slab_underside = to_level.elevation - to_level.structure;
-    let well_poly = well_polygon(&stair, &plan, slab_underside, MIN_HEADROOM);
+    let well_poly = if to_i > from_i { well_polygon(&stair, &plan, slab_underside, MIN_HEADROOM) } else { None };
     let has_well = well_poly.is_some();
     let guard = well_poly.as_ref().and_then(|_| well_guard_path(&stair, &plan, slab_underside, MIN_HEADROOM));
     let well = well_poly.unwrap_or_default();
@@ -195,6 +203,18 @@ fn run_stair(s: &mut Session, p: &Value) -> Result<Value> {
     });
 
     if has_well {
+        // Cut the well out of the upper room that contains it (never invent
+        // a room).
+        if let Some(c) = cadcraft_geom::polygon_centroid(&well) {
+            let target = d.arch.rooms.iter().position(|r| {
+                r.level == to_i as u32
+                    && cadcraft_geom::point_in_polygon(&r.polygon, c)
+                    && !r.holes.iter().any(|h| cadcraft_geom::point_in_polygon(h, c))
+            });
+            if let Some(room) = target.and_then(|i| d.arch.rooms.get_mut(i)) {
+                room.holes.push(well.clone());
+            }
+        }
         // Upper-level room for the open well.
         let mut room =
             Room { name: "Open Below".into(), room_type: RoomType::OpenBelow, level: to_i as u32, polygon: well.clone(), ..Room::default() };
@@ -425,6 +445,69 @@ mod tests {
         let run = r["run"].as_f64().unwrap();
         assert!((riser_height - 0.16875).abs() < 1e-9);
         assert!((run - 3.81).abs() < 1e-6);
+    }
+
+    /// Push a 20 m square room on `level` centred on the origin.
+    fn add_big_room(s: &mut Session, level: u32) {
+        let d = s.doc_mut().unwrap();
+        let polygon = vec![Vec2::new(-10.0, -10.0), Vec2::new(10.0, -10.0), Vec2::new(10.0, 10.0), Vec2::new(-10.0, 10.0)];
+        d.arch.push_room(Room { name: "Hall".into(), level, polygon, ..Room::default() });
+    }
+
+    #[test]
+    fn stair_without_levels_uses_first_and_last_level() {
+        let mut s = two_level_session();
+        let r = s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0 })).unwrap();
+        assert_eq!(r["risers"].as_u64(), Some(16));
+        let st = &s.doc().unwrap().arch.stairs[0];
+        assert_eq!((st.from_level, st.to_level), (0, 1));
+        // One level and no rise: nothing to derive, refused.
+        let mut one = new_session();
+        assert!(one.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0 })).is_err());
+        assert_eq!(one.doc().unwrap().arch.stairs.len(), 0);
+        // A present unknown level is still refused.
+        assert!(s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0, "toLevel": 99 })).is_err());
+    }
+
+    #[test]
+    fn deck_stair_to_grade_makes_no_well() {
+        let mut s = two_level_session();
+        add_big_room(&mut s, 0);
+        let r = s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0, "fromLevel": 1, "toLevel": 0, "rise": 2.7 })).unwrap();
+        assert_eq!(r["well"].as_bool(), Some(false));
+        let d = s.doc().unwrap();
+        assert!(d.arch.stairs[0].well.is_empty());
+        assert!(d.arch.railings.is_empty());
+        assert!(d.arch.rooms.iter().all(|r| r.room_type != RoomType::OpenBelow && r.holes.is_empty()));
+    }
+
+    #[test]
+    fn stair_well_becomes_a_hole_of_the_upper_room() {
+        let mut s = two_level_session();
+        add_big_room(&mut s, 0);
+        add_big_room(&mut s, 1);
+        s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0, "fromLevel": 0, "toLevel": 1 })).unwrap();
+        let d = s.doc().unwrap();
+        let well = d.arch.stairs[0].well.clone();
+        assert!(!well.is_empty());
+        let upper = d.arch.rooms.iter().find(|r| r.level == 1 && r.name == "Hall").unwrap();
+        assert_eq!(upper.holes, vec![well]);
+        let lower = d.arch.rooms.iter().find(|r| r.level == 0).unwrap();
+        assert!(lower.holes.is_empty());
+    }
+
+    #[test]
+    fn stair_well_room_area_matches_the_flight() {
+        let mut s = two_level_session();
+        add_big_room(&mut s, 1);
+        s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0, "fromLevel": 0, "toLevel": 1 })).unwrap();
+        let d = s.doc().unwrap();
+        let well_area = ring_area(&d.arch.stairs[0].well);
+        assert!(well_area > 0.0);
+        let upper = d.arch.rooms.iter().find(|r| r.name == "Hall").unwrap();
+        assert!((upper.interior_area - (400.0 - well_area)).abs() < 1e-6, "{}", upper.interior_area);
+        let open = d.arch.rooms.iter().find(|r| r.room_type == RoomType::OpenBelow).unwrap();
+        assert!((open.interior_area - well_area).abs() < 1e-6);
     }
 
     #[test]
