@@ -194,6 +194,9 @@ pub const MAX_OPENINGS: usize = 8192;
 /// Maximum number of rooms in a drawing.
 pub const MAX_ROOMS: usize = 1024;
 
+/// Maximum number of saved cameras in a drawing.
+pub const MAX_CAMERAS: usize = 64;
+
 /// Minimum room area (m²) to be considered valid.
 pub const MIN_ROOM_AREA: f64 = 0.05;
 
@@ -858,6 +861,83 @@ impl Roof {
     }
 }
 
+/// The kind of a saved 3D camera.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum CameraKind {
+    /// An orbit camera that revolves around its target.
+    #[default]
+    Orbit,
+    /// A full (framed) camera.
+    Full,
+}
+
+/// A saved 3D camera, stored on [`ArchModel::cameras`] so that it participates in
+/// undo, autosave, AUDIT and round-trip (decision 1).
+///
+/// `target`/`distance`/`azimuth_deg`/`elevation_deg` pose an orbit camera;
+/// `eye`/`eye_height` are the full-camera eye. `kind` selects which fields
+/// the consumer honours.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Camera3d {
+    /// Name of the camera, used for lookup and the active selection.
+    pub name: String,
+    /// How the camera is posed.
+    pub kind: CameraKind,
+    /// Point the orbit camera revolves around, in metres.
+    pub target: [f64; 3],
+    /// Orbit azimuth, in degrees.
+    pub azimuth_deg: f64,
+    /// Orbit elevation, in degrees.
+    pub elevation_deg: f64,
+    /// Orbit distance from the target, in metres.
+    pub distance: f64,
+    /// Full-camera eye position (x, y), in metres.
+    pub eye: [f64; 2],
+    /// Full-camera eye height, in metres.
+    pub eye_height: f64,
+    /// Field of view, in degrees.
+    pub fov_deg: f64,
+}
+
+impl Default for Camera3d {
+    fn default() -> Self {
+        Camera3d {
+            name: String::new(),
+            kind: CameraKind::default(),
+            target: [0.0; 3],
+            azimuth_deg: 0.0,
+            elevation_deg: 30.0,
+            distance: 10.0,
+            eye: [0.0, -10.0],
+            eye_height: 1.6,
+            fov_deg: 45.0,
+        }
+    }
+}
+
+/// Errors returned by [`ArchModel::set_camera`] / [`ArchModel::remove_camera`].
+///
+/// Errors are returned rather than clamping or rejecting silently, matching the
+/// "refuse, never clamp" policy (decision 12).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CameraError {
+    /// The camera name was empty or all whitespace.
+    EmptyName,
+    /// A camera with the same name already exists.
+    Duplicate,
+    /// Adding the camera would exceed [`MAX_CAMERAS`].
+    TooMany,
+    /// The camera contained a non-finite number (NaN or infinity).
+    NotFinite,
+}
+
+impl std::fmt::Display for CameraError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 /// The architectural object model for a drawing.
 ///
 /// Stored on [`Drawing::arch`]; the 3D pane and incremental rebuilds key off
@@ -892,6 +972,10 @@ pub struct ArchModel {
     pub railings: Vec<Railing>,
     #[serde(default)]
     pub next_railing_id: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cameras: Vec<Camera3d>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_camera: Option<String>,
 }
 
 impl Default for ArchModel {
@@ -909,6 +993,8 @@ impl Default for ArchModel {
             next_stair_id: 0,
             railings: Vec::new(),
             next_railing_id: 0,
+            cameras: Vec::new(),
+            active_camera: None,
             levels: vec![Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 }],
             types: vec![
                 WallType {
@@ -1162,6 +1248,67 @@ impl ArchModel {
             pts.push(w.start + perp * half);
         }
         if pts.is_empty() { Bounds2::EMPTY } else { Bounds2::from_points(pts.iter().copied()) }
+    }
+
+    /// The index of a saved camera by name, or `None` if not found.
+    pub fn camera_index(&self, name: &str) -> Option<usize> {
+        self.cameras.iter().position(|c| c.name == name)
+    }
+
+    /// Look up a saved camera by name.
+    pub fn camera_by_name(&self, name: &str) -> Option<&Camera3d> {
+        self.cameras.iter().find(|c| c.name == name)
+    }
+
+    /// Whether every numeric field of a camera is finite.
+    fn camera_is_finite(c: &Camera3d) -> bool {
+        c.azimuth_deg.is_finite()
+            && c.elevation_deg.is_finite()
+            && c.distance.is_finite()
+            && c.eye_height.is_finite()
+            && c.fov_deg.is_finite()
+            && c.target.iter().all(|v| v.is_finite())
+            && c.eye.iter().all(|v| v.is_finite())
+    }
+
+    /// Add or update a saved camera, storing it on the model so that it
+    /// participates in undo, autosave, AUDIT and round-trip (decision 1).
+    ///
+    /// Refuses — never clamps — when the name is empty or whitespace, when a
+    /// camera with that name already exists, when adding would exceed
+    /// [`MAX_CAMERAS`], or when any numeric field is non-finite (decision 12).
+    pub fn set_camera(&mut self, c: Camera3d) -> Result<(), CameraError> {
+        if c.name.trim().is_empty() {
+            return Err(CameraError::EmptyName);
+        }
+        if self.camera_by_name(&c.name).is_some() {
+            return Err(CameraError::Duplicate);
+        }
+        if self.cameras.len() >= MAX_CAMERAS {
+            return Err(CameraError::TooMany);
+        }
+        if !Self::camera_is_finite(&c) {
+            return Err(CameraError::NotFinite);
+        }
+        self.cameras.push(c);
+        Ok(())
+    }
+
+    /// Remove a saved camera by name. Returns `true` if it was found.
+    ///
+    /// Clears [`ArchModel::active_camera`] when it pointed at the removed
+    /// camera.
+    pub fn remove_camera(&mut self, name: &str) -> bool {
+        if let Some(pos) = self.camera_index(name) {
+            let was_active = self.active_camera.as_deref() == Some(name);
+            self.cameras.remove(pos);
+            if was_active {
+                self.active_camera = None;
+            }
+            true
+        } else {
+            false
+        }
     }
 
     /// A message when `counter` is at or below the largest id already in use, or
@@ -1522,6 +1669,32 @@ impl ArchModel {
         }
         for id in &dupe_railings {
             messages.push(format!("duplicate railing id {}", id));
+        }
+
+        // Deserialization bypasses set_camera(), so apply the same checks here.
+        if self.cameras.len() > MAX_CAMERAS {
+            messages.push(format!("model has {} cameras, max {MAX_CAMERAS}", self.cameras.len()));
+        }
+
+        let mut seen_camera = std::collections::HashSet::new();
+        let mut dupe_cameras = Vec::new();
+        for c in &self.cameras {
+            if c.name.trim().is_empty() {
+                messages.push(format!("camera `{}`: empty name", c.name));
+            }
+            if !Self::camera_is_finite(c) {
+                messages.push(format!("camera `{}`: non-finite numeric value", c.name));
+            }
+            if seen_camera.contains(&c.name) {
+                if !dupe_cameras.contains(&c.name) {
+                    dupe_cameras.push(c.name.clone());
+                }
+            } else {
+                seen_camera.insert(c.name.clone());
+            }
+        }
+        for name in &dupe_cameras {
+            messages.push(format!("duplicate camera name `{name}`"));
         }
 
         // Stale id counters: the next id to assign must be above every id in use.
@@ -2520,5 +2693,88 @@ mod tests {
         assert_eq!(l2.floor_to_floor(), 0.0, "negative ceiling height should give 0.0");
         let l3 = Level { ceiling_height: 0.0, structure: 0.0, ..Level::default() };
         assert_eq!(l3.floor_to_floor(), 0.0, "zero components should give 0.0");
+    }
+
+    #[test]
+    fn camera_defaults_are_sane() {
+        let c = Camera3d::default();
+        assert!(c.name.is_empty());
+        assert_eq!(c.kind, CameraKind::Orbit);
+        assert_eq!(c.target, [0.0; 3]);
+        assert_eq!(c.azimuth_deg, 0.0);
+        assert_eq!(c.elevation_deg, 30.0);
+        assert_eq!(c.distance, 10.0);
+        assert_eq!(c.eye, [0.0, -10.0]);
+        assert_eq!(c.eye_height, 1.6);
+        assert_eq!(c.fov_deg, 45.0);
+    }
+
+    #[test]
+    fn set_camera_refuses_empty_duplicate_and_non_finite() {
+        let mut m = ArchModel::default();
+
+        // Empty or whitespace-only names are refused.
+        assert_eq!(m.set_camera(Camera3d { name: String::new(), ..Camera3d::default() }), Err(CameraError::EmptyName));
+        assert_eq!(m.set_camera(Camera3d { name: "   ".into(), ..Camera3d::default() }), Err(CameraError::EmptyName));
+        assert_eq!(m.set_camera(Camera3d { name: "\t\n ".into(), ..Camera3d::default() }), Err(CameraError::EmptyName));
+        assert_eq!(m.cameras.len(), 0);
+
+        // A valid camera is accepted.
+        assert_eq!(m.set_camera(Camera3d { name: "front".into(), ..Camera3d::default() }), Ok(()));
+        assert_eq!(m.cameras.len(), 1);
+        assert!(m.camera_by_name("front").is_some());
+
+        // A duplicate name is refused.
+        let dup = Camera3d { name: "front".into(), ..Camera3d::default() };
+        assert_eq!(m.set_camera(dup.clone()), Err(CameraError::Duplicate));
+        assert_eq!(m.cameras.len(), 1);
+
+        // A non-finite field is refused (never clamped).
+        assert_eq!(m.set_camera(Camera3d { name: "bad".into(), distance: f64::NAN, ..Camera3d::default() }), Err(CameraError::NotFinite));
+        assert_eq!(m.set_camera(Camera3d { name: "bad2".into(), target: [f64::NAN; 3], ..Camera3d::default() }), Err(CameraError::NotFinite));
+        assert_eq!(m.set_camera(Camera3d { name: "bad3".into(), eye: [0.0, f64::INFINITY], ..Camera3d::default() }), Err(CameraError::NotFinite));
+        assert_eq!(m.cameras.len(), 1);
+    }
+
+    #[test]
+    fn cameras_are_capped_at_max_cameras() {
+        let mut m = ArchModel::default();
+        for i in 0..MAX_CAMERAS {
+            assert_eq!(m.set_camera(Camera3d { name: format!("c{}", i), ..Camera3d::default() }), Ok(()));
+        }
+        // At the cap: adding one more is refused, and the length is unchanged.
+        assert_eq!(m.set_camera(Camera3d { name: "extra".into(), ..Camera3d::default() }), Err(CameraError::TooMany));
+        assert_eq!(m.cameras.len(), MAX_CAMERAS);
+    }
+
+    #[test]
+    fn remove_camera_clears_the_active_pointer() {
+        let mut m = ArchModel::default();
+        assert_eq!(m.set_camera(Camera3d { name: "front".into(), ..Camera3d::default() }), Ok(()));
+        assert_eq!(m.set_camera(Camera3d { name: "back".into(), ..Camera3d::default() }), Ok(()));
+        assert_eq!(m.cameras.len(), 2);
+
+        // Pointing at the active camera that is not removed stays put.
+        m.active_camera = Some("front".into());
+        assert_eq!(m.remove_camera("back"), true);
+        assert_eq!(m.cameras.len(), 1);
+        assert_eq!(m.active_camera, Some("front".into()));
+        assert_eq!(m.camera_by_name("front"), Some(&m.cameras[0]));
+
+        // Removing the active camera clears the pointer.
+        assert_eq!(m.remove_camera("front"), true);
+        assert_eq!(m.cameras.len(), 0);
+        assert_eq!(m.active_camera, None);
+
+        // Removing a camera that is not there does nothing.
+        assert_eq!(m.remove_camera("ghost"), false);
+        assert_eq!(m.cameras.len(), 0);
+    }
+
+    #[test]
+    fn arch_model_default_has_no_cameras() {
+        let m = ArchModel::default();
+        assert_eq!(m.cameras.len(), 0);
+        assert_eq!(m.active_camera, None);
     }
 }
