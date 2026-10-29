@@ -141,7 +141,7 @@ fn run_deck(s: &mut Session, p: &Value) -> Result<Value> {
 
     Ok(json!({
         "id": format!("r{}", id.0),
-        "handle": format!("{:016X}", cadcraft_arch::room_handle(id).0),
+        "handle": cadcraft_doc::arch::handle_json(cadcraft_arch::room_handle(id)),
         "deckHeight": height,
         "interiorArea": interior_area,
     }))
