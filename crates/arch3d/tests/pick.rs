@@ -481,6 +481,7 @@ fn pick_reports_deck_part() {
         level: 0,
         polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0), Vec2::new(0.0, 3.0)],
         room_type: cadcraft_doc::arch::RoomType::Deck,
+        deck_height: Some(0.9),
         ..Default::default()
     });
 
