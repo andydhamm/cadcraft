@@ -323,4 +323,87 @@ mod tests {
         let min_z = mesh.positions.iter().map(|p| p[2] as f64).fold(f64::INFINITY, f64::min);
         assert!((min_z - base).abs() < 1e-6);
     }
+
+    #[test]
+    fn stair_mesh_with_nan_base_returns_none() {
+        let s = flight();
+        assert!(stair_mesh(&s, f64::NAN).is_none());
+    }
+
+    #[test]
+    fn stair_mesh_with_zero_width_returns_none() {
+        let s = Stair { width: 0.0, ..flight() };
+        assert!(stair_mesh(&s, 0.0).is_none());
+    }
+
+    #[test]
+    fn stair_mesh_rotated_90_degrees_goes_in_y_direction() {
+        let s = Stair {
+            start: Vec2::ZERO,
+            direction: std::f64::consts::FRAC_PI_2,
+            width: 1.0,
+            risers: 16,
+            treads: 15,
+            riser_height: 0.16875,
+            tread_depth: 0.254,
+            rise: 2.7,
+            run: 3.81,
+            ..Default::default()
+        };
+        let mesh = stair_mesh(&s, 0.0).expect("stair mesh");
+        let max_x = mesh.positions.iter().map(|p| p[0] as f64).fold(f64::NEG_INFINITY, f64::max);
+        let max_y = mesh.positions.iter().map(|p| p[1] as f64).fold(f64::NEG_INFINITY, f64::max);
+        assert!(max_y > max_x, "stair should extend more in Y than X when rotated 90 degrees");
+        assert!((max_y - 3.81).abs() < 0.01, "max Y should be approximately the run (3.81), got {}", max_y);
+    }
+
+    #[test]
+    fn landing_mesh_is_at_top_of_flight() {
+        let s = flight();
+        let base = 0.0;
+        let mesh = landing_mesh(&s, base).expect("landing mesh");
+        let max_z = mesh.positions.iter().map(|p| p[2] as f64).fold(f64::NEG_INFINITY, f64::max);
+        let min_z = mesh.positions.iter().map(|p| p[2] as f64).fold(f64::INFINITY, f64::min);
+        assert!((max_z - (base + s.rise)).abs() < 1e-6, "landing top should be at base + rise");
+        assert!((min_z - (base + s.rise - 0.05)).abs() < 1e-6, "landing bottom should be at base + rise - 0.05");
+    }
+
+    #[test]
+    fn landing_mesh_with_zero_depth_returns_none() {
+        let s = Stair { landing_depth: 0.0, ..flight() };
+        assert!(landing_mesh(&s, 0.0).is_none());
+    }
+
+    #[test]
+    fn stair_profile_with_huge_tread_count_is_capped() {
+        let s = Stair {
+            start: Vec2::ZERO,
+            direction: 0.0,
+            width: 1.0,
+            risers: 10000,
+            treads: 9999,
+            riser_height: 0.01,
+            tread_depth: 0.254,
+            rise: 100.0,
+            run: 2539.746,
+            ..Default::default()
+        };
+        let ring = stair_profile(&s).expect("profile");
+        // Capped at 4096 treads: 1 (origin) + 2*4096 (tread points) + 2 (closure) = 8195 max.
+        assert!(ring.len() <= 8195, "profile should be capped, got {} points", ring.len());
+    }
+
+    #[test]
+    fn drop_collinear_keeps_non_collinear_vertices() {
+        let ring = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(1.0, 0.0),
+            Vec2::new(2.0, 0.0), // collinear with neighbours
+            Vec2::new(2.0, 1.0),
+            Vec2::new(0.0, 1.0),
+        ];
+        let result = drop_collinear(&ring);
+        assert_eq!(result.len(), 4, "collinear vertex should be dropped");
+        assert!(!result.contains(&Vec2::new(2.0, 0.0)), "the collinear point should be gone");
+    }
 }
