@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-29 07:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 08:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 6 of 13: The 3D view, properly — 1 of 14 segments merged · 1 of 9 acceptance checks**
+**Phase 6 of 13: The 3D view, properly — 3 of 14 segments merged · 2 of 9 acceptance checks**
 
-4,774 workspace tests passing at the last merge · 435 segments merged in all · 0 of 13 seats working
+4,781 workspace tests passing at the last merge · 437 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -16,7 +16,7 @@ Updated 2026-10-29 07:45 UTC. This page and the card in the README are regenerat
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
-| 6 | The 3D view, properly | building | 1 / 9 | 2.6 h so far · expected done Oct 30 04:34–Nov 05 14:20 UTC |
+| 6 | The 3D view, properly | building | 2 / 9 | 2.9 h so far · expected done Oct 29 19:24–Oct 30 19:24 UTC |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
@@ -27,19 +27,19 @@ Updated 2026-10-29 07:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 6 segments
 
-9 queued, 2 working, 2 merging, 1 merged
+9 queued, 3 merged, 1 working, 1 escalate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p6-arch3d-camera` | arch3d::camera — orbit + full camera, projection, pixel rays | working | bonsai-a |
-| `p6-doc-cameras` | Camera3d on the arch model | working | bonsai-b |
-| `p6-cmd-sun` | sun command | merging | claude-sonnet-b |
-| `p6-r3d-limits` | Adapter choice + downlevel WebGL2 limits | merging | claude-sonnet-a |
+| `p6-doc-cameras` | Camera3d on the arch model | escalate |  |
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 29 07:59 | `p6-r3d-limits` | merged | 4,781 pass | claude-sonnet-a |
+| Oct 29 07:49 | `p6-cmd-sun` | merged | 4,777 pass | claude-sonnet-b |
 | Oct 29 06:47 | `p6-arch-sun` | merged | 4,774 pass | darwin-ws3 |
 | Oct 29 06:39 | `harden-p1-arch-crate` | merged | 4,767 pass | tturbo-mac2 |
 | Oct 29 06:32 | `harden-p5f-inspect-holes-are-rings` | merged | 4,751 pass | tturbo-mac |
@@ -50,23 +50,21 @@ Updated 2026-10-29 07:45 UTC. This page and the card in the README are regenerat
 | Oct 29 04:02 | `harden-p1-wall-graph` | merged | 4,727 pass | tturbo-mac2 |
 | Oct 29 03:50 | `p5f-inspect-holes-are-rings` | merged | 4,720 pass | kimi-k31 |
 | Oct 29 03:40 | `p5f-inspect-holes-are-rings` | refused | 4,720 pass | bonsai-a |
-| Oct 29 03:33 | `p5f-inspect-holes-are-rings` | refused | 4,720 pass | darwin-ws3 |
-| Oct 29 03:26 | `harden-p5-arch3d-railing-deck` | merged | 4,719 pass | tturbo-mac |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 597 |
-| bonsai-b | bonsai2-27b | agent | 548 |
+| bonsai-a | bonsai2-27b | agent | 598 |
+| bonsai-b | bonsai2-27b | agent | 550 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
-| claude-sonnet-a | sonnet | merging | 30 |
-| claude-sonnet-b | sonnet | merging | 25 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 429 |
+| claude-sonnet-a | sonnet | idle | 30 |
+| claude-sonnet-b | sonnet | idle | 25 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 430 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 72 |
 | mai-flash | mai-code-1.1-flash | idle | 6 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
-| tturbo-mac | tturbo-ultraheretic | gate | 394 |
+| tturbo-mac | tturbo-ultraheretic | merging | 395 |
 | tturbo-mac2 | tturbo-ultraheretic | idle | 251 |
