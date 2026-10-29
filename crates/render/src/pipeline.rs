@@ -123,7 +123,8 @@ fn build_space(d: &Drawing, space: &Space, opts: &Options, plotting: bool) -> Di
             entity(&mut b, &top_ctx(d, Mat3::IDENTITY, e.handle, &[], &[]), e);
         }
     }
-    // Arch poché is model-space only; plotting picks it up via build_plot -> build_space.
+    // Arch poché is drawn for model space only; paper space gets none of its own. A layout shows
+    // it through each viewport (see `viewports::contents`), so plotting picks it up there.
     // Arch objects follow their layer state: no-plot (and off/frozen) layers are skipped.
     if !matches!(space, Space::Paper(_)) {
         append_arch(&mut b.list, d, opts, plotting);
@@ -135,8 +136,8 @@ fn build_space(d: &Drawing, space: &Space, opts: &Options, plotting: bool) -> Di
     b.list
 }
 
-/// Merge the arch poché display list into `list`. Model-space only; plotting picks it up
-/// via `build_plot` -> `build_space`. Arch objects follow their layer state: no-plot
+/// Merge the arch poché display list into `list`. Called for model space only; layouts show it
+/// through their viewports instead. Arch objects follow their layer state: no-plot
 /// (and off/frozen) layers are skipped, per their layer state.
 fn append_arch(list: &mut DisplayList, d: &Drawing, opts: &Options, plotting: bool) {
     let src = crate::arch::build_arch(d, opts, plotting);
