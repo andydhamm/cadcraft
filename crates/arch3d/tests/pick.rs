@@ -245,14 +245,13 @@ fn pick_with_negative_max_t() {
     assert!(none.is_none(), "negative max_t should return None");
 }
 
-/// Infinity max_t should work (hit anywhere along the ray).
+/// Infinity max_t is non-finite, so it returns None per spec.
 #[test]
 fn pick_with_infinity_max_t() {
-    let (scene, w0, _) = house();
+    let (scene, _, _) = house();
     let bvh = Bvh::build(&scene);
-    let hit = bvh.ray(v(7.0, -5.0, 1.5), v(0.0, 1.0, 0.0), f64::INFINITY);
-    assert!(hit.is_some(), "infinity max_t should find hits");
-    assert_eq!(hit.unwrap().object, w0);
+    let none = bvh.ray(v(7.0, -5.0, 1.5), v(0.0, 1.0, 0.0), f64::INFINITY);
+    assert!(none.is_none(), "infinity max_t is non-finite and should return None");
 }
 
 /// NaN max_t should return None.

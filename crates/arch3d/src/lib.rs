@@ -329,7 +329,7 @@ impl Scene3d {
         for room in &model.rooms {
             if room.room_type == cadcraft_doc::arch::RoomType::Deck {
                 let level = level_for(model, room.level);
-                let material = "deck";
+                let material = if room.deck_height.map_or(false, |h| h > 0.0 && h.is_finite()) { "deck" } else { "floor" };
                 if let Some(m) = floors::floor_slab(room, &level, material) {
                     meshes.push(m);
                     decks_count += 1;
@@ -617,7 +617,7 @@ impl Scene3d {
             }
             if dirty.contains(&room.id) {
                 let level = level_for(model, room.level);
-                let material = "deck";
+                let material = if room.deck_height.map_or(false, |h| h > 0.0 && h.is_finite()) { "deck" } else { "floor" };
                 if let Some(m) = floors::floor_slab(room, &level, material) {
                     meshes.push(m);
                     decks_count += 1;
