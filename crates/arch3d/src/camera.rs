@@ -6,6 +6,7 @@
 //! entry points used by the engine, the CLI and the 3D pane.
 
 use crate::mesh::Bounds3;
+use crate::Scene3d;
 use cadcraft_geom::{Mat4, Vec3};
 
 /// Upper bound for the orbit distance (keeps floats sane and the projection bounded).
@@ -405,17 +406,6 @@ pub fn view_proj(camera: &Camera, aspect: f64) -> [[f32; 4]; 4] {
         for r in 0..4 {
             out[c][r] = m.m[r][c] as f32;
         }
-    }
-    out
-}
-
-/// Multiply a `Mat4` by a 3D point (implicitly homogenized to w=1).
-///
-/// `out[i] = m[i][0]*p[0] + m[i][1]*p[1] + m[i][2]*p[2] + m[i][3]`
-fn apply_col(m: &Mat4, p: [f64; 3]) -> [f64; 4] {
-    let mut out = [0.0f64; 4];
-    for i in 0..4 {
-        out[i] = m.m[i][0] * p[0] + m.m[i][1] * p[1] + m.m[i][2] * p[2] + m.m[i][3];
     }
     out
 }

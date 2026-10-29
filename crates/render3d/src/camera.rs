@@ -1,8 +1,4 @@
-//! Orbit camera for the 3D viewport: eye/view/projection matrices, bounds fitting and
-//! clamped orbit control.
-
-use cadcraft_arch3d::mesh::Bounds3;
-use cadcraft_geom::{Mat4, Vec2, Vec3};
+pub use cadcraft_arch3d::camera::*;
 
 /// Upper bound for the orbit distance (keeps floats sane and the projection bounded).
 pub const MAX_DISTANCE: f64 = 1_000_000.0;
