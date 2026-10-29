@@ -144,3 +144,22 @@ fn view_handle_is_its_own_range() {
     assert_ne!(h, arch_handle(id));
     assert_ne!(h, opening_handle(id));
 }
+
+/// A model without views writes the payload it wrote before views existed: `views` is left out
+/// when empty and `next_view_id` when zero (io's hostile-record test splices that payload, and a
+/// longer one turned its truncated splice into valid JSON). A deleted view's id is still not reused.
+#[test]
+fn a_model_without_views_writes_no_view_fields() {
+    let json = serde_json::to_string(&ArchModel::default()).unwrap();
+    assert!(!json.contains("\"views\""), "{json}");
+    assert!(!json.contains("next_view_id"), "{json}");
+
+    let mut m = ArchModel::default();
+    let front = ArchView { name: "Front".into(), look: [0.0, 1.0], scale: 50.0, layer: "A-ELEV".into(), ..Default::default() };
+    let id = m.push_view(front).unwrap();
+    assert!(serde_json::to_string(&m).unwrap().contains("\"views\""));
+    m.remove_view(id);
+    let back: ArchModel = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+    assert!(back.views.is_empty());
+    assert_eq!(back.next_view_id, 1);
+}

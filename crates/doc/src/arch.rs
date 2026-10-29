@@ -1372,6 +1372,10 @@ impl std::fmt::Display for CameraError {
     }
 }
 
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+
 /// Deserialize views with the same read-time filtering as [`ArchModel::validate`]:
 /// invalid definitions and entries beyond [`MAX_VIEWS`] are dropped.
 fn deserialize_views<'de, D>(deserializer: D) -> Result<Vec<ArchView>, D::Error>
@@ -1422,9 +1426,10 @@ pub struct ArchModel {
     pub cameras: Vec<Camera3d>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_camera: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_views")]
+    // Skipped when empty, so a model without views writes the same payload it did before views existed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "deserialize_views")]
     pub views: Vec<ArchView>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero")]
     pub next_view_id: u32,
 }
 
