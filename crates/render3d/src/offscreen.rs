@@ -14,6 +14,7 @@ use crate::adapter::{AdapterChoice, DeviceInfo, request_device};
 /// Alias of [`DeviceInfo`] for the accessor signature.
 type Info = DeviceInfo;
 use crate::camera::{Camera, view_proj};
+use crate::edges::{EDGE_COLOR, EdgePass};
 use crate::light::Light;
 use crate::pipeline::{
     COLOR_FORMAT, DEPTH_FORMAT, GpuMeshes, GpuPipeline, GpuUniform, PBR_SIZE, PbrUniform, STYLE_GLASS_HOUSE, STYLE_HIDDEN_LINE, STYLE_SHADED,
@@ -154,6 +155,7 @@ pub struct Offscreen {
     stride: u64,
     slots: Option<Slots>,
     meshes: Option<((u64, bool), GpuMeshes)>,
+    edges: Option<EdgePass>,
     shadowed: Option<ShadowPipelines>,
     shadows_built: u64,
     uploads: u64,
@@ -211,6 +213,7 @@ impl Offscreen {
             stride,
             slots: None,
             meshes: None,
+            edges: None,
             shadowed: None,
             shadows_built: 0,
             uploads: 0,
@@ -357,6 +360,11 @@ impl Offscreen {
                 self.queue.write_buffer(&slots.pbr_buffer, 0, &pbr_bytes);
             }
         }
+        let with_edges = matches!(opts.style, Style::ShadedEdges | Style::HiddenLine);
+        if with_edges {
+            let edges = self.edges.get_or_insert_with(|| EdgePass::new(&self.device, 1));
+            edges.prepare(&self.device, &self.queue, scene, scene_key, vp, EDGE_COLOR);
+        }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("render3d scene"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -399,6 +407,9 @@ impl Offscreen {
                 pass.set_bind_group(1, &slots.pbr_bind_group, &offset);
                 pass.draw_indexed(d.first_index..d.first_index + d.index_count, 0, 0..1);
             }
+        }
+        if with_edges && let Some(edges) = &self.edges {
+            edges.draw(&mut pass);
         }
     }
 
@@ -585,6 +596,61 @@ mod offscreen_behavior_tests {
                 eprintln!("SKIP: no GPU adapter available");
             }
         }
+    }
+
+    /// A 2 m cube around the origin with per-face vertices and outward normals.
+    fn cube_scene() -> Scene3d {
+        let mut m = crate::types::Mesh::new("concrete", crate::types::ArchId(1));
+        let faces: [([f32; 3], [f32; 3], [f32; 3]); 6] = [
+            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+            ([-1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]),
+            ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+            ([0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
+            ([0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            ([0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]),
+        ];
+        for (n, u, v) in faces {
+            let base = m.positions.len() as u32;
+            for (a, b) in [(-1.0f32, -1.0f32), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+                m.positions.push([n[0] + a * u[0] + b * v[0], n[1] + a * u[1] + b * v[1], n[2] + a * u[2] + b * v[2]]);
+                m.normals.push(n);
+                m.uvs.push([a, b]);
+            }
+            m.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
+        let mut s = Scene3d { meshes: vec![m], ..Default::default() };
+        s.bounds = crate::types::Bounds3::new([-1.0; 3], [1.0; 3]);
+        s
+    }
+
+    #[test]
+    fn shaded_edges_darkens_and_hidden_line_leaves_background() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (160u32, 120u32);
+        let mut off = Offscreen::with_device(device, queue, size);
+        let scene = cube_scene();
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(30.0, 30.0, 8.0, 45.0));
+        let mut shot = |style: Style| {
+            off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style, ..Default::default() });
+            off.read_rgba().unwrap_or_default()
+        };
+        let shaded = shot(Style::Shaded);
+        let edged = shot(Style::ShadedEdges);
+        let hidden = shot(Style::HiddenLine);
+        let bg = |p: &[u8]| p[..3].iter().zip([39u8, 44, 52]).all(|(a, b)| a.abs_diff(b) <= 2);
+        let model: Vec<usize> = shaded.chunks_exact(4).enumerate().filter(|(_, p)| !bg(p)).map(|(i, _)| i).collect();
+        assert!(!model.is_empty(), "the cube must be visible");
+        let lum = |px: &[u8]| -> f64 {
+            let sum: f64 =
+                model.iter().map(|&i| 0.2126 * f64::from(px[i * 4]) + 0.7152 * f64::from(px[i * 4 + 1]) + 0.0722 * f64::from(px[i * 4 + 2])).sum();
+            sum / model.len() as f64
+        };
+        assert!(lum(&edged) < lum(&shaded), "edges must darken: {} vs {}", lum(&edged), lum(&shaded));
+        let covered = hidden.chunks_exact(4).filter(|p| !bg(p)).count();
+        assert!((covered as f64) < 0.7 * model.len() as f64, "hidden-line covers {covered} of {}", model.len());
     }
 
     #[test]
