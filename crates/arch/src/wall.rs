@@ -598,11 +598,9 @@ mod tests {
             ..Wall::default()
         };
         let polys = wall_layer_polygons(&w);
-        // With infinite thickness, all bands should fit
-        assert_eq!(polys.len(), 2, "both bands should fit in infinite-thickness wall");
-        for (_, pts) in &polys {
-            assert!(pts.iter().all(|p| p.is_finite()), "all points should be finite");
-        }
+        // Infinite thickness is non-finite, so wall_polygon returns None and
+        // wall_layer_polygons returns empty (spec: None on degenerate/non-finite).
+        assert!(polys.is_empty(), "infinite-thickness wall should have no layer polygons");
     }
 
     #[test]
