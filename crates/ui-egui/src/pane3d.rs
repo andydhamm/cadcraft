@@ -38,11 +38,95 @@ impl Default for Orbit {
     }
 }
 
+/// How the pane shades the scene (the header selector).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Style3d {
+    /// PBR-shaded faces.
+    #[default]
+    Shaded,
+    /// Shaded faces with feature edges.
+    ShadedEdges,
+    /// Faces in the background colour with visible edges only.
+    HiddenLine,
+    /// Translucent faces: the whole building shows through.
+    GlassHouse,
+}
+
+impl Style3d {
+    /// Every style, in selector order.
+    pub const ALL: [Style3d; 4] = [Style3d::Shaded, Style3d::ShadedEdges, Style3d::HiddenLine, Style3d::GlassHouse];
+
+    /// The next style in selector order, wrapping after the last.
+    pub fn next(self) -> Self {
+        match self {
+            Style3d::Shaded => Style3d::ShadedEdges,
+            Style3d::ShadedEdges => Style3d::HiddenLine,
+            Style3d::HiddenLine => Style3d::GlassHouse,
+            Style3d::GlassHouse => Style3d::Shaded,
+        }
+    }
+
+    /// The English label (translated at draw time).
+    pub fn label(self) -> &'static str {
+        match self {
+            Style3d::Shaded => "Shaded",
+            Style3d::ShadedEdges => "Shaded Edges",
+            Style3d::HiddenLine => "Hidden Line",
+            Style3d::GlassHouse => "Glass House",
+        }
+    }
+
+    /// The renderer's style for this one.
+    pub fn render_style(self) -> cadcraft_render3d::Style {
+        match self {
+            Style3d::Shaded => cadcraft_render3d::Style::Shaded,
+            Style3d::ShadedEdges => cadcraft_render3d::Style::ShadedEdges,
+            Style3d::HiddenLine => cadcraft_render3d::Style::HiddenLine,
+            Style3d::GlassHouse => cadcraft_render3d::Style::GlassHouse,
+        }
+    }
+}
+
+/// Walk step in metres; Shift multiplies it by [`RUN_FACTOR`].
+pub const WALK_STEP: f64 = 1.0;
+/// Shift makes a step 4 m.
+pub const RUN_FACTOR: f64 = 4.0;
+/// Degrees turned per arrow-key press in the full camera.
+pub const TURN_STEP_DEG: f64 = 5.0;
+
+/// The proxy handle (as the 2D pane uses) of the arch object a 3D hit struck.
+///
+/// Walls and openings number separately, so the mesh's part decides which handle range the id
+/// belongs to; `grips::arch_id_from_handle` reads it back.
+pub fn proxy_handle(id: cadcraft_doc::ArchId, part: &str) -> cadcraft_doc::Handle {
+    use cadcraft_doc::arch as a;
+    match part {
+        "leaf" | "frame" | "casing" | "glass" | "sill" | "header" => a::opening_handle(id),
+        "floor" | "ceiling" | "deck" => a::room_handle(id),
+        "roof" => a::roof_handle(id),
+        "stair" => a::stair_handle(id),
+        "railing" => a::railing_handle(id),
+        _ => a::arch_handle(id),
+    }
+}
+
 /// Per-frame state for the 3D pane.
 #[derive(Debug)]
 pub struct Pane3d {
     /// The current orbit camera.
     pub orbit: Orbit,
+    /// The shading style.
+    pub style: Style3d,
+    /// The walk-through camera; `Some` replaces the orbit until [`Pane3d::use_orbit`].
+    pub full: Option<cadcraft_render3d::camera::FullCamera>,
+    /// Orbit target set by a loaded saved camera (`None` = the scene's centre).
+    orbit_target: Option<cadcraft_geom::Vec3>,
+    /// Orbit field of view set by a loaded saved camera.
+    orbit_fov: Option<f64>,
+    /// The saved camera last loaded from the drawing.
+    loaded_camera: Option<cadcraft_doc::arch::Camera3d>,
+    /// The proxy handle of the last 3D click that hit something, until the app takes it.
+    picked: Option<cadcraft_doc::Handle>,
     /// The `arch_revision` the scene was last built at (0 = never built).
     pub last_revision: u64,
     /// Number of meshes in the last build (0 when no scene).
@@ -62,7 +146,141 @@ pub struct Pane3d {
 impl Pane3d {
     /// New pane with a default orbit and no scene built yet.
     pub fn new() -> Self {
-        Self { orbit: Orbit::default(), last_revision: 0, mesh_count: 0, available: false, has_content: false, scene: None, doc: None, framed: false }
+        Self {
+            orbit: Orbit::default(),
+            style: Style3d::default(),
+            full: None,
+            orbit_target: None,
+            orbit_fov: None,
+            loaded_camera: None,
+            picked: None,
+            last_revision: 0,
+            mesh_count: 0,
+            available: false,
+            has_content: false,
+            scene: None,
+            doc: None,
+            framed: false,
+        }
+    }
+
+    /// Load the drawing's active saved camera when it differs from the one last loaded.
+    /// Returns `true` when the pane's camera changed.
+    pub fn load_active_camera(&mut self, model: &cadcraft_doc::ArchModel) -> bool {
+        use cadcraft_doc::arch::CameraKind;
+        use cadcraft_render3d::camera::FullCamera;
+        let Some(cam) = model.active_camera.as_deref().and_then(|n| model.camera_by_name(n)) else {
+            self.loaded_camera = None;
+            return false;
+        };
+        if self.loaded_camera.as_ref() == Some(cam) {
+            return false;
+        }
+        let fov = cam.fov_deg.filter(|f| f.is_finite() && *f > 0.0 && *f < 180.0);
+        let target = cam.target.filter(|t| t.iter().all(|v| v.is_finite())).map(|t| cadcraft_geom::Vec3::new(t[0], t[1], t[2]));
+        match cam.kind {
+            CameraKind::Full => {
+                let eye = cam.eye.filter(|e| e.iter().all(|v| v.is_finite())).unwrap_or([0.0, 0.0]);
+                let eye = cadcraft_geom::Vec3::new(eye[0], eye[1], cam.eye_height.filter(|h| h.is_finite()).unwrap_or(1.6));
+                let mut target = target.unwrap_or(cadcraft_geom::Vec3::new(0.0, 0.0, 0.0));
+                if (target.x - eye.x).hypot(target.y - eye.y) < 1e-6 {
+                    // Looking at its own plan position: face north instead.
+                    target = cadcraft_geom::Vec3::new(eye.x, eye.y + 1.0, eye.z);
+                }
+                self.full = Some(FullCamera::new(eye, target, fov.unwrap_or(45.0)));
+            }
+            CameraKind::Orbit => {
+                self.full = None;
+                self.orbit_target = target;
+                self.orbit_fov = fov;
+                if let Some(a) = cam.azimuth_deg.filter(|v| v.is_finite()) {
+                    self.orbit.azimuth = a.to_radians();
+                }
+                if let Some(e) = cam.elevation_deg.filter(|v| v.is_finite()) {
+                    self.orbit.elevation = e.to_radians().clamp(-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2);
+                }
+                if let Some(d) = cam.distance.filter(|v| v.is_finite() && *v > 0.0) {
+                    self.orbit.distance = d;
+                    // A saved distance is the user's framing; do not refit over it.
+                    self.framed = true;
+                }
+            }
+        }
+        self.loaded_camera = Some(cam.clone());
+        true
+    }
+
+    /// Back to the orbit camera from the walk-through camera.
+    pub fn use_orbit(&mut self) {
+        self.full = None;
+    }
+
+    /// The full camera, creating it from the current view when the pane is still orbiting.
+    fn ensure_full(&mut self) -> cadcraft_render3d::camera::FullCamera {
+        use cadcraft_render3d::camera::FullCamera;
+        match self.full {
+            Some(f) => f,
+            None => {
+                let cam = self.camera();
+                let f = FullCamera::new(cam.eye(), cam.target(), cam.fov_deg());
+                self.full = Some(f);
+                f
+            }
+        }
+    }
+
+    /// Walk the full camera `forward`/`strafe` steps of `step` metres in plan, the maths of the
+    /// `walkthrough` command: forward along `(sin yaw, cos yaw)`, strafe along `(cos yaw, -sin yaw)`,
+    /// yaw 0 = +Y turning toward +X. Eye and target move together, so the heading holds.
+    pub fn walk(&mut self, forward: f64, strafe: f64, step: f64) {
+        let mut f = self.ensure_full();
+        let yaw = (f.target.x - f.eye.x).atan2(f.target.y - f.eye.y);
+        let (sy, cy) = yaw.sin_cos();
+        let (fwd, right) = (forward * step, strafe * step);
+        let (dx, dy) = (fwd * sy + right * cy, fwd * cy - right * sy);
+        if !(dx.is_finite() && dy.is_finite()) {
+            return;
+        }
+        f.eye.x += dx;
+        f.eye.y += dy;
+        f.target.x += dx;
+        f.target.y += dy;
+        self.full = Some(f);
+    }
+
+    /// Turn the full camera `deg` degrees about its eye (positive = toward +X).
+    pub fn turn(&mut self, deg: f64) {
+        let mut f = self.ensure_full();
+        let (dx, dy) = (f.target.x - f.eye.x, f.target.y - f.eye.y);
+        let len = dx.hypot(dy);
+        if !deg.is_finite() || len < 1e-9 {
+            return;
+        }
+        let yaw = dx.atan2(dy) + deg.to_radians();
+        f.target.x = f.eye.x + len * yaw.sin();
+        f.target.y = f.eye.y + len * yaw.cos();
+        self.full = Some(f);
+    }
+
+    /// The proxy handle under `pixel` (y-down, device pixels of a `size` view), if the ray hits.
+    pub fn pick_handle_at(&self, size: (u32, u32), pixel: [f32; 2]) -> Option<cadcraft_doc::Handle> {
+        let scene = self.scene.as_ref()?;
+        let (origin, dir) = cadcraft_render3d::camera::ray_at(&self.camera(), size, pixel)?;
+        let hit = scene.pick(origin, dir)?;
+        Some(proxy_handle(hit.object, hit.part))
+    }
+
+    /// Click at `pixel`: remember the struck object's handle for the app to select. A miss
+    /// leaves the earlier pick (and the selection) alone.
+    pub fn pick(&mut self, size: (u32, u32), pixel: [f32; 2]) -> Option<cadcraft_doc::Handle> {
+        let h = self.pick_handle_at(size, pixel)?;
+        self.picked = Some(h);
+        Some(h)
+    }
+
+    /// Take the handle of the last 3D pick, for the app to add to the selection the 2D pane uses.
+    pub fn take_picked(&mut self) -> Option<cadcraft_doc::Handle> {
+        self.picked.take()
     }
 
     /// Whether the scene must be rebuilt because `current_revision` differs from the last
@@ -89,6 +307,7 @@ impl Pane3d {
                 if self.last_revision == revision {
                     return false;
                 }
+                self.load_active_camera(m);
                 let scene = cadcraft_arch3d::build(m);
                 let mesh_count = scene.meshes.len();
                 let has_content = !scene.meshes.is_empty();
@@ -117,6 +336,10 @@ impl Pane3d {
         if self.doc != Some(doc) {
             self.doc = Some(doc);
             self.last_revision = u64::MAX;
+            self.loaded_camera = None;
+            self.full = None;
+            self.orbit_target = None;
+            self.orbit_fov = None;
         }
         self.sync(revision, model)
     }
@@ -146,6 +369,15 @@ impl Pane3d {
         orbit.azimuth = self.orbit.azimuth.to_degrees();
         orbit.elevation = self.orbit.elevation.to_degrees();
         orbit.distance = self.orbit.distance.max(cadcraft_render3d::camera::MIN_DISTANCE);
+        if let Some(f) = self.full {
+            return cadcraft_render3d::Camera::Full(f);
+        }
+        if let Some(t) = self.orbit_target {
+            orbit.target = t;
+        }
+        if let Some(f) = self.orbit_fov {
+            orbit.fov_deg = f;
+        }
         cadcraft_render3d::Camera::Orbit(orbit)
     }
 }
@@ -169,10 +401,33 @@ pub fn draw(ui: &mut egui::Ui, pane: &mut Pane3d) {
         });
         return;
     };
+    ui.horizontal(|ui| {
+        for style in Style3d::ALL {
+            ui.selectable_value(&mut pane.style, style, crate::i18n::t(style.label()));
+        }
+        if pane.full.is_some() && ui.button(crate::i18n::t("Orbit")).clicked() {
+            pane.use_orbit();
+        }
+    });
     let (rect, response) = ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
+    if response.clicked() || response.drag_started() {
+        response.request_focus();
+    }
+    let ppp = ui.ctx().pixels_per_point();
+    let size = ((rect.width() * ppp).round().max(1.0) as u32, (rect.height() * ppp).round().max(1.0) as u32);
     if response.dragged() {
         let d = response.drag_delta();
-        orbit_by_drag(pane, -f64::from(d.x), f64::from(d.y), 0.01);
+        if pane.full.is_some() {
+            pane.turn(f64::from(d.x) * 0.3);
+        } else {
+            orbit_by_drag(pane, -f64::from(d.x), f64::from(d.y), 0.01);
+        }
+    }
+    if response.clicked()
+        && let Some(p) = response.interact_pointer_pos()
+    {
+        let px = [(p.x - rect.min.x) * ppp, (p.y - rect.min.y) * ppp];
+        pane.pick(size, px);
     }
     if response.hovered() {
         let wheel = ui.input(|i| i.smooth_scroll_delta.y);
@@ -180,10 +435,32 @@ pub fn draw(ui: &mut egui::Ui, pane: &mut Pane3d) {
             zoom_by_wheel(pane, f64::from(wheel) / 50.0);
         }
     }
-    let ppp = ui.ctx().pixels_per_point();
-    let size = ((rect.width() * ppp).round().max(1.0) as u32, (rect.height() * ppp).round().max(1.0) as u32);
-    let callback = Pane3dCallback { scene, key: pane.scene_key(), camera: pane.camera(), size };
+    if response.has_focus() {
+        walk_keys(ui, pane);
+    }
+    let callback = Pane3dCallback { scene, key: pane.scene_key(), camera: pane.camera(), size, style: pane.style };
     ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, callback));
+}
+
+/// Apply this frame's WASD / arrow key presses to the full camera: W/S and Up/Down walk,
+/// A/D strafe, Left/Right turn; Shift runs.
+fn walk_keys(ui: &egui::Ui, pane: &mut Pane3d) {
+    use egui::Key;
+    let (mut fwd, mut strafe, mut turn, mut run) = (0.0, 0.0, 0.0, false);
+    ui.input(|i| {
+        run = i.modifiers.shift;
+        let n = |k: Key| if i.key_pressed(k) { 1.0 } else { 0.0 };
+        fwd = n(Key::W) + n(Key::ArrowUp) - n(Key::S) - n(Key::ArrowDown);
+        strafe = n(Key::D) - n(Key::A);
+        turn = n(Key::ArrowRight) - n(Key::ArrowLeft);
+    });
+    let step = if run { WALK_STEP * RUN_FACTOR } else { WALK_STEP };
+    if fwd != 0.0 || strafe != 0.0 {
+        pane.walk(fwd, strafe, step);
+    }
+    if turn != 0.0 {
+        pane.turn(turn * TURN_STEP_DEG);
+    }
 }
 
 /// Set the pane up to render on the window's device. Call once with the app's render state;
@@ -229,7 +506,7 @@ struct Resources {
     /// The bind group for the offscreen target of this generation.
     bound: Option<(u64, wgpu::BindGroup)>,
     /// What the offscreen target last drew: scene key, size and view-projection.
-    drawn: Option<(u64, (u32, u32), [[f32; 4]; 4])>,
+    drawn: Option<(u64, (u32, u32), [[f32; 4]; 4], Style3d)>,
     /// How many times the scene was drawn into the offscreen target.
     draws: u64,
 }
@@ -308,6 +585,7 @@ struct Pane3dCallback {
     key: u64,
     camera: cadcraft_render3d::Camera,
     size: (u32, u32),
+    style: Style3d,
 }
 
 impl egui_wgpu::CallbackTrait for Pane3dCallback {
@@ -325,9 +603,10 @@ impl egui_wgpu::CallbackTrait for Pane3dCallback {
         let (w, h) = off.size();
         let vp = cadcraft_render3d::camera::view_proj(&self.camera, f64::from(w) / f64::from(h));
         // Redraw only when something visible changed; an idle pane costs one textured triangle.
-        let state = (self.key, (w, h), vp);
+        let state = (self.key, (w, h), vp, self.style);
         if res.drawn != Some(state) {
-            off.encode(encoder, &self.scene, self.key, &self.camera, &cadcraft_render3d::Light::DEFAULT);
+            let opts = cadcraft_render3d::RenderOptions { style: self.style.render_style(), ..Default::default() };
+            off.encode_with(encoder, &self.scene, self.key, &self.camera, &cadcraft_render3d::Light::DEFAULT, &opts);
             res.drawn = Some(state);
             res.draws += 1;
         }
@@ -753,8 +1032,13 @@ mod tests {
         let mut pane = Pane3d::new();
         pane.available = true;
         assert!(pane.sync(1, Some(&house())));
-        let callback =
-            |pane: &Pane3d| Pane3dCallback { scene: pane.scene.clone().expect("scene"), key: pane.scene_key(), camera: pane.camera(), size: (w, h) };
+        let callback = |pane: &Pane3d| Pane3dCallback {
+            scene: pane.scene.clone().expect("scene"),
+            key: pane.scene_key(),
+            camera: pane.camera(),
+            size: (w, h),
+            style: pane.style,
+        };
         let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [w, h], pixels_per_point: 1.0 };
         let target = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
@@ -807,5 +1091,152 @@ mod tests {
         orbit_by_drag(&mut pane, 30.0, 0.0, 0.01);
         frame(&callback(&pane), &mut resources);
         assert_eq!(draws(&resources), 2);
+    }
+
+    #[test]
+    fn pane3d_style_selector_cycles_all_four() {
+        let mut s = Style3d::default();
+        assert_eq!(s, Style3d::Shaded);
+        let mut seen = vec![s];
+        for _ in 0..3 {
+            s = s.next();
+            assert!(!seen.contains(&s));
+            seen.push(s);
+        }
+        assert_eq!(seen, Style3d::ALL.to_vec());
+        assert_eq!(s.next(), Style3d::Shaded);
+        let styles: std::collections::HashSet<_> = Style3d::ALL.iter().map(|s| format!("{:?}", s.render_style())).collect();
+        assert_eq!(styles.len(), 4);
+    }
+
+    fn full_of(pane: &Pane3d) -> cadcraft_render3d::camera::FullCamera {
+        match pane.camera() {
+            cadcraft_render3d::Camera::Full(f) => f,
+            other => panic!("expected a full camera, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pane3d_walkthrough_moves_the_eye_in_plan() {
+        let mut pane = Pane3d::new();
+        let eye = cadcraft_geom::Vec3::new(1.0, 2.0, 1.6);
+        pane.full = Some(cadcraft_render3d::camera::FullCamera::new(eye, cadcraft_geom::Vec3::new(1.0, 12.0, 1.6), 60.0));
+        // Yaw 0 faces +Y: forward 2 steps adds (0, 2); strafe 3 adds (3, 0).
+        pane.walk(2.0, 0.0, WALK_STEP);
+        let f = full_of(&pane);
+        assert!((f.eye.x - 1.0).abs() < 1e-9 && (f.eye.y - 4.0).abs() < 1e-9 && (f.eye.z - 1.6).abs() < 1e-9);
+        pane.walk(0.0, 3.0, WALK_STEP);
+        let f = full_of(&pane);
+        assert!((f.eye.x - 4.0).abs() < 1e-9 && (f.eye.y - 4.0).abs() < 1e-9);
+        // Shift runs 4 m; turning to yaw 90 (facing +X) then walking forward adds (4, 0).
+        pane.turn(90.0);
+        pane.walk(1.0, 0.0, WALK_STEP * RUN_FACTOR);
+        let f = full_of(&pane);
+        assert!((f.eye.x - 8.0).abs() < 1e-9 && (f.eye.y - 4.0).abs() < 1e-9, "{:?}", f.eye);
+        // From the orbit camera the walk starts at its eye and the pane switches to the full camera.
+        let mut orbiting = Pane3d::new();
+        assert!(orbiting.full.is_none());
+        orbiting.walk(1.0, 0.0, WALK_STEP);
+        assert!(orbiting.full.is_some());
+        orbiting.use_orbit();
+        assert!(matches!(orbiting.camera(), cadcraft_render3d::Camera::Orbit(_)));
+    }
+
+    #[test]
+    fn pane3d_pick_selects_the_same_proxy_handle_as_2d() {
+        let mut pane = Pane3d::new();
+        assert!(pane.sync(1, Some(&house())));
+        let size = (400u32, 300u32);
+        let cam = pane.camera();
+        // The open-topped house may let the centre ray through: take the first pixel that strikes it.
+        let (px, hit) = (0..30)
+            .flat_map(|y| (0..40).map(move |x| [x as f32 * 10.0 + 5.0, y as f32 * 10.0 + 5.0]))
+            .find_map(|px| {
+                let (o, d) = cadcraft_render3d::camera::ray_at(&cam, size, px)?;
+                Some((px, pane.scene()?.pick(o, d)?))
+            })
+            .expect("some pixel of the view hits the house");
+        let handle = pane.pick(size, px).expect("pick");
+        assert_eq!(handle, proxy_handle(hit.object, hit.part));
+        assert_eq!(handle, cadcraft_doc::arch::arch_handle(hit.object), "a wall hit is the wall's proxy handle");
+        assert_eq!(cadcraft_engine::grips::arch_id_from_handle(handle), Some(cadcraft_engine::grips::ArchTarget::Wall(hit.object)));
+        assert_eq!(pane.take_picked(), Some(handle));
+        // A miss reports nothing and clears nothing.
+        pane.pick(size, px);
+        assert_eq!(pane.pick(size, [f32::NAN, 0.0]), None);
+        assert_eq!(pane.take_picked(), Some(handle));
+        // Other object kinds route to their own handle ranges.
+        let id = cadcraft_doc::ArchId(3);
+        assert_eq!(proxy_handle(id, "leaf"), cadcraft_doc::arch::opening_handle(id));
+        assert_eq!(proxy_handle(id, "floor"), cadcraft_doc::arch::room_handle(id));
+        assert_eq!(proxy_handle(id, "roof"), cadcraft_doc::arch::roof_handle(id));
+    }
+
+    #[test]
+    fn pane3d_camera_move_does_not_reupload_meshes() {
+        let mut pane = Pane3d::new();
+        assert!(pane.sync(1, Some(&house())));
+        let key = pane.scene_key();
+        orbit_by_drag(&mut pane, 40.0, 10.0, 0.01);
+        zoom_by_wheel(&mut pane, 1.0);
+        pane.walk(1.0, 1.0, WALK_STEP);
+        pane.turn(10.0);
+        assert_eq!(pane.scene_key(), key, "camera moves must not change the mesh cache key");
+        assert!(!pane.sync(1, Some(&house())), "and must not rebuild the scene");
+        let Some((device, queue)) = test_device() else { return };
+        let mut off = cadcraft_render3d::Offscreen::with_device(device, queue, (32, 24));
+        let scene = pane.scene.clone().expect("scene");
+        off.render(&scene, key, &pane.camera(), &cadcraft_render3d::Light::DEFAULT);
+        pane.walk(2.0, 0.0, WALK_STEP);
+        off.render(&scene, key, &pane.camera(), &cadcraft_render3d::Light::DEFAULT);
+        pane.use_orbit();
+        off.render(&scene, key, &pane.camera(), &cadcraft_render3d::Light::DEFAULT);
+        assert_eq!(off.uploads(), 1);
+    }
+
+    #[test]
+    fn pane3d_loads_the_active_saved_camera() {
+        use cadcraft_doc::arch::{Camera3d, CameraKind};
+        let mut arch = house();
+        arch.set_camera(Camera3d {
+            name: "walk".into(),
+            kind: CameraKind::Full,
+            eye: Some([5.0, -3.0]),
+            eye_height: Some(1.7),
+            target: Some([5.0, 4.0, 1.7]),
+            fov_deg: Some(70.0),
+            ..Camera3d::default()
+        })
+        .expect("camera");
+        arch.set_camera(Camera3d {
+            name: "high".into(),
+            kind: CameraKind::Orbit,
+            azimuth_deg: Some(45.0),
+            elevation_deg: Some(30.0),
+            distance: Some(25.0),
+            target: Some([1.0, 2.0, 3.0]),
+            ..Camera3d::default()
+        })
+        .expect("camera");
+        arch.active_camera = Some("walk".into());
+        let mut pane = Pane3d::new();
+        assert!(pane.sync(1, Some(&arch)));
+        let f = full_of(&pane);
+        assert!((f.eye.x - 5.0).abs() < 1e-9 && (f.eye.y + 3.0).abs() < 1e-9 && (f.eye.z - 1.7).abs() < 1e-9);
+        assert!((f.fov_deg - 70.0).abs() < 1e-9);
+        // Unchanged: nothing reloads, so the user's walking is kept.
+        pane.walk(1.0, 0.0, WALK_STEP);
+        assert!(!pane.load_active_camera(&arch));
+        assert!((full_of(&pane).eye.y + 2.0).abs() < 1e-9);
+        // Switching the active camera loads the orbit one.
+        arch.active_camera = Some("high".into());
+        assert!(pane.sync(2, Some(&arch)));
+        match pane.camera() {
+            cadcraft_render3d::Camera::Orbit(o) => {
+                assert!((o.azimuth - 45.0).abs() < 1e-9 && (o.elevation - 30.0).abs() < 1e-9 && (o.distance - 25.0).abs() < 1e-9);
+                assert!((o.target.x - 1.0).abs() < 1e-9 && (o.target.z - 3.0).abs() < 1e-9);
+            }
+            other => panic!("expected an orbit camera, got {other:?}"),
+        }
     }
 }
