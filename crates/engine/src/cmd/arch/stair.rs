@@ -600,4 +600,52 @@ mod tests {
         assert!(r.is_err());
         assert_eq!(s.doc().unwrap().arch.stairs.len(), 0);
     }
+
+    #[test]
+    fn stair_command_refuses_nan_start() {
+        let mut s = two_level_session();
+        let r = s.execute("stair", &json!({ "start": [f64::NAN, 0.0], "direction": 90.0, "fromLevel": 0, "toLevel": 1 }));
+        assert!(r.is_err());
+        assert_eq!(s.doc().unwrap().arch.stairs.len(), 0);
+    }
+
+    #[test]
+    fn stair_command_null_levels_treated_as_absent() {
+        let mut s = two_level_session();
+        let r = s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0, "fromLevel": null, "toLevel": null })).unwrap();
+        assert_eq!(r["risers"].as_u64(), Some(16));
+        let st = &s.doc().unwrap().arch.stairs[0];
+        assert_eq!((st.from_level, st.to_level), (0, 1));
+    }
+
+    #[test]
+    fn stair_command_three_levels_stair_between_first_and_last() {
+        let mut s = two_level_session();
+        let _ = s.execute("level", &json!({"above": 1}));
+        let r = s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0 })).unwrap();
+        let st = &s.doc().unwrap().arch.stairs[0];
+        assert_eq!((st.from_level, st.to_level), (0, 2));
+        // Rise is 5.4 m (2 levels × 2.7 m); n minimises |5.4/n - 0.16875|
+        // n=32 gives 0.16875 exactly
+        assert_eq!(r["risers"].as_u64(), Some(32));
+    }
+
+    #[test]
+    fn stair_command_well_with_no_containing_room() {
+        let mut s = two_level_session();
+        // No rooms on upper level — well is created but no hole is added
+        s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0, "fromLevel": 0, "toLevel": 1 })).unwrap();
+        let d = s.doc().unwrap();
+        assert!(!d.arch.stairs[0].well.is_empty());
+        // Open Below room exists but no other room has a hole
+        let other_rooms: Vec<_> = d.arch.rooms.iter().filter(|r| r.room_type != RoomType::OpenBelow).collect();
+        assert!(other_rooms.iter().all(|r| r.holes.is_empty()));
+    }
+
+    #[test]
+    fn stair_command_width_boundary_five() {
+        let mut s = two_level_session();
+        let r = s.execute("stair", &json!({ "start": [0.0, 0.0], "direction": 90.0, "width": 5.0, "fromLevel": 0, "toLevel": 1 })).unwrap();
+        assert_eq!(s.doc().unwrap().arch.stairs[0].width, 5.0);
+    }
 }
