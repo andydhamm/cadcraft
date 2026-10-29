@@ -186,15 +186,31 @@ fn write_tables(w: &mut W, plan: TableWritePlan<'_>) -> HashMap<String, String> 
 }
 
 fn write_layer_table(w: &mut W, d: &Drawing) {
-    // Rooms and roofs get their proxy layer even when no command registered it explicitly.
+    // Rooms, roofs and view geometry get their proxy layer even when no command registered it
+    // explicitly.
     let missing = |used: bool, name: &str| used && !d.layers.iter().any(|l| l.name.eq_ignore_ascii_case(name));
     let extra_room_layer = missing(!d.arch.rooms.is_empty(), crate::dxf_arch::ARCH_ROOM_LAYER)
         .then(|| Layer { name: crate::dxf_arch::ARCH_ROOM_LAYER.into(), ..Layer::default() });
     let extra_roof_layer = missing(!d.arch.roofs.is_empty(), crate::dxf_arch::ARCH_ROOF_LAYER)
         .then(|| Layer { name: crate::dxf_arch::ARCH_ROOF_LAYER.into(), ..Layer::default() });
-    let layer_count = d.layers.len() + usize::from(extra_room_layer.is_some()) + usize::from(extra_roof_layer.is_some());
+    let extra_view_layers = (!d.arch.views.is_empty()).then(|| {
+        [
+            crate::dxf_arch::ARCH_ELEV_LAYER,
+            crate::dxf_arch::ARCH_SECT_LAYER,
+            crate::dxf_arch::ARCH_SECT_MCUT_LAYER,
+            crate::dxf_arch::ARCH_ANNO_DIMS_LAYER,
+        ]
+        .into_iter()
+        .filter(|name| !d.layers.iter().any(|l| l.name.eq_ignore_ascii_case(name)))
+        .map(|name| Layer { name: name.into(), ..Layer::default() })
+        .collect::<Vec<_>>()
+    });
+    let layer_count = d.layers.len()
+        + usize::from(extra_room_layer.is_some())
+        + usize::from(extra_roof_layer.is_some())
+        + extra_view_layers.as_ref().map_or(0, Vec::len);
     let th = table_head(w, "LAYER", layer_count);
-    for l in d.layers.iter().chain(extra_room_layer.iter()).chain(extra_roof_layer.iter()) {
+    for l in d.layers.iter().chain(extra_room_layer.iter()).chain(extra_roof_layer.iter()).chain(extra_view_layers.iter().flatten()) {
         let lh = record_head(w, "LAYER", &th, "AcDbLayerTableRecord");
         w.layers.insert(l.name.to_ascii_uppercase(), lh);
         w.s(2, &l.name);
@@ -376,28 +392,36 @@ fn write_entities(w: &mut W, d: &Drawing, ms_br: &str, ps_brs: &[(String, String
             entity(w, d, e, h, true, cx);
         }
     }
-    if !d.arch.is_empty() || !d.arch.rooms.is_empty() || !d.arch.roofs.is_empty() {
-        let mut proxy = |layer: &str, tags: Vec<Tag>| {
-            w.s(0, "LWPOLYLINE");
+    if !d.arch.is_empty() || !d.arch.rooms.is_empty() || !d.arch.roofs.is_empty() || !d.arch.views.is_empty() {
+        let mut proxy = |kind: &str, layer: &str, tags: Vec<Tag>| {
+            w.s(0, kind);
             let h = w.h();
             w.s(5, h);
             w.s(330, ms_br);
             w.s(100, "AcDbEntity");
             w.s(8, layer);
-            w.s(100, "AcDbPolyline");
+            match kind {
+                "LINE" => w.s(100, "AcDbLine"),
+                "TEXT" => w.s(100, "AcDbText"),
+                "LWPOLYLINE" => w.s(100, "AcDbPolyline"),
+                _ => {}
+            }
             w.t.extend(tags);
         };
         for tags in crate::dxf_arch::proxy_polylines(&d.arch) {
-            proxy(crate::dxf_arch::ARCH_PROXY_LAYER, tags);
+            proxy("LWPOLYLINE", crate::dxf_arch::ARCH_PROXY_LAYER, tags);
         }
         for (layer, tags) in crate::dxf_arch::proxy_opening_polylines(&d.arch) {
-            proxy(&layer, tags);
+            proxy("LWPOLYLINE", &layer, tags);
         }
         for tags in crate::dxf_arch::proxy_room_polylines(&d.arch) {
-            proxy(crate::dxf_arch::ARCH_ROOM_LAYER, tags);
+            proxy("LWPOLYLINE", crate::dxf_arch::ARCH_ROOM_LAYER, tags);
         }
         for tags in crate::dxf_arch::proxy_roof_polylines(&d.arch) {
-            proxy(crate::dxf_arch::ARCH_ROOF_LAYER, tags);
+            proxy("LWPOLYLINE", crate::dxf_arch::ARCH_ROOF_LAYER, tags);
+        }
+        for (kind, layer, tags) in crate::dxf_arch::proxy_view_entities(&d.arch) {
+            proxy(&kind, &layer, tags);
         }
     }
     w.s(0, "ENDSEC");
