@@ -15,7 +15,10 @@ impl Session {
     }
 
     /// Append a loaded drawing, fit the view to its model extents (aspect-corrected, minimum height 1e-6) when non-empty, end a running command, make it active, bump the epoch and return its index.
-    pub fn open_drawing(&mut self, d: Drawing, title: &str, path: Option<String>) -> usize {
+    pub fn open_drawing(&mut self, mut d: Drawing, title: &str, path: Option<String>) -> usize {
+        // Views read from a file carry no geometry: generate it before the drawing is stored.
+        let rev = d.arch_revision;
+        cadcraft_arch3d::views::refresh(&mut d.arch, rev);
         let mut st = DocState::new(d, title, path);
         let ext = st.doc.extents(&Space::Model);
         if !ext.is_empty() {

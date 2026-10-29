@@ -547,6 +547,8 @@ pub enum ArchTarget {
     Opening(ArchId),
     /// A room, resolved through `ArchModel::room`.
     Room(ArchId),
+    /// A view, resolved through `ArchModel::view`.
+    View(ArchId),
 }
 
 /// Resolve an arch proxy handle to its target, or `None` if `h` is not an arch proxy handle.
@@ -556,6 +558,9 @@ pub enum ArchTarget {
 /// opening id, and a room id can share a number, this is the single place that disambiguates
 /// them.
 pub fn arch_id_from_handle(h: Handle) -> Option<ArchTarget> {
+    if cadcraft_doc::arch::is_view_handle(h) {
+        return Some(ArchTarget::View(ArchId((h.0 - ARCH_HANDLE_BASE - cadcraft_doc::arch::VIEW_HANDLE_OFFSET) as u32)));
+    }
     if is_opening_handle(h) {
         return Some(ArchTarget::Opening(ArchId((h.0 - ARCH_HANDLE_BASE - OPENING_HANDLE_OFFSET) as u32)));
     }
@@ -575,20 +580,20 @@ impl Session {
     /// same point, and the other modes transform every selected object.
     pub fn grip_edit(&mut self, handle: Handle, grip_index: usize, new_point: Vec2, mode: GripMode) -> Result<()> {
         if let Some(target) = arch_id_from_handle(handle) {
-            if matches!(target, ArchTarget::Room(_)) {
+            if matches!(target, ArchTarget::Room(_) | ArchTarget::View(_)) {
                 // Rooms are not drag-editable yet; a grip drag is a silent no-op for every mode.
                 return Ok(());
             }
             if mode != GripMode::Stretch {
                 return match target {
-                    ArchTarget::Room(_) => Ok(()),
+                    ArchTarget::Room(_) | ArchTarget::View(_) => Ok(()),
                     ArchTarget::Opening(_) => Err(EngineError::Other("arch openings support only the stretch grip".into())),
                     ArchTarget::Wall(_) => Err(EngineError::Other("arch walls support only the stretch grip".into())),
                 };
             }
             let d = self.doc()?;
             return match target {
-                ArchTarget::Room(_) => Ok(()),
+                ArchTarget::Room(_) | ArchTarget::View(_) => Ok(()),
                 ArchTarget::Opening(id) => {
                     if !new_point.is_finite() {
                         return Err(EngineError::Other("non-finite point".into()));
@@ -672,6 +677,10 @@ impl Session {
                 ArchTarget::Room(id) => {
                     let room = d.arch.room(id).ok_or_else(|| EngineError::Other("no such object".into()))?;
                     Ok(cadcraft_arch::label::label_point(&room.polygon, &room.holes).into_iter().collect())
+                }
+                ArchTarget::View(id) => {
+                    let v = d.arch.view(id).ok_or_else(|| EngineError::Other("no such object".into()))?;
+                    Ok(vec![Vec2::new(v.insert[0], v.insert[1])])
                 }
                 ArchTarget::Wall(id) => match d.arch.wall(id) {
                     Some(w) => Ok(vec![w.start, w.end]),

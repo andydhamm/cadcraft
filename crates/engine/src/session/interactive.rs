@@ -390,6 +390,9 @@ impl Session {
     /// started in, so associativity is not applied across a document switch; `ok` is false for a
     /// failed or non-undoable programmatic command, which skips the constraint pass.
     pub(super) fn after_command(&mut self, before: Option<&Arc<Drawing>>, uid: Option<u64>, ok: bool) {
+        if ok {
+            cmd::arch::views::refresh_views(self);
+        }
         cmd::groups::after_command(self, before);
         cmd::constraints::after_command(self, before, ok);
         assoc::after_command(self, before, uid);
