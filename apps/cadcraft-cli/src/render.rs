@@ -4,7 +4,11 @@ use super::args::RenderArgs;
 use super::open;
 use super::output::{OutputError, Streams, write_atomic};
 use cadcraft_engine::Session;
+use cadcraft_geom::Vec3;
+use cadcraft_render3d::adapter::AdapterChoice;
 use cadcraft_render3d::camera::{Camera, MAX_DISTANCE, Orbit};
+use cadcraft_render3d::light::{Light, Sun};
+use cadcraft_render3d::offscreen::{Offscreen, RenderOptions, Style};
 
 /// Default pixel size for `render`.
 const DEFAULT_SIZE: (u32, u32) = (2400, 1600);
@@ -23,7 +27,7 @@ pub(crate) enum RenderError {
     SizeFormat(String),
     #[error("--size {name} must be a whole number in 1..={MAX_SIZE}, got `{value}`")]
     SizeRange { name: &'static str, value: String },
-    #[error("camera spec must begin with `orbit`")]
+    #[error("camera spec must begin with `orbit` or `full`")]
     CameraStart,
     #[error("camera field must be `name=value`, got `{0}`")]
     CameraField(String),
@@ -31,12 +35,14 @@ pub(crate) enum RenderError {
     CameraValue { name: String, value: String },
     #[error("unknown camera field `{0}`")]
     CameraUnknown(String),
+    #[error("full camera: {0}")]
+    CameraFull(String),
+    #[error("--sun must be lat=DEG,date=YYYY-MM-DD,time=solar-noon|HH:MM, got `{0}`")]
+    Sun(String),
     #[error("render: no GPU adapter")]
     NoAdapter,
     #[error("render: {0}")]
     Gpu(String),
-    #[error("render: tokio runtime: {0}")]
-    Runtime(std::io::Error),
     #[error(transparent)]
     Open(Box<super::error::CliError>),
     #[error(transparent)]
@@ -54,12 +60,98 @@ pub(crate) fn parse_size(v: &str) -> Result<(u32, u32), RenderError> {
     Ok((num("width", w)?, num("height", h)?))
 }
 
-/// Parse `orbit[,azimuth=A][,elevation=E][,distance=D][,fov=F]` into a camera seeded from `base`.
-/// Values must be finite and in range, so a bad `--camera` never reaches the GPU.
+/// Parse `--style`: exactly `shaded`, `shaded-edges`, `hidden-line` or `glass-house`.
+pub(crate) fn parse_style(s: &str) -> Option<Style> {
+    match s {
+        "shaded" => Some(Style::Shaded),
+        "shaded-edges" => Some(Style::ShadedEdges),
+        "hidden-line" => Some(Style::HiddenLine),
+        "glass-house" => Some(Style::GlassHouse),
+        _ => None,
+    }
+}
+
+/// Parse `--adapter`: `auto` or `fallback`.
+pub(crate) fn parse_adapter(s: &str) -> Option<AdapterChoice> {
+    AdapterChoice::parse(s)
+}
+
+/// Parse `lat=DEG,date=YYYY-MM-DD,time=solar-noon|HH:MM` into `(lat, date, time)`. All three are
+/// required, unknown or repeated fields are refused, and the sun must be computable for them.
+pub(crate) fn parse_sun(s: &str) -> Option<(f64, String, String)> {
+    let (mut lat, mut date, mut time) = (None, None, None);
+    for t in s.split(',').map(str::trim) {
+        let (k, v) = t.split_once('=').map(|(k, v)| (k.trim(), v.trim()))?;
+        match k {
+            "lat" if lat.is_none() => lat = Some(v.parse::<f64>().ok().filter(|x| x.is_finite())?),
+            "date" if date.is_none() => date = Some(v.to_string()),
+            "time" if time.is_none() => time = Some(v.to_string()),
+            _ => return None,
+        }
+    }
+    let (lat, date, time) = (lat?, date?, time?);
+    cadcraft_arch::sun::sun_position(lat, &date, &time)?;
+    Some((lat, date, time))
+}
+
+/// Parse `eye=x,y,z[,eyeHeight=h],target=x,y,z[,fov=f]` (or `eye=x,y` with `eyeHeight`), the part
+/// of a `full` camera after its name. Numbers must be finite, `fov` in (0, 180) degrees and the
+/// eye must differ from the target.
+fn parse_full_camera<'a>(tokens: impl Iterator<Item = &'a str>) -> Result<Camera, RenderError> {
+    let err = RenderError::CameraFull;
+    // Fields are `name=v[,v...]`: a token without `=` continues the previous field's numbers.
+    let mut fields: Vec<(&str, Vec<f64>)> = Vec::new();
+    for t in tokens.filter(|t| !t.is_empty()) {
+        let (name, val) = match t.split_once('=') {
+            Some((k, v)) => {
+                fields.push((k.trim(), Vec::new()));
+                (k.trim(), v.trim())
+            }
+            None if fields.is_empty() => return Err(RenderError::CameraField(t.to_string())),
+            None => (fields.last().map_or("", |f| f.0), t),
+        };
+        let v = val.parse::<f64>().map_err(|e| err(format!("{name}: {e}")))?;
+        if !v.is_finite() {
+            return Err(err(format!("{name} must be finite, got `{val}`")));
+        }
+        if let Some(f) = fields.last_mut() {
+            f.1.push(v);
+        }
+    }
+    let (mut eye, mut eye_height, mut target, mut fov) = (None, None, None, 60.0);
+    for (name, v) in fields {
+        match (name, v.as_slice()) {
+            ("eye", [x, y]) => eye = Some((*x, *y, None)),
+            ("eye", [x, y, z]) => eye = Some((*x, *y, Some(*z))),
+            ("eye", _) => return Err(err("eye needs x,y or x,y,z".into())),
+            ("eyeHeight", [h]) => eye_height = Some(*h),
+            ("eyeHeight", _) => return Err(err("eyeHeight needs one number".into())),
+            ("target", [x, y, z]) => target = Some(Vec3::new(*x, *y, *z)),
+            ("target", _) => return Err(err("target needs x,y,z".into())),
+            ("fov", [f]) if 0.0 < *f && *f < 180.0 => fov = *f,
+            ("fov", _) => return Err(err("fov must be one number in (0, 180) degrees".into())),
+            (other, _) => return Err(RenderError::CameraUnknown(other.to_string())),
+        }
+    }
+    let (ex, ey, ez) = eye.ok_or_else(|| err("eye is required".into()))?;
+    let ez = eye_height.or(ez).ok_or_else(|| err("eye=x,y needs eyeHeight".into()))?;
+    let target = target.ok_or_else(|| err("target is required".into()))?;
+    let eye = Vec3::new(ex, ey, ez);
+    if eye == target {
+        return Err(err("eye and target must differ".into()));
+    }
+    Ok(Camera::Full(cadcraft_arch3d::camera::FullCamera::new(eye, target, fov)))
+}
+
+/// Parse `orbit[,azimuth=A][,elevation=E][,distance=D][,fov=F]` into a camera seeded from `base`,
+/// or the `full,eye=..,target=..` form. Values must be finite and in range, so a bad `--camera`
+/// never reaches the GPU.
 fn parse_camera(spec: &str, base: Orbit) -> Result<Camera, RenderError> {
     let mut tokens = spec.split(',').map(str::trim);
-    if tokens.next() != Some("orbit") {
-        return Err(RenderError::CameraStart);
+    match tokens.next() {
+        Some("orbit") => {}
+        Some("full") => return parse_full_camera(tokens),
+        _ => return Err(RenderError::CameraStart),
     }
     let mut o = base;
     for t in tokens.filter(|t| !t.is_empty()) {
@@ -101,11 +193,28 @@ pub(crate) fn render(a: &RenderArgs, io: &mut Streams) -> Result<(), RenderError
     };
     // The mesh vertices, not the bounding box: room slabs leave its lower corners empty.
     let pb = cadcraft_render3d::camera::projected_scene_bounds(&camera, &scene, size);
-    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(RenderError::Runtime)?;
-    let png = rt.block_on(cadcraft_render3d::offscreen::headless_png(&scene, &camera, size)).map_err(|e| match e {
+    let light = match &a.sun {
+        Some((lat, date, time)) => {
+            let sun =
+                cadcraft_arch::sun::sun_position(*lat, date, time).ok_or_else(|| RenderError::Sun(format!("lat={lat},date={date},time={time}")))?;
+            let [x, y, z] = cadcraft_arch::sun::sun_dir(&sun);
+            Light::from_sun(&Sun { dir: [x as f32, y as f32, z as f32], ..Sun::default() }, Light::DEFAULT.ambient)
+        }
+        None => Light::DEFAULT,
+    };
+    let gpu = |e: cadcraft_render3d::Render3dError| match e {
         cadcraft_render3d::Render3dError::NoAdapter => RenderError::NoAdapter,
         e => RenderError::Gpu(e.to_string()),
-    })?;
+    };
+    let mut off = Offscreen::create_with(a.adapter, size).map_err(gpu)?;
+    io.errln(format_args!("{}", off.device_info().line()));
+    let map = if a.sun.is_some() || a.ground { off.build_shadow(&scene, scene.revision, &light, a.ground) } else { None };
+    let opts = RenderOptions { shadow: map.as_ref(), style: a.style, ground: a.ground, ..RenderOptions::default() };
+    off.render_with(&scene, scene.revision, &camera, &light, &opts);
+    let png = off.read_png().map_err(gpu)?;
+    if map.is_some() {
+        io.errln(format_args!("SHADOW size={} built={}", cadcraft_render3d::shadow::SHADOW_SIZE, off.shadow_maps_built()));
+    }
     write_atomic(&a.output, &png)?;
     io.errln(format_args!("wrote {} ({} bytes)", a.output.display(), png.len()));
     let projected = format_projected(pb);
@@ -120,6 +229,72 @@ mod tests {
 
     fn base() -> Orbit {
         Orbit::fit(&cadcraft_arch3d::mesh::Bounds3::new([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]))
+    }
+
+    #[test]
+    fn parse_style_accepts_only_the_four_names() {
+        assert_eq!(parse_style("shaded"), Some(Style::Shaded));
+        assert_eq!(parse_style("shaded-edges"), Some(Style::ShadedEdges));
+        assert_eq!(parse_style("hidden-line"), Some(Style::HiddenLine));
+        assert_eq!(parse_style("glass-house"), Some(Style::GlassHouse));
+        for bad in ["", "Shaded", "SHADED", "shaded_edges", "wireframe", " shaded", "glass"] {
+            assert_eq!(parse_style(bad), None, "`{bad}`");
+        }
+    }
+
+    #[test]
+    fn parse_camera_accepts_the_full_form() {
+        let Ok(Camera::Full(c)) = parse_camera("full,eye=1,2,3,target=4,5,6,fov=50", base()) else { panic!("full camera") };
+        assert_eq!((c.eye, c.target, c.fov_deg), (Vec3::new(1.0, 2.0, 3.0), Vec3::new(4.0, 5.0, 6.0), 50.0));
+        let Ok(Camera::Full(c)) = parse_camera("full,eye=1,2,eyeHeight=1.6,target=4,5,1", base()) else { panic!("eye height") };
+        assert_eq!((c.eye, c.fov_deg), (Vec3::new(1.0, 2.0, 1.6), 60.0));
+        for bad in [
+            "full",
+            "full,eye=1,2,3",
+            "full,target=1,2,3",
+            "full,eye=1,2,target=3,4,5",
+            "full,eye=1,2,3,target=1,2,3",
+            "full,eye=1,2,3,target=4,5,6,fov=0",
+            "full,eye=1,2,3,target=4,5,6,fov=180",
+            "full,eye=NaN,2,3,target=4,5,6",
+            "full,eye=1,2,3,target=4,5,inf",
+            "full,eye=1,2,3,4,target=4,5,6",
+            "full,eye=1,2,3,target=4,5,6,bogus=1",
+            "full,1,2,3",
+        ] {
+            assert!(parse_camera(bad, base()).is_err(), "`{bad}` should be rejected");
+        }
+        assert!(matches!(parse_camera("orbit,azimuth=5", base()), Ok(Camera::Orbit(_))));
+    }
+
+    #[test]
+    fn parse_sun_requires_lat_date_and_time() {
+        assert_eq!(parse_sun("lat=51.05,date=2026-06-21,time=solar-noon"), Some((51.05, "2026-06-21".to_string(), "solar-noon".to_string())));
+        assert_eq!(parse_sun(" lat = -33.9 , date=2026-12-21 , time=15:30 ").map(|s| s.2), Some("15:30".to_string()));
+        for bad in [
+            "",
+            "lat=51",
+            "lat=51,date=2026-06-21",
+            "date=2026-06-21,time=12:00",
+            "lat=51,date=2026-06-21,time=12:00,extra=1",
+            "lat=51,lat=52,date=2026-06-21,time=12:00",
+            "lat=abc,date=2026-06-21,time=12:00",
+            "lat=NaN,date=2026-06-21,time=12:00",
+            "lat=95,date=2026-06-21,time=12:00",
+            "lat=51,date=2026-13-40,time=12:00",
+            "lat=51,date=2026-06-21,time=noon",
+        ] {
+            assert_eq!(parse_sun(bad), None, "`{bad}`");
+        }
+    }
+
+    #[test]
+    fn parse_adapter_accepts_auto_and_fallback() {
+        assert_eq!(parse_adapter("auto"), Some(AdapterChoice::Auto));
+        assert_eq!(parse_adapter("fallback"), Some(AdapterChoice::Fallback));
+        for bad in ["", "gpu", "software", "auto,fallback"] {
+            assert_eq!(parse_adapter(bad), None, "`{bad}`");
+        }
     }
 
     #[test]

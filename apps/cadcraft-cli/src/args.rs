@@ -100,6 +100,30 @@ pub(crate) struct RenderArgs {
     /// The image size in pixels (default 2400x1600, each side 1-8192)
     #[arg(long, value_name = "WxH", value_parser = crate::render::parse_size)]
     pub(crate) size: Option<(u32, u32)>,
+    /// Face style: shaded, shaded-edges, hidden-line or glass-house
+    #[arg(long, value_name = "STYLE", default_value = "shaded", value_parser = parse_style_arg)]
+    pub(crate) style: cadcraft_render3d::Style,
+    /// Sun for shadows: `lat=DEG,date=YYYY-MM-DD,time=solar-noon|HH:MM`
+    #[arg(long, value_name = "SPEC", value_parser = parse_sun_arg)]
+    pub(crate) sun: Option<(f64, String, String)>,
+    /// Draw a ground plane under the scene (and cast shadows on it)
+    #[arg(long)]
+    pub(crate) ground: bool,
+    /// GPU adapter: auto or fallback (software)
+    #[arg(long, value_name = "ADAPTER", default_value = "auto", value_parser = parse_adapter_arg)]
+    pub(crate) adapter: cadcraft_render3d::adapter::AdapterChoice,
+}
+
+fn parse_style_arg(s: &str) -> Result<cadcraft_render3d::Style, String> {
+    crate::render::parse_style(s).ok_or_else(|| format!("`{s}` is not one of shaded, shaded-edges, hidden-line, glass-house"))
+}
+
+fn parse_sun_arg(s: &str) -> Result<(f64, String, String), String> {
+    crate::render::parse_sun(s).ok_or_else(|| format!("`{s}` is not lat=DEG,date=YYYY-MM-DD,time=solar-noon|HH:MM"))
+}
+
+fn parse_adapter_arg(s: &str) -> Result<cadcraft_render3d::adapter::AdapterChoice, String> {
+    crate::render::parse_adapter(s).ok_or_else(|| format!("`{s}` is not auto or fallback"))
 }
 
 /// Print a drawing's summary as JSON

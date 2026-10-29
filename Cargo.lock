@@ -668,8 +668,10 @@ dependencies = [
 name = "cadcraft-cli"
 version = "0.14.0"
 dependencies = [
+ "cadcraft-arch",
  "cadcraft-arch3d",
  "cadcraft-engine",
+ "cadcraft-geom",
  "cadcraft-io",
  "cadcraft-mcp",
  "cadcraft-render",

@@ -10,6 +10,7 @@
 
 pub mod adapter;
 pub mod camera;
+pub mod edges;
 pub mod light;
 pub mod offscreen;
 pub mod pipeline;
