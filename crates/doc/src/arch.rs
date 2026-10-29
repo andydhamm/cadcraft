@@ -1503,7 +1503,7 @@ impl ArchModel {
 
     /// Whether the model has no walls.
     pub fn is_empty(&self) -> bool {
-        self.walls.is_empty() && self.views.is_empty()
+        self.walls.is_empty()
     }
 
     /// Look up a wall type by name (case-insensitive).
