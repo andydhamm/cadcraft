@@ -1,8 +1,8 @@
 # arch3d build status
 
-Updated 2026-10-29 17:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 17:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 7 of 13: Generated elevations and sections**
+**Phase 7 of 13: Generated elevations and sections — 0 of 12 segments merged · 0 of 9 acceptance checks**
 
 4,967 workspace tests passing at the last merge · 463 segments merged in all · 0 of 11 seats working
 
@@ -17,7 +17,7 @@ Updated 2026-10-29 17:30 UTC. This page and the card in the README are regenerat
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
-| 7 | Generated elevations and sections | planning | — | 0.3 h so far · expected done Oct 29 23:16–Nov 07 04:28 UTC |
+| 7 | Generated elevations and sections | building | 0 / 9 | 0.6 h so far · expected done Oct 29 23:29–Oct 31 04:06 UTC |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
@@ -27,8 +27,15 @@ Updated 2026-10-29 17:30 UTC. This page and the card in the README are regenerat
 
 ## Phase 7 segments
 
-none yet
+7 queued, 3 working, 2 gate
 
+| Segment | What | State | Seat |
+|---|---|---|---|
+| `p7-handles-one-form` | One JSON handle form for every arch object (inspect, pick3d, command replies) | working | claude-sonnet-b |
+| `p7-ui-pick-selects` | A 3D pick becomes the 2D selection | working | bonsai-a |
+| `p7-roof-eave-at-the-wall` | Roof underside meets the eave wall top with an overhang (walls no longer stretched into the roof) | working | mai-flash |
+| `p7-doc-views` | Linked view objects (ELEVATION / SECTION) and ArchKind in the arch model | gate | darwin-ws3 |
+| `p7-render-arch-in-viewports` | Arch linework shows through paper-space viewports and layout plots | gate | claude-sonnet-a |
 
 ## Recent merges
 
@@ -51,14 +58,14 @@ none yet
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | idle | 625 |
-| bonsai-b | bonsai2-27b | idle | 578 |
+| bonsai-a | bonsai2-27b | agent | 625 |
+| bonsai-b | bonsai2-27b | agent | 578 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
-| claude-sonnet-a | sonnet | idle | 39 |
-| claude-sonnet-b | sonnet | idle | 33 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | yielding | 467 |
+| claude-sonnet-a | sonnet | gate | 39 |
+| claude-sonnet-b | sonnet | agent | 33 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 467 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 75 |
-| mai-flash | mai-code-1.1-flash | idle | 9 |
-| tturbo-mac | tturbo-ultraheretic | agent | 420 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 260 |
+| mai-flash | mai-code-1.1-flash | agent | 9 |
+| tturbo-mac | tturbo-ultraheretic | gate | 420 |
+| tturbo-mac2 | tturbo-ultraheretic | gate | 260 |
