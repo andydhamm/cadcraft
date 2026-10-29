@@ -283,16 +283,6 @@ impl Pane3d {
         self.picked.take()
     }
 
-    /// Apply the last 3D pick as the drawing's selection, so a click in the 3D pane selects the
-    /// same proxy handle as a click in the 2D pane (phase-6 carry-over). Takes the pending handle
-    /// and replaces the selection with it, returning it so the caller can repaint. A miss (or no
-    /// pending pick) leaves the selection alone.
-    pub fn apply_pick(pane: &mut Pane3d, session: &mut cadcraft_engine::Session) -> Option<cadcraft_doc::Handle> {
-        let h = pane.take_picked()?;
-        session.set_selection(vec![h]);
-        Some(h)
-    }
-
     /// Whether the scene must be rebuilt because `current_revision` differs from the last
     /// `arch_revision` we rendered against.
     pub fn needs_rebuild(&self, current_revision: u64) -> bool {
@@ -661,6 +651,16 @@ pub fn orbit_by_drag(pane: &mut Pane3d, dx: f64, dy: f64, sensitivity: f64) {
 /// Positive `delta` zooms in (decreases distance); negative zooms out.
 pub fn zoom_by_wheel(pane: &mut Pane3d, delta: f64) {
     pane.orbit.distance = (pane.orbit.distance * (1.0 - 0.1 * delta)).clamp(0.5, 1000.0);
+}
+
+/// Apply the last 3D pick as the drawing's selection, so a click in the 3D pane selects the
+/// same proxy handle as a click in the 2D pane (phase-6 carry-over). Takes the pending handle
+/// and replaces the selection with it, returning it so the caller can repaint. A miss (or no
+/// pending pick) leaves the selection alone.
+pub fn apply_pick(pane: &mut Pane3d, session: &mut cadcraft_engine::Session) -> Option<cadcraft_doc::Handle> {
+    let h = pane.take_picked()?;
+    session.set_selection(vec![h]);
+    Some(h)
 }
 
 #[cfg(test)]
@@ -1317,7 +1317,7 @@ mod tests {
         // The centre pixel strikes the door; its proxy handle is the opening's (0x8000 range),
         // not the wall's.
         assert!(pane.pick(size, center).is_some(), "the centre pixel strikes the door");
-        assert!(pane.apply_pick(&mut pane, &mut session).is_some(), "the door pick must be applied to the selection");
+        assert!(apply_pick(&mut pane, &mut session).is_some(), "the door pick must be applied to the selection");
         assert_eq!(
             sel_handles(&session),
             vec![cadcraft_doc::arch::opening_handle(cadcraft_doc::ArchId(0)).hex()],
@@ -1334,7 +1334,7 @@ mod tests {
 
         // Establish a baseline selection via a real 3D pick.
         assert!(pane.pick(size, center).is_some(), "the centre pixel strikes the door");
-        assert!(pane.apply_pick(&mut pane, &mut session).is_some());
+        assert!(apply_pick(&mut pane, &mut session).is_some());
         let before = sel_handles(&session);
         assert_eq!(
             before,
@@ -1344,7 +1344,7 @@ mod tests {
 
         // A sky pick strikes nothing and must leave that selection exactly as it was.
         assert!(pane.pick(size, sky).is_none(), "a sky pixel must strike nothing");
-        assert!(pane.apply_pick(&mut pane, &mut session).is_none(), "a miss has no handle to apply");
+        assert!(apply_pick(&mut pane, &mut session).is_none(), "a miss has no handle to apply");
         assert_eq!(sel_handles(&session), before, "a sky pick leaves the selection alone");
     }
 }
