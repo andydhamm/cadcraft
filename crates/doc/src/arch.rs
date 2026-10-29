@@ -2866,7 +2866,7 @@ mod tests {
 
         // Non-finite field
         let mut m2 = ArchModel::default();
-        m2.cameras.push(Camera3d { name: "bad".into(), distance: f64::NAN, ..Camera3d::default() });
+        m2.cameras.push(Camera3d { name: "bad".into(), distance: Some(f64::NAN), ..Camera3d::default() });
         let msgs2 = m2.validate();
         assert!(msgs2.iter().any(|m| m.contains("non-finite")), "non-finite camera field not reported: {msgs2:?}");
 
@@ -2889,8 +2889,9 @@ mod tests {
     #[test]
     fn arch_model_with_cameras_json_roundtrips() {
         let mut m = ArchModel::default();
-        m.set_camera(Camera3d { name: "front".into(), distance: 15.0, ..Camera3d::default() }).unwrap();
-        m.set_camera(Camera3d { name: "top".into(), kind: CameraKind::Full, eye: [0.0, 0.0], eye_height: 20.0, ..Camera3d::default() }).unwrap();
+        m.set_camera(Camera3d { name: "front".into(), distance: Some(15.0), ..Camera3d::default() }).unwrap();
+        m.set_camera(Camera3d { name: "top".into(), kind: CameraKind::Full, eye: Some([0.0, 0.0]), eye_height: Some(20.0), ..Camera3d::default() })
+            .unwrap();
         m.active_camera = Some("front".into());
 
         let json = serde_json::to_string(&m).unwrap();
@@ -2898,10 +2899,10 @@ mod tests {
 
         assert_eq!(back.cameras.len(), 2);
         assert_eq!(back.cameras[0].name, "front");
-        assert_eq!(back.cameras[0].distance, 15.0);
+        assert_eq!(back.cameras[0].distance, Some(15.0));
         assert_eq!(back.cameras[1].name, "top");
         assert_eq!(back.cameras[1].kind, CameraKind::Full);
-        assert_eq!(back.cameras[1].eye_height, 20.0);
+        assert_eq!(back.cameras[1].eye_height, Some(20.0));
         assert_eq!(back.active_camera, Some("front".into()));
     }
 
@@ -2918,12 +2919,15 @@ mod tests {
     #[test]
     fn camera_with_infinity_is_rejected() {
         let mut m = ArchModel::default();
-        assert_eq!(m.set_camera(Camera3d { name: "inf".into(), azimuth_deg: f64::INFINITY, ..Camera3d::default() }), Err(CameraError::NotFinite));
         assert_eq!(
-            m.set_camera(Camera3d { name: "inf2".into(), elevation_deg: f64::NEG_INFINITY, ..Camera3d::default() }),
+            m.set_camera(Camera3d { name: "inf".into(), azimuth_deg: Some(f64::INFINITY), ..Camera3d::default() }),
             Err(CameraError::NotFinite)
         );
-        assert_eq!(m.set_camera(Camera3d { name: "inf3".into(), fov_deg: f64::INFINITY, ..Camera3d::default() }), Err(CameraError::NotFinite));
+        assert_eq!(
+            m.set_camera(Camera3d { name: "inf2".into(), elevation_deg: Some(f64::NEG_INFINITY), ..Camera3d::default() }),
+            Err(CameraError::NotFinite)
+        );
+        assert_eq!(m.set_camera(Camera3d { name: "inf3".into(), fov_deg: Some(f64::INFINITY), ..Camera3d::default() }), Err(CameraError::NotFinite));
         assert_eq!(m.cameras.len(), 0);
     }
 }
