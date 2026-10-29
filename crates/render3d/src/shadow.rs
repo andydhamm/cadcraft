@@ -630,6 +630,43 @@ mod tests {
     }
 
     #[test]
+    fn shadow_depth_is_one_where_nothing_is_drawn() {
+        let Some((device, queue)) = crate::gputest::shared_device() else { return };
+        // A small block far from the origin; most of the map should be empty (depth 1.0).
+        let mut s = Scene3d::default();
+        s.meshes.push(cuboid("wall", [100.0, 100.0, 0.0], [102.0, 102.0, 2.0]));
+        s.bounds = Bounds3::new([100.0, 100.0, 0.0], [102.0, 102.0, 2.0]);
+        let meshes = crate::pipeline::upload(&device, &s);
+        let sm = build(&device, &queue, &meshes, sun_from_south(), &s.bounds).expect("shadow map");
+        let depths = read_depth(&device, &queue, &sm);
+        // Sample a point far from the block (in light space, well outside the block).
+        let far = depth_at(&sm, &depths, [50.0, 50.0, 0.0]);
+        assert!(far.is_finite(), "far point should be finite");
+        // The far point should be near the clear depth of 1.0 (nothing drawn there).
+        assert!((far - 1.0).abs() < 0.01, "far point depth should be ~1.0, got {far}");
+    }
+
+    #[test]
+    fn shadow_map_with_empty_meshes() {
+        let Some((device, queue)) = crate::gputest::shared_device() else { return };
+        let s = Scene3d::default();
+        let meshes = crate::pipeline::upload(&device, &s);
+        // Empty meshes: the map should still be built (all clear depth).
+        let sm = build(&device, &queue, &meshes, sun_from_south(), &s.bounds);
+        // With empty bounds, fit returns None, so build returns None.
+        assert!(sm.is_none(), "empty bounds should yield no shadow map");
+        // With non-empty bounds but no meshes, the map should be built.
+        let b = Bounds3::new([0.0; 3], [4.0; 3]);
+        let sm2 = build(&device, &queue, &meshes, sun_from_south(), &b);
+        assert!(sm2.is_some(), "non-empty bounds with no meshes should still build a map");
+        let depths = read_depth(&device, &queue, &sm2.unwrap());
+        // All depths should be the clear value 1.0.
+        for d in depths.iter().take(100) {
+            assert!((d - 1.0).abs() < 0.01, "empty map should be clear depth 1.0, got {d}");
+        }
+    }
+
+    #[test]
     fn a_low_winter_sun_shadows_the_ground_north_of_the_house() {
         let Some((device, queue)) = crate::gputest::shared_device() else { return };
         // Lat 51.05, 21 December, solar noon: about 15.5 degrees above the south horizon.
