@@ -403,10 +403,9 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let walls_json: Vec<Value> = new_walls
         .iter()
         .map(|w| {
-            let handle = Handle(0xA000_0000u64 + w.id.0 as u64);
             json!({
                 "id": format!("w{}", w.id.0),
-                "handle": handle.hex(),
+                "handle": cadcraft_doc::arch::handle_json(cadcraft_doc::arch_handle(w.id)),
             })
         })
         .collect();
