@@ -29,6 +29,7 @@ pub mod stair;
 pub mod stretch;
 pub mod sun;
 pub mod view;
+pub mod views;
 pub mod wall;
 
 /// Default layered wall band thicknesses for the given wall side.
@@ -62,6 +63,7 @@ pub fn specs() -> Vec<CommandSpec> {
     v.extend(sample::specs());
     v.extend(stretch::specs());
     v.extend(view::specs());
+    v.extend(views::specs());
     v.extend(roofauto::specs());
     v.extend(deck::specs());
     v.extend(railing::specs());

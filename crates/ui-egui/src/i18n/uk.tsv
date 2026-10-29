@@ -1577,6 +1577,10 @@
 	Shaded Edges	Затінений з ребрами
 	Hidden Line	Приховані лінії
 	Glass House	Скляний будинок
-	View Sheet	Лист видів
-	Architecture>View Sheet	Архітектура>Лист видів
-	View Sheet	Лист видів
+
+# Phase 7: Views
+	Section	Переріз
+	Delete View	Видалити вид
+	Architecture>Elevation	Архітектура>Відмітка
+	Architecture>Section	Архітектура>Переріз
+	Architecture>Delete View	Архітектура>Видалити вид
