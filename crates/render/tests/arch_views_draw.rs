@@ -4,7 +4,7 @@
 
 use cadcraft_color::Color;
 use cadcraft_doc::Drawing;
-use cadcraft_doc::arch::{ArchId, ArchKind, ArchView, DimKind, ViewDim, ViewGeometry, ViewLine, ViewRing, view_handle};
+use cadcraft_doc::arch::{ArchId, ArchKind, ArchView, ViewDim, ViewGeometry, ViewLine, ViewRing, view_handle};
 use cadcraft_geom::Vec2;
 use cadcraft_render::{DPrim, DisplayList, Kind, Options, build_arch};
 
@@ -16,19 +16,18 @@ fn drawing(generated: bool) -> (Drawing, ArchId) {
             l.color = Color::Index(idx);
         }
     }
-    let line = |a: [f64; 2], b: [f64; 2]| ViewLine { a, b, kind: ArchKind::Wall, object: ArchId(1) };
+    let line = |a: [f64; 2], b: [f64; 2]| ViewLine { a, b, object: ArchId(1), ..ViewLine::default() };
     let geometry = ViewGeometry {
-        revision: 0,
         extent: [0.0, 0.0, 4.0, 3.0],
         lines: vec![line([0.0, 0.0], [4.0, 0.0]), line([4.0, 0.0], [4.0, 3.0])],
         rings: vec![ViewRing {
             kind: ArchKind::Wall,
             object: ArchId(1),
-            material: String::new(),
             points: vec![[1.0, 1.0], [2.0, 1.0], [2.0, 2.0], [1.0, 2.0]],
+            ..ViewRing::default()
         }],
-        dims: vec![ViewDim { kind: DimKind::Width, a: [0.0, 0.0], b: [4.0, 0.0], at: [0.0, -1.0], value: 4.0, text: "4000".into() }],
-        error: None,
+        dims: vec![ViewDim { a: [0.0, 0.0], b: [4.0, 0.0], at: [0.0, -1.0], value: 4.0, text: "4000".into(), ..ViewDim::default() }],
+        ..ViewGeometry::default()
     };
     let view = ArchView { name: "South".into(), insert: [10.0, 20.0], scale: 50.0, generated: generated.then_some(geometry), ..ArchView::default() };
     let id = d.arch.push_view(view).expect("view is valid");
