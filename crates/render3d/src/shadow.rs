@@ -736,6 +736,57 @@ mod tests {
     }
 
     #[test]
+    fn ground_mesh_with_zero_extent_in_one_axis() {
+        // A flat plane: zero extent in z
+        let b = Bounds3::new([0.0, 0.0, 0.0], [10.0, 5.0, 0.0]);
+        let g = ground_mesh(&b);
+        assert_eq!(g.positions.len(), 4);
+        assert_eq!(g.indices.len(), 6);
+        // Largest side is 10 (x), grow = 20
+        let xs: Vec<f32> = g.positions.iter().map(|p| p[0]).collect();
+        let ys: Vec<f32> = g.positions.iter().map(|p| p[1]).collect();
+        assert_eq!(xs.iter().cloned().fold(f32::MAX, f32::min), -20.0);
+        assert_eq!(xs.iter().cloned().fold(f32::MIN, f32::max), 30.0);
+        assert_eq!(ys.iter().cloned().fold(f32::MAX, f32::min), -20.0);
+        assert_eq!(ys.iter().cloned().fold(f32::MIN, f32::max), 25.0);
+        assert!(g.positions.iter().all(|p| p[2] == 0.0));
+    }
+
+    #[test]
+    fn fit_with_zero_extent_bounds() {
+        // Bounds with zero extent on one axis
+        let b = Bounds3::new([0.0, 0.0, 0.0], [4.0, 4.0, 0.0]);
+        let (m, range) = fit([0.0, -0.5, 0.8], &b).expect("fit should succeed");
+        assert!(m.iter().flatten().all(|v| v.is_finite()));
+        assert!(range > 0.0);
+    }
+
+    #[test]
+    fn ground_mesh_with_bounds_min_greater_than_max() {
+        // Hostile input: min > max on some axes
+        let b = Bounds3::new([10.0, 5.0, 2.0], [0.0, 0.0, 5.0]);
+        let g = ground_mesh(&b);
+        assert_eq!(g.positions.len(), 4);
+        // Largest side is 10 (x: 0 to 10), grow = 20
+        let xs: Vec<f32> = g.positions.iter().map(|p| p[0]).collect();
+        let ys: Vec<f32> = g.positions.iter().map(|p| p[1]).collect();
+        assert_eq!(xs.iter().cloned().fold(f32::MAX, f32::min), -20.0);
+        assert_eq!(xs.iter().cloned().fold(f32::MIN, f32::max), 30.0);
+        assert_eq!(ys.iter().cloned().fold(f32::MAX, f32::min), -20.0);
+        assert_eq!(ys.iter().cloned().fold(f32::MIN, f32::max), 25.0);
+        // z should be the lower bound (min of 2.0 and 5.0)
+        assert!(g.positions.iter().all(|p| p[2] == 2.0));
+    }
+
+    #[test]
+    fn ground_mesh_with_very_large_bounds() {
+        let b = Bounds3::new([-1e15, -1e15, 0.0], [1e15, 1e15, 10.0]);
+        let g = ground_mesh(&b);
+        assert_eq!(g.positions.len(), 4);
+        assert!(g.positions.iter().all(|p| p.iter().all(|v| v.is_finite())));
+    }
+
+    #[test]
     fn shadow_light_view_proj_projects_center_to_origin() {
         let b = Bounds3::new([-2.0, -2.0, 0.0], [2.0, 2.0, 4.0]);
         let (m, _range) = fit([0.0, -0.5, 0.8], &b).expect("fit should succeed");
