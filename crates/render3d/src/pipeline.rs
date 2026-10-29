@@ -294,6 +294,42 @@ pub fn upload(device: &wgpu::Device, scene: &Scene3d) -> GpuMeshes {
     GpuMeshes { vertex_buffer, index_buffer, vertex_count, index_count, draws }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BlendMode {
+    Opaque,
+    GlassHouse,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct MeshPipelineDescriptor {
+    pub(crate) sample_count: u32,
+    pub(crate) depth_write: bool,
+    pub(crate) blend: Option<BlendMode>,
+}
+
+fn glass_blend_state() -> wgpu::BlendState {
+    wgpu::BlendState {
+        color: wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::SrcAlpha,
+            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+            operation: wgpu::BlendOperation::Add,
+        },
+        alpha: wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+            operation: wgpu::BlendOperation::Add,
+        },
+    }
+}
+
+pub(crate) fn pipeline_descriptor(sample_count: u32, depth_write: bool, blend: Option<BlendMode>) -> MeshPipelineDescriptor {
+    MeshPipelineDescriptor { sample_count: valid_sample_count(sample_count), depth_write, blend }
+}
+
+pub(crate) fn glass_pipeline_descriptor(sample_count: u32) -> MeshPipelineDescriptor {
+    pipeline_descriptor(sample_count, false, Some(BlendMode::GlassHouse))
+}
+
 /// Pipelines and bind group layouts built together.
 struct Built {
     opaque: wgpu::RenderPipeline,
@@ -366,8 +402,9 @@ fn create_all(device: &wgpu::Device, sample_count: u32) -> Built {
         })
     };
     let opaque = make("render3d pipeline", true, None);
-    // Glass: alpha blended, depth tested but not written, drawn after the opaque draws.
-    let blended = make("render3d glass pipeline", false, Some(wgpu::BlendState::ALPHA_BLENDING));
+    // Glass-house uses a dedicated translucent blend: colour uses SrcAlpha / OneMinusSrcAlpha,
+    // alpha uses One / OneMinusSrcAlpha, while the depth test stays Less and depth writes stay off.
+    let blended = make("render3d glass pipeline", false, Some(glass_blend_state()));
 
     Built { opaque, blended, bgl, pbr_bgl }
 }

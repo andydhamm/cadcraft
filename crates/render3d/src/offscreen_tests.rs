@@ -201,6 +201,55 @@ fn a_face_seen_from_behind_is_lit_from_the_camera_side() {
 }
 
 #[test]
+fn glass_house_blends_and_differs_from_shaded() {
+    let Some(mut r) = renderer((96, 96)) else { return };
+    let cam = Camera::Orbit(Orbit::at_origin(25.0, 25.0, 12.0, 45.0));
+    let scene = scene(vec![cuboid("door", [-3.0, -3.0, -1.0], [3.0, 0.0, 1.0]), cuboid("glass", [-2.0, 1.0, -1.0], [2.0, 3.0, 1.0])]);
+    r.render(&scene, 1, &cam, &Light::DEFAULT);
+    let shaded = r.read_rgba().expect("readback");
+    r.render_with(&scene, 2, &cam, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
+    let glass = r.read_rgba().expect("readback");
+    let hues = |img: &[u8]| -> usize {
+        let mut set = std::collections::BTreeSet::new();
+        for p in img.chunks_exact(4) {
+            if !close([p[0], p[1], p[2], p[3]], clear_srgb(), 8) {
+                set.insert([p[0], p[1], p[2], p[3]]);
+            }
+        }
+        set.len()
+    };
+    assert_ne!(glass, shaded, "glass-house style should change the image");
+    assert!(hues(&glass) > hues(&shaded), "glass-house should produce more blended colours");
+}
+
+#[test]
+fn glass_house_shows_an_interior_wall_through_an_exterior_one() {
+    let Some(mut r) = renderer((96, 96)) else { return };
+    let cam = Camera::Orbit(Orbit::at_origin(15.0, 0.0, 8.0, 35.0));
+    let exterior = cuboid("wall", [-2.0, -3.0, -1.0], [0.0, 3.0, 1.0]);
+    let without = scene(vec![exterior.clone()]);
+    let mut with_partition = without.clone();
+    with_partition.meshes.push(cuboid("wall", [-0.25, 2.5, -1.0], [1.0, 3.5, 1.0]));
+    r.render_with(&without, 1, &cam, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
+    let without_img = r.read_rgba().expect("readback");
+    r.render_with(&with_partition, 2, &cam, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
+    let with_img = r.read_rgba().expect("readback");
+    let diff = without_img
+        .chunks_exact(4)
+        .zip(with_img.chunks_exact(4))
+        .filter(|(a, b)| a[0].abs_diff(b[0]) > 8 || a[1].abs_diff(b[1]) > 8 || a[2].abs_diff(b[2]) > 8)
+        .count();
+    assert!(diff > 100, "the interior partition should change pixels seen through the exterior wall");
+}
+
+#[test]
+fn glass_house_pipeline_writes_no_depth() {
+    let desc = crate::pipeline::glass_pipeline_descriptor(4);
+    assert_eq!(desc.sample_count, 4);
+    assert!(!desc.depth_write);
+}
+
+#[test]
 fn an_unchanged_scene_key_reuses_the_uploaded_meshes() {
     let Some(mut r) = renderer((16, 16)) else { return };
     let s = scene(vec![cuboid("wall", [-1.0, -1.0, -1.0], [1.0, 1.0, 1.0])]);
