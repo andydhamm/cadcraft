@@ -329,7 +329,11 @@ impl Scene3d {
         for room in &model.rooms {
             if room.room_type == cadcraft_doc::arch::RoomType::Deck {
                 let level = level_for(model, room.level);
-                if let Some(m) = floors::floor_slab(room, &level, "deck") {
+                let material = match room.deck_height {
+                    Some(h) if h.is_finite() && h > 0.0 => "deck",
+                    _ => "floor",
+                };
+                if let Some(m) = floors::floor_slab(room, &level, material) {
                     meshes.push(m);
                     decks_count += 1;
                     floors += 1;
@@ -616,14 +620,19 @@ impl Scene3d {
             }
             if dirty.contains(&room.id) {
                 let level = level_for(model, room.level);
-                if let Some(m) = floors::floor_slab(room, &level, "floor") {
+                let material = match room.deck_height {
+                    Some(h) if h.is_finite() && h > 0.0 => "deck",
+                    _ => "floor",
+                };
+                if let Some(m) = floors::floor_slab(room, &level, material) {
                     meshes.push(m);
                     decks_count += 1;
                     floors += 1;
                 }
             } else {
                 if let Some(om) = prev_by_object.get(&room.id) {
-                    let deck_meshes: Vec<Mesh> = om.iter().filter(|m| m.material == "floor" && !m.positions.is_empty()).cloned().collect();
+                    let deck_meshes: Vec<Mesh> =
+                        om.iter().filter(|m| (m.material == "floor" || m.material == "deck") && !m.positions.is_empty()).cloned().collect();
                     if !deck_meshes.is_empty() {
                         decks_count += 1;
                         floors += 1;
