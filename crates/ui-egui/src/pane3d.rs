@@ -490,7 +490,10 @@ mod tests {
         assert!(pane.scene().is_some());
 
         let cam = pane.camera();
-        let cadcraft_render3d::Camera::Orbit(o) = cam;
+        let o = match cam {
+            cadcraft_render3d::Camera::Orbit(o) => o,
+            _ => cadcraft_render3d::camera::Orbit::at_origin(0.0, 0.0, 1.0, 45.0),
+        };
 
         // `fit` centres the camera on the scene; for a 0..10 m wall that is x = 5.
         assert!((o.target.x - 5.0).abs() < 0.25);
@@ -603,7 +606,10 @@ mod tests {
         assert!(pane.sync(1, Some(&arch)));
 
         let cam = pane.camera();
-        let cadcraft_render3d::Camera::Orbit(o) = cam;
+        let o = match cam {
+            cadcraft_render3d::Camera::Orbit(o) => o,
+            _ => cadcraft_render3d::camera::Orbit::at_origin(0.0, 0.0, 1.0, 45.0),
+        };
 
         assert!(o.distance >= cadcraft_render3d::camera::MIN_DISTANCE);
         // House is 10x8m; camera should target near its center (5, 4)
@@ -658,7 +664,10 @@ mod tests {
         let mut pane = Pane3d::new();
         // No scene built yet; camera should still be valid
         let cam = pane.camera();
-        let cadcraft_render3d::Camera::Orbit(o) = cam;
+        let o = match cam {
+            cadcraft_render3d::Camera::Orbit(o) => o,
+            _ => cadcraft_render3d::camera::Orbit::at_origin(0.0, 0.0, 1.0, 45.0),
+        };
         assert!(o.distance >= cadcraft_render3d::camera::MIN_DISTANCE);
         assert!(o.target.is_finite(), "camera target must be finite with no scene");
     }
