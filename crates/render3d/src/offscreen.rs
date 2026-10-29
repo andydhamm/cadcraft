@@ -763,6 +763,138 @@ mod offscreen_behavior_tests {
         assert_ne!(Style::ShadedEdges.code(), Style::GlassHouse.code());
         assert_ne!(Style::HiddenLine.code(), Style::GlassHouse.code());
     }
+
+    #[test]
+    fn glass_house_blends_and_differs_from_shaded() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (160u32, 120u32);
+        let mut off = Offscreen::with_device(device, queue, size);
+        let scene = cube_scene();
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(30.0, 30.0, 8.0, 45.0));
+
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::Shaded, ..Default::default() });
+        let shaded = off.read_rgba().expect("read shaded");
+
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
+        let glass = off.read_rgba().expect("read glass");
+
+        assert_ne!(shaded, glass, "glass-house must differ from shaded");
+
+        // Glass-house should have more distinct colors due to blending
+        let shaded_colors: std::collections::HashSet<[u8; 4]> = shaded.chunks_exact(4).map(|p| [p[0], p[1], p[2], p[3]]).collect();
+        let glass_colors: std::collections::HashSet<[u8; 4]> = glass.chunks_exact(4).map(|p| [p[0], p[1], p[2], p[3]]).collect();
+        assert!(glass_colors.len() > shaded_colors.len(), "glass-house should have more distinct colors: {} vs {}", glass_colors.len(), shaded_colors.len());
+    }
+
+    #[test]
+    fn glass_house_shows_an_interior_wall_through_an_exterior_one() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (160u32, 120u32);
+        let mut off = Offscreen::with_device(device, queue, size);
+
+        // Two parallel walls: exterior at x=0, interior at x=1
+        let mut ext = crate::types::Mesh::new("wall", crate::types::ArchId(1));
+        ext.positions.extend_from_slice(&[-0.1, 0.0, 0.0, 0.1, 0.0, 0.0, 0.1, 2.0, 0.0, -0.1, 2.0, 0.0]);
+        ext.normals.extend_from_slice(&[0.0, 0.0, 1.0; 4]);
+        ext.uvs.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 1.0, 2.0, 0.0, 2.0]);
+        ext.indices = vec![0, 1, 2, 0, 2, 3];
+
+        let mut int = crate::types::Mesh::new("wall", crate::types::ArchId(2));
+        int.positions.extend_from_slice(&[0.9, 0.0, 0.0, 1.1, 0.0, 0.0, 1.1, 2.0, 0.0, 0.9, 2.0, 0.0]);
+        int.normals.extend_from_slice(&[0.0, 0.0, 1.0; 4]);
+        int.uvs.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 1.0, 2.0, 0.0, 2.0]);
+        int.indices = vec![0, 1, 2, 0, 2, 3];
+
+        let scene = Scene3d {
+            meshes: vec![ext, int],
+            bounds: crate::types::Bounds3::new([-0.1, 0.0, 0.0], [1.1, 2.0, 0.0]),
+            ..Default::default()
+        };
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(5.0, 1.0, 3.0, 0.0));
+
+        // Render with both walls
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
+        let with_interior = off.read_rgba().expect("read with interior");
+
+        // Render with only exterior wall
+        let mut scene_no_int = scene.clone();
+        scene_no_int.meshes.pop();
+        off.render_with(&scene_no_int, 2, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
+        let without_interior = off.read_rgba().expect("read without interior");
+
+        assert_ne!(with_interior, without_interior, "interior wall must be visible through exterior wall in glass-house");
+    }
+
+    #[test]
+    fn glass_house_with_empty_scene() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (64u32, 64u32);
+        let mut off = Offscreen::with_device(device, queue, size);
+        let scene = Scene3d::default();
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(0.0, 0.0, 5.0, 0.0));
+
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
+        let pixels = off.read_rgba().expect("read empty glass-house");
+        assert!(pixels_are_uniform(&pixels), "empty glass-house scene should be uniform background");
+    }
+
+    #[test]
+    fn glass_house_with_nan_coordinates() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (64u32, 64u32);
+        let mut off = Offscreen::with_device(device, queue, size);
+
+        let mut mesh = crate::types::Mesh::new("wall", crate::types::ArchId(1));
+        mesh.positions.extend_from_slice(&[f32::NAN, 0.0, 0.0, 1.0, f32::INFINITY, 0.0, 0.0, 0.0, f32::NEG_INFINITY]);
+        mesh.normals.extend_from_slice(&[0.0, 0.0, 1.0; 3]);
+        mesh.uvs.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
+        mesh.indices = vec![0, 1, 2];
+
+        let scene = Scene3d { meshes: vec![mesh], ..Default::default() };
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(0.0, 0.0, 5.0, 0.0));
+
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
+        let pixels = off.read_rgba().expect("read nan glass-house");
+        // Should not crash; all pixel bytes must be valid
+        for chunk in pixels.chunks_exact(4) {
+            assert!(chunk.iter().all(|&b| b <= 255), "pixel byte out of range");
+        }
+    }
+
+    #[test]
+    fn glass_house_ground_stays_opaque() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (160u32, 120u32);
+        let mut off = Offscreen::with_device(device, queue, size);
+        let scene = cube_scene();
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(30.0, 30.0, 8.0, 45.0));
+
+        // With ground
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ground: true, ..Default::default() });
+        let glass_ground = off.read_rgba().expect("read glass with ground");
+
+        // Without ground
+        off.render_with(&scene, 2, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ground: false, ..Default::default() });
+        let glass_no_ground = off.read_rgba().expect("read glass without ground");
+
+        // The ground should be visible (different pixels)
+        assert_ne!(glass_ground, glass_no_ground, "ground should be visible in glass-house");
+    }
 }
 
 #[cfg(test)]
