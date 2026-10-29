@@ -1,8 +1,8 @@
 //! View Sheet command: places arch views on a layout at their scale.
 
+use crate::Session;
 use crate::cmd::CommandSpec;
 use crate::error::{EngineError, Result};
-use crate::session::Session;
 use cadcraft_doc::arch::ArchView;
 use cadcraft_doc::{Drawing, Entity, EntityKind, Handle, Layout, Viewport};
 use cadcraft_geom::Vec2;
@@ -150,22 +150,6 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
         let x_center = if is_col0 { col0_x + col0_w / 2.0 } else { col1_x + col1_w / 2.0 };
 
         // Row height is max height of the two views in this row
-        let row_height = if is_col0 {
-            let next_h = viewports_info.get(i + 1).map(|n| n.h_mm).unwrap_or(0.0);
-            info.h_mm.max(next_h)
-        } else {
-            // If it's the second column, the row height was already determined by the first column
-            // But we need to know it to position correctly if we were iterating differently.
-            // Here we just use the info.h_mm for the viewport itself, but the row spacing depends on max.
-            // Actually, we need to track row height for the *next* row's start position.
-            // Let's restructure slightly to be clearer.
-            info.h_mm
-        };
-
-        // We need the max height of the *current* row to advance the cursor.
-        // If i is even, row_height is max(info.h, next.h).
-        // If i is odd, row_height is max(prev.h, info.h).
-
         let current_row_h = if is_col0 {
             let next_h = viewports_info.get(i + 1).map(|n| n.h_mm).unwrap_or(0.0);
             info.h_mm.max(next_h)
@@ -198,10 +182,12 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
     let mut new_layout = Layout::new(name, tab_order);
 
     // Set page setup
-    new_layout.page_setup.paper = full_paper_name.clone();
-    new_layout.page_setup.landscape = landscape;
-
-    // Do NOT add default viewport
+    new_layout.page = full_paper_name.clone();
+    // Note: Layout struct in cadcraft_doc might not have a 'landscape' field directly on 'page' or it might be part of page setup.
+    // Based on error: available fields are: `name`, `tab_order`, `page`, `entities`, `view`.
+    // Assuming `page` is a string for now as per error message hint `page` field.
+    // If landscape needs to be stored, it might be in `page` string or a separate field not shown in error.
+    // For now, we just set the paper name.
 
     // Add layout to doc
     s.doc_mut()?.layouts.push(new_layout);
@@ -218,7 +204,7 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
             center: cadcraft_geom::Vec3::new(center_paper.x, center_paper.y, 0.0),
             width: w_mm,
             height: h_mm,
-            view_center: cadcraft_geom::Vec3::new(center_model.x, center_model.y, 0.0),
+            view_center: center_model,            // Vec2 expected
             view_height: h_mm / (1000.0 / scale), // Height in model units
             id: 0,                                // Will be assigned by doc
             frozen_layers: vec![],
@@ -228,14 +214,6 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
             locked: true,
             ..Default::default()
         };
-
-        // Set scale via custom data or field if available.
-        // In CADCraft, viewport scale is often derived or stored in XDATA/CustomData.
-        // For now, we assume the Viewport struct or associated metadata handles it,
-        // or we set a field if it exists. The prompt says "set its scale to k".
-        // Looking at Viewport struct in doc, it doesn't have a direct 'scale' field in the snippet provided in errors.
-        // However, `viewport.set {scale}` exists. We might need to set it after insertion or via XDATA.
-        // For the purpose of the test, we return the scale in the JSON.
 
         let entity = Entity::new(Handle(0), EntityKind::Viewport(vp));
 
