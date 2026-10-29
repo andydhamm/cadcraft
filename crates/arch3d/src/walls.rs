@@ -469,28 +469,31 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
                         }
                     }
                     if is_covered {
-                        let a = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
-                        let b = Vec2::new(plane.base_edge[2], plane.base_edge[3]);
-                        let ab = b - a;
-                        let len_sq = ab.x * ab.x + ab.y * ab.y;
-                        let dist = if len_sq > 1e-12 {
-                            let len = len_sq.sqrt();
-                            let dir = Vec2::new(ab.x / len, ab.y / len);
-                            let normal = Vec2::new(-dir.y, dir.x);
-                            let v = p - a;
-                            (v.x * normal.x + v.y * normal.y).abs()
-                        } else {
-                            0.0
-                        };
+                        let dist = line_dist_to_base_edge(plane, p);
                         let overhang = if plane.overhang.is_finite() && plane.overhang >= 0.0 { plane.overhang } else { 0.0 };
-                        if dist <= overhang + 1e-9 {
+                        if (p.x - 0.1).abs() < 1e-8 && (p.y - 4.0).abs() < 1e-8 {
+                            println!(
+                                "DBG wall sample p={:?} plane base={:?} overhang={} dist={} eave_z={} underside={}",
+                                p,
+                                plane.base_edge,
+                                overhang,
+                                dist,
+                                plane.eave_z,
+                                underside_z(plane, plane.eave_z, p)
+                            );
+                        }
+                        // The roof underside is evaluated on the true eave line, inset from the
+                        // overhang outline by `overhang`. Wall samples still in that offset band
+                        // belong to the overhang itself and must not generate a clipped roof top.
+                        if !dist.is_finite() || dist <= overhang + 1e-9 {
                             continue;
                         }
                         let z_plane = underside_z(plane, plane.eave_z, p);
-                        if z_plane.is_finite() {
-                            z_best = z_best.max(z_plane);
-                            covered = true;
+                        if !z_plane.is_finite() || z_plane <= plane.eave_z + 1e-9 {
+                            continue;
                         }
+                        z_best = z_best.max(z_plane);
+                        covered = true;
                     }
                 }
             }
@@ -655,6 +658,26 @@ pub(crate) fn profile_prism(outer: &[Vec2], holes: &[Vec<Vec2>], wall: &Wall, ba
 /// with more than four profile points.
 pub fn extrude_profile_slab(shape: &WallShape, profile: &WallProfile, base: f64, wall: &Wall, material: &str) -> Option<Mesh> {
     profile_prism(&profile.outer, &profile.holes, wall, base, material, shape.id)
+}
+
+fn line_dist_to_base_edge(plane: &cadcraft_doc::arch::RoofPlane, p: Vec2) -> f64 {
+    let a = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
+    let b = Vec2::new(plane.base_edge[2], plane.base_edge[3]);
+    let ab = b - a;
+    let len_sq = ab.x * ab.x + ab.y * ab.y;
+    if len_sq < 1e-12 || !len_sq.is_finite() {
+        return 0.0;
+    }
+    let len = len_sq.sqrt();
+    let dir = Vec2::new(ab.x / len, ab.y / len);
+    let left = Vec2::new(-dir.y, dir.x);
+    let right = Vec2::new(dir.y, -dir.x);
+    let centroid = plane.ring.iter().filter(|q| q.is_finite()).copied().reduce(|acc, q| acc + q).unwrap_or(Vec2::ZERO);
+    let count = plane.ring.iter().filter(|q| q.is_finite()).count();
+    let centroid = if count > 0 { centroid / count as f64 } else { a };
+    let normal_xy = if (centroid - a).dot(left) >= 0.0 { left } else { right };
+    let v = p - a;
+    v.x * normal_xy.x + v.y * normal_xy.y
 }
 
 fn point_to_line_dist(p: Vec2, a: Vec2, b: Vec2) -> f64 {
