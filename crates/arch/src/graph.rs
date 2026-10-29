@@ -65,7 +65,7 @@ fn saturate_cell_coord(x: f64) -> i64 {
     } else if v < i64::MIN as f64 {
         i64::MIN
     } else {
-        v as i64
+        v.round() as i64
     }
 }
 
@@ -157,19 +157,7 @@ impl WallGraph {
         }
 
         // Build clusters: sort members by (ArchId, Start-before-End).
-        // Sort clusters by root (which is the lowest endpoint index = wall order).
-        let mut clusters: Vec<Vec<(ArchId, End)>> = Vec::new();
-        for (r, members) in &root_to_members {
-            let mut cluster: Vec<(ArchId, End)> = Vec::with_capacity(members.len());
-            for &idx in members {
-                cluster.push((ends[idx].0, ends[idx].1));
-            }
-            cluster.sort_by_key(|m| (m.0, if m.1 == End::Start { 0u8 } else { 1u8 }));
-            clusters.push(cluster);
-        }
-        // Sort by root (lowest endpoint index = wall order).
-        // BTreeMap iterates in key order, so clusters are already sorted by root.
-        // Verify and sort explicitly for safety.
+        // Clusters are ordered by root (lowest endpoint index = wall order).
         let mut indexed: Vec<(usize, Vec<(ArchId, End)>)> = root_to_members
             .iter()
             .map(|(r, members)| {
@@ -678,5 +666,105 @@ mod tests {
         let graph = WallGraph::build(&model);
         // There are 2 clusters (indices 0 and 1). Index 100 is out of range.
         assert_eq!(graph.cluster(100), &[]);
+    }
+
+    #[test]
+    fn graph_two_walls_same_endpoints() {
+        let w1 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 2.0);
+        let w2 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 2.0);
+        let model = make_model(vec![w1, w2]);
+
+        let graph = WallGraph::build(&model);
+
+        assert_eq!(graph.len(), 2);
+        // Both start ends in one cluster, both end ends in another.
+        let c_start1 = graph.cluster_of(ArchId(0), End::Start).unwrap();
+        let c_start2 = graph.cluster_of(ArchId(1), End::Start).unwrap();
+        let c_end1 = graph.cluster_of(ArchId(0), End::End).unwrap();
+        let c_end2 = graph.cluster_of(ArchId(1), End::End).unwrap();
+        assert_eq!(c_start1, c_start2);
+        assert_eq!(c_end1, c_end2);
+        assert_ne!(c_start1, c_end1);
+        assert_eq!(graph.cluster(c_start1).len(), 2);
+        assert_eq!(graph.cluster(c_end1).len(), 2);
+    }
+
+    #[test]
+    fn graph_three_collinear_walls() {
+        let w1 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), 2.0);
+        let w2 = Wall::new(Vec2::new(5.0, 0.0), Vec2::new(10.0, 0.0), 2.0);
+        let w3 = Wall::new(Vec2::new(10.0, 0.0), Vec2::new(15.0, 0.0), 2.0);
+        let model = make_model(vec![w1, w2, w3]);
+
+        let graph = WallGraph::build(&model);
+
+        let pairs = graph.collinear_pairs();
+        assert_eq!(pairs.len(), 3);
+        assert_eq!(pairs[0], (ArchId(0), ArchId(1)));
+        assert_eq!(pairs[1], (ArchId(0), ArchId(2)));
+        assert_eq!(pairs[2], (ArchId(1), ArchId(2)));
+    }
+
+    #[test]
+    fn graph_ends_at_non_finite_point() {
+        let w1 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 2.0);
+        let model = make_model(vec![w1]);
+
+        let graph = WallGraph::build(&model);
+
+        assert_eq!(graph.ends_at(Vec2::new(f64::NAN, 0.0)).len(), 0);
+        assert_eq!(graph.ends_at(Vec2::new(f64::INFINITY, 0.0)).len(), 0);
+        assert_eq!(graph.ends_at(Vec2::new(0.0, f64::NEG_INFINITY)).len(), 0);
+    }
+
+    #[test]
+    fn graph_cluster_of_unknown_wall() {
+        let w1 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 2.0);
+        let model = make_model(vec![w1]);
+
+        let graph = WallGraph::build(&model);
+
+        // ArchId(99) is not in the graph.
+        assert_eq!(graph.cluster_of(ArchId(99), End::Start), None);
+        assert_eq!(graph.cluster_of(ArchId(99), End::End), None);
+    }
+
+    #[test]
+    fn graph_zero_length_wall_ignored() {
+        let w1 = Wall::new(Vec2::new(5.0, 5.0), Vec2::new(5.0, 5.0), 2.0);
+        let w2 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 2.0);
+        let model = make_model(vec![w1, w2]);
+
+        let graph = WallGraph::build(&model);
+
+        // Only w2 should be in the graph.
+        assert_eq!(graph.len(), 1);
+    }
+
+    #[test]
+    fn graph_nan_thickness_wall_ignored() {
+        let w1 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), f64::NAN);
+        let w2 = Wall::new(Vec2::new(20.0, 0.0), Vec2::new(30.0, 0.0), 2.0);
+        let model = make_model(vec![w1, w2]);
+
+        let graph = WallGraph::build(&model);
+
+        // Only w2 should be in the graph.
+        assert_eq!(graph.len(), 1);
+    }
+
+    #[test]
+    fn graph_rectangle_with_diagonal_not_closed_loop() {
+        let w1 = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 2.0);
+        let w2 = Wall::new(Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 2.0);
+        let w3 = Wall::new(Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0), 2.0);
+        let w4 = Wall::new(Vec2::new(0.0, 10.0), Vec2::new(0.0, 0.0), 2.0);
+        let diag = Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0), 2.0);
+        let model = make_model(vec![w1, w2, w3, w4, diag]);
+
+        let graph = WallGraph::build(&model);
+
+        // Not a closed loop because wall 1 has 3 distinct neighbours (4, 2, diag).
+        assert!(!graph.is_closed_loop());
     }
 }
