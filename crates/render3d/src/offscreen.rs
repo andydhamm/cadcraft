@@ -280,7 +280,8 @@ impl Offscreen {
     pub fn build_shadow(&mut self, scene: &Scene3d, scene_key: u64, light: &Light, ground: bool) -> Option<ShadowMap> {
         self.ensure_meshes(scene, scene_key, ground);
         let (_, meshes) = self.meshes.as_ref()?;
-        let map = crate::shadow::build(&self.device, &self.queue, meshes, light.normalized().dir, &scene.bounds)?;
+        let map =
+            crate::shadow::build(&self.device, &self.queue, meshes, light.normalized().dir, &crate::shadow::receiver_bounds(&scene.bounds, ground))?;
         self.shadows_built += 1;
         Some(map)
     }
