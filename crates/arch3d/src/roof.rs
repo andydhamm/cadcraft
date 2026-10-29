@@ -20,12 +20,9 @@ fn dist_to_base_edge_line(plane: &RoofPlane, p: Vec2) -> f64 {
     }
     let len = len_sq.sqrt();
     let dir = Vec2::new(ab.x / len, ab.y / len);
-    let left = Vec2::new(-dir.y, dir.x);
-    let right = Vec2::new(dir.y, -dir.x);
-    let centroid = plane.ring.iter().filter(|q| q.is_finite()).copied().reduce(|acc, q| acc + q).unwrap_or(Vec2::ZERO);
-    let count = plane.ring.iter().filter(|q| q.is_finite()).count();
-    let centroid = if count > 0 { centroid / count as f64 } else { a };
-    let normal_xy = if (centroid - a).dot(left) >= 0.0 { left } else { right };
+    // Preserve roof_plane_mesh's established base-edge orientation. In particular,
+    // a zero overhang must produce exactly the same heights as before this fix.
+    let normal_xy = Vec2::new(-dir.y, dir.x);
     let v = p - a;
     v.x * normal_xy.x + v.y * normal_xy.y
 }
