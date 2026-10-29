@@ -890,7 +890,7 @@ mod offscreen_behavior_tests {
         mesh.indices = vec![0, 1, 2, 0, 2, 3];
 
         let scene = Scene3d { meshes: vec![mesh], bounds: crate::types::Bounds3::new([-0.5, 0.0, 0.0], [0.5, 1.0, 0.0]), ..Default::default() };
-        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(0.0, 0.0, 3.0, 45.0));
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(30.0, 30.0, 3.0, 45.0));
 
         off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
         let pixels = off.read_rgba().expect("read single mesh");
@@ -921,7 +921,7 @@ mod offscreen_behavior_tests {
         w2.indices = vec![0, 1, 2, 0, 2, 3];
 
         let scene = Scene3d { meshes: vec![w1, w2], bounds: crate::types::Bounds3::new([-0.5, 0.0, 0.0], [0.5, 1.0, 0.0]), ..Default::default() };
-        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(0.0, 0.0, 3.0, 45.0));
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(30.0, 30.0, 3.0, 45.0));
 
         off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
         let pixels = off.read_rgba().expect("read coincident walls");
@@ -947,7 +947,7 @@ mod offscreen_behavior_tests {
 
         let scene =
             Scene3d { meshes: vec![mesh], bounds: crate::types::Bounds3::new([-1000.0, 0.0, 0.0], [1000.0, 1000.0, 0.0]), ..Default::default() };
-        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(0.0, 0.0, 5000.0, 45.0));
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(30.0, 30.0, 5000.0, 45.0));
 
         off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ..Default::default() });
         let pixels = off.read_rgba().expect("read large scene");
