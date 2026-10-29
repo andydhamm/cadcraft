@@ -52,6 +52,13 @@ pub struct Sun {
     pub intensity: f32,
 }
 
+impl Default for Sun {
+    /// Straight overhead, full strength.
+    fn default() -> Self {
+        Sun { dir: [0.0, 0.0, 1.0], intensity: 1.0 }
+    }
+}
+
 impl Light {
     /// A light from a [`Sun`] and an `ambient` level. The sun's intensity is carried by the PBR
     /// block (`pipeline::PbrUniform::new`), not by [`Light`], which has no intensity.

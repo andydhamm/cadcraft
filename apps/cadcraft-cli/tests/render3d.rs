@@ -227,6 +227,62 @@ fn render_with_size_option() {
 }
 
 #[test]
+fn render_rejects_bad_style_sun_and_adapter() {
+    let dir = temp_dir("render_rejects_bad_style_sun_and_adapter");
+    let in_dxf = wall_plan(&dir);
+    let out_png = dir.join("view.png");
+    let base = ["render".to_string(), in_dxf.to_string_lossy().into(), out_png.to_string_lossy().into()];
+    for extra in
+        [["--style", "wireframe"], ["--style", "Shaded"], ["--sun", "lat=51"], ["--sun", "lat=51,date=2026-06-21,time=noon"], ["--adapter", "gpu"]]
+    {
+        let mut args = base.to_vec();
+        args.extend(extra.iter().map(|s| s.to_string()));
+        let out = run_cli(&args);
+        assert!(!out.status.success(), "{extra:?} should be a usage error");
+        assert_ne!(out.status.code(), Some(3), "{extra:?} is a usage error, not NO_ADAPTER");
+        assert!(!out_png.exists(), "nothing should be written for {extra:?}");
+    }
+    let mut args = base.to_vec();
+    args.extend(["--camera".to_string(), "full,eye=1,1,1,target=1,1,1".to_string()]);
+    assert!(!run_cli(&args).status.success(), "eye == target should be rejected");
+}
+
+#[test]
+fn render_prints_device_and_shadow_lines() {
+    let dir = temp_dir("render_prints_device_and_shadow_lines");
+    let in_dxf = wall_plan(&dir);
+    let out_png = dir.join("view.png");
+
+    let out = run_cli(&[
+        "render".into(),
+        in_dxf.to_string_lossy().into(),
+        out_png.to_string_lossy().into(),
+        "--adapter".into(),
+        "fallback".into(),
+        "--style".into(),
+        "shaded-edges".into(),
+        "--ground".into(),
+        "--sun".into(),
+        "lat=51.05,date=2026-06-21,time=solar-noon".into(),
+        "--camera".into(),
+        "full,eye=-8,-10,6,target=5,4,1,fov=50".into(),
+        "--size".into(),
+        "320x200".into(),
+    ]);
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    if out.status.code() == Some(3) {
+        assert!(stderr.contains("NO_ADAPTER"), "{stderr}");
+        eprintln!("SKIP: no fallback adapter");
+        return;
+    }
+    assert!(out.status.success(), "render failed: {stderr}");
+    assert!(is_png(&out_png), "no PNG written");
+    assert!(stderr.lines().any(|l| l.starts_with("PROJECTED ")), "{stderr}");
+    assert!(stderr.lines().any(|l| l.starts_with("DEVICE name=")), "{stderr}");
+    assert!(stderr.lines().any(|l| l.starts_with("SHADOW size=1024 built=")), "{stderr}");
+}
+
+#[test]
 fn render_camera_unknown_param_rejected() {
     let dir = temp_dir("render_camera_unknown_param_rejected");
     let in_dxf = wall_plan(&dir);
