@@ -143,8 +143,9 @@ fn parse_full_camera<'a>(tokens: impl Iterator<Item = &'a str>) -> Result<Camera
     Ok(Camera::Full(cadcraft_arch3d::camera::FullCamera::new(eye, target, fov)))
 }
 
-/// Parse `orbit[,azimuth=A][,elevation=E][,distance=D][,fov=F]` into a camera seeded from `base`,
-/// or the `full,eye=..,target=..` form. Values must be finite and in range, so a bad `--camera`
+/// Parse `orbit[,azimuth=A][,elevation=E][,distance=D][,fov=F][,target=X,Y,Z]` into a camera
+/// seeded from `base` (the fitted target is replaced when `target` is given), or the
+/// `full,eye=..,target=..` form. Values must be finite and in range, so a bad `--camera`
 /// never reaches the GPU.
 fn parse_camera(spec: &str, base: Orbit) -> Result<Camera, RenderError> {
     let mut tokens = spec.split(',').map(str::trim);
@@ -153,8 +154,9 @@ fn parse_camera(spec: &str, base: Orbit) -> Result<Camera, RenderError> {
         Some("full") => return parse_full_camera(tokens),
         _ => return Err(RenderError::CameraStart),
     }
+    let it = tokens.filter(|t| !t.is_empty());
     let mut o = base;
-    for t in tokens.filter(|t| !t.is_empty()) {
+    while let Some(t) = it.next() {
         let (name, val) = t.split_once('=').map(|(k, v)| (k.trim(), v.trim())).ok_or_else(|| RenderError::CameraField(t.to_string()))?;
         let bad = |why: String| RenderError::CameraValue { name: name.to_string(), value: why };
         let v = val.parse::<f64>().map_err(|e| bad(e.to_string()))?;
@@ -162,6 +164,17 @@ fn parse_camera(spec: &str, base: Orbit) -> Result<Camera, RenderError> {
             return Err(bad(format!("must be finite, got `{val}`")));
         }
         match name {
+            "target" => {
+                // `target` spans three comma tokens: `target=X`, then the bare `Y` and `Z`
+                // tokens that follow it (the way `parse_full_camera` reads `target=`).
+                let ty = it.next().and_then(|y| y.parse::<f64>().ok()).ok_or_else(|| bad("target needs x,y,z".into()))?;
+                let tz = it.next().and_then(|z| z.parse::<f64>().ok()).ok_or_else(|| bad("target needs x,y,z".into()))?;
+                if ty.is_finite() && tz.is_finite() {
+                    o.target = Vec3::new(v, ty, tz);
+                } else {
+                    return Err(bad(format!("target must be finite, got y={ty},z={tz}")));
+                }
+            }
             "azimuth" => o.azimuth = v,
             "elevation" if (-89.0..=89.0).contains(&v) => o.elevation = v,
             "elevation" => return Err(bad(format!("must be in [-89, 89] degrees, got `{val}`"))),
@@ -239,6 +252,30 @@ mod tests {
         assert_eq!(parse_style("glass-house"), Some(Style::GlassHouse));
         for bad in ["", "Shaded", "SHADED", "shaded_edges", "wireframe", " shaded", "glass"] {
             assert_eq!(parse_style(bad), None, "`{bad}`");
+        }
+    }
+
+    #[test]
+    fn orbit_camera_spec_accepts_a_target() {
+        let Ok(Camera::Orbit(o)) = parse_camera("orbit,target=5,4,0", base()) else {
+            panic!("target camera");
+        };
+        assert_eq!(o.target, Vec3::new(5.0, 4.0, 0.0));
+        assert!(parse_camera("orbit,target=5,4,0,azimuth=0", base()).is_ok());
+    }
+
+    #[test]
+    fn orbit_target_needs_three_finite_numbers() {
+        for bad in [
+            "orbit,target=5,4",
+            "orbit,target=5,abc,0",
+            "orbit,target=abc,4,0",
+            "orbit,target=5,inf,0",
+            "orbit,target=5,4,inf",
+            "orbit,target=NaN,4,0",
+            "orbit,target=5,4,0,0",
+        ] {
+            assert!(parse_camera(bad, base()).is_err(), "`{bad}` should be rejected");
         }
     }
 
