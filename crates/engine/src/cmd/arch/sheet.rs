@@ -221,7 +221,7 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
 
     Ok(json!({
         "layout": name,
-        "paper": full_paper_name,
+        "paper": paper_name,
         "landscape": landscape,
         "viewports": resp
     }))

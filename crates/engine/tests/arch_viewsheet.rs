@@ -13,7 +13,7 @@ fn make_view(name: &str, scale: f64, w: f64, h: f64) -> ArchView {
     // Add a line to ensure it's not empty, though extent is what matters for bounds()
     // Assuming bounds() uses extent. If bounds() calculates from lines, we need lines.
     // Let's add a line covering the bounds.
-    geometry.lines.push(ViewLine { a: [0.0, 0.0], b: [w, h], kind: cadcraft_doc::arch::ArchKind::View, object: cadcraft_doc::arch::ArchId(0) });
+    geometry.lines.push(ViewLine { a: [0.0, 0.0], b: [w, h], ..Default::default() });
 
     v.generated = Some(geometry);
     v
@@ -69,7 +69,7 @@ fn viewsheet_lays_out_two_per_row_from_the_top_left() {
         .execute(
             "viewsheet",
             &json!({
-                "name": "Layout1",
+                "name": "TestSheet2",
                 "views": ["v0", "v1", "v2", "v3"],
                 "paper": "ARCH D",
                 "landscape": true
