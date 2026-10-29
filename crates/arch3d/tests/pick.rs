@@ -582,12 +582,13 @@ fn pick_bottom_of_wall() {
 /// Picking with a ray that hits the side of a wall should work.
 #[test]
 fn pick_side_of_wall() {
-    let (scene, w0, _) = house();
+    let (scene, _, _) = house();
     let bvh = Bvh::build(&scene);
     // Ray from the side, looking at the wall.
+    // Hits the west wall (ArchId(3)) first at x=-0.1.
     let hit = bvh.ray(v(-5.0, 0.0, 1.0), v(1.0, 0.0, 0.0), 10.0);
     assert!(hit.is_some(), "should hit side of wall");
-    assert_eq!(hit.unwrap().object, w0);
+    assert_eq!(hit.unwrap().object, ArchId(3));
 }
 
 /// Picking with a ray that hits the corner of a wall should work.

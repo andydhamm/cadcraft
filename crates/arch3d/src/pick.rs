@@ -185,7 +185,7 @@ impl Bvh {
     /// `dir` is normalised internally; a zero or non-finite direction, a
     /// non-finite origin, or a non-finite / non-positive `max_t` gives `None`.
     pub fn ray(&self, origin: Vec3, dir: Vec3, max_t: f64) -> Option<PickHit> {
-        if self.nodes.is_empty() || !origin.is_finite() || !dir.is_finite() || !max_t.is_finite() || max_t <= 0.0 {
+        if self.nodes.is_empty() || !origin.is_finite() || !dir.is_finite() || max_t.is_nan() || max_t <= 0.0 {
             return None;
         }
         let len = dir.len();

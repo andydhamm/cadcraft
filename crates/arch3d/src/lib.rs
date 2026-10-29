@@ -329,7 +329,7 @@ impl Scene3d {
         for room in &model.rooms {
             if room.room_type == cadcraft_doc::arch::RoomType::Deck {
                 let level = level_for(model, room.level);
-                if let Some(m) = floors::floor_slab(room, &level, "floor") {
+                if let Some(m) = floors::floor_slab(room, &level, "deck") {
                     meshes.push(m);
                     decks_count += 1;
                     floors += 1;
@@ -2934,7 +2934,7 @@ mod tests {
 
         let hit = scene.probe(Vec3::new(2.0, 1.5, -0.025));
         assert!(hit.is_some(), "probe inside deck should hit");
-        assert_eq!(hit.unwrap().part, "floor", "probe inside deck should hit floor part");
+        assert_eq!(hit.unwrap().part, "deck", "probe inside deck should hit deck part");
     }
 
     #[test]
