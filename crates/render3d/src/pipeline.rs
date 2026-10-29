@@ -32,6 +32,104 @@ pub fn uniform_stride(device: &wgpu::Device) -> u64 {
     UNIFORM_SIZE.div_ceil(align) * align
 }
 
+/// Shading style: faces shaded with PBR.
+pub const STYLE_SHADED: u32 = 0;
+/// Shading style: shaded; the edge lines come from `arch3d::edges`.
+pub const STYLE_SHADED_EDGES: u32 = 1;
+/// Shading style: faces in the clear colour with depth written (hidden-line).
+pub const STYLE_HIDDEN_LINE: u32 = 2;
+/// Shading style: translucent (alpha 0.35), no depth write.
+pub const STYLE_GLASS_HOUSE: u32 = 3;
+
+/// Material and sun uniforms uploaded to the GPU (WGSL `PbrUniforms`, group 1 binding 1).
+///
+/// 96 bytes, 16-byte align; the `_p*` fields are layout padding.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PbrUniform {
+    /// Unit direction toward the sun.
+    pub light_dir: [f32; 3],
+    /// Sun radiance scale.
+    pub sun_intensity: f32,
+    /// Ambient fraction 0..=1.
+    pub ambient: f32,
+    /// 0 dielectric … 1 metal.
+    pub metallic: f32,
+    /// Perceptual roughness 0..=1.
+    pub roughness: f32,
+    /// Opacity; below 1.0 blends.
+    pub alpha: f32,
+    /// One of the `STYLE_*` constants.
+    pub style: u32,
+    pub _p0: [u32; 3],
+    /// Eye position in world space.
+    pub camera_pos: [f32; 3],
+    /// Shadow-map depth range start (unused until shadows land).
+    pub shadow_min: f32,
+    /// Shadow-map depth range end.
+    pub shadow_max: f32,
+    pub _p1: [f32; 3],
+    pub _p2: [f32; 4],
+}
+/// Byte size of [`PbrUniform`].
+pub const PBR_SIZE: u64 = 96;
+
+impl PbrUniform {
+    /// Build the block from a light, a draw and a style, replacing every non-finite value and
+    /// clamping `metallic`, `roughness`, `alpha` to 0..=1 and `ambient` to 0..=1.
+    pub fn new(light: &crate::light::Light, sun_intensity: f32, draw: &Draw, style: u32, camera_pos: [f32; 3]) -> Self {
+        let l = light.normalized();
+        let fin = |v: f32, d: f32| if v.is_finite() { v } else { d };
+        let mut cam = camera_pos;
+        for c in cam.iter_mut() {
+            *c = fin(*c, 0.0);
+        }
+        PbrUniform {
+            light_dir: l.dir,
+            sun_intensity: fin(sun_intensity, 1.0).max(0.0),
+            ambient: l.ambient,
+            metallic: fin(draw.metallic, 0.0).clamp(0.0, 1.0),
+            roughness: fin(draw.roughness, 0.5).clamp(0.0, 1.0),
+            alpha: fin(draw.alpha, 1.0).clamp(0.0, 1.0),
+            style: style.min(STYLE_GLASS_HOUSE),
+            _p0: [0; 3],
+            camera_pos: cam,
+            shadow_min: 0.0,
+            shadow_max: 0.0,
+            _p1: [0.0; 3],
+            _p2: [0.0; 4],
+        }
+    }
+}
+
+/// MSAA sample counts we allow: 1 or 4 (the only counts WebGL2 guarantees). Anything else is 1.
+pub fn valid_sample_count(n: u32) -> u32 {
+    if n == 4 { 4 } else { 1 }
+}
+
+/// PBR parameters for an arch3d material name: `(albedo, metallic, roughness, alpha)`. Albedo is
+/// [`material_albedo`]; unknown names are a neutral matte dielectric `([0.75; 3], 0.0, 0.5, 1.0)`.
+pub fn material_pbr(material: &str) -> ([f32; 3], f32, f32, f32) {
+    let albedo = material_albedo(material);
+    let m = material.to_ascii_lowercase();
+    let starts = |names: &[&str]| names.iter().any(|n| m.starts_with(n));
+    if starts(&["glass"]) {
+        return (albedo, 0.0, 0.05, 0.35);
+    }
+    let rough = if starts(&["frame", "sill"]) {
+        0.6
+    } else if starts(&["wall", "ceiling", "fascia", "soffit", "casing", "header"]) {
+        0.9
+    } else if starts(&["floor", "door", "leaf", "stair", "railing", "deck"]) {
+        0.7
+    } else if starts(&["roof", "ground"]) {
+        0.95
+    } else {
+        return (albedo, 0.0, 0.5, 1.0);
+    };
+    (albedo, 0.0, rough, 1.0)
+}
+
 /// Linear albedo for an arch3d material name. Unknown names are a neutral grey, so a new
 /// material still renders lit; names are matched by prefix (`wall-exterior` is a wall).
 pub fn material_albedo(material: &str) -> [f32; 3] {
@@ -98,6 +196,25 @@ pub struct Draw {
     pub index_count: u32,
     /// Linear albedo from [`material_albedo`].
     pub albedo: [f32; 3],
+    /// 0 dielectric … 1 metal, from [`material_pbr`].
+    pub metallic: f32,
+    /// Perceptual roughness 0..=1.
+    pub roughness: f32,
+    /// Opacity; below 1.0 the draw blends (glass).
+    pub alpha: f32,
+}
+
+impl Default for Draw {
+    fn default() -> Self {
+        Draw { first_index: 0, index_count: 0, albedo: [0.75; 3], metallic: 0.0, roughness: 0.5, alpha: 1.0 }
+    }
+}
+
+impl Draw {
+    /// Whether the draw needs the blended, depth-write-free pipeline.
+    pub fn is_blended(&self) -> bool {
+        self.alpha < 1.0
+    }
 }
 
 /// GPU-side mesh buffers for a scene.
@@ -143,7 +260,8 @@ pub fn upload(device: &wgpu::Device, scene: &Scene3d) -> GpuMeshes {
         }
         let index_count = indices.len() as u32 - first_index;
         if index_count > 0 {
-            draws.push(Draw { first_index, index_count, albedo: material_albedo(&mesh.material) });
+            let (albedo, metallic, roughness, alpha) = material_pbr(&mesh.material);
+            draws.push(Draw { first_index, index_count, albedo, metallic, roughness, alpha });
         }
         vertex_offset += n;
     }
@@ -173,95 +291,119 @@ pub fn upload(device: &wgpu::Device, scene: &Scene3d) -> GpuMeshes {
     GpuMeshes { vertex_buffer, index_buffer, vertex_count, index_count, draws }
 }
 
-/// Build the render pipeline and related resources.
-fn create_all(device: &wgpu::Device, sample_count: u32) -> (wgpu::RenderPipeline, wgpu::BindGroupLayout) {
+/// Pipelines and bind group layouts built together.
+struct Built {
+    opaque: wgpu::RenderPipeline,
+    blended: wgpu::RenderPipeline,
+    bgl: wgpu::BindGroupLayout,
+    pbr_bgl: wgpu::BindGroupLayout,
+}
+
+/// Build the render pipelines and related resources.
+fn create_all(device: &wgpu::Device, sample_count: u32) -> Built {
+    let sample_count = valid_sample_count(sample_count);
     let module =
         device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("render3d mesh"), source: wgpu::ShaderSource::Wgsl(SHADER.into()) });
 
+    let uniform_entry = |binding: u32, size: u64| wgpu::BindGroupLayoutEntry {
+        binding,
+        count: None,
+        // One slot per draw in a shared buffer, picked with a dynamic offset.
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: true,
+            min_binding_size: std::num::NonZero::new(size),
+        },
+        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+    };
     let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("render3d bind group layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            count: None,
-            // One slot per draw in a shared buffer, picked with a dynamic offset.
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: true,
-                min_binding_size: std::num::NonZero::new(UNIFORM_SIZE),
-            },
-            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-        }],
+        entries: &[uniform_entry(0, UNIFORM_SIZE)],
+    });
+    let pbr_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("render3d pbr bind group layout"),
+        entries: &[uniform_entry(1, PBR_SIZE)],
     });
 
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("render3d pipeline layout"),
-        bind_group_layouts: &[Some(&bgl)],
+        bind_group_layouts: &[Some(&bgl), Some(&pbr_bgl)],
         immediate_size: 0,
     });
 
-    let vertex =
-        wgpu::VertexState { module: &module, entry_point: Some("vs"), buffers: &[Some(vertex_layout())], compilation_options: Default::default() };
-
-    let depth_stencil = wgpu::DepthStencilState {
-        format: DEPTH_FORMAT,
-        depth_write_enabled: Some(true),
-        depth_compare: Some(wgpu::CompareFunction::Less),
-        stencil: wgpu::StencilState::default(),
-        bias: wgpu::DepthBiasState::default(),
+    let make = |label: &str, depth_write: bool, blend: Option<wgpu::BlendState>| {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs"),
+                buffers: &[Some(vertex_layout())],
+                compilation_options: Default::default(),
+            },
+            // Two-sided: arch3d's caps and slabs are not all wound outward, and the shader flips
+            // the normal of a back face so it is lit from the side the camera sees.
+            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(depth_write),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState { count: sample_count, mask: !0, alpha_to_coverage_enabled: false },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("fs"),
+                targets: &[Some(wgpu::ColorTargetState { format: COLOR_FORMAT, blend, write_mask: wgpu::ColorWrites::ALL })],
+                compilation_options: Default::default(),
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
     };
+    let opaque = make("render3d pipeline", true, None);
+    // Glass: alpha blended, depth tested but not written, drawn after the opaque draws.
+    let blended = make("render3d glass pipeline", false, Some(wgpu::BlendState::ALPHA_BLENDING));
 
-    let multisample = wgpu::MultisampleState { count: sample_count, mask: !0, alpha_to_coverage_enabled: false };
-
-    let fragment = wgpu::FragmentState {
-        module: &module,
-        entry_point: Some("fs"),
-        targets: &[Some(wgpu::ColorTargetState { format: COLOR_FORMAT, blend: None, write_mask: wgpu::ColorWrites::ALL })],
-        compilation_options: Default::default(),
-    };
-
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("render3d pipeline"),
-        layout: Some(&layout),
-        vertex: vertex,
-        // Two-sided: arch3d's caps and slabs are not all wound outward, and the shader flips the
-        // normal of a back face so it is lit from the side the camera sees.
-        primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
-        depth_stencil: Some(depth_stencil),
-        multisample: multisample,
-        fragment: Some(fragment),
-        multiview_mask: None,
-        cache: None,
-    });
-
-    (pipeline, bgl)
+    Built { opaque, blended, bgl, pbr_bgl }
 }
 
-/// Create a lit render pipeline with a 32-bit float depth state.
+/// Create a lit render pipeline with a 32-bit float depth state. `sample_count` is 1 or 4
+/// (anything else is 1).
 pub fn create_pipeline(device: &wgpu::Device, sample_count: u32) -> wgpu::RenderPipeline {
-    let (pipeline, _bgl) = create_all(device, sample_count);
-    pipeline
+    create_all(device, sample_count).opaque
 }
 
-/// All GPU resources for the 3D viewport: pipeline, bind group layout,
-/// uniform buffer and bind group.
+/// All GPU resources for the 3D viewport: pipelines, bind group layouts,
+/// uniform buffers and bind groups.
 pub struct GpuPipeline {
+    /// Opaque pipeline (depth written, no blending).
     pub pipeline: wgpu::RenderPipeline,
+    /// Blended pipeline for draws with `alpha < 1.0` (no depth write).
+    pub glass_pipeline: wgpu::RenderPipeline,
+    /// Layout of group 0 (view/albedo block, binding 0, dynamic offset).
     pub bgl: wgpu::BindGroupLayout,
+    /// Layout of group 1 (PBR block, binding 1, dynamic offset).
+    pub pbr_bgl: wgpu::BindGroupLayout,
     pub uniform: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
+    /// Slot-0 PBR block buffer and its group-1 bind group.
+    pub pbr_uniform: wgpu::Buffer,
+    pub pbr_bind_group: wgpu::BindGroup,
 }
 
 impl GpuPipeline {
-    /// Build the full pipeline with a uniform buffer initialised to a zero uniform.
+    /// Build the full pipeline with uniform buffers initialised to zero / default uniforms.
+    /// `sample_count` is 1 or 4 (anything else is 1).
     pub fn new(device: &wgpu::Device, sample_count: u32) -> Self {
-        let (pipeline, bgl) = create_all(device, sample_count);
+        let Built { opaque, blended, bgl, pbr_bgl } = create_all(device, sample_count);
 
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("render3d uniform buffer"),
             contents: bytemuck::bytes_of(&GpuUniform::new([[0.0; 4]; 4], [0.0; 3], 0.0, [0.0; 3])),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("render3d bind group instance"),
             layout: &bgl,
@@ -275,13 +417,38 @@ impl GpuPipeline {
             }],
         });
 
-        GpuPipeline { pipeline, bgl, uniform, bind_group }
+        let pbr = PbrUniform::new(&crate::light::Light::DEFAULT, 1.0, &Draw::default(), STYLE_SHADED, [0.0; 3]);
+        let pbr_uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("render3d pbr uniform buffer"),
+            contents: bytemuck::bytes_of(&pbr),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let pbr_bind_group = pbr_bind_group(device, &pbr_bgl, &pbr_uniform);
+
+        GpuPipeline { pipeline: opaque, glass_pipeline: blended, bgl, pbr_bgl, uniform, bind_group, pbr_uniform, pbr_bind_group }
     }
 
     /// Upload a new uniform to the GPU (slot 0; bind with dynamic offset 0).
     pub fn write_uniform(&self, queue: &wgpu::Queue, u: &GpuUniform) {
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(u));
     }
+
+    /// Upload a new PBR block (slot 0; bind group 1 with dynamic offset 0).
+    pub fn write_pbr(&self, queue: &wgpu::Queue, u: &PbrUniform) {
+        queue.write_buffer(&self.pbr_uniform, 0, bytemuck::bytes_of(u));
+    }
+}
+
+/// A group-1 bind group over `buffer` (one [`PBR_SIZE`] slot, dynamic offset).
+pub fn pbr_bind_group(device: &wgpu::Device, pbr_bgl: &wgpu::BindGroupLayout, buffer: &wgpu::Buffer) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("render3d pbr bind group"),
+        layout: pbr_bgl,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 1,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding { buffer, offset: 0, size: std::num::NonZero::new(PBR_SIZE) }),
+        }],
+    })
 }
 
 #[cfg(test)]
@@ -332,6 +499,74 @@ mod tests {
     #[test]
     fn gpu_uniform_is_96_bytes() {
         assert_eq!(std::mem::size_of::<GpuUniform>(), 96);
+    }
+
+    #[test]
+    fn material_pbr_gives_glass_alpha_below_one() {
+        let (_, metallic, roughness, alpha) = material_pbr("glass");
+        assert_eq!(alpha, 0.35);
+        assert_eq!(roughness, 0.05);
+        assert_eq!(metallic, 0.0);
+        for name in ["wall", "floor", "ceiling", "roof", "frame", "casing", "leaf", "sill", "header", "stair", "railing", "deck", "ground"] {
+            let (_, m, r, a) = material_pbr(name);
+            assert_eq!((m, a), (0.0, 1.0), "{name}");
+            assert!((0.6..=0.95).contains(&r), "{name} roughness {r}");
+        }
+    }
+
+    #[test]
+    fn material_pbr_falls_back_to_neutral_for_unknown_names() {
+        assert_eq!(material_pbr("unobtainium"), ([0.75, 0.75, 0.75], 0.0, 0.5, 1.0));
+        assert_eq!(material_pbr(""), ([0.75, 0.75, 0.75], 0.0, 0.5, 1.0));
+        let d = Draw::default();
+        assert_eq!((d.metallic, d.roughness, d.alpha), (0.0, 0.5, 1.0));
+    }
+
+    #[test]
+    fn pbr_uniform_block_is_96_bytes() {
+        assert_eq!(std::mem::size_of::<PbrUniform>(), 96);
+        assert_eq!(std::mem::offset_of!(PbrUniform, sun_intensity), 12);
+        assert_eq!(std::mem::offset_of!(PbrUniform, style), 32);
+        assert_eq!(std::mem::offset_of!(PbrUniform, camera_pos), 48);
+        assert_eq!(std::mem::offset_of!(PbrUniform, shadow_min), 60);
+        assert_eq!(std::mem::offset_of!(PbrUniform, shadow_max), 64);
+        assert_eq!(std::mem::offset_of!(PbrUniform, _p2), 80);
+        for field in [
+            "struct PbrUniforms {",
+            "light_dir:     vec3<f32>",
+            "sun_intensity: f32",
+            "metallic:      f32",
+            "roughness:     f32",
+            "alpha:         f32",
+            "style:         u32",
+            "camera_pos:    vec3<f32>",
+            "shadow_min:    f32",
+            "shadow_max:    f32",
+            "@group(1) @binding(1) var<uniform> p: PbrUniforms;",
+        ] {
+            assert!(SHADER.contains(field), "{field}");
+        }
+    }
+
+    #[test]
+    fn msaa_sample_count_is_one_or_four() {
+        assert_eq!(valid_sample_count(1), 1);
+        assert_eq!(valid_sample_count(4), 4);
+        for bad in [0, 2, 8, 16, u32::MAX] {
+            assert_eq!(valid_sample_count(bad), 1);
+        }
+        let Some((device, _queue)) = crate::gputest::shared_device() else { return };
+        let _ = GpuPipeline::new(&device, 4);
+        let _ = GpuPipeline::new(&device, 2);
+    }
+
+    #[test]
+    fn flat_normal_still_drives_shading() {
+        // The face normal comes from the screen-space derivatives, never the vertex normal.
+        let fs = SHADER.split("@fragment").nth(1).unwrap_or("");
+        assert!(fs.contains("cross(dpdy(v.wpos), dpdx(v.wpos))"));
+        assert!(!fs.contains("v.nrm"));
+        assert!(SHADER.contains("arch3d's boxes share 8 corners with averaged normals"));
     }
 
     #[test]

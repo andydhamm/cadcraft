@@ -42,6 +42,24 @@ impl Light {
     }
 }
 
+/// A directional sun: `dir` points from the surface toward the sun, `intensity` scales its
+/// radiance (1.0 = the full-strength default).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sun {
+    /// Direction toward the sun (any length; see [`Light::normalized`]).
+    pub dir: [f32; 3],
+    /// Radiance scale, 1.0 for the default sun.
+    pub intensity: f32,
+}
+
+impl Light {
+    /// A light from a [`Sun`] and an `ambient` level. The sun's intensity is carried by the PBR
+    /// block (`pipeline::PbrUniform::new`), not by [`Light`], which has no intensity.
+    pub fn from_sun(s: &Sun, ambient: f32) -> Light {
+        Light { dir: s.dir, ambient }.normalized()
+    }
+}
+
 impl Default for Light {
     fn default() -> Self {
         Self::DEFAULT
@@ -98,6 +116,13 @@ mod tests {
 
         let ok = Light { dir: [0.0, 0.0, 1.0], ambient: 0.7 };
         assert_eq!(ok.normalized().ambient, 0.7);
+    }
+
+    #[test]
+    fn from_sun_normalises_and_clamps() {
+        let l = Light::from_sun(&Sun { dir: [0.0, 0.0, 5.0], intensity: 2.0 }, 2.0);
+        assert_eq!(l.dir, [0.0, 0.0, 1.0]);
+        assert_eq!(l.ambient, 1.0);
     }
 
     #[test]

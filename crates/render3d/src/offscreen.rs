@@ -15,7 +15,10 @@ use crate::adapter::{AdapterChoice, DeviceInfo, request_device};
 type Info = DeviceInfo;
 use crate::camera::{Camera, view_proj};
 use crate::light::Light;
-use crate::pipeline::{COLOR_FORMAT, DEPTH_FORMAT, GpuMeshes, GpuPipeline, GpuUniform, UNIFORM_SIZE, uniform_stride, upload};
+use crate::pipeline::{
+    COLOR_FORMAT, DEPTH_FORMAT, GpuMeshes, GpuPipeline, GpuUniform, PBR_SIZE, PbrUniform, STYLE_SHADED, UNIFORM_SIZE, pbr_bind_group, uniform_stride,
+    upload,
+};
 use crate::types::Scene3d;
 use image::ImageEncoder;
 
@@ -99,6 +102,8 @@ struct Slots {
     capacity: u64,
     buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
+    pbr_buffer: wgpu::Buffer,
+    pbr_bind_group: wgpu::BindGroup,
 }
 
 /// Offscreen renderer that draws a [`Scene3d`] into its own colour + depth targets.
@@ -221,7 +226,14 @@ impl Offscreen {
                     }),
                 }],
             });
-            self.slots = Some(Slots { capacity, buffer, bind_group });
+            let pbr_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("render3d pbr uniforms"),
+                size: capacity * self.stride,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let pbr_bind_group = pbr_bind_group(&self.device, &self.gpu.pbr_bgl, &pbr_buffer);
+            self.slots = Some(Slots { capacity, buffer, bind_group, pbr_buffer, pbr_bind_group });
         }
         let aspect = f64::from(self.targets.width) / f64::from(self.targets.height);
         let vp = view_proj(camera, aspect);
@@ -233,8 +245,17 @@ impl Offscreen {
                 let at = i * self.stride as usize;
                 bytes[at..at + UNIFORM_SIZE as usize].copy_from_slice(bytemuck::bytes_of(&u));
             }
+            let eye = camera.eye();
+            let eye = [eye.x as f32, eye.y as f32, eye.z as f32];
+            let mut pbr_bytes = vec![0u8; bytes.len()];
+            for (i, d) in meshes.draws.iter().enumerate() {
+                let p = PbrUniform::new(&l, 1.0, d, STYLE_SHADED, eye);
+                let at = i * self.stride as usize;
+                pbr_bytes[at..at + PBR_SIZE as usize].copy_from_slice(bytemuck::bytes_of(&p));
+            }
             if !bytes.is_empty() {
                 self.queue.write_buffer(&slots.buffer, 0, &bytes);
+                self.queue.write_buffer(&slots.pbr_buffer, 0, &pbr_bytes);
             }
         }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -258,12 +279,17 @@ impl Offscreen {
         if meshes.draws.is_empty() {
             return;
         }
-        pass.set_pipeline(&self.gpu.pipeline);
         pass.set_vertex_buffer(0, meshes.vertex_buffer.slice(..));
         pass.set_index_buffer(meshes.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        for (i, d) in meshes.draws.iter().enumerate() {
-            pass.set_bind_group(0, &slots.bind_group, &[(i as u64 * self.stride) as u32]);
-            pass.draw_indexed(d.first_index..d.first_index + d.index_count, 0, 0..1);
+        // Opaque draws first, then the blended ones (glass) over them without writing depth.
+        for blended in [false, true] {
+            pass.set_pipeline(if blended { &self.gpu.glass_pipeline } else { &self.gpu.pipeline });
+            for (i, d) in meshes.draws.iter().enumerate().filter(|(_, d)| d.is_blended() == blended) {
+                let offset = [(i as u64 * self.stride) as u32];
+                pass.set_bind_group(0, &slots.bind_group, &offset);
+                pass.set_bind_group(1, &slots.pbr_bind_group, &offset);
+                pass.draw_indexed(d.first_index..d.first_index + d.index_count, 0, 0..1);
+            }
         }
     }
 

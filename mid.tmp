@@ -1,0 +1,160 @@
+/// Pipelines and bind group layouts built together.
+struct Built {
+    opaque: wgpu::RenderPipeline,
+    blended: wgpu::RenderPipeline,
+    bgl: wgpu::BindGroupLayout,
+    pbr_bgl: wgpu::BindGroupLayout,
+}
+
+/// Build the render pipelines and related resources.
+fn create_all(device: &wgpu::Device, sample_count: u32) -> Built {
+    let sample_count = valid_sample_count(sample_count);
+    let module =
+        device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("render3d mesh"), source: wgpu::ShaderSource::Wgsl(SHADER.into()) });
+
+    let uniform_entry = |binding: u32, size: u64| wgpu::BindGroupLayoutEntry {
+        binding,
+        count: None,
+        // One slot per draw in a shared buffer, picked with a dynamic offset.
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: true,
+            min_binding_size: std::num::NonZero::new(size),
+        },
+        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+    };
+    let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("render3d bind group layout"),
+        entries: &[uniform_entry(0, UNIFORM_SIZE)],
+    });
+    let pbr_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("render3d pbr bind group layout"),
+        entries: &[uniform_entry(1, PBR_SIZE)],
+    });
+
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("render3d pipeline layout"),
+        bind_group_layouts: &[Some(&bgl), Some(&pbr_bgl)],
+        immediate_size: 0,
+    });
+
+    let make = |label: &str, depth_write: bool, blend: Option<wgpu::BlendState>| {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs"),
+                buffers: &[Some(vertex_layout())],
+                compilation_options: Default::default(),
+            },
+            // Two-sided: arch3d's caps and slabs are not all wound outward, and the shader flips
+            // the normal of a back face so it is lit from the side the camera sees.
+            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(depth_write),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState { count: sample_count, mask: !0, alpha_to_coverage_enabled: false },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("fs"),
+                targets: &[Some(wgpu::ColorTargetState { format: COLOR_FORMAT, blend, write_mask: wgpu::ColorWrites::ALL })],
+                compilation_options: Default::default(),
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let opaque = make("render3d pipeline", true, None);
+    // Glass: alpha blended, depth tested but not written, drawn after the opaque draws.
+    let blended = make("render3d glass pipeline", false, Some(wgpu::BlendState::ALPHA_BLENDING));
+
+    Built { opaque, blended, bgl, pbr_bgl }
+}
+
+/// Create a lit render pipeline with a 32-bit float depth state. `sample_count` is 1 or 4
+/// (anything else is 1).
+pub fn create_pipeline(device: &wgpu::Device, sample_count: u32) -> wgpu::RenderPipeline {
+    create_all(device, sample_count).opaque
+}
+
+/// All GPU resources for the 3D viewport: pipelines, bind group layouts,
+/// uniform buffers and bind groups.
+pub struct GpuPipeline {
+    /// Opaque pipeline (depth written, no blending).
+    pub pipeline: wgpu::RenderPipeline,
+    /// Blended pipeline for draws with `alpha < 1.0` (no depth write).
+    pub glass_pipeline: wgpu::RenderPipeline,
+    /// Layout of group 0 (view/albedo block, binding 0, dynamic offset).
+    pub bgl: wgpu::BindGroupLayout,
+    /// Layout of group 1 (PBR block, binding 1, dynamic offset).
+    pub pbr_bgl: wgpu::BindGroupLayout,
+    pub uniform: wgpu::Buffer,
+    pub bind_group: wgpu::BindGroup,
+    /// Slot-0 PBR block buffer and its group-1 bind group.
+    pub pbr_uniform: wgpu::Buffer,
+    pub pbr_bind_group: wgpu::BindGroup,
+}
+
+impl GpuPipeline {
+    /// Build the full pipeline with uniform buffers initialised to zero / default uniforms.
+    /// `sample_count` is 1 or 4 (anything else is 1).
+    pub fn new(device: &wgpu::Device, sample_count: u32) -> Self {
+        let Built { opaque, blended, bgl, pbr_bgl } = create_all(device, sample_count);
+
+        let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("render3d uniform buffer"),
+            contents: bytemuck::bytes_of(&GpuUniform::new([[0.0; 4]; 4], [0.0; 3], 0.0, [0.0; 3])),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("render3d bind group instance"),
+            layout: &bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &uniform,
+                    offset: 0,
+                    size: std::num::NonZero::new(UNIFORM_SIZE),
+                }),
+            }],
+        });
+
+        let pbr = PbrUniform::new(&crate::light::Light::DEFAULT, 1.0, &Draw::default(), STYLE_SHADED, [0.0; 3]);
+        let pbr_uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("render3d pbr uniform buffer"),
+            contents: bytemuck::bytes_of(&pbr),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let pbr_bind_group = pbr_bind_group(device, &pbr_bgl, &pbr_uniform);
+
+        GpuPipeline { pipeline: opaque, glass_pipeline: blended, bgl, pbr_bgl, uniform, bind_group, pbr_uniform, pbr_bind_group }
+    }
+
+    /// Upload a new uniform to the GPU (slot 0; bind with dynamic offset 0).
+    pub fn write_uniform(&self, queue: &wgpu::Queue, u: &GpuUniform) {
+        queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(u));
+    }
+
+    /// Upload a new PBR block (slot 0; bind group 1 with dynamic offset 0).
+    pub fn write_pbr(&self, queue: &wgpu::Queue, u: &PbrUniform) {
+        queue.write_buffer(&self.pbr_uniform, 0, bytemuck::bytes_of(u));
+    }
+}
+
+/// A group-1 bind group over `buffer` (one [`PBR_SIZE`] slot, dynamic offset).
+pub fn pbr_bind_group(device: &wgpu::Device, pbr_bgl: &wgpu::BindGroupLayout, buffer: &wgpu::Buffer) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("render3d pbr bind group"),
+        layout: pbr_bgl,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 1,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding { buffer, offset: 0, size: std::num::NonZero::new(PBR_SIZE) }),
+        }],
+    })
+}
+
