@@ -786,7 +786,12 @@ mod offscreen_behavior_tests {
         // Glass-house should have more distinct colors due to blending
         let shaded_colors: std::collections::HashSet<[u8; 4]> = shaded.chunks_exact(4).map(|p| [p[0], p[1], p[2], p[3]]).collect();
         let glass_colors: std::collections::HashSet<[u8; 4]> = glass.chunks_exact(4).map(|p| [p[0], p[1], p[2], p[3]]).collect();
-        assert!(glass_colors.len() > shaded_colors.len(), "glass-house should have more distinct colors: {} vs {}", glass_colors.len(), shaded_colors.len());
+        assert!(
+            glass_colors.len() > shaded_colors.len(),
+            "glass-house should have more distinct colors: {} vs {}",
+            glass_colors.len(),
+            shaded_colors.len()
+        );
     }
 
     #[test]
@@ -801,21 +806,17 @@ mod offscreen_behavior_tests {
         // Two parallel walls: exterior at x=0, interior at x=1
         let mut ext = crate::types::Mesh::new("wall", crate::types::ArchId(1));
         ext.positions.extend_from_slice(&[-0.1, 0.0, 0.0, 0.1, 0.0, 0.0, 0.1, 2.0, 0.0, -0.1, 2.0, 0.0]);
-        ext.normals.extend_from_slice(&[0.0, 0.0, 1.0; 4]);
+        ext.normals.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
         ext.uvs.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 1.0, 2.0, 0.0, 2.0]);
         ext.indices = vec![0, 1, 2, 0, 2, 3];
 
         let mut int = crate::types::Mesh::new("wall", crate::types::ArchId(2));
         int.positions.extend_from_slice(&[0.9, 0.0, 0.0, 1.1, 0.0, 0.0, 1.1, 2.0, 0.0, 0.9, 2.0, 0.0]);
-        int.normals.extend_from_slice(&[0.0, 0.0, 1.0; 4]);
+        int.normals.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
         int.uvs.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 1.0, 2.0, 0.0, 2.0]);
         int.indices = vec![0, 1, 2, 0, 2, 3];
 
-        let scene = Scene3d {
-            meshes: vec![ext, int],
-            bounds: crate::types::Bounds3::new([-0.1, 0.0, 0.0], [1.1, 2.0, 0.0]),
-            ..Default::default()
-        };
+        let scene = Scene3d { meshes: vec![ext, int], bounds: crate::types::Bounds3::new([-0.1, 0.0, 0.0], [1.1, 2.0, 0.0]), ..Default::default() };
         let camera = Camera::Orbit(crate::camera::Orbit::at_origin(5.0, 1.0, 3.0, 0.0));
 
         // Render with both walls
@@ -858,7 +859,7 @@ mod offscreen_behavior_tests {
 
         let mut mesh = crate::types::Mesh::new("wall", crate::types::ArchId(1));
         mesh.positions.extend_from_slice(&[f32::NAN, 0.0, 0.0, 1.0, f32::INFINITY, 0.0, 0.0, 0.0, f32::NEG_INFINITY]);
-        mesh.normals.extend_from_slice(&[0.0, 0.0, 1.0; 3]);
+        mesh.normals.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
         mesh.uvs.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
         mesh.indices = vec![0, 1, 2];
 
