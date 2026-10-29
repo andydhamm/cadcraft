@@ -253,7 +253,7 @@ pub fn extrude_wall_profile(shape: &WallShape, profile: WallProfile, base: f64, 
         && (profile.outer[2].y - profile.outer[3].y).abs() < 1e-9;
 
     if is_rect && profile.holes.is_empty() {
-        let height = profile.outer[2].y;
+        let height = profile.outer[1].y;
         let mut mesh = Mesh::new(material, shape.id);
         mesh.level_elevation = base;
         mesh.push_prism(&shape.polygon, base, base + height);
