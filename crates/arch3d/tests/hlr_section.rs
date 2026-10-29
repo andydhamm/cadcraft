@@ -9,7 +9,7 @@ use cadcraft_arch3d::edges::{CREASE_DEG, EdgeKind, feature_edges};
 use cadcraft_arch3d::hlr::{Line2, OrthoView, merge_collinear, visible_lines};
 use cadcraft_arch3d::section::{Plane, section_cut, section_view};
 use cadcraft_arch3d::{Mesh, Scene3d, build};
-use cadcraft_doc::arch::{Opening, OpeningKind};
+use cadcraft_doc::arch::{ArchKind, Level, Opening, OpeningKind, Room};
 use cadcraft_doc::{ArchId, ArchModel, Wall};
 use cadcraft_geom::Vec2;
 
@@ -184,7 +184,7 @@ fn hostile_meshes_and_views_never_panic() {
 
 #[test]
 fn merge_collinear_joins_one_objects_overlapping_runs_and_keeps_the_rest() {
-    let l = |a: [f64; 2], b: [f64; 2], id| Line2::new(a, b, ArchId(id));
+    let l = |a: [f64; 2], b: [f64; 2], id| Line2::new(a, b, ArchKind::Wall, ArchId(id));
     let m = merge_collinear(vec![
         l([0.0, 0.0], [1.0, 0.0], 1),
         l([2.0, 0.0], [0.5, 0.0], 1),
@@ -202,6 +202,42 @@ fn merge_collinear_joins_one_objects_overlapping_runs_and_keeps_the_rest() {
     for (x, y) in again.iter().zip(&m) {
         assert!(x.object == y.object && (0..2).all(|i| (x.a[i] - y.a[i]).abs() < 1e-9 && (x.b[i] - y.b[i]).abs() < 1e-9), "{x:?} {y:?}");
     }
+}
+
+#[test]
+fn merge_collinear_never_joins_a_wall_line_with_an_opening_line_of_the_same_number() {
+    let wall = Line2::new([0.0, 0.0], [2.0, 0.0], ArchKind::Wall, ArchId(0));
+    let opening = Line2::new([1.0, 0.0], [3.0, 0.0], ArchKind::Opening, ArchId(0));
+    let m = merge_collinear(vec![wall, opening]);
+    assert_eq!(m.len(), 2, "{m:?}");
+    assert!(m.iter().any(|l| l.kind == ArchKind::Wall && covers(&[*l], [0.0, 0.0], [2.0, 0.0])));
+    assert!(m.iter().any(|l| l.kind == ArchKind::Opening && covers(&[*l], [1.0, 0.0], [3.0, 0.0])));
+}
+
+#[test]
+fn elevation_lines_carry_the_kind_of_their_object() {
+    let (mut m, [s, ..]) = house();
+    m.push_opening(Opening::new(s, 3.0, 0.9, 2.1, OpeningKind::Door));
+    let v = visible_lines(&build(&m), &front());
+    assert!(v.iter().any(|l| l.kind == ArchKind::Opening && l.object == ArchId(0)), "{v:?}");
+    assert!(v.iter().any(|l| l.kind == ArchKind::Wall && l.object == ArchId(0)), "{v:?}");
+}
+
+#[test]
+fn section_rings_carry_the_kind_of_their_object() {
+    let (mut m, _) = house();
+    m.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+    m.rooms.push(Room {
+        id: ArchId(0),
+        level: 0,
+        polygon: vec![Vec2::new(0.1, 0.1), Vec2::new(9.9, 0.1), Vec2::new(9.9, 7.9), Vec2::new(0.1, 7.9)],
+        ..Default::default()
+    });
+    let cut = section_cut(&build(&m), &y4(), &front());
+    let walls = cut.rings.iter().filter(|r| r.kind == ArchKind::Wall).count();
+    let rooms = cut.rings.iter().filter(|r| r.kind == ArchKind::Room).count();
+    assert_eq!(walls, 2, "{:?}", cut.rings);
+    assert!(rooms >= 1, "{:?}", cut.rings);
 }
 
 #[test]
