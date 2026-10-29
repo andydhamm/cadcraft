@@ -1065,6 +1065,25 @@ mod tests {
     }
 
     #[test]
+    fn arch_record_version_is_five() {
+        // Verify that a v5 record parses correctly and cameras are cleared (as they were introduced in v6)
+        let mut m = one_wall_model();
+        // Add a camera to ensure it gets cleared if present in a v5 payload
+        use cadcraft_doc::arch::Camera3d;
+        m.cameras.push(Camera3d { name: "Test".into(), ..Default::default() });
+
+        let json = serde_json::json!({ "version": 5, "model": m }).to_string();
+        let text = crate::dxf_ext::json_chunks(&json).join("");
+        let parsed = parse_arch(&text);
+
+        assert!(parsed.is_some(), "a version-5 payload must still parse");
+        let model = parsed.unwrap();
+        assert_eq!(model.walls.len(), 1, "version-5 payload lost its wall");
+        assert!(model.cameras.is_empty(), "v5 payload should have no cameras");
+        assert!(model.active_camera.is_none(), "v5 payload should have no active camera");
+    }
+
+    #[test]
     fn arch_record_version_is_six() {
         let chunks = arch_chunks(&one_wall_model()).unwrap();
         let obj: serde_json::Value = serde_json::from_str(&chunks.join("")).unwrap();
