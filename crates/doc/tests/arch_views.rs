@@ -96,13 +96,10 @@ fn invalid_views_are_refused_and_dropped_on_read() {
     );
 
     let back: ArchModel = serde_json::from_str(&json).unwrap();
-    // The invalid view should be dropped by validate() during deserialization?
-    // Actually, validate() is called on the model, which drops invalid views.
-    // But serde_json::from_str doesn't call validate().
-    // The prompt says "Read-time validation (validate ~1337 and the path cameras use on deserialize) drops invalid views".
-    // In this codebase, `Drawing::open` or similar likely calls `validate`.
-    // However, for the test, we can just check that `validate` removes them.
+    assert_eq!(back.views.len(), 1);
+    assert_eq!(back.views[0].name, "Good");
 
+    // Programmatically inserted invalid views are also dropped by validate().
     let mut m2 = ArchModel::default();
     m2.views.push(ArchView { name: "".into(), look: [0.0, 1.0], ..ArchView::default() });
     m2.views.push(ArchView { name: "Good".into(), look: [0.0, 1.0], ..ArchView::default() });
