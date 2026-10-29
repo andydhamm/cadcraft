@@ -2790,26 +2790,26 @@ mod tests {
         let c = Camera3d {
             name: "front".into(),
             kind: CameraKind::Orbit,
-            target: [1.0, 2.0, 3.0],
-            azimuth_deg: 45.0,
-            elevation_deg: 30.0,
-            distance: 20.0,
-            eye: [5.0, -15.0],
-            eye_height: 1.7,
-            fov_deg: 50.0,
+            target: Some([1.0, 2.0, 3.0]),
+            azimuth_deg: Some(45.0),
+            elevation_deg: Some(30.0),
+            distance: Some(20.0),
+            eye: Some([5.0, -15.0]),
+            eye_height: Some(1.7),
+            fov_deg: Some(50.0),
         };
         let json = serde_json::to_string(&c).unwrap();
         let back: Camera3d = serde_json::from_str(&json).unwrap();
         assert_eq!(back, c);
         assert_eq!(back.name, "front");
         assert_eq!(back.kind, CameraKind::Orbit);
-        assert_eq!(back.target, [1.0, 2.0, 3.0]);
-        assert_eq!(back.azimuth_deg, 45.0);
-        assert_eq!(back.elevation_deg, 30.0);
-        assert_eq!(back.distance, 20.0);
-        assert_eq!(back.eye, [5.0, -15.0]);
-        assert_eq!(back.eye_height, 1.7);
-        assert_eq!(back.fov_deg, 50.0);
+        assert_eq!(back.target, Some([1.0, 2.0, 3.0]));
+        assert_eq!(back.azimuth_deg, Some(45.0));
+        assert_eq!(back.elevation_deg, Some(30.0));
+        assert_eq!(back.distance, Some(20.0));
+        assert_eq!(back.eye, Some([5.0, -15.0]));
+        assert_eq!(back.eye_height, Some(1.7));
+        assert_eq!(back.fov_deg, Some(50.0));
     }
 
     #[test]
