@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-29 04:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 05:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 5 of 13: Stairs, railings and decks — 24 of 24 segments merged · 9 of 9 acceptance checks**
 
@@ -15,7 +15,7 @@ Updated 2026-10-29 04:45 UTC. This page and the card in the README are regenerat
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
-| 5 | Stairs, railings and decks | building | 9 / 9 | 15.8 h so far · expected done Oct 29 06:54–Oct 29 11:30 UTC |
+| 5 | Stairs, railings and decks | building | 9 / 9 | 16.0 h so far · expected done Oct 29 07:09–Oct 29 11:45 UTC |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
@@ -62,5 +62,5 @@ Updated 2026-10-29 04:45 UTC. This page and the card in the README are regenerat
 | mai-flash | mai-code-1.1-flash | idle | 6 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
-| tturbo-mac | tturbo-ultraheretic | agent | 390 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 246 |
+| tturbo-mac | tturbo-ultraheretic | agent | 391 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 247 |
