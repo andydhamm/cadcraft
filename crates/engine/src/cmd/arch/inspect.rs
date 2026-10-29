@@ -962,6 +962,42 @@ mod tests {
 
     /// A room with holes reports those holes as array-of-rings, not a count.
     #[test]
+    fn inspect_room_label_with_holes() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "Hall".into(),
+                    room_type: RoomType::Living,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(6.0, 0.0), Vec2::new(6.0, 4.0), Vec2::new(0.0, 4.0)],
+                    holes: vec![vec![Vec2::new(2.0, 1.0), Vec2::new(4.0, 1.0), Vec2::new(4.0, 3.0), Vec2::new(2.0, 3.0)]],
+                    ceiling_height: Some(2.4),
+                    interior_area: 16.0,
+                    standard_area: 16.48,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        assert_eq!(rooms.len(), 1, "expected one room");
+        let r = &rooms[0];
+        let holes = r["holes"].as_array().expect("holes should be an array of rings");
+        assert_eq!(holes.len(), 1, "expected one hole ring");
+        let label = r["label"].as_array().expect("label must be an array");
+        assert_eq!(label.len(), 2, "label must be [x, y]");
+        let x = label[0].as_f64().expect("label x must be a number");
+        let y = label[1].as_f64().expect("label y must be a number");
+        assert!(x.is_finite() && y.is_finite(), "label must be finite: ({x}, {y})");
+        assert!(x >= 0.0 && x <= 6.0, "label x {x} outside outer ring");
+        assert!(y >= 0.0 && y <= 4.0, "label y {y} outside outer ring");
+    }
+
+    /// A room with holes reports those holes as array-of-rings, not a count.
+    #[test]
     fn inspect_room_holes_are_rings() {
         let mut s = Session::new();
         match s.doc_mut() {
