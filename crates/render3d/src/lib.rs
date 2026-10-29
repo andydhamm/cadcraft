@@ -13,6 +13,7 @@ pub mod camera;
 pub mod light;
 pub mod offscreen;
 pub mod pipeline;
+pub mod shadow;
 pub mod types;
 
 #[cfg(test)]
@@ -30,7 +31,7 @@ mod tests {
 
 pub use camera::{Camera, Orbit, projected_bounds, projected_scene_bounds};
 pub use light::Light;
-pub use offscreen::{Offscreen, headless_png, render_png};
+pub use offscreen::{Offscreen, RenderOptions, Style, headless_png, render_png, render_png_with};
 pub use pipeline::{Draw, GpuMeshes, material_albedo, upload};
 pub use types::{ArchId, Bounds3, Mesh, Scene3d};
 
