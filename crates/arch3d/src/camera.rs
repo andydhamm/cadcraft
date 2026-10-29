@@ -5,8 +5,8 @@
 //! `projected_scene_bounds`, `view_proj`, `project_point` and `ray_at` are the public
 //! entry points used by the engine, the CLI and the 3D pane.
 
-use crate::mesh::Bounds3;
 use crate::Scene3d;
+use crate::mesh::Bounds3;
 use cadcraft_geom::{Mat4, Vec3};
 
 /// Upper bound for the orbit distance (keeps floats sane and the projection bounded).
@@ -369,11 +369,7 @@ pub fn ray_at(camera: &Camera, size: (u32, u32), pixel: [f32; 2]) -> Option<(Vec
         return None;
     }
     let dir = dir_world.normalized();
-    if dir.is_finite() {
-        Some((camera.eye(), dir))
-    } else {
-        None
-    }
+    if dir.is_finite() { Some((camera.eye(), dir)) } else { None }
 }
 
 /// Multiply a `Mat4` by a 3D point (implicitly homogenized to w=1).
