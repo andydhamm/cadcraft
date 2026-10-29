@@ -97,8 +97,12 @@ pub fn generate(scene: &Scene3d, view: &ArchView, revision: u64) -> ViewGeometry
             let Some(sv) = section_view(&sc, &plane, [0.0, 0.0, 1.0]) else { return failed(revision, "the section view is not usable") };
             let mut lines = sv.cut.lines;
             lines.extend(sv.beyond);
-            let rings =
-                sv.cut.rings.into_iter().map(|r| ViewRing { kind: r.kind, object: r.object, material: r.material, points: r.points }).collect();
+            let rings = sv
+                .cut
+                .rings
+                .into_iter()
+                .map(|r| ViewRing { kind: r.kind, object: r.object, material: r.material, points: r.points, ..Default::default() })
+                .collect();
             (lines, rings)
         }
     };
@@ -108,7 +112,8 @@ pub fn generate(scene: &Scene3d, view: &ArchView, revision: u64) -> ViewGeometry
         return failed(revision, format!("the view has more than {MAX_VIEW_LINES} lines"));
     }
 
-    let mut lines: Vec<ViewLine> = lines.into_iter().map(|l| ViewLine { a: l.a, b: l.b, kind: l.kind, object: l.object }).collect();
+    let mut lines: Vec<ViewLine> =
+        lines.into_iter().map(|l| ViewLine { a: l.a, b: l.b, kind: l.kind, object: l.object, ..Default::default() }).collect();
     lines.sort_by(|x, y| x.kind.cmp(&y.kind).then(x.object.cmp(&y.object)).then_with(|| cmp_pt(x.a, y.a)).then_with(|| cmp_pt(x.b, y.b)));
     let mut rings = rings;
     rings.sort_by(|x, y| x.kind.cmp(&y.kind).then(x.object.cmp(&y.object)).then_with(|| cmp_pts(&x.points, &y.points)));
@@ -138,6 +143,7 @@ pub fn generate(scene: &Scene3d, view: &ArchView, revision: u64) -> ViewGeometry
             at: [(u0 + u1) / 2.0, v0 - DIM_OFFSET],
             value: u1 - u0,
             text: mm(u1 - u0),
+            ..Default::default()
         });
         dims.push(ViewDim {
             kind: DimKind::Height,
@@ -146,10 +152,11 @@ pub fn generate(scene: &Scene3d, view: &ArchView, revision: u64) -> ViewGeometry
             at: [u0 - DIM_OFFSET, (v0 + v1) / 2.0],
             value: v1 - v0,
             text: mm(v1 - v0),
+            ..Default::default()
         });
     }
 
-    ViewGeometry { revision, extent: ext.unwrap_or_default(), lines, rings, dims, error: None }
+    ViewGeometry { revision, extent: ext.unwrap_or_default(), lines, rings, dims, ..Default::default() }
 }
 
 /// Regenerate every view of `model` whose geometry is missing or not for `revision`; returns how many. The scene is
