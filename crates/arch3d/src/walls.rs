@@ -434,12 +434,12 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
         }
     }
 
-    // Sample both wall faces. The roof may cover either side of a gable wall, but
-    // the overhang band itself must not be treated as roof cover.
+    // Sample both wall faces and keep the lowest covering roof underside. At an
+    // eave, the outer face remains at eave height, preventing the higher roof
+    // over the inner face from stretching the wall into the roof.
     let mut points: Vec<Vec2> = Vec::new();
-    let top_v = top - base;
     for &u in &unique_us {
-        let mut z_best = f64::NEG_INFINITY;
+        let mut z_best = f64::INFINITY;
         let mut covered = false;
         for side in [-1.0, 1.0] {
             let p = wall.start + dir * u + out * (wall.thickness / 2.0) * side;
@@ -503,26 +503,17 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
                         });
                     }
                     if is_covered {
-                        let dist = line_dist_to_base_edge(plane, p);
-                        let overhang = if plane.overhang.is_finite() && plane.overhang >= 0.0 { plane.overhang } else { 0.0 };
                         let z_plane = underside_z(plane, plane.eave_z, p);
-                        // The roof overhang band itself is not roof cover: the eave is `overhang`
-                        // inside from the roof ring. Ignore only that band, not the wall thickness.
-                        let wall_band = overhang;
-                        if !dist.is_finite() || dist <= wall_band + 1e-9 {
-                            continue;
+                        if z_plane.is_finite() {
+                            z_best = z_best.min(z_plane);
+                            covered = true;
                         }
-                        if !z_plane.is_finite() || z_plane <= plane.eave_z + 1e-9 {
-                            continue;
-                        }
-                        z_best = z_best.max(z_plane);
-                        covered = true;
                     }
                 }
             }
         }
         let v = z_best - base;
-        if covered && v.is_finite() && v > top_v + 1e-9 {
+        if covered && v.is_finite() {
             points.push(Vec2::new(u, v));
         }
     }
@@ -681,26 +672,6 @@ pub(crate) fn profile_prism(outer: &[Vec2], holes: &[Vec<Vec2>], wall: &Wall, ba
 /// with more than four profile points.
 pub fn extrude_profile_slab(shape: &WallShape, profile: &WallProfile, base: f64, wall: &Wall, material: &str) -> Option<Mesh> {
     profile_prism(&profile.outer, &profile.holes, wall, base, material, shape.id)
-}
-
-fn line_dist_to_base_edge(plane: &cadcraft_doc::arch::RoofPlane, p: Vec2) -> f64 {
-    let a = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
-    let b = Vec2::new(plane.base_edge[2], plane.base_edge[3]);
-    let ab = b - a;
-    let len_sq = ab.x * ab.x + ab.y * ab.y;
-    if len_sq < 1e-12 || !len_sq.is_finite() {
-        return 0.0;
-    }
-    let len = len_sq.sqrt();
-    let dir = Vec2::new(ab.x / len, ab.y / len);
-    let left = Vec2::new(-dir.y, dir.x);
-    let right = Vec2::new(dir.y, -dir.x);
-    let centroid = plane.ring.iter().filter(|q| q.is_finite()).copied().reduce(|acc, q| acc + q).unwrap_or(Vec2::ZERO);
-    let count = plane.ring.iter().filter(|q| q.is_finite()).count();
-    let centroid = if count > 0 { centroid / count as f64 } else { a };
-    let normal_xy = if (centroid - a).dot(left) >= 0.0 { left } else { right };
-    let v = p - a;
-    v.x * normal_xy.x + v.y * normal_xy.y
 }
 
 fn point_to_line_dist(p: Vec2, a: Vec2, b: Vec2) -> f64 {

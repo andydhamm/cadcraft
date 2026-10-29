@@ -65,7 +65,7 @@ pub fn roof_plane_mesh(plane: &RoofPlane, eave_z: f64, material: &str, id: ArchI
     let dx = p1.x - p0.x;
     let dy = p1.y - p0.y;
     let len_sq = dx * dx + dy * dy;
-    if len_sq < 1e-12 {
+    if !len_sq.is_finite() || len_sq < 1e-12 {
         return None;
     }
     let len = len_sq.sqrt();
@@ -210,7 +210,7 @@ pub fn fascia_mesh(plane: &RoofPlane, eave_z: f64, depth: f64, id: ArchId) -> Op
     let dx = p1.x - p0.x;
     let dy = p1.y - p0.y;
     let len_sq = dx * dx + dy * dy;
-    if len_sq < 1e-12 {
+    if !len_sq.is_finite() || len_sq < 1e-12 {
         return None;
     }
     let len = len_sq.sqrt();
@@ -335,7 +335,7 @@ pub fn soffit_mesh(plane: &RoofPlane, eave_z: f64, depth: f64, id: ArchId) -> Op
     let dx = p1.x - p0.x;
     let dy = p1.y - p0.y;
     let len_sq = dx * dx + dy * dy;
-    if len_sq < 1e-12 {
+    if !len_sq.is_finite() || len_sq < 1e-12 {
         return None;
     }
     let len = len_sq.sqrt();
@@ -1227,21 +1227,22 @@ mod tests {
         roof.id = ArchId(1);
         let mut plane = simple_plane();
         plane.eave_z = 2.4;
+        plane.overhang = 0.5;
         plane.fascia_depth = 0.12;
         plane.soffit_depth = 0.2;
         roof.planes.push(plane);
 
         let meshes = roof_meshes(&roof, 0.0);
 
-        // Fascia top should be at eave_z = 2.4
+        // At the overhang outline the underside is eave_z - slope * overhang.
+        let outline_z = 2.4 - 0.5 * 0.5;
         let fascia = meshes.iter().find(|m| m.material == "fascia").expect("fascia mesh");
         let fb = fascia.bounds();
-        assert!((fb.max[2] - 2.4).abs() < 0.01, "fascia top should be at 2.4, got {}", fb.max[2]);
+        assert!((fb.max[2] - outline_z).abs() < 0.01, "fascia top should be at {outline_z}, got {}", fb.max[2]);
 
-        // Soffit top should be at eave_z - thickness = 2.4 - 0.2 = 2.2
         let soffit = meshes.iter().find(|m| m.material == "soffit").expect("soffit mesh");
         let sb = soffit.bounds();
-        assert!((sb.max[2] - 2.2).abs() < 0.01, "soffit top should be at 2.2, got {}", sb.max[2]);
+        assert!((sb.max[2] - outline_z).abs() < 0.01, "soffit top should be at {outline_z}, got {}", sb.max[2]);
     }
 
     #[test]

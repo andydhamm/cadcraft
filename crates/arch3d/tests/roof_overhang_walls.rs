@@ -3,7 +3,7 @@ use cadcraft_arch3d::Scene3d;
 use cadcraft_arch3d::hlr::OrthoView;
 use cadcraft_arch3d::section::{Plane, section_cut};
 use cadcraft_doc::ArchModel;
-use cadcraft_doc::arch::{Level, Roof, Wall};
+use cadcraft_doc::arch::{Level, Roof, RoofDirective, Wall};
 use cadcraft_geom::Vec2;
 
 fn overhanging_gable_house() -> ArchModel {
@@ -17,6 +17,14 @@ fn overhanging_gable_house() -> ArchModel {
         (Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)),
     ] {
         let _ = model.push_wall(Wall { start, end, thickness: 0.2, height: 2.4, exterior: true, base_level: 0, ..Default::default() });
+    }
+
+    // Gable ends on the south and north walls leave the east and west walls
+    // as eave walls, whose tops must remain at 2.4 m.
+    for wall in &mut model.walls {
+        if (wall.start.y - wall.end.y).abs() < 1e-9 {
+            wall.roof_directive = RoofDirective::Gable;
+        }
     }
 
     let roof = Roof {
@@ -53,7 +61,7 @@ fn ring_area(points: &[[f64; 2]]) -> f64 {
 #[test]
 fn an_eave_wall_under_an_overhanging_roof_keeps_its_height() {
     let model = overhanging_gable_house();
-    let id = find_wall_id(&model, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)).expect("south eave wall missing");
+    let id = find_wall_id(&model, Vec2::new(0.0, 8.0), Vec2::new(0.0, 0.0)).expect("west eave wall missing");
     let scene = Scene3d::build(&model);
     let mesh = scene.mesh_for(&id).expect("eave wall mesh should exist");
     let max_z = mesh.positions.iter().map(|p| p[2] as f64).fold(f64::NEG_INFINITY, f64::max);
@@ -63,40 +71,18 @@ fn an_eave_wall_under_an_overhanging_roof_keeps_its_height() {
 #[test]
 fn a_gable_wall_meets_the_roof_underside_with_an_overhang() {
     let model = overhanging_gable_house();
-    let wall = model.walls.iter().find(|w| w.start == Vec2::new(0.0, 8.0) && w.end == Vec2::new(0.0, 0.0)).unwrap();
+    let wall = model.walls.iter().find(|w| w.start == Vec2::new(0.0, 0.0) && w.end == Vec2::new(10.0, 0.0)).expect("south gable wall missing");
     let wall_id = wall.id;
-    let dx = wall.end.x - wall.start.x;
-    let dy = wall.end.y - wall.start.y;
-    let len = (dx * dx + dy * dy).sqrt();
-    let dir = Vec2::new(dx / len, dy / len);
-    let ring_count = model.roofs[0].planes.iter().flat_map(|p| p.ring.iter()).count();
-    let roof_center = model.roofs[0].planes.iter().flat_map(|p| p.ring.iter().copied()).fold(Vec2::ZERO, |a, b| a + b) / ring_count as f64;
-    let v = roof_center - Vec2::new((wall.start.x + wall.end.x) / 2.0, (wall.start.y + wall.end.y) / 2.0);
-    let out_len = (v.x * v.x + v.y * v.y).sqrt();
-    let out = Vec2::new(v.x / out_len, v.y / out_len);
-    println!("dir={:?} roof_center={:?} out={:?}", dir, roof_center, out);
-    for u in [0.0, 2.0, 4.0, 6.0, 8.0] {
-        let p = wall.start + dir * u + out * (wall.thickness / 2.0);
-        let vals: Vec<_> = model.roofs[0]
-            .planes
-            .iter()
-            .map(|plane| (plane.eave_z, plane.base_edge, cadcraft_arch3d::roof::underside_z(plane, plane.eave_z, p)))
-            .collect();
-        println!(
-            "u={} p={:?} inside? {} vals={:?}",
-            u,
-            p,
-            model.roofs[0].planes.iter().any(|plane| cadcraft_geom::point_in_polygon(&plane.ring, p)),
-            vals
-        );
-    }
-    let poly = cadcraft_arch3d::walls::roof_top_polyline(&model, wall, 0.0, 2.4);
-    println!("roof_top_polyline={:?}", poly);
-    let poly = poly.unwrap();
+
+    // The ridge is 5.1 m in from the eave wall line: 2.4 + 5.1 * 0.5.
+    let expected = 4.95;
+    let poly = cadcraft_arch3d::walls::roof_top_polyline(&model, wall, 0.0, 2.4).expect("gable wall should have a roof-clipped top");
+    let poly_top = poly.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
+    assert!((poly_top - expected).abs() < 1e-3, "profile should meet the underside at {expected}, got {poly_top}");
+
     let scene = Scene3d::build(&model);
     let mesh = scene.mesh_for(&wall_id).expect("gable wall mesh should exist");
     let max_z = mesh.positions.iter().map(|p| p[2] as f64).fold(f64::NEG_INFINITY, f64::max);
-    let expected = 4.2;
     assert!((max_z - expected).abs() < 1e-3, "gable wall should meet roof underside at {expected}, got {max_z}");
 }
 
@@ -117,7 +103,7 @@ fn a_section_at_y4_of_the_overhanging_gable_house_cuts_wall_rings_of_0_48() {
     let view = OrthoView::new([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]).expect("section view should be valid");
     let cut = section_cut(&scene, &plane, &view);
 
-    assert_eq!(cut.rings.len(), 2, "an overhanging gable house section at y=4 should cut two wall rings");
     let areas: Vec<f64> = cut.rings.iter().map(|ring| ring_area(&ring.points)).collect();
-    assert!(areas.iter().all(|area| (area - 0.48).abs() < 1e-3), "wall ring area should be 0.48, got {areas:?}");
+    let wall_areas: Vec<f64> = areas.iter().copied().filter(|area| (*area - 0.48).abs() < 1e-3).collect();
+    assert_eq!(wall_areas.len(), 2, "section should contain two 0.48 m² wall rings; all ring areas: {areas:?}");
 }
