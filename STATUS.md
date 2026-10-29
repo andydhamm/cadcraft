@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-29 20:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 21:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 7 of 13: Generated elevations and sections — 3 of 12 segments merged · 1 of 9 acceptance checks**
+**Phase 7 of 13: Generated elevations and sections — 4 of 12 segments merged · 1 of 9 acceptance checks**
 
-5,001 workspace tests passing at the last merge · 470 segments merged in all · 0 of 11 seats working
+5,001 workspace tests passing at the last merge · 471 segments merged in all · 0 of 11 seats working
 
 ## Phases
 
@@ -17,7 +17,7 @@ Updated 2026-10-29 20:45 UTC. This page and the card in the README are regenerat
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
-| 7 | Generated elevations and sections | building | 1 / 9 | 3.6 h so far · expected done Oct 30 09:01–Oct 31 11:51 UTC |
+| 7 | Generated elevations and sections | building | 1 / 9 | 3.8 h so far · expected done Oct 30 09:15–Oct 31 12:52 UTC |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
@@ -27,12 +27,15 @@ Updated 2026-10-29 20:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 7 segments
 
-7 queued, 3 merged, 1 gate, 1 working
+4 merged, 3 queued, 2 working, 2 gate, 1 escalate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p7-roof-eave-at-the-wall` | Roof underside meets the eave wall top with an overhang (walls no longer stretched into the roof) | gate | mai-flash |
-| `p7-doc-views` | Linked view objects (ELEVATION / SECTION) and ArchKind in the arch model | working | kimi-k31 |
+| `p7-roof-eave-at-the-wall` | Roof underside meets the eave wall top with an overhang (walls no longer stretched into the roof) | escalate |  |
+| `p7-hlr-kinds` | HLR lines and section rings carry their object's kind | working | claude-sonnet-a |
+| `p7-render-views` | Draw linked views in the plan: linework, filled poche, overall dimensions; template layers | gate | claude-sonnet-b |
+| `p7-io-views` | DXF round trip for views (CADCRAFT_ARCH v7) and save-time view proxies | working | mai-flash |
+| `p7-engine-viewsheet` | viewsheet: linked views on a layout at their scale (ARCH D at 1:50) | gate | darwin-ws3 |
 
 ## Recent merges
 
@@ -55,14 +58,14 @@ Updated 2026-10-29 20:45 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | gate | 637 |
-| bonsai-b | bonsai2-27b | agent | 598 |
+| bonsai-a | bonsai2-27b | agent | 638 |
+| bonsai-b | bonsai2-27b | gate | 599 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
-| claude-sonnet-a | sonnet | idle | 40 |
-| claude-sonnet-b | sonnet | idle | 34 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 484 |
-| kimi-k31 | k3.1-pro-highspeed | agent | 80 |
-| mai-flash | mai-code-1.1-flash | gate | 11 |
-| tturbo-mac | tturbo-ultraheretic | agent | 430 |
+| claude-sonnet-a | sonnet | agent | 40 |
+| claude-sonnet-b | sonnet | gate | 34 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 484 |
+| kimi-k31 | k3.1-pro-highspeed | down | 81 |
+| mai-flash | mai-code-1.1-flash | agent | 12 |
+| tturbo-mac | tturbo-ultraheretic | gate | 430 |
 | tturbo-mac2 | tturbo-ultraheretic | idle | 264 |
