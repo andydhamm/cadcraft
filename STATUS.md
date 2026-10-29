@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-29 17:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 17:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 6 of 13: The 3D view, properly — 20 of 20 segments merged · 9 of 9 acceptance checks**
+**Phase 7 of 13: Generated elevations and sections**
 
-4,911 workspace tests passing at the last merge · 461 segments merged in all · 0 of 11 seats working
+4,962 workspace tests passing at the last merge · 462 segments merged in all · 0 of 11 seats working
 
 ## Phases
 
@@ -16,8 +16,8 @@ Updated 2026-10-29 17:00 UTC. This page and the card in the README are regenerat
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
-| 6 | The 3D view, properly | building | 9 / 9 | 11.9 h so far · expected done Oct 29 17:00–Oct 29 22:02 UTC |
-| 7 | Generated elevations and sections | planned | — | — |
+| 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
+| 7 | Generated elevations and sections | planning | — | 0.1 h so far · expected done Oct 29 23:16–Nov 07 04:28 UTC |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
@@ -25,15 +25,16 @@ Updated 2026-10-29 17:00 UTC. This page and the card in the README are regenerat
 | 12 | Exports and interoperability | planned | — | — |
 | 13 | Polish | planned | — | — |
 
-## Phase 6 segments
+## Phase 7 segments
 
-20 merged
+none yet
 
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 29 17:05 | `harden-p6-arch3d-pick` | merged | 4,962 pass | tturbo-mac |
 | Oct 29 16:49 | `harden-p6f-cli-orbit-target` | merged | 4,911 pass | tturbo-mac2 |
 | Oct 29 16:46 | `p6f-cmd-camera-full-eye` | merged | 4,903 pass | darwin-ws3 |
 | Oct 29 16:13 | `harden-p6-docs` | merged | 4,899 pass | tturbo-mac2 |
@@ -45,7 +46,6 @@ Updated 2026-10-29 17:00 UTC. This page and the card in the README are regenerat
 | Oct 29 14:45 | `harden-p6-r3d-edges` | merged | 4,882 pass | tturbo-mac2 |
 | Oct 29 14:38 | `p6-ui-pane3d` | merged | 4,874 pass | claude-sonnet-a |
 | Oct 29 14:27 | `p6-cli-render` | merged | 4,869 pass | claude-sonnet-b |
-| Oct 29 14:14 | `harden-p6-r3d-pbr` | merged | 4,863 pass | tturbo-mac2 |
 
 ## Seats active in the last hour
 
@@ -60,5 +60,5 @@ Updated 2026-10-29 17:00 UTC. This page and the card in the README are regenerat
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | yielding | 467 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 75 |
 | mai-flash | mai-code-1.1-flash | idle | 9 |
-| tturbo-mac | tturbo-ultraheretic | merging | 418 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 258 |
+| tturbo-mac | tturbo-ultraheretic | agent | 418 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 259 |
