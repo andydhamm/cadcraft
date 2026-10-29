@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 /// A stable identifier for an architectural object.
 ///
 /// Assigned by [`ArchModel::add_wall`]; monotonically increasing within a drawing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ArchId(pub u32);
 
 impl ArchId {
@@ -1782,7 +1782,7 @@ impl ArchModel {
     /// - Per-kind id caps and no duplicate ids per kind.
     /// - Each `next_*_id` counter is above the largest id already in use for
     ///   its kind (skipped when the in-use ids reach [`u32::MAX`]).
-    pub fn validate(&self) -> Vec<String> {
+    pub fn validate(&mut self) -> Vec<String> {
         let mut messages = Vec::new();
 
         if self.walls.len() > MAX_WALLS {
