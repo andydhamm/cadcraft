@@ -972,9 +972,9 @@ pub struct ArchModel {
     pub railings: Vec<Railing>,
     #[serde(default)]
     pub next_railing_id: u32,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cameras: Vec<Camera3d>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_camera: Option<String>,
 }
 
