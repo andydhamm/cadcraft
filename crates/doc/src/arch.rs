@@ -2784,4 +2784,150 @@ mod tests {
         assert_eq!(m.cameras.len(), 0);
         assert_eq!(m.active_camera, None);
     }
+
+    #[test]
+    fn camera_json_roundtrips() {
+        let c = Camera3d {
+            name: "front".into(),
+            kind: CameraKind::Orbit,
+            target: Some([1.0, 2.0, 3.0]),
+            azimuth_deg: Some(45.0),
+            elevation_deg: Some(30.0),
+            distance: Some(20.0),
+            eye: Some([5.0, -15.0]),
+            eye_height: Some(1.7),
+            fov_deg: Some(50.0),
+        };
+        let json = serde_json::to_string(&c).unwrap();
+        let back: Camera3d = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, c);
+        assert_eq!(back.name, "front");
+        assert_eq!(back.kind, CameraKind::Orbit);
+        assert_eq!(back.target, Some([1.0, 2.0, 3.0]));
+        assert_eq!(back.azimuth_deg, Some(45.0));
+        assert_eq!(back.elevation_deg, Some(30.0));
+        assert_eq!(back.distance, Some(20.0));
+        assert_eq!(back.eye, Some([5.0, -15.0]));
+        assert_eq!(back.eye_height, Some(1.7));
+        assert_eq!(back.fov_deg, Some(50.0));
+    }
+
+    #[test]
+    fn camera_kind_serializes_as_camel_case() {
+        let orbit = CameraKind::Orbit;
+        let full = CameraKind::Full;
+        assert_eq!(serde_json::to_string(&orbit).unwrap(), "\"Orbit\"");
+        assert_eq!(serde_json::to_string(&full).unwrap(), "\"Full\"");
+        let back_orbit: CameraKind = serde_json::from_str("\"Orbit\"").unwrap();
+        let back_full: CameraKind = serde_json::from_str("\"Full\"").unwrap();
+        assert_eq!(back_orbit, CameraKind::Orbit);
+        assert_eq!(back_full, CameraKind::Full);
+    }
+
+    #[test]
+    fn duplicate_camera_names_are_case_sensitive() {
+        let mut m = ArchModel::default();
+        assert_eq!(m.set_camera(Camera3d { name: "Front".into(), ..Camera3d::default() }), Ok(()));
+        // "front" is different from "Front"
+        assert_eq!(m.set_camera(Camera3d { name: "front".into(), ..Camera3d::default() }), Ok(()));
+        assert_eq!(m.cameras.len(), 2);
+        // But exact duplicate is refused
+        assert_eq!(m.set_camera(Camera3d { name: "Front".into(), ..Camera3d::default() }), Err(CameraError::Duplicate));
+        assert_eq!(m.set_camera(Camera3d { name: "front".into(), ..Camera3d::default() }), Err(CameraError::Duplicate));
+    }
+
+    #[test]
+    fn camera_index_returns_none_for_missing_camera() {
+        let mut m = ArchModel::default();
+        assert_eq!(m.camera_index("nonexistent"), None);
+        assert_eq!(m.camera_by_name("nonexistent"), None);
+
+        assert_eq!(m.set_camera(Camera3d { name: "front".into(), ..Camera3d::default() }), Ok(()));
+        assert_eq!(m.camera_index("front"), Some(0));
+        assert_eq!(m.camera_index("other"), None);
+    }
+
+    #[test]
+    fn remove_camera_with_empty_name_returns_false() {
+        let mut m = ArchModel::default();
+        assert_eq!(m.set_camera(Camera3d { name: "front".into(), ..Camera3d::default() }), Ok(()));
+        // Empty name is not a valid camera name, so removal should fail
+        assert_eq!(m.remove_camera(""), false);
+        assert_eq!(m.cameras.len(), 1);
+    }
+
+    #[test]
+    fn validate_reports_camera_issues() {
+        // Empty name
+        let mut m = ArchModel::default();
+        m.cameras.push(Camera3d { name: String::new(), ..Camera3d::default() });
+        let msgs = m.validate();
+        assert!(msgs.iter().any(|m| m.contains("empty name")), "empty camera name not reported: {msgs:?}");
+
+        // Non-finite field
+        let mut m2 = ArchModel::default();
+        m2.cameras.push(Camera3d { name: "bad".into(), distance: Some(f64::NAN), ..Camera3d::default() });
+        let msgs2 = m2.validate();
+        assert!(msgs2.iter().any(|m| m.contains("non-finite")), "non-finite camera field not reported: {msgs2:?}");
+
+        // Duplicate names
+        let mut m3 = ArchModel::default();
+        m3.cameras.push(Camera3d { name: "dup".into(), ..Camera3d::default() });
+        m3.cameras.push(Camera3d { name: "dup".into(), ..Camera3d::default() });
+        let msgs3 = m3.validate();
+        assert!(msgs3.iter().any(|m| m.contains("duplicate camera name")), "duplicate camera name not reported: {msgs3:?}");
+
+        // Too many cameras
+        let mut m4 = ArchModel::default();
+        for i in 0..MAX_CAMERAS + 1 {
+            m4.cameras.push(Camera3d { name: format!("c{}", i), ..Camera3d::default() });
+        }
+        let msgs4 = m4.validate();
+        assert!(msgs4.iter().any(|m| m.contains("cameras") && m.contains("max")), "too many cameras not reported: {msgs4:?}");
+    }
+
+    #[test]
+    fn arch_model_with_cameras_json_roundtrips() {
+        let mut m = ArchModel::default();
+        m.set_camera(Camera3d { name: "front".into(), distance: Some(15.0), ..Camera3d::default() }).unwrap();
+        m.set_camera(Camera3d { name: "top".into(), kind: CameraKind::Full, eye: Some([0.0, 0.0]), eye_height: Some(20.0), ..Camera3d::default() })
+            .unwrap();
+        m.active_camera = Some("front".into());
+
+        let json = serde_json::to_string(&m).unwrap();
+        let back: ArchModel = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(back.cameras.len(), 2);
+        assert_eq!(back.cameras[0].name, "front");
+        assert_eq!(back.cameras[0].distance, Some(15.0));
+        assert_eq!(back.cameras[1].name, "top");
+        assert_eq!(back.cameras[1].kind, CameraKind::Full);
+        assert_eq!(back.cameras[1].eye_height, Some(20.0));
+        assert_eq!(back.active_camera, Some("front".into()));
+    }
+
+    #[test]
+    fn empty_cameras_skipped_in_serialization() {
+        let m = ArchModel::default();
+        let json = serde_json::to_string(&m).unwrap();
+        // Empty cameras vec should be skipped
+        assert!(!json.contains("\"cameras\""), "empty cameras array should be skipped: {json}");
+        // None active_camera should be skipped
+        assert!(!json.contains("\"active_camera\""), "None active_camera should be skipped: {json}");
+    }
+
+    #[test]
+    fn camera_with_infinity_is_rejected() {
+        let mut m = ArchModel::default();
+        assert_eq!(
+            m.set_camera(Camera3d { name: "inf".into(), azimuth_deg: Some(f64::INFINITY), ..Camera3d::default() }),
+            Err(CameraError::NotFinite)
+        );
+        assert_eq!(
+            m.set_camera(Camera3d { name: "inf2".into(), elevation_deg: Some(f64::NEG_INFINITY), ..Camera3d::default() }),
+            Err(CameraError::NotFinite)
+        );
+        assert_eq!(m.set_camera(Camera3d { name: "inf3".into(), fov_deg: Some(f64::INFINITY), ..Camera3d::default() }), Err(CameraError::NotFinite));
+        assert_eq!(m.cameras.len(), 0);
+    }
 }
