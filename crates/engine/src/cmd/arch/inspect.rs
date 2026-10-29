@@ -1026,7 +1026,7 @@ mod tests {
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         assert_eq!(rooms.len(), 1, "expected one room");
         let r = &rooms[0];
-        assert_eq!(r["holes"].as_i64().unwrap(), 1, "holes must retain the legacy count");
+        assert_eq!(r["holes"].as_array().unwrap().len(), 1, "holes must be an array of rings");
         let holes = r["holeRings"].as_array().expect("holeRings should be an array of rings");
         assert_eq!(holes.len(), 1, "expected one hole ring");
         assert_eq!(holes[0].as_array().unwrap().len(), 4, "expected a 4-point ring");
@@ -2059,5 +2059,106 @@ mod tests {
         let holes = r["holes"].clone();
         let hole_rings = r["holeRings"].clone();
         assert_eq!(holes, hole_rings, "holes and holeRings must be identical");
+    }
+
+    /// A degenerate hole with a single point is still reported as a ring.
+    #[test]
+    fn inspect_room_hole_with_one_point() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "OnePoint".into(),
+                    room_type: RoomType::Living,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(6.0, 0.0), Vec2::new(6.0, 4.0), Vec2::new(0.0, 4.0)],
+                    holes: vec![vec![Vec2::new(3.0, 2.0)]],
+                    ceiling_height: Some(2.4),
+                    interior_area: 24.0,
+                    standard_area: 24.0,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        let r = &rooms[0];
+        let holes = r["holes"].as_array().expect("holes must be an array");
+        assert_eq!(holes.len(), 1, "expected one hole");
+        let hole = holes[0].as_array().expect("hole must be an array of points");
+        assert_eq!(hole.len(), 1, "hole should have 1 point");
+    }
+
+    /// A hole with NaN coordinates is reported with finite JSON numbers (NaN serializes to null in serde_json).
+    #[test]
+    fn inspect_room_hole_with_nan_coordinates() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                d.arch.push_room(Room {
+                    name: "NanHole".into(),
+                    room_type: RoomType::Living,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(6.0, 0.0), Vec2::new(6.0, 4.0), Vec2::new(0.0, 4.0)],
+                    holes: vec![vec![Vec2::new(f64::NAN, 1.0), Vec2::new(4.0, 1.0), Vec2::new(4.0, 3.0), Vec2::new(2.0, 3.0)]],
+                    ceiling_height: Some(2.4),
+                    interior_area: 20.0,
+                    standard_area: 20.0,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        let r = &rooms[0];
+        let holes = r["holes"].as_array().expect("holes must be an array");
+        assert_eq!(holes.len(), 1, "expected one hole");
+        let hole = holes[0].as_array().expect("hole must be an array of points");
+        assert_eq!(hole.len(), 4, "hole should have 4 points");
+        // The first point's x is NaN, which serde_json serializes as null.
+        assert!(hole[0][0].is_null(), "NaN x should serialize to null");
+        assert!((hole[0][1].as_f64().expect("y") - 1.0).abs() < 1e-9, "y should be 1.0");
+    }
+
+    /// A room with many holes reports all of them correctly.
+    #[test]
+    fn inspect_room_many_holes() {
+        let mut s = Session::new();
+        match s.doc_mut() {
+            Ok(d) => {
+                let mut holes = Vec::new();
+                for i in 0..10 {
+                    let x = (i % 5) as f64 * 1.5 + 0.5;
+                    let y = (i / 5) as f64 * 1.5 + 0.5;
+                    holes.push(vec![Vec2::new(x, y), Vec2::new(x + 0.5, y), Vec2::new(x + 0.5, y + 0.5), Vec2::new(x, y + 0.5)]);
+                }
+                d.arch.push_room(Room {
+                    name: "ManyHoles".into(),
+                    room_type: RoomType::Living,
+                    level: 0,
+                    polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+                    holes,
+                    ceiling_height: Some(2.4),
+                    interior_area: 70.0,
+                    standard_area: 70.0,
+                    ..Room::default()
+                });
+                d.touch_arch();
+            }
+            Err(_) => {}
+        }
+        let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
+        let rooms = v["rooms"].as_array().expect("rooms array missing");
+        let r = &rooms[0];
+        let holes = r["holes"].as_array().expect("holes must be an array");
+        assert_eq!(holes.len(), 10, "expected 10 holes");
+        for h in holes {
+            let ring = h.as_array().expect("each hole must be an array of points");
+            assert_eq!(ring.len(), 4, "each hole should have 4 points");
+        }
     }
 }
