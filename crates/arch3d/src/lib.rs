@@ -14,6 +14,7 @@ pub mod floors;
 pub mod hlr;
 pub mod mesh;
 pub mod openings;
+pub mod pick;
 pub mod probe;
 pub mod railing;
 pub mod ray;
