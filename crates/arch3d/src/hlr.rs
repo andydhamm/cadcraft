@@ -18,6 +18,7 @@
 use crate::edges::{CREASE_DEG, cross, dot, sub, unit, weld, welded_edges};
 use crate::section::Plane;
 use crate::{ArchId, Scene3d};
+use cadcraft_doc::arch::ArchKind;
 
 /// Points this close to a triangle's outline on the sheet (metres) count as covered by it.
 pub const EPS_SHEET: f64 = 1e-5;
@@ -71,17 +72,20 @@ impl OrthoView {
     }
 }
 
-/// A visible line on the sheet, tagged with the arch object it belongs to.
+/// A visible line on the sheet, tagged with the arch object it belongs to. Ids number per kind, so the object is
+/// `(kind, object)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Line2 {
     pub a: [f64; 2],
     pub b: [f64; 2],
+    /// The kind of the object the line came from.
+    pub kind: ArchKind,
     pub object: ArchId,
 }
 
 impl Line2 {
-    pub const fn new(a: [f64; 2], b: [f64; 2], object: ArchId) -> Self {
-        Line2 { a, b, object }
+    pub const fn new(a: [f64; 2], b: [f64; 2], kind: ArchKind, object: ArchId) -> Self {
+        Line2 { a, b, kind, object }
     }
 
     pub fn length(&self) -> f64 {
@@ -344,8 +348,9 @@ pub fn visible_lines(scene: &Scene3d, view: &OrthoView) -> Vec<Line2> {
 /// section's cut faces) hiding what is behind them. Merged per object, in a fixed order.
 pub(crate) fn visible_lines_beyond(scene: &Scene3d, view: &OrthoView, keep: Option<&Plane>, caps: &[Cap]) -> Vec<Line2> {
     let mut tris: Vec<Tri> = Vec::new();
-    let mut edges: Vec<([f64; 3], [f64; 3], ArchId)> = Vec::new();
+    let mut edges: Vec<([f64; 3], [f64; 3], ArchKind, ArchId)> = Vec::new();
     for mesh in &scene.meshes {
+        let kind = ArchKind::from_part(crate::probe::part_of(mesh));
         let w = weld(mesh);
         for t in &w.tris {
             let c = w.corners(t);
@@ -361,7 +366,7 @@ pub(crate) fn visible_lines_beyond(scene: &Scene3d, view: &OrthoView, keep: Opti
                 Some(pl) => clip_segment(e.a, e.b, pl),
             };
             if let Some((a, b)) = kept {
-                edges.push((view.project(a), view.project(b), e.object));
+                edges.push((view.project(a), view.project(b), kind, e.object));
             }
         }
     }
@@ -369,7 +374,7 @@ pub(crate) fn visible_lines_beyond(scene: &Scene3d, view: &OrthoView, keep: Opti
     let mut stamp: Vec<usize> = vec![usize::MAX; tris.len()];
     let mut out = Vec::new();
     let mut hidden: Vec<(f64, f64)> = Vec::new();
-    for (k, &(e0, e1, object)) in edges.iter().enumerate() {
+    for (k, &(e0, e1, kind, object)) in edges.iter().enumerate() {
         let len = (e1[0] - e0[0]).hypot(e1[1] - e0[1]);
         if !len.is_finite() || len < MIN_RUN {
             continue; // seen end-on (or not finite): a point, not a line
@@ -420,17 +425,18 @@ pub(crate) fn visible_lines_beyond(scene: &Scene3d, view: &OrthoView, keep: Opti
                 continue;
             }
             let at = |t: f64| [e0[0] + t * (e1[0] - e0[0]), e0[1] + t * (e1[1] - e0[1])];
-            out.push(Line2::new(at(t0), at(t1), object));
+            out.push(Line2::new(at(t0), at(t1), kind, object));
         }
     }
     merge_collinear(out)
 }
 
 /// Join each object's collinear lines that overlap or touch (within [`EPS_SHEET`]) into one, so an edge split by
-/// welding or by occlusion, or drawn twice by one object, is a single stroke. Lines of different objects never merge:
-/// each keeps the object it belongs to. Lines shorter than [`MIN_RUN`] go. The result is in a fixed order.
+/// welding or by occlusion, or drawn twice by one object, is a single stroke. Lines of different objects never merge
+/// (an object is its kind and its id: wall 0 and opening 0 are two): each keeps the kind and object it belongs to. Lines shorter than [`MIN_RUN`] go. The result is in a fixed order.
 pub fn merge_collinear(lines: Vec<Line2>) -> Vec<Line2> {
     struct Item {
+        kind: ArchKind,
         object: ArchId,
         q: i64,
         rho: f64,
@@ -452,16 +458,23 @@ pub fn merge_collinear(lines: Vec<Line2>) -> Vec<Line2> {
             let q = (d[1].atan2(d[0]) / ANGLE_Q).round() as i64;
             let rho = -d[1] * l.a[0] + d[0] * l.a[1];
             let (sa, sb) = (d[0] * l.a[0] + d[1] * l.a[1], d[0] * l.b[0] + d[1] * l.b[1]);
-            Some(Item { object: l.object, q, rho, s0: sa.min(sb), s1: sa.max(sb), d })
+            Some(Item { kind: l.kind, object: l.object, q, rho, s0: sa.min(sb), s1: sa.max(sb), d })
         })
         .collect();
-    items.sort_by(|a, b| a.object.cmp(&b.object).then(a.q.cmp(&b.q)).then(a.rho.total_cmp(&b.rho)).then(a.s0.total_cmp(&b.s0)));
+    items.sort_by(|a, b| {
+        a.kind.cmp(&b.kind).then(a.object.cmp(&b.object)).then(a.q.cmp(&b.q)).then(a.rho.total_cmp(&b.rho)).then(a.s0.total_cmp(&b.s0))
+    });
     let mut out = Vec::new();
     let mut i = 0;
     while i < items.len() {
         let first = &items[i];
         let mut j = i + 1;
-        while j < items.len() && items[j].object == first.object && items[j].q == first.q && (items[j].rho - first.rho).abs() <= EPS_SHEET {
+        while j < items.len()
+            && items[j].kind == first.kind
+            && items[j].object == first.object
+            && items[j].q == first.q
+            && (items[j].rho - first.rho).abs() <= EPS_SHEET
+        {
             j += 1;
         }
         let (d, rho) = (first.d, first.rho);
@@ -473,14 +486,14 @@ pub fn merge_collinear(lines: Vec<Line2>) -> Vec<Line2> {
             cur = match cur {
                 Some((c0, c1)) if s0 <= c1 + EPS_SHEET => Some((c0, c1.max(s1))),
                 Some((c0, c1)) => {
-                    out.push(Line2::new(at(c0), at(c1), first.object));
+                    out.push(Line2::new(at(c0), at(c1), first.kind, first.object));
                     Some((s0, s1))
                 }
                 None => Some((s0, s1)),
             };
         }
         if let Some((c0, c1)) = cur {
-            out.push(Line2::new(at(c0), at(c1), first.object));
+            out.push(Line2::new(at(c0), at(c1), first.kind, first.object));
         }
         i = j;
     }

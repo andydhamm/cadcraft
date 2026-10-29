@@ -12,6 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::edges::{dot, unit, weld};
 use crate::hlr::{Cap, Line2, OrthoView, visible_lines_beyond};
 use crate::{ArchId, Scene3d};
+use cadcraft_doc::arch::ArchKind;
 
 /// A plane in world space: the points `p` with `normal · p = offset`, `normal` a unit vector.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -42,14 +43,16 @@ impl Plane {
 /// One closed ring where a solid is cut, on the sheet (counter-clockwise), with the object and material it cuts.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CutRing {
+    /// The kind of the object cut; ids number per kind, so the object is `(kind, object)`.
+    pub kind: ArchKind,
     pub object: ArchId,
     pub material: String,
     pub points: Vec<[f64; 2]>,
 }
 
 impl CutRing {
-    pub fn new(object: ArchId, material: &str, points: Vec<[f64; 2]>) -> Self {
-        CutRing { object, material: material.to_string(), points }
+    pub fn new(kind: ArchKind, object: ArchId, material: &str, points: Vec<[f64; 2]>) -> Self {
+        CutRing { kind, object, material: material.to_string(), points }
     }
 
     /// The shoelace area on the sheet, positive for a counter-clockwise ring (every ring this module returns).
@@ -89,6 +92,7 @@ fn ring_area(p: &[[f64; 2]]) -> f64 {
 pub fn section_cut(scene: &Scene3d, plane: &Plane, view: &OrthoView) -> SectionCut {
     let mut cut = SectionCut::default();
     for mesh in &scene.meshes {
+        let kind = ArchKind::from_part(crate::probe::part_of(mesh));
         let w = weld(mesh);
         let d: Vec<f64> = w.points.iter().map(|&p| plane.distance(p)).collect();
         let front = |i: u32| d.get(i as usize).is_some_and(|&x| x >= 0.0);
@@ -131,9 +135,9 @@ pub fn section_cut(scene: &Scene3d, plane: &Plane, view: &OrthoView) -> SectionC
                 if a < 0.0 {
                     pts.reverse();
                 }
-                cut.rings.push(CutRing::new(mesh.object, &mesh.material, pts));
+                cut.rings.push(CutRing::new(kind, mesh.object, &mesh.material, pts));
             } else {
-                cut.lines.extend(pts.windows(2).map(|s| Line2::new(s[0], s[1], mesh.object)));
+                cut.lines.extend(pts.windows(2).map(|s| Line2::new(s[0], s[1], kind, mesh.object)));
             }
         }
     }
@@ -173,9 +177,9 @@ fn chains(next: &BTreeMap<(u32, u32), Vec<(u32, u32)>>) -> Vec<(Vec<(u32, u32)>,
 pub fn section_view(scene: &Scene3d, plane: &Plane, up: [f64; 3]) -> Option<SectionView> {
     let view = OrthoView::new(plane.normal(), up)?;
     let cut = section_cut(scene, plane, &view);
-    let mut by_object: BTreeMap<ArchId, Vec<Vec<[f64; 2]>>> = BTreeMap::new();
+    let mut by_object: BTreeMap<(ArchKind, ArchId), Vec<Vec<[f64; 2]>>> = BTreeMap::new();
     for r in &cut.rings {
-        by_object.entry(r.object).or_default().push(r.points.clone());
+        by_object.entry((r.kind, r.object)).or_default().push(r.points.clone());
     }
     let depth = plane.offset; // the view looks along the unit normal, so a point's depth is normal · p
     let caps: Vec<Cap> = by_object.into_values().map(|rings| Cap::new(rings, depth)).collect();
