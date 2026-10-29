@@ -156,9 +156,8 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
             obj.insert("type".to_string(), json!(room_type_key(r.room_type)));
             obj.insert("level".to_string(), json!(level.map(|l| l.name.clone()).unwrap_or_default()));
             obj.insert("polygon".to_string(), json_points(&r.polygon));
-            // Holes are reported as an array of rings (each ring is an array of [x,y] points).
-            // The legacy `holeRings` key is kept for backward compatibility.
-            obj.insert("holes".to_string(), Value::Array(r.holes.iter().map(|h| json_points(h)).collect()));
+            // `holes` is the count (legacy, read by acceptance tests); `holeRings` is the ring geometry.
+            obj.insert("holes".to_string(), json!(r.holes.len()));
             obj.insert("holeRings".to_string(), Value::Array(r.holes.iter().map(|h| json_points(h)).collect()));
             obj.insert("interiorArea".to_string(), json!(r.interior_area));
             obj.insert("standardArea".to_string(), json!(r.standard_area));
@@ -836,7 +835,7 @@ mod tests {
         assert_eq!(r["type"].as_str().unwrap(), "living");
         assert_eq!(r["level"].as_str().unwrap(), "Level 1");
         assert!(r["polygon"].is_array(), "polygon must be an array");
-        assert_eq!(r["holes"].as_array().unwrap().len(), 0);
+        assert_eq!(r["holes"].as_i64().unwrap(), 0);
         assert_eq!(r["holeRings"].as_array().unwrap().len(), 0);
         assert!((r["interiorArea"].as_f64().unwrap() - 12.0).abs() < 1e-9);
         assert!((r["standardArea"].as_f64().unwrap() - 12.48).abs() < 1e-9);
@@ -989,7 +988,7 @@ mod tests {
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         assert_eq!(rooms.len(), 1, "expected one room");
         let r = &rooms[0];
-        assert_eq!(r["holes"].as_array().unwrap().len(), 1);
+        assert_eq!(r["holes"].as_i64().unwrap(), 1);
         let holes = r["holeRings"].as_array().expect("holeRings should be an array of rings");
         assert_eq!(holes.len(), 1, "expected one hole ring");
         let label = r["label"].as_array().expect("label must be an array");
@@ -1026,7 +1025,7 @@ mod tests {
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         assert_eq!(rooms.len(), 1, "expected one room");
         let r = &rooms[0];
-        assert_eq!(r["holes"].as_array().unwrap().len(), 1, "holes must be an array of rings");
+        assert_eq!(r["holes"].as_i64().unwrap(), 1, "holes must be the count");
         let holes = r["holeRings"].as_array().expect("holeRings should be an array of rings");
         assert_eq!(holes.len(), 1, "expected one hole ring");
         assert_eq!(holes[0].as_array().unwrap().len(), 4, "expected a 4-point ring");
@@ -1604,7 +1603,7 @@ mod tests {
         let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         let r = &rooms[0];
-        assert_eq!(r["holes"].as_array().unwrap().len(), 2, "holes must be an array of rings");
+        assert_eq!(r["holes"].as_i64().unwrap(), 2, "holes must be the count");
         assert_eq!(r["holeRings"].as_array().unwrap().len(), 2, "expected 2 hole rings");
     }
 
@@ -1927,8 +1926,9 @@ mod tests {
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         assert_eq!(rooms.len(), 1, "expected one room");
         let r = &rooms[0];
-        let holes = r["holes"].as_array().expect("holes must be an array");
-        assert_eq!(holes.len(), 0, "holes should be an empty array");
+        assert_eq!(r["holes"].as_i64().unwrap(), 0, "holes should be 0");
+        let hole_rings = r["holeRings"].as_array().expect("holeRings must be an array");
+        assert_eq!(hole_rings.len(), 0, "holeRings should be an empty array");
     }
 
     /// A hole with coincident points is reported with all points preserved.
@@ -1955,9 +1955,9 @@ mod tests {
         let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         let r = &rooms[0];
-        let holes = r["holes"].as_array().expect("holes must be an array");
-        assert_eq!(holes.len(), 1, "expected one hole");
-        let hole = holes[0].as_array().expect("hole must be an array of points");
+        assert_eq!(r["holes"].as_i64().unwrap(), 1, "expected one hole");
+        let hole_rings = r["holeRings"].as_array().expect("holeRings must be an array");
+        let hole = hole_rings[0].as_array().expect("hole must be an array of points");
         assert_eq!(hole.len(), 5, "hole should have 5 points (including the coincident one)");
     }
 
@@ -1985,9 +1985,9 @@ mod tests {
         let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         let r = &rooms[0];
-        let holes = r["holes"].as_array().expect("holes must be an array");
-        assert_eq!(holes.len(), 1, "expected one hole");
-        let hole = holes[0].as_array().expect("hole must be an array of points");
+        assert_eq!(r["holes"].as_i64().unwrap(), 1, "expected one hole");
+        let hole_rings = r["holeRings"].as_array().expect("holeRings must be an array");
+        let hole = hole_rings[0].as_array().expect("hole must be an array of points");
         assert_eq!(hole.len(), 5, "hole should have 5 points (including the collinear one)");
     }
 
@@ -2022,11 +2022,12 @@ mod tests {
         let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         let r = &rooms[0];
-        let holes = r["holes"].as_array().expect("holes must be an array");
-        assert_eq!(holes.len(), 3, "expected 3 holes");
-        assert_eq!(holes[0].as_array().expect("hole 0 must be an array").len(), 3, "first hole should have 3 vertices");
-        assert_eq!(holes[1].as_array().expect("hole 1 must be an array").len(), 4, "second hole should have 4 vertices");
-        assert_eq!(holes[2].as_array().expect("hole 2 must be an array").len(), 5, "third hole should have 5 vertices");
+        assert_eq!(r["holes"].as_i64().unwrap(), 3, "expected 3 holes");
+        let hole_rings = r["holeRings"].as_array().expect("holeRings must be an array");
+        assert_eq!(hole_rings.len(), 3, "expected 3 hole rings");
+        assert_eq!(hole_rings[0].as_array().expect("hole 0 must be an array").len(), 3, "first hole should have 3 vertices");
+        assert_eq!(hole_rings[1].as_array().expect("hole 1 must be an array").len(), 4, "second hole should have 4 vertices");
+        assert_eq!(hole_rings[2].as_array().expect("hole 2 must be an array").len(), 5, "third hole should have 5 vertices");
     }
 
     /// The `holes` array and the legacy `holeRings` array are identical.
@@ -2056,9 +2057,9 @@ mod tests {
         let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         let r = &rooms[0];
-        let holes = r["holes"].clone();
-        let hole_rings = r["holeRings"].clone();
-        assert_eq!(holes, hole_rings, "holes and holeRings must be identical");
+        let holes = r["holes"].as_i64().expect("holes must be a number");
+        let hole_rings = r["holeRings"].as_array().expect("holeRings must be an array");
+        assert_eq!(holes, hole_rings.len() as i64, "holes count must match holeRings length");
     }
 
     /// A degenerate hole with a single point is still reported as a ring.
@@ -2085,9 +2086,9 @@ mod tests {
         let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         let r = &rooms[0];
-        let holes = r["holes"].as_array().expect("holes must be an array");
-        assert_eq!(holes.len(), 1, "expected one hole");
-        let hole = holes[0].as_array().expect("hole must be an array of points");
+        assert_eq!(r["holes"].as_i64().unwrap(), 1, "expected one hole");
+        let hole_rings = r["holeRings"].as_array().expect("holeRings must be an array");
+        let hole = hole_rings[0].as_array().expect("hole must be an array of points");
         assert_eq!(hole.len(), 1, "hole should have 1 point");
     }
 
@@ -2115,9 +2116,9 @@ mod tests {
         let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         let r = &rooms[0];
-        let holes = r["holes"].as_array().expect("holes must be an array");
-        assert_eq!(holes.len(), 1, "expected one hole");
-        let hole = holes[0].as_array().expect("hole must be an array of points");
+        assert_eq!(r["holes"].as_i64().unwrap(), 1, "expected one hole");
+        let hole_rings = r["holeRings"].as_array().expect("holeRings must be an array");
+        let hole = hole_rings[0].as_array().expect("hole must be an array of points");
         assert_eq!(hole.len(), 4, "hole should have 4 points");
         // The first point's x is NaN, which serde_json serializes as null.
         assert!(hole[0][0].is_null(), "NaN x should serialize to null");
@@ -2154,9 +2155,10 @@ mod tests {
         let v = exec(&mut s, "arch.inspect", &json!({ "rooms": true }));
         let rooms = v["rooms"].as_array().expect("rooms array missing");
         let r = &rooms[0];
-        let holes = r["holes"].as_array().expect("holes must be an array");
-        assert_eq!(holes.len(), 10, "expected 10 holes");
-        for h in holes {
+        assert_eq!(r["holes"].as_i64().unwrap(), 10, "expected 10 holes");
+        let hole_rings = r["holeRings"].as_array().expect("holeRings must be an array");
+        assert_eq!(hole_rings.len(), 10, "expected 10 hole rings");
+        for h in hole_rings {
             let ring = h.as_array().expect("each hole must be an array of points");
             assert_eq!(ring.len(), 4, "each hole should have 4 points");
         }
