@@ -2366,7 +2366,7 @@ mod tests {
 
     #[test]
     fn validate_accepts_a_clean_model() {
-        let m = ArchModel::default();
+        let mut m = ArchModel::default();
         assert!(m.validate().is_empty());
 
         let mut m = ArchModel::default();
