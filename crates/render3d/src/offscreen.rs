@@ -705,6 +705,178 @@ mod offscreen_behavior_tests {
     }
 
     #[test]
+    fn style_codes_are_distinct() {
+        let codes: Vec<u32> = [Style::Shaded, Style::ShadedEdges, Style::HiddenLine, Style::GlassHouse].iter().map(|s| s.code()).collect();
+        for i in 0..codes.len() {
+            for j in i + 1..codes.len() {
+                assert_ne!(codes[i], codes[j], "style codes must be distinct");
+            }
+        }
+    }
+
+    #[test]
+    fn offscreen_resize_same_size_returns_false() {
+        with_offscreen((100, 100), |off| {
+            assert!(!off.resize((100, 100)), "same size should return false");
+        });
+    }
+
+    #[test]
+    fn offscreen_resize_increases_generation() {
+        with_offscreen((100, 100), |off| {
+            let gen_before = off.generation();
+            assert!(off.resize((200, 200)), "resize to different size should return true");
+            assert_eq!(off.generation(), gen_before + 1, "generation should increment");
+            assert_eq!(off.size(), (200, 200));
+        });
+    }
+
+    #[test]
+    fn glass_house_with_empty_scene() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (160, 120);
+        let mut off = Offscreen::with_device(device, queue, size);
+        let scene = Scene3d::default();
+        off.render_with(
+            &scene,
+            1,
+            &Camera::Orbit(crate::camera::Orbit::at_origin(0.0, 0.0, 5.0, 45.0)),
+            &Light::DEFAULT,
+            &RenderOptions { style: Style::GlassHouse, ..Default::default() },
+        );
+        let rgba = off.read_rgba().expect("readback");
+        assert!(pixels_are_uniform(&rgba), "empty scene should be uniform clear colour");
+    }
+
+    #[test]
+    fn glass_house_with_single_mesh() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (160, 120);
+        let mut off = Offscreen::with_device(device, queue, size);
+        let scene = cube_scene();
+        off.render_with(
+            &scene,
+            1,
+            &Camera::Orbit(crate::camera::Orbit::at_origin(0.0, 0.0, 5.0, 45.0)),
+            &Light::DEFAULT,
+            &RenderOptions { style: Style::GlassHouse, ..Default::default() },
+        );
+        let rgba = off.read_rgba().expect("readback");
+        let bg = |p: &[u8]| p[..3].iter().zip([39u8, 44, 52]).all(|(a, b)| a.abs_diff(b) <= 2);
+        let model: Vec<usize> = rgba.chunks_exact(4).enumerate().filter(|(_, p)| !bg(p)).map(|(i, _)| i).collect();
+        assert!(!model.is_empty(), "the cube must be visible");
+    }
+
+    #[test]
+    fn glass_house_with_nan_coordinates() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (160, 120);
+        let mut off = Offscreen::with_device(device, queue, size);
+        let mut scene = cube_scene();
+        scene.meshes[0].positions[0][0] = f32::NAN;
+        off.render_with(
+            &scene,
+            1,
+            &Camera::Orbit(crate::camera::Orbit::at_origin(0.0, 0.0, 5.0, 45.0)),
+            &Light::DEFAULT,
+            &RenderOptions { style: Style::GlassHouse, ..Default::default() },
+        );
+        let rgba = off.read_rgba().expect("readback");
+        assert!(!rgba.is_empty(), "render with NaN should still produce output");
+    }
+
+    #[test]
+    fn glass_house_with_large_scene() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (160, 120);
+        let mut off = Offscreen::with_device(device, queue, size);
+        let mut scene = Scene3d::default();
+        for i in 0..20 {
+            let mut m = crate::types::Mesh::new("wall", crate::types::ArchId(i));
+            let x = (i as f32 - 10.0) * 2.0;
+            for (a, b) in [(-1.0f32, -1.0f32), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+                m.positions.push([x + a, b, 0.0]);
+                m.normals.push([0.0, 0.0, 1.0]);
+                m.uvs.push([a, b]);
+            }
+            m.indices = vec![0, 1, 2, 0, 2, 3];
+            scene.meshes.push(m);
+        }
+        scene.bounds = crate::types::Bounds3::new([-22.0, -2.0, -1.0], [22.0, 2.0, 1.0]);
+        off.render_with(
+            &scene,
+            1,
+            &Camera::Orbit(crate::camera::Orbit::at_origin(0.0, 0.0, 30.0, 45.0)),
+            &Light::DEFAULT,
+            &RenderOptions { style: Style::GlassHouse, ..Default::default() },
+        );
+        let rgba = off.read_rgba().expect("readback");
+        assert!(!rgba.is_empty(), "large scene should render");
+    }
+
+    #[test]
+    fn glass_house_with_coincident_walls() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (160, 120);
+        let mut off = Offscreen::with_device(device, queue, size);
+        let mut scene = Scene3d::default();
+        for i in 0..5 {
+            let m = crate::types::Mesh::new("wall", crate::types::ArchId(i));
+            scene.meshes.push(m);
+        }
+        scene.meshes[0].positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]];
+        scene.meshes[0].normals = vec![[0.0, 0.0, 1.0]; 4];
+        scene.meshes[0].uvs = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+        scene.meshes[0].indices = vec![0, 1, 2, 0, 2, 3];
+        for i in 1..5 {
+            scene.meshes[i].positions = scene.meshes[0].positions.clone();
+            scene.meshes[i].normals = scene.meshes[0].normals.clone();
+            scene.meshes[i].uvs = scene.meshes[0].uvs.clone();
+            scene.meshes[i].indices = scene.meshes[0].indices.clone();
+        }
+        scene.bounds = crate::types::Bounds3::new([0.0, 0.0, 0.0], [1.0, 1.0, 0.0]);
+        off.render_with(
+            &scene,
+            1,
+            &Camera::Orbit(crate::camera::Orbit::at_origin(0.5, 0.5, 3.0, 45.0)),
+            &Light::DEFAULT,
+            &RenderOptions { style: Style::GlassHouse, ..Default::default() },
+        );
+        let rgba = off.read_rgba().expect("readback");
+        assert!(!rgba.is_empty(), "coincident walls should render");
+    }
+
+    #[test]
+    fn glass_house_ground_stays_opaque() {
+        let Some((device, queue)) = crate::gputest::shared_device() else {
+            eprintln!("SKIP: no GPU adapter available");
+            return;
+        };
+        let size = (160, 120);
+        let mut off = Offscreen::with_device(device, queue, size);
+        let scene = cube_scene();
+        let camera = Camera::Orbit(crate::camera::Orbit::at_origin(0.0, 0.0, 5.0, 45.0));
+        off.render_with(&scene, 1, &camera, &Light::DEFAULT, &RenderOptions { style: Style::GlassHouse, ground: true, ..Default::default() });
+        let rgba = off.read_rgba().expect("readback");
+        assert!(!rgba.is_empty(), "glass house with ground should render");
+    }
+
+    #[test]
     fn shaded_edges_darkens_and_hidden_line_leaves_background() {
         let Some((device, queue)) = crate::gputest::shared_device() else {
             eprintln!("SKIP: no GPU adapter available");
