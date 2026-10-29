@@ -590,14 +590,14 @@ fn a_new_drawing_has_no_arch_layers() {
     // Historical name: after p1-arch-layers, a new drawing includes the five
     // architectural layers. The assertion reflects the current behaviour.
     let d = Drawing::new_imperial();
-    assert_eq!(d.layers.len(), 7, "a new drawing must have exactly 7 layers");
+    assert_eq!(d.layers.len(), 12, "a new drawing must have exactly 12 layers");
 }
 
 #[test]
 fn a_new_drawing_has_arch_layers() {
     let arch_names = ["A-WALL", "A-DOOR", "A-GLAZ", "A-ROOF", "A-STAIR"];
     for d in [Drawing::new_imperial(), Drawing::new_metric()] {
-        assert_eq!(d.layers.len(), 7, "a new drawing should carry 0, Defpoints, and 5 arch layers");
+        assert_eq!(d.layers.len(), 12, "a new drawing should carry 0, Defpoints, and 10 arch layers");
         assert!(d.layers.iter().any(|l| l.name == "Defpoints"), "Defpoints missing from a new drawing");
         for name in arch_names {
             assert!(d.layer(name).is_some(), "{name} must be present in a new drawing");
@@ -632,10 +632,15 @@ fn arch_layers_are_in_a_new_drawing_in_order() {
         "A-GLAZ".to_string(),
         "A-ROOF".to_string(),
         "A-STAIR".to_string(),
+        "A-RAIL".to_string(),
+        "A-ELEV".to_string(),
+        "A-SECT".to_string(),
+        "A-SECT-MCUT".to_string(),
+        "A-ANNO-DIMS".to_string(),
     ];
     for d in [Drawing::new_imperial(), Drawing::new_metric()] {
         let names: Vec<_> = d.layers.iter().map(|l| l.name.clone()).collect();
-        assert_eq!(names, expected, "a new drawing's layer table must be exactly 0, Defpoints, A-WALL, A-DOOR, A-GLAZ, A-ROOF, A-STAIR, in order");
+        assert_eq!(names, expected, "a new drawing's layer table must be the template layers, in order");
     }
 }
 

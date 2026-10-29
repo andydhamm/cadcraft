@@ -318,7 +318,119 @@ pub fn build_arch(d: &Drawing, _opts: &Options, plotting: bool) -> DisplayList {
         }
     }
 
+    push_views(d, &mut list, plotting);
+
     list
+}
+
+/// Upper bound on view lines, rings and dimensions drawn per view (hostile geometry).
+const MAX_VIEW_ITEMS: usize = 100_000;
+
+/// Draw every linked view's generated geometry: linework on the view's layer, poché rings on
+/// `A-SECT-MCUT` and dimensions on `A-ANNO-DIMS`, all tagged with the view's proxy handle.
+fn push_views(d: &Drawing, list: &mut DisplayList, plotting: bool) {
+    let ink_of = |name: &str| {
+        let c = d.layer(name).map(|l| l.color).unwrap_or(Color::Index(7));
+        crate::ink(Color::ByLayer, c, Color::Index(7))
+    };
+    for view in &d.arch.views {
+        let Some(g) = &view.generated else { continue };
+        if !g.extent.iter().all(|v| v.is_finite()) || !view.insert.iter().all(|v| v.is_finite()) {
+            continue;
+        }
+        let handle = cadcraft_doc::arch::view_handle(view.id);
+        let at = |p: [f64; 2]| -> Option<Vec2> {
+            if !p.iter().all(|v| v.is_finite()) {
+                return None;
+            }
+            let q = view.placed(p);
+            q.iter().all(|v| v.is_finite()).then(|| Vec2::new(q[0], q[1]))
+        };
+
+        if !arch_layer_skipped(d, &view.layer, plotting) {
+            let ink = ink_of(&view.layer);
+            for l in g.lines.iter().take(MAX_VIEW_ITEMS) {
+                if let (Some(a), Some(b)) = (at(l.a), at(l.b)) {
+                    push_polyline(list, handle, &ink, &[a, b]);
+                }
+            }
+        }
+
+        if !arch_layer_skipped(d, "A-SECT-MCUT", plotting) {
+            let ink = ink_of("A-SECT-MCUT");
+            for ring in g.rings.iter().take(MAX_VIEW_ITEMS) {
+                let pts: Vec<Vec2> = ring.points.iter().filter_map(|&p| at(p)).collect();
+                if pts.len() < 3 || pts.len() != ring.points.len() {
+                    continue;
+                }
+                let tris = crate::triangulate_evenodd(std::slice::from_ref(&pts));
+                if tris.len() >= 3 {
+                    let start = u32::try_from(list.tris.len()).unwrap_or(u32::MAX);
+                    for q in &tris {
+                        list.bounds.add(*q);
+                        list.tris.push(*q);
+                    }
+                    list.prims.push(DPrim {
+                        handle,
+                        color: ink.rgb,
+                        aci7: ink.aci7,
+                        lw: 0.0,
+                        transparency: 0,
+                        kind: Kind::Tris,
+                        start,
+                        len: u32::try_from(tris.len()).unwrap_or(u32::MAX),
+                    });
+                }
+                let mut closed = pts;
+                closed.push(closed[0]);
+                push_polyline(list, handle, &ink, &closed);
+            }
+        }
+
+        if !arch_layer_skipped(d, "A-ANNO-DIMS", plotting) {
+            let ink = ink_of("A-ANNO-DIMS");
+            let k = if view.scale.is_finite() && view.scale > 0.0 { view.scale / 1000.0 } else { 0.05 };
+            for dim in g.dims.iter().take(MAX_VIEW_ITEMS) {
+                let (Some(a), Some(b), Some(on)) = (at(dim.a), at(dim.b), at(dim.at)) else { continue };
+                push_dim(list, handle, &ink, k, a, b, on, &dim.text);
+            }
+        }
+    }
+}
+
+/// One dimension: extension lines, dimension line, 45-degree ticks and centred text.
+#[allow(clippy::too_many_arguments)]
+fn push_dim(list: &mut DisplayList, handle: Handle, ink: &crate::Ink, k: f64, a: Vec2, b: Vec2, on: Vec2, text: &str) {
+    let len = a.dist(b);
+    if len < 1e-12 || !len.is_finite() {
+        return;
+    }
+    let dir = (b - a) * (1.0 / len);
+    let n = dir.perp();
+    let off = (on - a).dot(n);
+    let (a2, b2) = (a + n * off, b + n * off);
+    let over = n * (1.5 * k * if off < 0.0 { -1.0 } else { 1.0 });
+    push_polyline(list, handle, ink, &[a, a2 + over]);
+    push_polyline(list, handle, ink, &[b, b2 + over]);
+    push_polyline(list, handle, ink, &[a2, b2]);
+    let tick = (dir + n) * (std::f64::consts::FRAC_1_SQRT_2 * 1.5 * k);
+    for p in [a2, b2] {
+        push_polyline(list, handle, ink, &[p - tick, p + tick]);
+    }
+    if text.is_empty() {
+        return;
+    }
+    // Keep the text upright: read along the measured direction pointing right.
+    let (rd, rn) = if dir.x < -1e-12 || (dir.x.abs() <= 1e-12 && dir.y < 0.0) { (dir * -1.0, n * -1.0) } else { (dir, n) };
+    let h = 2.5 * k;
+    let mid = (a2 + b2) * 0.5 + rn * (h * 0.75);
+    let params = TextParams::centered(mid, h, rd.y.atan2(rd.x));
+    let (sh, _) = place(&TextFont::Stroke, text, &params);
+    for stroke in &sh.strokes {
+        if stroke.len() >= 2 && stroke.iter().all(|p| p.is_finite()) {
+            push_polyline(list, handle, ink, stroke);
+        }
+    }
 }
 
 /// Upper bound on riser lines drawn for one stair (hostile tread depths).
