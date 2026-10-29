@@ -119,7 +119,7 @@ fn generated_geometry_is_not_serialized() {
     v.generated = Some(ViewGeometry {
         revision: 1,
         extent: [0.0, 0.0, 1.0, 1.0],
-        lines: vec![ViewLine { a: [0.0, 0.0], b: [1.0, 1.0], kind: ArchKind::Wall, object: ArchId(0) }],
+        lines: vec![ViewLine { a: [0.0, 0.0], b: [1.0, 1.0], kind: ArchKind::Wall, object: ArchId(0), ..ViewLine::default() }],
         ..ViewGeometry::default()
     });
 
