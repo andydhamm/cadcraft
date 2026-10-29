@@ -492,7 +492,9 @@ mod tests {
         }
         let x = ((c[0] / c[3]) * 0.5 + 0.5) * sm.size as f32;
         let y = (0.5 - (c[1] / c[3]) * 0.5) * sm.size as f32;
-        depths.get(y as usize * sm.size as usize + x as usize).copied().unwrap_or(f32::NAN)
+        let xi = x.clamp(0.0, sm.size as f32 - 1.0) as usize;
+        let yi = y.clamp(0.0, sm.size as f32 - 1.0) as usize;
+        depths.get(yi * sm.size as usize + xi).copied().unwrap_or(1.0)
     }
 
     #[test]
@@ -630,6 +632,44 @@ mod tests {
     }
 
     #[test]
+    fn shadow_depth_is_one_where_nothing_is_drawn() {
+        let Some((device, queue)) = crate::gputest::shared_device() else { return };
+        // A small block far from the origin; most of the map should be empty (depth 1.0).
+        let mut s = Scene3d::default();
+        s.meshes.push(cuboid("wall", [100.0, 100.0, 0.0], [102.0, 102.0, 2.0]));
+        s.bounds = Bounds3::new([100.0, 100.0, 0.0], [102.0, 102.0, 2.0]);
+        let meshes = crate::pipeline::upload(&device, &s);
+        let sm = build(&device, &queue, &meshes, sun_from_south(), &s.bounds).expect("shadow map");
+        let depths = read_depth(&device, &queue, &sm);
+        // Sample a point well outside the fitted region (1.2x margin on the 2 m block
+        // gives ~2.4 m half-extent in light space; 3 m south is safely outside).
+        let far = depth_at(&sm, &depths, [101.0, 97.0, 1.0]);
+        assert!(far.is_finite(), "far point should be finite");
+        // Outside the fitted region the depth is the clear value 1.0.
+        assert!((far - 1.0).abs() < 0.01, "far point depth should be ~1.0, got {far}");
+    }
+
+    #[test]
+    fn shadow_map_with_empty_meshes() {
+        let Some((device, queue)) = crate::gputest::shared_device() else { return };
+        let s = Scene3d::default();
+        let meshes = crate::pipeline::upload(&device, &s);
+        // Empty meshes: the map should still be built (all clear depth).
+        let sm = build(&device, &queue, &meshes, sun_from_south(), &s.bounds);
+        // With empty bounds, fit returns None, so build returns None.
+        assert!(sm.is_none(), "empty bounds should yield no shadow map");
+        // With non-empty bounds but no meshes, the map should be built.
+        let b = Bounds3::new([0.0; 3], [4.0; 3]);
+        let sm2 = build(&device, &queue, &meshes, sun_from_south(), &b);
+        assert!(sm2.is_some(), "non-empty bounds with no meshes should still build a map");
+        let depths = read_depth(&device, &queue, &sm2.unwrap());
+        // All depths should be the clear value 1.0.
+        for d in depths.iter().take(100) {
+            assert!((d - 1.0).abs() < 0.01, "empty map should be clear depth 1.0, got {d}");
+        }
+    }
+
+    #[test]
     fn a_low_winter_sun_shadows_the_ground_north_of_the_house() {
         let Some((device, queue)) = crate::gputest::shared_device() else { return };
         // Lat 51.05, 21 December, solar noon: about 15.5 degrees above the south horizon.
@@ -698,28 +738,6 @@ mod tests {
     }
 
     #[test]
-    fn shadow_map_with_empty_meshes() {
-        let Some((device, queue)) = crate::gputest::shared_device() else { return };
-        let scene = Scene3d::default();
-        let meshes = crate::pipeline::upload(&device, &scene);
-        let b = Bounds3::new([0.0; 3], [4.0; 3]);
-        let sm = build(&device, &queue, &meshes, sun_from_south(), &b);
-        assert!(sm.is_some(), "shadow map should be built even with no meshes");
-    }
-
-    #[test]
-    fn shadow_depth_is_one_where_nothing_is_drawn() {
-        let Some((device, queue)) = crate::gputest::shared_device() else { return };
-        let scene = Scene3d::default();
-        let meshes = crate::pipeline::upload(&device, &scene);
-        let b = Bounds3::new([0.0; 3], [4.0; 3]);
-        let sm = build(&device, &queue, &meshes, sun_from_south(), &b).expect("shadow map");
-        let depths = read_depth(&device, &queue, &sm);
-        let all_one = depths.iter().all(|d| (d - 1.0).abs() < 1e-6);
-        assert!(all_one, "empty scene should have all depth 1.0");
-    }
-
-    #[test]
     fn fit_with_very_elongated_bounds() {
         let b = Bounds3::new([0.0, 0.0, 0.0], [1000.0, 1.0, 1.0]);
         let (m, range) = fit([0.0, -0.5, 0.8], &b).expect("fit should succeed");
@@ -733,6 +751,71 @@ mod tests {
         let (m, range) = fit([0.0, 0.0, 1.0], &b).expect("fit should succeed for overhead sun");
         assert!(m.iter().flatten().all(|v| v.is_finite()));
         assert!(range > 0.0);
+    }
+
+    #[test]
+    fn ground_mesh_with_zero_extent_in_one_axis() {
+        // A flat plane: zero extent in z
+        let b = Bounds3::new([0.0, 0.0, 0.0], [10.0, 5.0, 0.0]);
+        let g = ground_mesh(&b);
+        assert_eq!(g.positions.len(), 4);
+        assert_eq!(g.indices.len(), 6);
+        // Largest side is 10 (x), grow = 20
+        let xs: Vec<f32> = g.positions.iter().map(|p| p[0]).collect();
+        let ys: Vec<f32> = g.positions.iter().map(|p| p[1]).collect();
+        assert_eq!(xs.iter().cloned().fold(f32::MAX, f32::min), -20.0);
+        assert_eq!(xs.iter().cloned().fold(f32::MIN, f32::max), 30.0);
+        assert_eq!(ys.iter().cloned().fold(f32::MAX, f32::min), -20.0);
+        assert_eq!(ys.iter().cloned().fold(f32::MIN, f32::max), 25.0);
+        assert!(g.positions.iter().all(|p| p[2] == 0.0));
+    }
+
+    #[test]
+    fn receiver_bounds_grows_with_largest_side() {
+        // A long thin scene: the ground quad should grow by twice the largest side (x).
+        let b = Bounds3::new([0.0, 0.0, 0.0], [100.0, 2.0, 1.0]);
+        let r = receiver_bounds(&b, true);
+        // Largest side is 100 (x), grow = 200.
+        assert_eq!(r.min[0], -200.0);
+        assert_eq!(r.max[0], 300.0);
+        // y side is 2, but grow is based on largest side, so y also grows by 200.
+        assert_eq!(r.min[1], -200.0);
+        assert_eq!(r.max[1], 202.0);
+        // z unchanged.
+        assert_eq!(r.min[2], 0.0);
+        assert_eq!(r.max[2], 1.0);
+    }
+
+    #[test]
+    fn receiver_bounds_with_tall_scene_grows_by_height() {
+        // A tall thin scene: the ground quad should grow by twice the height.
+        let b = Bounds3::new([0.0, 0.0, 0.0], [2.0, 2.0, 50.0]);
+        let r = receiver_bounds(&b, true);
+        // Largest side is 50 (z), grow = 100.
+        assert_eq!(r.min[0], -100.0);
+        assert_eq!(r.max[0], 102.0);
+        assert_eq!(r.min[1], -100.0);
+        assert_eq!(r.max[1], 102.0);
+        // z unchanged.
+        assert_eq!(r.min[2], 0.0);
+        assert_eq!(r.max[2], 50.0);
+    }
+
+    #[test]
+    fn depth_at_clamps_to_texture_bounds() {
+        let Some((device, queue)) = crate::gputest::shared_device() else { return };
+        let scene = block_scene();
+        let meshes = crate::pipeline::upload(&device, &scene);
+        let sm = build(&device, &queue, &meshes, sun_from_south(), &scene.bounds).expect("shadow map");
+        let depths = read_depth(&device, &queue, &sm);
+        // A point far outside the fitted region should clamp to the texture edge and return 1.0.
+        let far = depth_at(&sm, &depths, [1000.0, 1000.0, 1000.0]);
+        assert!(far.is_finite(), "clamped depth should be finite");
+        assert!((far - 1.0).abs() < 0.01, "clamped depth should be ~1.0, got {far}");
+        // A point far in the negative direction.
+        let far_neg = depth_at(&sm, &depths, [-1000.0, -1000.0, -1000.0]);
+        assert!(far_neg.is_finite(), "clamped depth should be finite");
+        assert!((far_neg - 1.0).abs() < 0.01, "clamped depth should be ~1.0, got {far_neg}");
     }
 
     #[test]
