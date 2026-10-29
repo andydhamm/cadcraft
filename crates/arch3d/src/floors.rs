@@ -338,4 +338,52 @@ mod tests {
         assert!(!slab.positions.is_empty());
         assert!(slab.is_manifold());
     }
+
+    #[test]
+    fn deck_slab_with_holes() {
+        let level = default_level(0.0, 0.3);
+        let room = Room {
+            id: ArchId(1),
+            room_type: RoomType::Deck,
+            polygon: sq(),
+            holes: vec![vec![Vec2::new(1.5, 1.5), Vec2::new(2.5, 1.5), Vec2::new(2.5, 2.5), Vec2::new(1.5, 2.5)]],
+            deck_height: Some(0.9),
+            ..Default::default()
+        };
+        let slab = floor_slab(&room, &level, "floor").expect("deck slab");
+        assert!(slab.is_manifold());
+        // Top-cap area: 4x4 - 1x1 = 15.
+        let area = top_cap_area(&slab, 0.9);
+        assert!((area - 15.0).abs() < 1e-6, "top-cap area = {area}, expected 15.0");
+    }
+
+    #[test]
+    fn deck_slab_with_nan_height_falls_back_to_grade() {
+        let level = default_level(0.0, 0.3);
+        let room = Room { id: ArchId(1), room_type: RoomType::Deck, polygon: sq(), deck_height: Some(f64::NAN), ..Default::default() };
+        let slab = floor_slab(&room, &level, "floor").expect("grade slab");
+        assert_eq!(slab.material, "floor");
+        let z_max = slab.positions.iter().map(|p| p[2] as f64).fold(f64::NEG_INFINITY, f64::max);
+        assert!((z_max - 0.0).abs() < 1e-6, "z_max = {z_max}, expected 0.0");
+    }
+
+    #[test]
+    fn deck_slab_with_zero_height_falls_back_to_grade() {
+        let level = default_level(0.0, 0.3);
+        let room = Room { id: ArchId(1), room_type: RoomType::Deck, polygon: sq(), deck_height: Some(0.0), ..Default::default() };
+        let slab = floor_slab(&room, &level, "floor").expect("grade slab");
+        assert_eq!(slab.material, "floor");
+        let z_max = slab.positions.iter().map(|p| p[2] as f64).fold(f64::NEG_INFINITY, f64::max);
+        assert!((z_max - 0.0).abs() < 1e-6, "z_max = {z_max}, expected 0.0");
+    }
+
+    #[test]
+    fn deck_slab_with_negative_height_falls_back_to_grade() {
+        let level = default_level(0.0, 0.3);
+        let room = Room { id: ArchId(1), room_type: RoomType::Deck, polygon: sq(), deck_height: Some(-0.5), ..Default::default() };
+        let slab = floor_slab(&room, &level, "floor").expect("grade slab");
+        assert_eq!(slab.material, "floor");
+        let z_max = slab.positions.iter().map(|p| p[2] as f64).fold(f64::NEG_INFINITY, f64::max);
+        assert!((z_max - 0.0).abs() < 1e-6, "z_max = {z_max}, expected 0.0");
+    }
 }
