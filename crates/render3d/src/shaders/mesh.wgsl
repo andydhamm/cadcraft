@@ -81,7 +81,9 @@ fn fresnel_schlick(vdh: f32, f0: vec3<f32>) -> vec3<f32> {
     let l = normalize(p.light_dir);
     var vdir = n;
     let to_eye = p.camera_pos - v.wpos;
-    if (dot(to_eye, to_eye) > 1e-12) {
+    // Matte dielectrics keep a per-face constant view direction so a planar face is one colour
+    // (the perspective view vector would otherwise shift the faint specular by a level or two).
+    if (dot(to_eye, to_eye) > 1e-12 && (p.metallic > 0.01 || p.alpha < 1.0)) {
         vdir = normalize(to_eye);
     }
     let h = normalize(l + vdir);

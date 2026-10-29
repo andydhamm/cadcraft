@@ -53,13 +53,14 @@ fn mesh_shader_flat_shading_uses_world_position_derivatives() {
 #[test]
 fn mesh_shader_lighting_formula() {
     let src = shader_source();
-    // The lighting model is: albedo * (ambient + (1 - ambient) * max(dot(n, light_dir), 0))
-    assert!(src.contains("max(dot(n, u.light_dir), 0.0)"), "shader must clamp N·L to [0, 1]");
-    assert!(src.contains("u.albedo * (u.ambient + (1.0 - u.ambient) * ndl)"), "shader must use the correct ambient+diffuse formula");
+    // Metallic-roughness PBR: ambient + (Lambert diffuse + GGX specular) * radiance * N·L
+    assert!(src.contains("max(dot(n, l), 0.0)"), "shader must clamp N·L at 0");
+    assert!(src.contains("let c = amb + lit;"), "shader must add ambient and direct lighting");
 }
 
 #[test]
 fn mesh_shader_returns_opaque_color() {
     let src = shader_source();
-    assert!(src.contains("return vec4<f32>(c, 1.0);"), "fragment shader must return opaque (alpha=1.0) color");
+    // Opaque by default (alpha 1.0); only glass (alpha < 1) blends.
+    assert!(src.contains("return vec4<f32>(c, alpha);"), "fragment shader must return the material alpha");
 }
