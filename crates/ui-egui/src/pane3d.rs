@@ -1347,4 +1347,94 @@ mod tests {
         assert!(apply_pick(&mut pane, &mut session).is_none(), "a miss has no handle to apply");
         assert_eq!(sel_handles(&session), before, "a sky pick leaves the selection alone");
     }
+
+    #[test]
+    fn a_second_3d_pick_replaces_the_first() {
+        let (mut pane, mut session) = house_pane();
+        let (_, size) = front_camera();
+        let center = [240.0, 160.0];
+
+        // First pick: the door at the centre.
+        let door_handle = pane.pick(size, center).expect("first pick hits the door");
+        apply_pick(&mut pane, &mut session).expect("first pick applied");
+        assert_eq!(sel_handles(&session), vec![cadcraft_doc::arch::opening_handle(cadcraft_doc::ArchId(0)).hex()], "first pick selects the door");
+
+        // Second pick: to the right, hitting the wall (not the door).
+        let wall_pixel = [350.0, 160.0];
+        let wall_handle = pane.pick(size, wall_pixel).expect("second pick hits the wall");
+        apply_pick(&mut pane, &mut session).expect("second pick applied");
+        let handles = sel_handles(&session);
+        assert_eq!(handles.len(), 1, "selection should have exactly one handle");
+        assert_eq!(handles[0], wall_handle.hex(), "selection should be the wall handle");
+        assert_ne!(handles[0], door_handle.hex(), "selection should not still be the door");
+        assert_eq!(
+            cadcraft_engine::grips::arch_id_from_handle(wall_handle),
+            Some(cadcraft_engine::grips::ArchTarget::Wall(cadcraft_doc::ArchId(0))),
+            "second pick should select the wall"
+        );
+    }
+
+    #[test]
+    fn apply_pick_with_nothing_picked_leaves_selection_alone() {
+        let (mut pane, mut session) = house_pane();
+        let (_, size) = front_camera();
+        let center = [240.0, 160.0];
+
+        // Establish a selection.
+        pane.pick(size, center).expect("pick hits the door");
+        apply_pick(&mut pane, &mut session).expect("pick applied");
+        let before = sel_handles(&session);
+
+        // Calling apply_pick without a new pick is a no-op.
+        assert!(apply_pick(&mut pane, &mut session).is_none(), "no pick, no apply");
+        assert_eq!(sel_handles(&session), before, "selection unchanged");
+    }
+
+    #[test]
+    fn a_3d_pick_replaces_a_multi_selection() {
+        let (mut pane, mut session) = house_pane();
+        let (_, size) = front_camera();
+        let center = [240.0, 160.0];
+
+        // Establish a 2D multi-selection.
+        let wall0 = cadcraft_doc::arch::arch_handle(cadcraft_doc::ArchId(0));
+        let wall1 = cadcraft_doc::arch::arch_handle(cadcraft_doc::ArchId(1));
+        session.set_selection(vec![wall0, wall1]);
+        assert_eq!(sel_handles(&session).len(), 2, "two handles selected");
+
+        // A 3D pick replaces the multi-selection with a single handle.
+        pane.pick(size, center).expect("pick hits the door");
+        apply_pick(&mut pane, &mut session).expect("pick applied");
+        let handles = sel_handles(&session);
+        assert_eq!(handles.len(), 1, "3D pick replaces multi-selection with single");
+        assert_eq!(handles[0], cadcraft_doc::arch::opening_handle(cadcraft_doc::ArchId(0)).hex(), "the single selection is the picked opening");
+    }
+
+    #[test]
+    fn a_3d_pick_round_trips_through_arch_id_from_handle() {
+        let (mut pane, mut session) = house_pane();
+        let (_, size) = front_camera();
+        let center = [240.0, 160.0];
+
+        pane.pick(size, center).expect("pick hits the door");
+        let handle = apply_pick(&mut pane, &mut session).expect("pick applied");
+
+        // The handle must resolve back to the opening through the single disambiguator.
+        let target = cadcraft_engine::grips::arch_id_from_handle(handle);
+        assert_eq!(
+            target,
+            Some(cadcraft_engine::grips::ArchTarget::Opening(cadcraft_doc::ArchId(0))),
+            "the picked handle must resolve back to the opening"
+        );
+    }
+
+    #[test]
+    fn a_pick_with_no_scene_returns_none() {
+        let mut pane = Pane3d::new();
+        let mut session = Session::new();
+
+        // No scene built: pick and apply are both no-ops.
+        assert!(pane.pick((100, 100), [50.0, 50.0]).is_none(), "no scene, no pick");
+        assert!(apply_pick(&mut pane, &mut session).is_none(), "no pick, no apply");
+    }
 }
