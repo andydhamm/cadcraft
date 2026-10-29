@@ -315,7 +315,7 @@ pub fn project_point(camera: &Camera, size: (u32, u32), p: [f64; 3]) -> Option<[
     let pf = [p[0] as f32, p[1] as f32, p[2] as f32];
     let aspect = w as f64 / h as f64;
     let vp = view_proj(camera, aspect);
-    let clip = [0.0f32; 4];
+    let mut clip = [0.0f32; 4];
     for i in 0..4 {
         clip[i] = vp[0][i] * pf[0] + vp[1][i] * pf[1] + vp[2][i] * pf[2] + vp[3][i];
     }
@@ -362,9 +362,15 @@ pub fn ray_at(camera: &Camera, size: (u32, u32), pixel: [f32; 2]) -> Option<(Vec
     // Normalised pixel → NDC (y flipped to y-down).
     let nx = (pixel[0] / w_f) * 2.0 - 1.0;
     let ny = 1.0 - (pixel[1] / h_f) * 2.0;
-    // Inverse view·proj: clip ray direction (world→camera→NDC) is (nx*aspect*tan_half, ny*tan_half, -1).
-    let dir_clip = Vec3::new(nx * aspect * tan_half, ny * tan_half, -1.0);
-    let dir_world = camera.view().inv() * dir_clip;
+    // Inverse view rotation applied to the clip-space direction.
+    // View matrix columns are [right, new_up, -fw]; the inverse rotation uses
+    // those as rows, so d_world = right*d_x + new_up*d_y + (-fw)*d_z.
+    // With d_z = -1.0 this simplifies to right*d_x + new_up*d_y + fw.
+    let view = camera.view();
+    let right = Vec3::new(view.m[0][0], view.m[1][0], view.m[2][0]);
+    let up = Vec3::new(view.m[0][1], view.m[1][1], view.m[2][1]);
+    let fw = Vec3::new(-view.m[0][2], -view.m[1][2], -view.m[2][2]);
+    let dir_world = right * ((nx * aspect * tan_half) as f64) + up * ((ny * tan_half) as f64) + fw;
     if !dir_world.is_finite() {
         return None;
     }
