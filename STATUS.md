@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-29 20:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 20:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 7 of 13: Generated elevations and sections — 3 of 12 segments merged · 1 of 9 acceptance checks**
 
@@ -17,7 +17,7 @@ Updated 2026-10-29 20:30 UTC. This page and the card in the README are regenerat
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
-| 7 | Generated elevations and sections | building | 1 / 9 | 3.3 h so far · expected done Oct 30 07:54–Oct 31 08:51 UTC |
+| 7 | Generated elevations and sections | building | 1 / 9 | 3.6 h so far · expected done Oct 30 09:01–Oct 31 11:51 UTC |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
@@ -27,12 +27,12 @@ Updated 2026-10-29 20:30 UTC. This page and the card in the README are regenerat
 
 ## Phase 7 segments
 
-7 queued, 3 merged, 1 working, 1 gate
+7 queued, 3 merged, 1 gate, 1 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p7-roof-eave-at-the-wall` | Roof underside meets the eave wall top with an overhang (walls no longer stretched into the roof) | working | mai-flash |
-| `p7-doc-views` | Linked view objects (ELEVATION / SECTION) and ArchKind in the arch model | gate | kimi-k31 |
+| `p7-roof-eave-at-the-wall` | Roof underside meets the eave wall top with an overhang (walls no longer stretched into the roof) | gate | mai-flash |
+| `p7-doc-views` | Linked view objects (ELEVATION / SECTION) and ArchKind in the arch model | working | kimi-k31 |
 
 ## Recent merges
 
@@ -55,14 +55,14 @@ Updated 2026-10-29 20:30 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 637 |
-| bonsai-b | bonsai2-27b | gate | 597 |
+| bonsai-a | bonsai2-27b | gate | 637 |
+| bonsai-b | bonsai2-27b | agent | 598 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | idle | 40 |
 | claude-sonnet-b | sonnet | idle | 34 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 483 |
-| kimi-k31 | k3.1-pro-highspeed | gate | 78 |
-| mai-flash | mai-code-1.1-flash | agent | 11 |
-| tturbo-mac | tturbo-ultraheretic | gate | 429 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 484 |
+| kimi-k31 | k3.1-pro-highspeed | agent | 80 |
+| mai-flash | mai-code-1.1-flash | gate | 11 |
+| tturbo-mac | tturbo-ultraheretic | agent | 430 |
 | tturbo-mac2 | tturbo-ultraheretic | idle | 264 |
