@@ -2630,6 +2630,96 @@ mod tests {
     }
 
     #[test]
+    fn room_holes_without_wells_returned_unchanged() {
+        let model = well_test_model(vec![sq(1.0, 1.0, 2.0), sq(5.0, 5.0, 3.0)], vec![]);
+        let room = &model.rooms[0];
+        let holes = well_holes_for(&model, room);
+        assert_eq!(holes.len(), 2, "should return the room's two holes");
+        assert_eq!(holes[0], room.holes[0]);
+        assert_eq!(holes[1], room.holes[1]);
+    }
+
+    #[test]
+    fn well_with_nan_point_is_added() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 1,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+            ..Default::default()
+        });
+        let well = vec![Vec2::new(1.0, 1.0), Vec2::new(f64::NAN, 1.0), Vec2::new(4.0, 4.0), Vec2::new(1.0, 4.0)];
+        let mut stair = cadcraft_doc::arch::Stair::default();
+        stair.id = ArchId(200);
+        stair.to_level = 1;
+        stair.well = well;
+        model.stairs.push(stair);
+
+        let room = &model.rooms[0];
+        let holes = well_holes_for(&model, room);
+        assert_eq!(holes.len(), 1, "well with NaN should be added");
+        assert!(holes[0][1].x.is_nan(), "NaN should be preserved");
+    }
+
+    #[test]
+    fn well_with_huge_coordinates_is_added() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 1,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+            ..Default::default()
+        });
+        let well = vec![Vec2::new(1e15, 1e15), Vec2::new(1e15 + 3.0, 1e15), Vec2::new(1e15 + 3.0, 1e15 + 3.0), Vec2::new(1e15, 1e15 + 3.0)];
+        let mut stair = cadcraft_doc::arch::Stair::default();
+        stair.id = ArchId(200);
+        stair.to_level = 1;
+        stair.well = well;
+        model.stairs.push(stair);
+
+        let room = &model.rooms[0];
+        let holes = well_holes_for(&model, room);
+        assert_eq!(holes.len(), 1, "well with huge coordinates should be added");
+        assert_eq!(holes[0][0].x, 1e15);
+    }
+
+    #[test]
+    fn stair_on_different_level_not_included() {
+        let model = well_test_model(vec![], vec![sq(1.0, 1.0, 3.0)]);
+        let mut model2 = model.clone();
+        model2.stairs[0].to_level = 2;
+        let room = &model2.rooms[0];
+        let holes = well_holes_for(&model2, room);
+        assert!(holes.is_empty(), "well from different level should not be included");
+    }
+
+    #[test]
+    fn empty_well_polygon_is_skipped() {
+        let mut model = ArchModel::default();
+        model.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+        model.levels.push(Level { index: 1, elevation: 2.7, ceiling_height: 2.4, ..Default::default() });
+        model.rooms.push(Room {
+            id: ArchId(100),
+            level: 1,
+            polygon: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)],
+            ..Default::default()
+        });
+        let mut stair = cadcraft_doc::arch::Stair::default();
+        stair.id = ArchId(200);
+        stair.to_level = 1;
+        stair.well = vec![];
+        model.stairs.push(stair);
+
+        let room = &model.rooms[0];
+        let holes = well_holes_for(&model, room);
+        assert!(holes.is_empty(), "empty well should be skipped");
+    }
+
+    #[test]
     fn part_of_maps_stair_railing_deck() {
         let base = box_mesh(0.0, 0.0, 0.0, 1.0, "stair-stringer", ArchId(1));
         assert_eq!(part_of(&base), "stair");
