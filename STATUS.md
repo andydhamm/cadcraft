@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-29 04:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 04:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 5 of 13: Stairs, railings and decks — 24 of 24 segments merged · 9 of 9 acceptance checks**
 
-4,727 workspace tests passing at the last merge · 429 segments merged in all · 0 of 13 seats working
+4,739 workspace tests passing at the last merge · 431 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -15,7 +15,7 @@ Updated 2026-10-29 04:30 UTC. This page and the card in the README are regenerat
 | 2 | Openings | done | 9 / 9 | 15.8 h |
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
-| 5 | Stairs, railings and decks | building | 9 / 9 | 15.5 h so far · expected done Oct 29 06:39–Oct 29 11:15 UTC |
+| 5 | Stairs, railings and decks | building | 9 / 9 | 15.8 h so far · expected done Oct 29 06:54–Oct 29 11:30 UTC |
 | 6 | The 3D view, properly | planned | — | — |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
@@ -34,6 +34,8 @@ Updated 2026-10-29 04:30 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 29 04:40 | `harden-p5-arch3d-stairs` | merged | 4,739 pass | tturbo-mac |
+| Oct 29 04:33 | `harden-p1-arch-workspace` | merged | 4,732 pass | tturbo-mac2 |
 | Oct 29 04:02 | `harden-p1-wall-graph` | merged | 4,727 pass | tturbo-mac2 |
 | Oct 29 03:50 | `p5f-inspect-holes-are-rings` | merged | 4,720 pass | kimi-k31 |
 | Oct 29 03:40 | `p5f-inspect-holes-are-rings` | refused | 4,720 pass | bonsai-a |
@@ -44,8 +46,6 @@ Updated 2026-10-29 04:30 UTC. This page and the card in the README are regenerat
 | Oct 29 02:52 | `p5f-inspect-holes-are-rings` | refused | 4,708 pass | mai-flash |
 | Oct 29 02:45 | `harden-p5f-dxf-deck-height-roundtrip` | merged | 4,707 pass | tturbo-mac |
 | Oct 29 02:36 | `p5f-inspect-holes-are-rings` | refused | 4,703 pass | bonsai-b |
-| Oct 29 02:26 | `harden-p5f-stair-cmd-optional-levels` | merged | 4,702 pass | tturbo-mac2 |
-| Oct 29 02:20 | `p5f-inspect-holes-are-rings` | refused | 4,698 pass | darwin-ws3 |
 
 ## Seats active in the last hour
 
@@ -57,10 +57,10 @@ Updated 2026-10-29 04:30 UTC. This page and the card in the README are regenerat
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | idle | 27 |
 | claude-sonnet-b | sonnet | idle | 23 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 426 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | yielding | 426 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 72 |
 | mai-flash | mai-code-1.1-flash | idle | 6 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
-| tturbo-mac | tturbo-ultraheretic | merging | 390 |
-| tturbo-mac2 | tturbo-ultraheretic | merging | 246 |
+| tturbo-mac | tturbo-ultraheretic | agent | 390 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 246 |
