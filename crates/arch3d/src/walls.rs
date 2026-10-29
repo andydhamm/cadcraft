@@ -503,7 +503,10 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
                         });
                     }
                     if is_covered {
-                        let z_plane = underside_z(plane, plane.eave_z, p);
+                        // Preserve the wall clip's segment-distance behaviour for either
+                        // base-edge orientation, while sharing the roof's overhang correction.
+                        let outline_z = underside_z(plane, plane.eave_z, a);
+                        let z_plane = outline_z + plane.slope * point_to_line_dist(p, a, b);
                         if z_plane.is_finite() {
                             z_best = z_best.min(z_plane);
                             covered = true;
