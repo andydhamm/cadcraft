@@ -302,7 +302,7 @@ fn cameras_json(s: &Session) -> Result<Value, EngineError> {
             json!({
                 "name": c.name,
                 "kind": kind,
-                "target": c.target,
+                "target": c.target.unwrap_or([0.0, 0.0, 0.0]),
                 "azimuth": c.azimuth_deg,
                 "elevation": c.elevation_deg,
                 "distance": c.distance,
@@ -717,5 +717,66 @@ mod tests {
         );
         assert!(matches!(r, Err(EngineError::BadParams { .. })));
         assert_eq!(cam_count(&s), 0);
+    }
+
+    /// A 4-component eye is rejected for both full and orbit cameras.
+    #[test]
+    fn camera_save_full_refuses_4_component_eye() {
+        let mut s = Session::new();
+        for p in [
+            json!({ "save": "a", "kind": "full", "eye": [1.0, 2.0, 3.0, 4.0] }),
+            json!({ "save": "b", "kind": "orbit", "eye": [1.0, 2.0, 3.0, 4.0] }),
+        ] {
+            let r = s.execute("camera", &p);
+            assert!(matches!(r, Err(EngineError::BadParams { .. })), "{p:?} -> {r:?}");
+        }
+        assert_eq!(cam_count(&s), 0);
+    }
+
+    /// Null (or NaN) in any eye component is rejected.
+    #[test]
+    fn camera_save_full_refuses_null_in_eye() {
+        let mut s = Session::new();
+        for p in [
+            json!({ "save": "a", "kind": "full", "eye": [null, 2.0, 3.0] }),
+            json!({ "save": "b", "kind": "full", "eye": [1.0, null, 3.0] }),
+            json!({ "save": "c", "kind": "full", "eye": [1.0, 2.0, null] }),
+            json!({ "save": "d", "kind": "full", "eye": [null, 2.0] }),
+        ] {
+            let r = s.execute("camera", &p);
+            assert!(matches!(r, Err(EngineError::BadParams { .. })), "{p:?} -> {r:?}");
+        }
+        assert_eq!(cam_count(&s), 0);
+    }
+
+    /// An orbit camera with a 3-component eye is rejected.
+    #[test]
+    fn camera_save_full_refuses_orbit_with_3d_eye() {
+        let mut s = Session::new();
+        let r = s.execute("camera", &json!({ "save": "a", "kind": "orbit", "eye": [1.0, 2.0, 3.0] }));
+        assert!(matches!(r, Err(EngineError::BadParams { .. })), "orbit with 3D eye should be rejected");
+        assert_eq!(cam_count(&s), 0);
+    }
+
+    /// A full camera without a target defaults to the origin.
+    #[test]
+    fn camera_save_full_without_target_defaults_to_origin() {
+        let mut s = Session::new();
+        let r = s.execute("camera", &json!({ "save": "a", "kind": "full", "eye": [3.0, -8.0, 1.6] })).unwrap();
+        assert_eq!(r["active"], json!("a"));
+        assert_eq!(r["cameras"][0]["target"], json!([0.0, 0.0, 0.0]));
+        assert_eq!(r["cameras"][0]["eye"], json!([3.0, -8.0, 1.6]));
+    }
+
+    /// Negative and very large finite eye values are accepted.
+    #[test]
+    fn camera_save_full_accepts_negative_and_large_eye() {
+        let mut s = Session::new();
+        let r = s.execute("camera", &json!({ "save": "neg", "kind": "full", "eye": [-100.0, -200.0, -50.0] })).unwrap();
+        assert_eq!(r["cameras"][0]["eye"], json!([-100.0, -200.0, -50.0]));
+
+        let r2 = s.execute("camera", &json!({ "save": "big", "kind": "full", "eye": [1e308, 1e308, 1e308] })).unwrap();
+        assert_eq!(r2["cameras"][1]["eye"], json!([1e308, 1e308, 1e308]));
+        assert_eq!(cam_count(&s), 2);
     }
 }
