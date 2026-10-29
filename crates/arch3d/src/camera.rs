@@ -214,6 +214,14 @@ impl Camera {
         }
     }
 
+    /// Target position in world space (dispatches on the variant).
+    pub fn target(&self) -> Vec3 {
+        match self {
+            Camera::Orbit(o) => o.target,
+            Camera::Full(f) => f.target,
+        }
+    }
+
     /// View (world→camera) matrix (dispatches on the variant).
     pub fn view(&self) -> Mat4 {
         match self {
@@ -462,9 +470,9 @@ mod tests {
         let cam = Camera::Full(cam);
         let size = (64u32, 64u32);
         let (origin, dir) = ray_at(&cam, size, [32.0, 32.0]).unwrap();
-        assert!((origin - cam.eye()).length() < 1e-6, "origin should be the eye");
-        let to_target = (cam.target - origin).normalized();
-        assert!((to_target - dir).length() < 1e-4, "centre ray should point at target: {} vs {}", to_target, dir);
+        assert!((origin - cam.eye()).len() < 1e-6, "origin should be the eye");
+        let to_target = (cam.target() - origin).normalized();
+        assert!((to_target - dir).len() < 1e-4, "centre ray should point at target: {} vs {}", to_target, dir);
     }
 
     #[test]
@@ -476,7 +484,7 @@ mod tests {
         let (origin, dir) = ray_at(&cam, size, px).unwrap();
         // The point p should lie on the ray (within tolerance).
         let t = (p - origin).dot(dir);
-        let on_ray = (p - (origin + dir * t)).length();
+        let on_ray = (p - (origin + dir * t)).len();
         assert!(on_ray < 1e-2, "projected point should lie on the ray: {} (t={})", on_ray, t);
     }
 
@@ -494,7 +502,7 @@ mod tests {
         let cam = Camera::Orbit(Orbit::at_origin(0.0, 0.0, 10.0, 45.0));
         let vp = view_proj(&cam, 1.0);
         // The target should project to the screen centre.
-        let clip = [0.0f32; 4];
+        let mut clip = [0.0f32; 4];
         for i in 0..4 {
             clip[i] = vp[0][i] * 0.0 + vp[1][i] * 0.0 + vp[2][i] * 0.0 + vp[3][i];
         }
