@@ -1,26 +1,21 @@
-use cadcraft_doc::arch::{ArchModel, ArchView, ViewGeometry, ViewLine};
+use cadcraft_doc::arch::{ArchView, ViewGeometry, ViewLine};
 use cadcraft_engine::Session;
 use serde_json::json;
 
 /// Helper to create a mock ArchView with generated geometry.
 fn make_view(name: &str, scale: f64, w: f64, h: f64) -> ArchView {
     let mut v = ArchView { name: name.into(), scale, ..Default::default() };
-    
+
     // Create generated geometry with bounds [0, 0, w, h]
-    let mut gen = ViewGeometry::default();
-    gen.extent = [0.0, 0.0, w, h];
-    
+    let mut geometry = ViewGeometry::default();
+    geometry.extent = [0.0, 0.0, w, h];
+
     // Add a line to ensure it's not empty, though extent is what matters for bounds()
     // Assuming bounds() uses extent. If bounds() calculates from lines, we need lines.
     // Let's add a line covering the bounds.
-    gen.lines.push(ViewLine {
-        a: [0.0, 0.0],
-        b: [w, h],
-        kind: cadcraft_doc::arch::ArchKind::View,
-        object: cadcraft_doc::arch::ArchId(0),
-    });
-    
-    v.generated = Some(gen);
+    geometry.lines.push(ViewLine { a: [0.0, 0.0], b: [w, h], kind: cadcraft_doc::arch::ArchKind::View, object: cadcraft_doc::arch::ArchId(0) });
+
+    v.generated = Some(geometry);
     v
 }
 
@@ -31,7 +26,7 @@ fn viewsheet_puts_each_view_in_its_own_viewport_at_1_to_50() {
     // Setup 4 views
     for i in 0..4 {
         let v = make_view(&format!("v{i}"), 50.0, 11.2, 5.7);
-        s.doc_mut().arch.views.push(v);
+        s.doc_mut().unwrap().arch.views.push(v);
     }
 
     let res = s.execute(
@@ -67,7 +62,7 @@ fn viewsheet_lays_out_two_per_row_from_the_top_left() {
     // Setup 4 views
     for i in 0..4 {
         let v = make_view(&format!("v{i}"), 50.0, 11.2, 5.7);
-        s.doc_mut().arch.views.push(v);
+        s.doc_mut().unwrap().arch.views.push(v);
     }
 
     let res = s
@@ -108,7 +103,7 @@ fn viewsheet_adds_no_default_viewport() {
 
     for i in 0..4 {
         let v = make_view(&format!("v{i}"), 50.0, 11.2, 5.7);
-        s.doc_mut().arch.views.push(v);
+        s.doc_mut().unwrap().arch.views.push(v);
     }
 
     s.execute(
@@ -129,7 +124,7 @@ fn viewsheet_adds_no_default_viewport() {
     let vp_count = layout
         .entities
         .iter()
-        .filter(|h| s.doc().unwrap().entity(**h).map(|e| matches!(e.kind, cadcraft_doc::EntityKind::Viewport(_))).unwrap_or(false))
+        .filter(|h| s.doc().unwrap().entity(*h).map(|e| matches!(e.kind, cadcraft_doc::EntityKind::Viewport(_))).unwrap_or(false))
         .count();
 
     assert_eq!(vp_count, 4, "Should have exactly 4 viewports, no default");
@@ -141,7 +136,7 @@ fn viewsheet_refuses_bad_input_and_changes_nothing() {
 
     // Add 1 view
     let v = make_view("v0", 50.0, 11.2, 5.7);
-    s.doc_mut().arch.views.push(v);
+    s.doc_mut().unwrap().arch.views.push(v);
 
     let layouts_before = s.doc().unwrap().layouts.len();
 
