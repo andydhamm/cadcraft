@@ -672,6 +672,16 @@ mod offscreen_behavior_tests {
             assert_eq!(off.size(), (640, 400));
         });
     }
+
+    #[test]
+    fn style_codes_are_distinct() {
+        assert_ne!(Style::Shaded.code(), Style::ShadedEdges.code());
+        assert_ne!(Style::Shaded.code(), Style::HiddenLine.code());
+        assert_ne!(Style::Shaded.code(), Style::GlassHouse.code());
+        assert_ne!(Style::ShadedEdges.code(), Style::HiddenLine.code());
+        assert_ne!(Style::ShadedEdges.code(), Style::GlassHouse.code());
+        assert_ne!(Style::HiddenLine.code(), Style::GlassHouse.code());
+    }
 }
 
 #[cfg(test)]
