@@ -1,6 +1,7 @@
 //! Wall extrusion: turns a solved 2D `WallShape` into a 3D extruded mesh.
 
 use crate::mesh::Mesh;
+use crate::roof::underside_z;
 
 use cadcraft_arch::join::WallShape;
 use cadcraft_arch::opening::ROUGH_ALLOWANCE;
@@ -26,8 +27,10 @@ pub struct RoofClip {
     pub base_edge: [f64; 4],
     /// The slope (rise / run).
     pub slope: f64,
-    /// The height of the roof at the base edge.
+    /// The roof underside height at the eave line.
     pub eave_z: f64,
+    /// The plan overhang from the roof outline to the eave line.
+    pub overhang: f64,
 }
 
 /// A wall's elevation profile in wall-local coordinates.
@@ -262,8 +265,9 @@ pub fn elevation_profile(
         let dist0 = point_to_line_dist(p0_world, Vec2::new(c.base_edge[0], c.base_edge[1]), Vec2::new(c.base_edge[2], c.base_edge[3]));
         let dist1 = point_to_line_dist(p1_world, Vec2::new(c.base_edge[0], c.base_edge[1]), Vec2::new(c.base_edge[2], c.base_edge[3]));
 
-        let z0 = c.eave_z + c.slope * dist0;
-        let z1 = c.eave_z + c.slope * dist1;
+        let overhang = if c.overhang.is_finite() && c.overhang >= 0.0 { c.overhang } else { 0.0 };
+        let z0 = c.eave_z + c.slope * (dist0 - overhang);
+        let z1 = c.eave_z + c.slope * (dist1 - overhang);
 
         v0 = z0 - base;
         v1 = z1 - base;
@@ -378,10 +382,31 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
     }
     let edge_mid = Vec2::new(sum_x / (edges.len() as f64 * 2.0), sum_y / (edges.len() as f64 * 2.0));
     let wall_mid = Vec2::new((wall.start.x + wall.end.x) / 2.0, (wall.start.y + wall.end.y) / 2.0);
-    let out_vec = edge_mid - wall_mid;
-    let out_len = (out_vec.x * out_vec.x + out_vec.y * out_vec.y).sqrt();
+    let mut out_vec = edge_mid - wall_mid;
+    let mut out_len = (out_vec.x * out_vec.x + out_vec.y * out_vec.y).sqrt();
     if out_len < 1e-9 {
-        return None;
+        let mut roof_center = Vec2::ZERO;
+        let mut count = 0usize;
+        for roof in &model.roofs {
+            if roof.level != wall.base_level {
+                continue;
+            }
+            for plane in &roof.planes {
+                for q in &plane.ring {
+                    roof_center += *q;
+                    count += 1;
+                }
+            }
+        }
+        if count == 0 {
+            return None;
+        }
+        let roof_center = roof_center / count as f64;
+        out_vec = roof_center - wall_mid;
+        out_len = (out_vec.x * out_vec.x + out_vec.y * out_vec.y).sqrt();
+        if out_len < 1e-9 {
+            return None;
+        }
     }
     let out = Vec2::new(out_vec.x / out_len, out_vec.y / out_len);
 
@@ -409,62 +434,89 @@ pub fn roof_top_polyline(model: &ArchModel, wall: &Wall, base: f64, top: f64) ->
         }
     }
 
-    // Evaluate the top height at each candidate `u`.
+    // Sample both wall faces and keep the lowest covering roof underside. At an
+    // eave, the outer face remains at eave height, preventing the higher roof
+    // over the inner face from stretching the wall into the roof.
     let mut points: Vec<Vec2> = Vec::new();
     for &u in &unique_us {
-        let p = wall.start + dir * u + out * (wall.thickness / 2.0);
-        let mut z = top;
+        let mut z_best = f64::INFINITY;
         let mut covered = false;
-        for roof in &model.roofs {
-            if roof.level != wall.base_level {
-                continue;
-            }
-            for plane in &roof.planes {
-                let a = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
-                let b = Vec2::new(plane.base_edge[2], plane.base_edge[3]);
-                let edge_len = ((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y)).sqrt();
-                if edge_len < 1e-12 || plane.ring.len() < 3 {
+        for side in [-1.0, 1.0] {
+            let p = wall.start + dir * u + out * (wall.thickness / 2.0) * side;
+            for roof in &model.roofs {
+                if roof.level != wall.base_level {
                     continue;
                 }
-                let perp = Vec2::new(-(b.y - a.y), b.x - a.x);
-                let perp_len = (perp.x * perp.x + perp.y * perp.y).sqrt();
-                if perp_len < 1e-12 {
-                    continue;
-                }
-                let mut n = Vec2::new(perp.x / perp_len, perp.y / perp_len);
-                let mut cx = 0.0;
-                let mut cy = 0.0;
-                for q in &plane.ring {
-                    cx += q.x;
-                    cy += q.y;
-                }
-                let c = Vec2::new(cx / plane.ring.len() as f64, cy / plane.ring.len() as f64);
-                if (c - a).dot(n) < 0.0 {
-                    n = Vec2::new(-n.x, -n.y);
-                }
-                let d = (p - a).dot(n);
-                let mut is_covered = point_in_polygon(&plane.ring, p);
-                if !is_covered {
-                    let to_c = c - p;
-                    let to_c_len = (to_c.x * to_c.x + to_c.y * to_c.y).sqrt();
-                    if to_c_len >= 1e-12 {
-                        let nudged = p + to_c / to_c_len * 1e-6;
-                        is_covered = point_in_polygon(&plane.ring, nudged);
+                for plane in &roof.planes {
+                    let a = Vec2::new(plane.base_edge[0], plane.base_edge[1]);
+                    let b = Vec2::new(plane.base_edge[2], plane.base_edge[3]);
+                    let edge_len = ((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y)).sqrt();
+                    if edge_len < 1e-12 || plane.ring.len() < 3 {
+                        continue;
                     }
-                }
-                if is_covered {
-                    let z_plane = plane.eave_z + plane.slope * d;
-                    if z_plane.is_finite() {
-                        if !covered || z_plane < z {
-                            z = z_plane;
+                    let mut is_covered = point_in_polygon(&plane.ring, p);
+                    if !is_covered {
+                        let mut cx = 0.0;
+                        let mut cy = 0.0;
+                        for q in &plane.ring {
+                            cx += q.x;
+                            cy += q.y;
                         }
-                        covered = true;
+                        let c = Vec2::new(cx / plane.ring.len() as f64, cy / plane.ring.len() as f64);
+                        let to_c = c - p;
+                        let to_c_len = (to_c.x * to_c.x + to_c.y * to_c.y).sqrt();
+                        if to_c_len >= 1e-12 {
+                            let nudged = p + to_c / to_c_len * 1e-6;
+                            is_covered = point_in_polygon(&plane.ring, nudged);
+                        }
+                    }
+                    if !is_covered {
+                        is_covered = plane.ring.windows(2).any(|w| {
+                            let a = w[0];
+                            let b = w[1];
+                            let dx = b.x - a.x;
+                            let dy = b.y - a.y;
+                            let len_sq = dx * dx + dy * dy;
+                            if len_sq < 1e-12 {
+                                return false;
+                            }
+                            let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq;
+                            let t = t.clamp(0.0, 1.0);
+                            let closest = Vec2::new(a.x + t * dx, a.y + t * dy);
+                            let d2 = (p.x - closest.x) * (p.x - closest.x) + (p.y - closest.y) * (p.y - closest.y);
+                            d2 <= 1e-12
+                        }) || (plane.ring.len() >= 2 && {
+                            let a = plane.ring[0];
+                            let b = plane.ring[plane.ring.len() - 1];
+                            let dx = b.x - a.x;
+                            let dy = b.y - a.y;
+                            let len_sq = dx * dx + dy * dy;
+                            if len_sq < 1e-12 {
+                                false
+                            } else {
+                                let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq;
+                                let t = t.clamp(0.0, 1.0);
+                                let closest = Vec2::new(a.x + t * dx, a.y + t * dy);
+                                let d2 = (p.x - closest.x) * (p.x - closest.x) + (p.y - closest.y) * (p.y - closest.y);
+                                d2 <= 1e-12
+                            }
+                        });
+                    }
+                    if is_covered {
+                        // Preserve the wall clip's segment-distance behaviour for either
+                        // base-edge orientation, while sharing the roof's overhang correction.
+                        let outline_z = underside_z(plane, plane.eave_z, a);
+                        let z_plane = outline_z + plane.slope * point_to_line_dist(p, a, b);
+                        if z_plane.is_finite() {
+                            z_best = z_best.min(z_plane);
+                            covered = true;
+                        }
                     }
                 }
             }
         }
-        let v = z - base;
-        if v.is_finite() {
+        let v = z_best - base;
+        if covered && v.is_finite() {
             points.push(Vec2::new(u, v));
         }
     }
@@ -1288,7 +1340,7 @@ mod tests {
             base_level: 0,
             ..Default::default()
         };
-        let clip = RoofClip { base_edge: [0.0, 0.0, 10.0, 0.0], slope: 0.5, eave_z: 2.4 };
+        let clip = RoofClip { base_edge: [0.0, 0.0, 10.0, 0.0], slope: 0.5, eave_z: 2.4, overhang: 0.0 };
         let profile = elevation_profile(&shape, &wall, 0.0, 2.4, Some(&clip), None, &[]).unwrap();
         assert_eq!(profile.outer.len(), 4, "perpendicular wall with roof clip should have 4 vertices");
         assert!((profile.outer[0].y - 0.0).abs() < 1e-9);
@@ -1731,7 +1783,7 @@ mod tests {
             ..Default::default()
         };
         // Roof with eave_z well above the wall top (2.4)
-        let clip = RoofClip { base_edge: [0.0, 0.0, 10.0, 0.0], slope: 0.5, eave_z: 5.0 };
+        let clip = RoofClip { base_edge: [0.0, 0.0, 10.0, 0.0], slope: 0.5, eave_z: 5.0, overhang: 0.0 };
         let profile = elevation_profile(&shape, &wall, 0.0, 2.4, Some(&clip), None, &[]).unwrap();
         // The roof is above the wall, so the profile should still be a rectangle at height 2.4
         assert_eq!(profile.outer.len(), 4, "roof above wall should not change profile");

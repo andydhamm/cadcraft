@@ -21,6 +21,7 @@ pub mod ray;
 pub mod roof;
 pub mod section;
 pub mod stairs;
+pub mod views;
 pub mod walls;
 
 pub use crate::mesh::{Bounds3, Mesh};
@@ -690,7 +691,13 @@ fn find_roof_clip(model: &ArchModel, wall: &Wall) -> Option<RoofClip> {
             let dist1 = point_to_line_dist(p1, face_start, face_end);
 
             if dist0 < 1e-6 && dist1 < 1e-6 {
-                return Some(RoofClip { base_edge: plane.base_edge, slope: plane.slope, eave_z: plane.eave_z, ..Default::default() });
+                return Some(RoofClip {
+                    base_edge: plane.base_edge,
+                    slope: plane.slope,
+                    eave_z: plane.eave_z,
+                    overhang: plane.overhang,
+                    ..Default::default()
+                });
             }
         }
     }
