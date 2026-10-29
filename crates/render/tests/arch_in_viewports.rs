@@ -135,8 +135,8 @@ fn two_viewports_with_independent_layer_freezes() {
         clip: None,
         on: true,
     };
-    d1.add(&paper(), Common::default(), EntityKind::Viewport(vp1)).unwrap();
-    d1.add(&paper(), Common::default(), EntityKind::Viewport(vp2)).unwrap();
+    d1.add(&paper(), Common::default(), EntityKind::Viewport(vp1.clone())).unwrap();
+    d1.add(&paper(), Common::default(), EntityKind::Viewport(vp2.clone())).unwrap();
     let l1 = build(&d1, &paper(), &Options::default());
     let count_both = l1.prims.iter().filter(|p| is_wall(p, &d1)).count();
     assert!(count_both > 0, "both viewports should show walls");
@@ -255,7 +255,7 @@ fn per_viewport_layer_color_changes_arch_linework_color() {
         clip: None,
         on: true,
     };
-    d1.add(&paper(), Common::default(), EntityKind::Viewport(vp1)).unwrap();
+    d1.add(&paper(), Common::default(), EntityKind::Viewport(vp1.clone())).unwrap();
     let l1 = build(&d1, &paper(), &Options::default());
     let wall_prims1: Vec<_> = l1.prims.iter().filter(|p| is_wall(p, &d1)).collect();
     let color1 = wall_prims1.first().map(|p| p.color);
