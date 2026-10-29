@@ -557,4 +557,68 @@ mod tests {
         let fraction = different as f64 / (rgba.len() / 4) as f64;
         assert!(fraction > 0.02, "only {}% of pixels differ from clear color (need > 2%)", fraction * 100.0);
     }
+
+    #[test]
+    fn orbit_target_with_other_fields_after() {
+        let Ok(Camera::Orbit(o)) = parse_camera("orbit,target=5,4,0,azimuth=10,elevation=20", base()) else {
+            panic!("target with other fields after");
+        };
+        assert_eq!(o.target, Vec3::new(5.0, 4.0, 0.0));
+        assert_eq!(o.azimuth, 10.0);
+        assert_eq!(o.elevation, 20.0);
+    }
+
+    #[test]
+    fn orbit_target_as_only_field() {
+        let Ok(Camera::Orbit(o)) = parse_camera("orbit,target=1,2,3", base()) else {
+            panic!("target as only field");
+        };
+        assert_eq!(o.target, Vec3::new(1.0, 2.0, 3.0));
+    }
+
+    #[test]
+    fn orbit_duplicate_target_second_wins() {
+        let Ok(Camera::Orbit(o)) = parse_camera("orbit,target=1,2,3,target=4,5,6", base()) else {
+            panic!("duplicate target");
+        };
+        assert_eq!(o.target, Vec3::new(4.0, 5.0, 6.0));
+    }
+
+    #[test]
+    fn orbit_target_negative_and_zero() {
+        let Ok(Camera::Orbit(o)) = parse_camera("orbit,target=-5,-4,0", base()) else {
+            panic!("negative target");
+        };
+        assert_eq!(o.target, Vec3::new(-5.0, -4.0, 0.0));
+        let Ok(Camera::Orbit(o)) = parse_camera("orbit,target=0,0,0", base()) else {
+            panic!("zero target");
+        };
+        assert_eq!(o.target, Vec3::new(0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn orbit_target_inf_x_rejected() {
+        assert!(parse_camera("orbit,target=inf,4,0", base()).is_err(), "inf x should be rejected");
+        assert!(parse_camera("orbit,target=-inf,4,0", base()).is_err(), "-inf x should be rejected");
+    }
+
+    #[test]
+    fn orbit_target_very_large_and_small() {
+        let Ok(Camera::Orbit(o)) = parse_camera("orbit,target=1e300,1e300,1e300", base()) else {
+            panic!("large target");
+        };
+        assert_eq!(o.target, Vec3::new(1e300, 1e300, 1e300));
+        let Ok(Camera::Orbit(o)) = parse_camera("orbit,target=1e-300,1e-300,1e-300", base()) else {
+            panic!("small target");
+        };
+        assert_eq!(o.target, Vec3::new(1e-300, 1e-300, 1e-300));
+    }
+
+    #[test]
+    fn orbit_target_with_whitespace() {
+        let Ok(Camera::Orbit(o)) = parse_camera("orbit,target= 5 , 4 , 0", base()) else {
+            panic!("target with whitespace");
+        };
+        assert_eq!(o.target, Vec3::new(5.0, 4.0, 0.0));
+    }
 }

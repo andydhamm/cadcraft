@@ -322,3 +322,39 @@ fn render_camera_unknown_param_rejected() {
     assert!(!out.status.success(), "unknown camera parameter should be rejected");
     assert!(!out_png.exists(), "no output should be written for unknown camera parameter");
 }
+
+#[test]
+fn render_orbit_target_changes_projection() {
+    let dir = temp_dir("render_orbit_target_changes_projection");
+    let in_dxf = wall_plan(&dir);
+    let out1 = dir.join("view1.png");
+    let out2 = dir.join("view2.png");
+
+    let r1 = run_cli(&[
+        "render".into(),
+        in_dxf.to_string_lossy().into(),
+        out1.to_string_lossy().into(),
+        "--camera".into(),
+        "orbit,azimuth=0,elevation=45,distance=20,target=0,0,0".into(),
+    ]);
+    let r2 = run_cli(&[
+        "render".into(),
+        in_dxf.to_string_lossy().into(),
+        out2.to_string_lossy().into(),
+        "--camera".into(),
+        "orbit,azimuth=0,elevation=45,distance=20,target=10,8,0".into(),
+    ]);
+
+    if r1.status.code() == Some(3) || r2.status.code() == Some(3) {
+        eprintln!("SKIP: no GPU adapter");
+        return;
+    }
+    assert!(r1.status.success(), "render 1 failed: {}", String::from_utf8_lossy(&r1.stderr));
+    assert!(r2.status.success(), "render 2 failed: {}", String::from_utf8_lossy(&r2.stderr));
+
+    let s1 = String::from_utf8_lossy(&r1.stderr);
+    let s2 = String::from_utf8_lossy(&r2.stderr);
+    let p1 = s1.lines().find(|l| l.starts_with("PROJECTED ")).expect("PROJECTED line 1");
+    let p2 = s2.lines().find(|l| l.starts_with("PROJECTED ")).expect("PROJECTED line 2");
+    assert_ne!(p1, p2, "different targets should produce different projections");
+}
