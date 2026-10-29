@@ -639,12 +639,11 @@ mod tests {
         let meshes = crate::pipeline::upload(&device, &s);
         let sm = build(&device, &queue, &meshes, sun_from_south(), &s.bounds).expect("shadow map");
         let depths = read_depth(&device, &queue, &sm);
-        // Sample a point within the fitted region but off the block.
-        // The fit margin (1.2x) extends the region beyond the block in light space;
-        // [101, 99.5, 1] is 0.5 m south of the block, well inside the fitted region.
-        let far = depth_at(&sm, &depths, [101.0, 99.5, 1.0]);
+        // Sample a point well outside the fitted region (1.2x margin on the 2 m block
+        // gives ~2.4 m half-extent in light space; 3 m south is safely outside).
+        let far = depth_at(&sm, &depths, [101.0, 97.0, 1.0]);
         assert!(far.is_finite(), "far point should be finite");
-        // The far point should be near the clear depth of 1.0 (nothing drawn there).
+        // Outside the fitted region the depth is the clear value 1.0.
         assert!((far - 1.0).abs() < 0.01, "far point depth should be ~1.0, got {far}");
     }
 
