@@ -48,6 +48,9 @@ pub fn landing_mesh(s: &Stair, base: f64) -> Option<crate::mesh::Mesh> {
     if !stair_valid(s) || !base.is_finite() {
         return None;
     }
+    if s.landing_depth == 0.0 {
+        return None;
+    }
     let landing_depth = if s.landing_depth.is_finite() && s.landing_depth > 0.0 { s.landing_depth } else { s.width };
     let dir = Vec2::from_angle(s.direction);
     let perp = dir.perp();
@@ -77,7 +80,7 @@ pub fn landing_mesh(s: &Stair, base: f64) -> Option<crate::mesh::Mesh> {
         let z_local = p[2] as f64;
         let x = s.start.x + u * dir.x + w * perp.x;
         let y = s.start.y + u * dir.y + w * perp.y;
-        let z = bottom + z_local;
+        let z = z_local;
         *p = [x as f32, y as f32, z as f32];
     }
 
