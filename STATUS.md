@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-29 09:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 09:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 6 of 13: The 3D view, properly — 3 of 14 segments merged · 2 of 9 acceptance checks**
+**Phase 6 of 13: The 3D view, properly — 4 of 14 segments merged · 2 of 9 acceptance checks**
 
-4,788 workspace tests passing at the last merge · 438 segments merged in all · 0 of 13 seats working · PAUSED
+4,793 workspace tests passing at the last merge · 439 segments merged in all · 0 of 13 seats working · PAUSED
 
 ## Phases
 
@@ -16,7 +16,7 @@ Updated 2026-10-29 09:00 UTC. This page and the card in the README are regenerat
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
-| 6 | The 3D view, properly | building | 2 / 9 | 3.9 h so far · expected done Oct 30 00:21–Oct 31 08:39 UTC |
+| 6 | The 3D view, properly | building | 2 / 9 | 4.1 h so far · expected done Oct 29 21:51–Oct 30 18:41 UTC |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
@@ -27,17 +27,17 @@ Updated 2026-10-29 09:00 UTC. This page and the card in the README are regenerat
 
 ## Phase 6 segments
 
-9 queued, 3 merged, 2 gate
+9 queued, 4 merged, 1 gate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p6-arch3d-camera` | arch3d::camera — orbit + full camera, projection, pixel rays | gate | bonsai-a |
-| `p6-doc-cameras` | Camera3d on the arch model | gate | kimi-k31 |
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 29 09:13 | `p6-doc-cameras` | merged | 4,793 pass | kimi-k31 |
 | Oct 29 08:08 | `harden-p6-arch-sun` | merged | 4,788 pass | tturbo-mac |
 | Oct 29 07:59 | `p6-r3d-limits` | merged | 4,781 pass | claude-sonnet-a |
 | Oct 29 07:49 | `p6-cmd-sun` | merged | 4,777 pass | claude-sonnet-b |
@@ -49,22 +49,21 @@ Updated 2026-10-29 09:00 UTC. This page and the card in the README are regenerat
 | Oct 29 04:40 | `harden-p5-arch3d-stairs` | merged | 4,739 pass | tturbo-mac |
 | Oct 29 04:33 | `harden-p1-arch-workspace` | merged | 4,732 pass | tturbo-mac2 |
 | Oct 29 04:02 | `harden-p1-wall-graph` | merged | 4,727 pass | tturbo-mac2 |
-| Oct 29 03:50 | `p5f-inspect-holes-are-rings` | merged | 4,720 pass | kimi-k31 |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | gate | 600 |
-| bonsai-b | bonsai2-27b | gate | 551 |
+| bonsai-a | bonsai2-27b | gate | 601 |
+| bonsai-b | bonsai2-27b | idle | 552 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
-| claude-sonnet-a | sonnet | idle | 30 |
-| claude-sonnet-b | sonnet | idle | 25 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 432 |
-| kimi-k31 | k3.1-pro-highspeed | gate | 73 |
-| mai-flash | mai-code-1.1-flash | idle | 6 |
+| claude-sonnet-a | sonnet | held | 30 |
+| claude-sonnet-b | sonnet | held | 25 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 433 |
+| kimi-k31 | k3.1-pro-highspeed | idle | 74 |
+| mai-flash | mai-code-1.1-flash | held | 6 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
 | tturbo-mac | tturbo-ultraheretic | gate | 396 |
-| tturbo-mac2 | tturbo-ultraheretic | idle | 251 |
+| tturbo-mac2 | tturbo-ultraheretic | held | 251 |
