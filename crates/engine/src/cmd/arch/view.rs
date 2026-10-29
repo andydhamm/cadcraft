@@ -178,6 +178,15 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
         Some(_) => return Err(bad("camera", "`kind` must be \"orbit\" or \"full\"")),
     };
     let mut cam = Camera3d { name, kind, ..Default::default() };
+    // Reset optional fields to None to avoid inheriting invalid defaults (e.g. NaN)
+    cam.target = None;
+    cam.azimuth_deg = None;
+    cam.elevation_deg = None;
+    cam.distance = None;
+    cam.fov_deg = None;
+    cam.eye = None;
+    cam.eye_height = None;
+
     if let Some(t) = opt_vec::<3>(params, "target")? {
         cam.target = Some(t);
     }
