@@ -570,4 +570,88 @@ mod tests {
         assert!(off.build_shadow(&scene, 1, &light, true).is_some());
         assert_eq!(off.shadow_maps_built(), 2);
     }
+
+    #[test]
+    fn ground_mesh_with_coincident_bounds() {
+        let b = Bounds3::new([5.0, 3.0, 2.0], [5.0, 3.0, 2.0]);
+        let g = ground_mesh(&b);
+        assert_eq!(g.positions.len(), 4);
+        assert_eq!(g.indices.len(), 6);
+        // side = 0, max(1.0) = 1.0, grow = 2.0
+        let xs: Vec<f32> = g.positions.iter().map(|p| p[0]).collect();
+        let ys: Vec<f32> = g.positions.iter().map(|p| p[1]).collect();
+        assert_eq!(xs.iter().cloned().fold(f32::MAX, f32::min), 3.0);
+        assert_eq!(xs.iter().cloned().fold(f32::MIN, f32::max), 7.0);
+        assert_eq!(ys.iter().cloned().fold(f32::MAX, f32::min), 1.0);
+        assert_eq!(ys.iter().cloned().fold(f32::MIN, f32::max), 5.0);
+        assert!(g.positions.iter().all(|p| p[2] == 2.0));
+    }
+
+    #[test]
+    fn ground_mesh_with_negative_bounds() {
+        let b = Bounds3::new([-10.0, -5.0, -2.0], [-2.0, 3.0, 1.0]);
+        let g = ground_mesh(&b);
+        assert_eq!(g.positions.len(), 4);
+        // Largest side is 8 (x: -10 to -2), grow = 16
+        let xs: Vec<f32> = g.positions.iter().map(|p| p[0]).collect();
+        let ys: Vec<f32> = g.positions.iter().map(|p| p[1]).collect();
+        assert_eq!(xs.iter().cloned().fold(f32::MAX, f32::min), -26.0);
+        assert_eq!(xs.iter().cloned().fold(f32::MIN, f32::max), 14.0);
+        assert_eq!(ys.iter().cloned().fold(f32::MAX, f32::min), -21.0);
+        assert_eq!(ys.iter().cloned().fold(f32::MIN, f32::max), 19.0);
+        assert!(g.positions.iter().all(|p| p[2] == -2.0));
+    }
+
+    #[test]
+    fn shadow_map_with_empty_meshes() {
+        let Some((device, queue)) = crate::gputest::shared_device() else { return };
+        let scene = Scene3d::default();
+        let meshes = crate::pipeline::upload(&device, &scene);
+        let b = Bounds3::new([0.0; 3], [4.0; 3]);
+        let sm = build(&device, &queue, &meshes, sun_from_south(), &b);
+        assert!(sm.is_some(), "shadow map should be built even with no meshes");
+    }
+
+    #[test]
+    fn shadow_depth_is_one_where_nothing_is_drawn() {
+        let Some((device, queue)) = crate::gputest::shared_device() else { return };
+        let scene = Scene3d::default();
+        let meshes = crate::pipeline::upload(&device, &scene);
+        let b = Bounds3::new([0.0; 3], [4.0; 3]);
+        let sm = build(&device, &queue, &meshes, sun_from_south(), &b).expect("shadow map");
+        let depths = read_depth(&device, &queue, &sm);
+        let all_one = depths.iter().all(|d| (d - 1.0).abs() < 1e-6);
+        assert!(all_one, "empty scene should have all depth 1.0");
+    }
+
+    #[test]
+    fn fit_with_very_elongated_bounds() {
+        let b = Bounds3::new([0.0, 0.0, 0.0], [1000.0, 1.0, 1.0]);
+        let (m, range) = fit([0.0, -0.5, 0.8], &b).expect("fit should succeed");
+        assert!(m.iter().flatten().all(|v| v.is_finite()));
+        assert!(range > 0.0);
+    }
+
+    #[test]
+    fn fit_with_sun_directly_overhead() {
+        let b = Bounds3::new([0.0; 3], [4.0; 3]);
+        let (m, range) = fit([0.0, 0.0, 1.0], &b).expect("fit should succeed for overhead sun");
+        assert!(m.iter().flatten().all(|v| v.is_finite()));
+        assert!(range > 0.0);
+    }
+
+    #[test]
+    fn shadow_light_view_proj_projects_center_to_origin() {
+        let b = Bounds3::new([-2.0, -2.0, 0.0], [2.0, 2.0, 4.0]);
+        let (m, _range) = fit([0.0, -0.5, 0.8], &b).expect("fit should succeed");
+        let c = [0.0f32, 0.0f32, 2.0f32];
+        let mut clip = [0.0f32; 4];
+        for (i, v) in clip.iter_mut().enumerate() {
+            *v = m[0][i] * c[0] + m[1][i] * c[1] + m[2][i] * c[2] + m[3][i];
+        }
+        assert!((clip[0] / clip[3]).abs() < 0.1, "center x should be near 0, got {}", clip[0] / clip[3]);
+        assert!((clip[1] / clip[3]).abs() < 0.1, "center y should be near 0, got {}", clip[1] / clip[3]);
+        let z = clip[2] / clip[3];
+        assert!(z >= 0.0 && z <= 1.0, "center z should be in [0,1], got {}", z);
+    }
 }
