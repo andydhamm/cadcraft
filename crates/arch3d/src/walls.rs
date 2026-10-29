@@ -6,7 +6,7 @@ use cadcraft_arch::join::WallShape;
 use cadcraft_arch::opening::ROUGH_ALLOWANCE;
 use cadcraft_doc::ArchId;
 use cadcraft_doc::ArchModel;
-use cadcraft_doc::arch::{Opening, Wall};
+use cadcraft_doc::arch::{Opening, OpeningKind, Wall};
 use cadcraft_geom::{Vec2, point_in_polygon};
 
 const HOLE_INSET: f64 = 1e-3;
@@ -114,6 +114,85 @@ pub(crate) fn opening_holes(openings: &[&Opening], base: f64, _len: f64, _max_v:
     holes
 }
 
+fn bottom_door_notches(openings: &[&Opening], base: f64, len: f64) -> Vec<(f64, f64, f64)> {
+    let mut cuts = Vec::new();
+    for op in openings {
+        if !matches!(op.kind, OpeningKind::Door | OpeningKind::GarageDoor | OpeningKind::CasedOpening) {
+            continue;
+        }
+        if op.sill.abs() > 1e-9 {
+            continue;
+        }
+
+        let half = (op.width + ROUGH_ALLOWANCE) / 2.0;
+        let u0 = (op.offset - half).clamp(0.0, len);
+        let u1 = (op.offset + half).clamp(0.0, len);
+        if u1 <= u0 || !u0.is_finite() || !u1.is_finite() {
+            continue;
+        }
+
+        let v1 = op.sill + op.height + ROUGH_ALLOWANCE - base;
+        if !v1.is_finite() || v1 <= 0.0 {
+            continue;
+        }
+
+        cuts.push((u0, u1, v1));
+    }
+    cuts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut merged: Vec<(f64, f64, f64)> = Vec::new();
+    for cut in cuts {
+        if let Some(last) = merged.last_mut() {
+            if cut.0 <= last.1 + 1e-9 {
+                last.1 = last.1.max(cut.1);
+                last.2 = last.2.max(cut.2);
+                continue;
+            }
+        }
+        merged.push(cut);
+    }
+    merged
+}
+
+fn outer_with_bottom_door_notches(outer: &[Vec2], len: f64, notches: &[(f64, f64, f64)]) -> Vec<Vec2> {
+    if notches.is_empty() {
+        return outer.to_vec();
+    }
+
+    let mut ring = Vec::new();
+    ring.push(Vec2::new(0.0, 0.0));
+    for &(u0, u1, v1) in notches {
+        let left = u0.clamp(0.0, len);
+        let right = u1.clamp(0.0, len);
+        if right <= left + 1e-9 {
+            continue;
+        }
+        if ring.last().is_some_and(|p| (p.x - left).abs() > 1e-9 || (p.y - 0.0).abs() > 1e-9) {
+            ring.push(Vec2::new(left, 0.0));
+        }
+        ring.push(Vec2::new(left, v1));
+        ring.push(Vec2::new(right, v1));
+        ring.push(Vec2::new(right, 0.0));
+    }
+
+    if ring.last().map_or(true, |p| (p.x - len).abs() > 1e-9 || p.y.abs() > 1e-9) {
+        ring.push(Vec2::new(len, 0.0));
+    }
+
+    for p in outer.iter().skip(1) {
+        if ring.last().is_some_and(|last| (last.x - p.x).abs() < 1e-9 && (last.y - p.y).abs() < 1e-9) {
+            continue;
+        }
+        ring.push(*p);
+    }
+
+    while ring.len() >= 2 && ring[0] == ring[ring.len() - 1] {
+        ring.pop();
+    }
+
+    ring
+}
+
 /// Compute the elevation profile of a wall, clipped by a roof and cut by openings.
 ///
 /// Returns `None` if the profile is degenerate.
@@ -217,7 +296,14 @@ pub fn elevation_profile(
         vec![Vec2::new(0.0, 0.0), Vec2::new(len, 0.0), Vec2::new(len, max_v), Vec2::new(0.0, max_v)]
     };
 
-    let holes = opening_holes(openings, base, len, max_v, &outer);
+    let notches = bottom_door_notches(openings, base, len);
+    let outer = if notches.is_empty() { outer } else { outer_with_bottom_door_notches(&outer, len, &notches) };
+    let door_holes: Vec<&Opening> = openings
+        .iter()
+        .copied()
+        .filter(|op| !matches!(op.kind, OpeningKind::Door | OpeningKind::GarageDoor | OpeningKind::CasedOpening) || op.sill.abs() > 1e-9)
+        .collect();
+    let holes = opening_holes(&door_holes, base, len, max_v, &outer);
 
     Some(WallProfile { outer, holes })
 }
