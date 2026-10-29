@@ -142,4 +142,80 @@ mod tests {
         // We just verify it builds.
         assert!(!mesh.positions.is_empty());
     }
+
+    #[test]
+    fn railing_mesh_returns_none_for_empty_path() {
+        let r = Railing::default();
+        assert!(railing_mesh(&r, 0.0).is_none());
+    }
+
+    #[test]
+    fn railing_mesh_returns_none_for_single_point_path() {
+        let mut r = Railing::default();
+        r.path = vec![Vec2::new(0.0, 0.0)];
+        assert!(railing_mesh(&r, 0.0).is_none());
+    }
+
+    #[test]
+    fn railing_mesh_returns_none_for_zero_length_segment() {
+        let mut r = Railing::default();
+        r.path = vec![Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)];
+        assert!(railing_mesh(&r, 0.0).is_none());
+    }
+
+    #[test]
+    fn railing_mesh_returns_none_for_nan_height() {
+        let mut r = Railing::default();
+        r.path = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
+        r.height = f64::NAN;
+        assert!(railing_mesh(&r, 0.0).is_none());
+    }
+
+    #[test]
+    fn railing_mesh_returns_none_for_zero_thickness() {
+        let mut r = Railing::default();
+        r.path = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
+        r.thickness = 0.0;
+        assert!(railing_mesh(&r, 0.0).is_none());
+    }
+
+    #[test]
+    fn railing_mesh_returns_none_for_nan_base() {
+        let mut r = Railing::default();
+        r.path = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
+        assert!(railing_mesh(&r, f64::NAN).is_none());
+    }
+
+    #[test]
+    fn panel_railing_handrail_is_at_correct_height() {
+        let mut r = Railing::default();
+        r.id = ArchId(1);
+        r.path = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
+        r.height = 1.0;
+        r.thickness = 0.1;
+        r.style = RailingStyle::Panel;
+
+        let mesh = railing_mesh(&r, 0.0).expect("railing mesh");
+        let z_min = mesh.positions.iter().map(|p| p[2] as f64).fold(f64::INFINITY, f64::min);
+        let z_max = mesh.positions.iter().map(|p| p[2] as f64).fold(f64::NEG_INFINITY, f64::max);
+        assert!((z_max - 1.0).abs() < 1e-6, "z_max = {z_max}, expected 1.0");
+        assert!((z_min - 0.0).abs() < 1e-6, "z_min = {z_min}, expected 0.0");
+    }
+
+    #[test]
+    fn baluster_railing_handrail_catches_probe_between_balusters() {
+        let mut r = Railing::default();
+        r.id = ArchId(2);
+        r.path = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)];
+        r.height = 1.0;
+        r.thickness = 0.1;
+        r.style = RailingStyle::Balusters;
+        r.baluster_gap = 0.1;
+
+        let mesh = railing_mesh(&r, 0.0).expect("railing mesh");
+        // Probe at the handrail height between balusters - should hit the handrail
+        let hit = crate::probe::probe(&crate::Scene3d { meshes: vec![mesh.clone()], ..Default::default() }, Vec3::new(0.5, 0.0, 0.975));
+        assert!(hit.is_some(), "probe at handrail height should hit railing");
+        assert_eq!(hit.unwrap().part, "railing");
+    }
 }
