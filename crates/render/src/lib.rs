@@ -335,7 +335,7 @@ mod arch_poché_hardening {
     fn arch_poché_empty_model_no_prims() {
         let d = Drawing::new_metric();
         let list = build(&d, &Space::Model, &Options::default());
-        let has_arch_prim = list.prims.iter().any(|p| p.handle >= ARCH_HANDLE_BASE);
+        let has_arch_prim = list.prims.iter().any(|p| p.handle >= Handle(ARCH_HANDLE_BASE));
         assert!(!has_arch_prim, "empty model should not produce arch prims");
     }
 
@@ -343,10 +343,10 @@ mod arch_poché_hardening {
     #[test]
     fn arch_poché_multiple_walls_distinct_handles() {
         let mut d = Drawing::new_metric();
-        d.arch.walls.push(Wall { id: ArchId(0), points: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)], thickness: 0.1, ..Default::default() });
-        d.arch.walls.push(Wall { id: ArchId(1), points: vec![Vec2::new(0.0, 0.0), Vec2::new(0.0, 1.0)], thickness: 0.1, ..Default::default() });
+        d.arch.walls.push(Wall { id: ArchId(0), start: Vec2::new(0.0, 0.0), end: Vec2::new(1.0, 0.0), thickness: 0.1, ..Default::default() });
+        d.arch.walls.push(Wall { id: ArchId(1), start: Vec2::new(0.0, 0.0), end: Vec2::new(0.0, 1.0), thickness: 0.1, ..Default::default() });
         let list = build(&d, &Space::Model, &Options::default());
-        let arch_handles: Vec<Handle> = list.prims.iter().filter(|p| p.handle >= ARCH_HANDLE_BASE).map(|p| p.handle).collect();
+        let arch_handles: Vec<Handle> = list.prims.iter().filter(|p| p.handle >= Handle(ARCH_HANDLE_BASE)).map(|p| p.handle).collect();
         assert!(arch_handles.len() >= 2, "expected at least 2 arch prims, got {}", arch_handles.len());
         let unique: std::collections::HashSet<Handle> = arch_handles.iter().copied().collect();
         assert!(unique.len() >= 2, "expected at least 2 distinct arch handles");
@@ -356,11 +356,11 @@ mod arch_poché_hardening {
     #[test]
     fn arch_poché_build_and_build_plot_consistent() {
         let mut d = Drawing::new_metric();
-        d.arch.walls.push(Wall { id: ArchId(0), points: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)], thickness: 0.1, ..Default::default() });
+        d.arch.walls.push(Wall { id: ArchId(0), start: Vec2::new(0.0, 0.0), end: Vec2::new(1.0, 0.0), thickness: 0.1, ..Default::default() });
         let list = build(&d, &Space::Model, &Options::default());
         let plot_list = build_plot(&d, &Space::Model, &Options::default());
-        let arch_count = list.prims.iter().filter(|p| p.handle >= ARCH_HANDLE_BASE).count();
-        let plot_arch_count = plot_list.prims.iter().filter(|p| p.handle >= ARCH_HANDLE_BASE).count();
+        let arch_count = list.prims.iter().filter(|p| p.handle >= Handle(ARCH_HANDLE_BASE)).count();
+        let plot_arch_count = plot_list.prims.iter().filter(|p| p.handle >= Handle(ARCH_HANDLE_BASE)).count();
         assert_eq!(arch_count, plot_arch_count, "build and build_plot should have the same number of arch prims");
         assert!(arch_count > 0, "expected at least one arch prim");
     }
@@ -369,7 +369,7 @@ mod arch_poché_hardening {
     #[test]
     fn arch_poché_degenerate_zero_length_wall() {
         let mut d = Drawing::new_metric();
-        d.arch.walls.push(Wall { id: ArchId(0), points: vec![Vec2::new(1.0, 1.0), Vec2::new(1.0, 1.0)], thickness: 0.1, ..Default::default() });
+        d.arch.walls.push(Wall { id: ArchId(0), start: Vec2::new(1.0, 1.0), end: Vec2::new(1.0, 1.0), thickness: 0.1, ..Default::default() });
         let list = build(&d, &Space::Model, &Options::default());
         // Should not crash; all prims should have finite coordinates
         for prim in &list.prims {
