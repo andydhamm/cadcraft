@@ -83,7 +83,9 @@ impl PbrUniform {
         let fin = |v: f32, d: f32| if v.is_nan() { d } else { v };
         let mut cam = camera_pos;
         for c in cam.iter_mut() {
-            *c = fin(*c, 0.0);
+            if !c.is_finite() {
+                *c = 0.0;
+            }
         }
         PbrUniform {
             light_dir: l.dir,
