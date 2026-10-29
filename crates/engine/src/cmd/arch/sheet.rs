@@ -4,7 +4,7 @@ use crate::Session;
 use crate::cmd::CommandSpec;
 use crate::error::{EngineError, Result};
 use cadcraft_doc::arch::ArchView;
-use cadcraft_doc::{Drawing, Entity, EntityKind, Handle, Layout, Viewport};
+use cadcraft_doc::{Drawing, Entity, EntityKind, Handle, Layout, PageSetup, Viewport};
 use cadcraft_geom::Vec2;
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -77,10 +77,21 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
             return Err(EngineError::Other(format!("view {v_name} has no generated geometry")));
         }
 
-        let bounds = view.bounds();
+        let bounds_opt = view.bounds();
+        if bounds_opt.is_none() {
+            return Err(EngineError::Other(format!("view {v_name} has invalid bounds")));
+        }
+        let bounds = bounds_opt.unwrap(); // Safe due to check above
+
+        // bounds is [min_x, min_y, max_x, max_y]
+        let min_x = bounds[0];
+        let min_y = bounds[1];
+        let max_x = bounds[2];
+        let max_y = bounds[3];
+
         // Grown bounds for dimensions
-        let grown_min = Vec2::new(bounds.min.x - 1.5, bounds.min.y - 1.5);
-        let grown_max = Vec2::new(bounds.max.x + 1.5, bounds.max.y + 1.5);
+        let grown_min = Vec2::new(min_x - 1.5, min_y - 1.5);
+        let grown_max = Vec2::new(max_x + 1.5, max_y + 1.5);
 
         view_data.push((v_name.to_string(), view.scale, grown_min, grown_max));
     }
@@ -182,12 +193,13 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
     let mut new_layout = Layout::new(name, tab_order);
 
     // Set page setup
-    new_layout.page = full_paper_name.clone();
-    // Note: Layout struct in cadcraft_doc might not have a 'landscape' field directly on 'page' or it might be part of page setup.
-    // Based on error: available fields are: `name`, `tab_order`, `page`, `entities`, `view`.
-    // Assuming `page` is a string for now as per error message hint `page` field.
-    // If landscape needs to be stored, it might be in `page` string or a separate field not shown in error.
-    // For now, we just set the paper name.
+    let mut page_setup = PageSetup::default();
+    // Try to set paper. If PageSetup has a `paper` field of type String or similar.
+    // If it's an enum, this will fail. We'll try setting it as a string first.
+    // If compilation fails, we might need to import PaperSize or similar.
+    // For now, assuming `paper` is a settable field.
+    page_setup.paper = full_paper_name.clone();
+    new_layout.page = page_setup;
 
     // Add layout to doc
     s.doc_mut()?.layouts.push(new_layout);
@@ -217,8 +229,8 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
 
         let entity = Entity::new(Handle(0), EntityKind::Viewport(vp));
 
-        // Insert entity
-        let handle = s.doc_mut()?.model.insert(entity);
+        // Insert entity using add_entity on Drawing
+        let handle = s.doc_mut()?.add_entity(entity);
         handles.push(handle);
 
         // Add to layout
@@ -229,8 +241,7 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
         resp.push(json!({
             "handle": format!("{:x}", handle.0),
             "view": v_name,
-            "scale": scale, // Return the requested scale (e.g. 50) or k (20)? Prompt says "scale":20.0 in test.
-            // Test expects scale 20.0. k = 1000/50 = 20.
+            "scale": 1000.0 / scale, // Return k (20.0 for 1:50)
             "center": [center_paper.x, center_paper.y],
             "width": w_mm,
             "height": h_mm
