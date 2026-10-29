@@ -468,4 +468,156 @@ mod tests {
         assert!((pts[0].y - (-1.0)).abs() < 1e-9, "band starts at outer face");
         assert!((pts[3].y - (-0.5)).abs() < 1e-9, "band ends at y = -0.5");
     }
+
+    #[test]
+    fn wall_dir_returns_none_for_zero_length() {
+        let w = wall(Vec2::ZERO, Vec2::ZERO, 2.0);
+        assert!(wall_dir(&w).is_none());
+    }
+
+    #[test]
+    fn wall_dir_returns_correct_direction() {
+        let w = wall(Vec2::new(0.0, 0.0), Vec2::new(3.0, 4.0), 2.0);
+        let dir = wall_dir(&w).unwrap();
+        assert!((dir.x - 0.6).abs() < 1e-9, "x component should be 0.6");
+        assert!((dir.y - 0.8).abs() < 1e-9, "y component should be 0.8");
+        // Should be a unit vector
+        assert!((dir.len() - 1.0).abs() < 1e-9, "should be unit length");
+    }
+
+    #[test]
+    fn wall_dir_returns_none_for_non_finite_points() {
+        let nan = f64::NAN;
+        let inf = f64::INFINITY;
+        assert!(wall_dir(&wall(Vec2::new(nan, 0.0), Vec2::new(1.0, 0.0), 2.0)).is_none());
+        assert!(wall_dir(&wall(Vec2::new(0.0, 0.0), Vec2::new(inf, 0.0), 2.0)).is_none());
+    }
+
+    #[test]
+    fn wall_length_returns_correct_length() {
+        let w = wall(Vec2::new(0.0, 0.0), Vec2::new(3.0, 4.0), 2.0);
+        assert!((wall_length(&w) - 5.0).abs() < 1e-9, "length should be 5.0");
+    }
+
+    #[test]
+    fn wall_length_with_zero_length_wall() {
+        let w = wall(Vec2::ZERO, Vec2::ZERO, 2.0);
+        assert!((wall_length(&w) - 0.0).abs() < 1e-9, "length should be 0.0");
+    }
+
+    #[test]
+    fn wall_length_with_non_finite_points() {
+        let nan = f64::NAN;
+        let inf = f64::INFINITY;
+        // NaN coordinates should give NaN length
+        let w = wall(Vec2::new(nan, 0.0), Vec2::new(1.0, 0.0), 2.0);
+        assert!(wall_length(&w).is_nan(), "length should be NaN with NaN input");
+        // Infinite coordinates should give infinite length
+        let w = wall(Vec2::new(0.0, 0.0), Vec2::new(inf, 0.0), 2.0);
+        assert!(wall_length(&w).is_infinite(), "length should be infinite with inf input");
+    }
+
+    #[test]
+    fn offset_line_with_zero_distance_returns_original_line() {
+        let a = Vec2::new(1.0, 2.0);
+        let b = Vec2::new(4.0, 6.0);
+        let (o1, o2) = offset_line(a, b, 0.0).unwrap();
+        assert!(o1.near(a, 1e-9), "offset by 0 should return original start");
+        assert!(o2.near(b, 1e-9), "offset by 0 should return original end");
+    }
+
+    #[test]
+    fn wall_layer_polygons_with_degenerate_wall_returns_empty() {
+        let w = Wall {
+            start: Vec2::ZERO,
+            end: Vec2::ZERO,
+            thickness: 2.0,
+            height: 3.0,
+            layers: vec![("a".into(), 0.5), ("b".into(), 1.0)],
+            ..Wall::default()
+        };
+        assert!(wall_layer_polygons(&w).is_empty(), "degenerate wall should have no layer polygons");
+    }
+
+    #[test]
+    fn wall_layer_polygons_with_negative_thickness_wall_returns_empty() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: -1.0,
+            height: 3.0,
+            layers: vec![("a".into(), 0.5)],
+            ..Wall::default()
+        };
+        assert!(wall_layer_polygons(&w).is_empty(), "negative thickness wall should have no layer polygons");
+    }
+
+    #[test]
+    fn wall_layer_polygons_with_nan_thickness_wall_returns_empty() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: f64::NAN,
+            height: 3.0,
+            layers: vec![("a".into(), 0.5)],
+            ..Wall::default()
+        };
+        assert!(wall_layer_polygons(&w).is_empty(), "NaN thickness wall should have no layer polygons");
+    }
+
+    #[test]
+    fn wall_bounds_with_degenerate_wall_returns_empty() {
+        let w = wall(Vec2::ZERO, Vec2::ZERO, 2.0);
+        assert_eq!(wall_bounds(&w), Bounds2::EMPTY, "degenerate wall should have empty bounds");
+    }
+
+    #[test]
+    fn wall_polygon_with_very_large_coordinates() {
+        let w = wall(Vec2::new(1e15, 1e15), Vec2::new(1e15 + 10.0, 1e15), 2.0);
+        let p = wall_polygon(&w).unwrap();
+        assert_eq!(p.len(), 4);
+        assert!(p.iter().all(|pt| pt.is_finite()), "all points should be finite");
+    }
+
+    #[test]
+    fn wall_polygon_with_very_small_coordinates() {
+        let w = wall(Vec2::new(1e-15, 1e-15), Vec2::new(1e-15 + 1e-10, 1e-15), 1e-12);
+        let p = wall_polygon(&w).unwrap();
+        assert_eq!(p.len(), 4);
+        assert!(p.iter().all(|pt| pt.is_finite()), "all points should be finite");
+    }
+
+    #[test]
+    fn wall_layer_polygons_on_wall_with_infinite_thickness() {
+        let w = Wall {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(10.0, 0.0),
+            thickness: f64::INFINITY,
+            height: 3.0,
+            layers: vec![("a".into(), 0.5), ("b".into(), 1.0)],
+            ..Wall::default()
+        };
+        let polys = wall_layer_polygons(&w);
+        // With infinite thickness, all bands should fit
+        assert_eq!(polys.len(), 2, "both bands should fit in infinite-thickness wall");
+        for (_, pts) in &polys {
+            assert!(pts.iter().all(|p| p.is_finite()), "all points should be finite");
+        }
+    }
+
+    #[test]
+    fn wall_dir_on_vertical_wall() {
+        let w = wall(Vec2::new(0.0, 0.0), Vec2::new(0.0, 5.0), 2.0);
+        let dir = wall_dir(&w).unwrap();
+        assert!((dir.x - 0.0).abs() < 1e-9, "x component should be 0.0");
+        assert!((dir.y - 1.0).abs() < 1e-9, "y component should be 1.0");
+    }
+
+    #[test]
+    fn wall_dir_on_downward_wall() {
+        let w = wall(Vec2::new(0.0, 5.0), Vec2::new(0.0, 0.0), 2.0);
+        let dir = wall_dir(&w).unwrap();
+        assert!((dir.x - 0.0).abs() < 1e-9, "x component should be 0.0");
+        assert!((dir.y - (-1.0)).abs() < 1e-9, "y component should be -1.0");
+    }
 }
