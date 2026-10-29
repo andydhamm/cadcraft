@@ -347,3 +347,56 @@ fn a_window_beyond_a_section_shows_through_its_wall() {
     let sv = section_view(&build(&d), &y4(), [0.0, 0.0, 1.0]).expect("a vertical section view with up = +z exists");
     assert!(sv.beyond.iter().any(|l| (l.a[0] - l.b[0]).abs() < TOL && ((l.a[1] - l.b[1]).abs() - 1.2).abs() < TOL), "{:?}", sv.beyond);
 }
+
+#[test]
+fn merge_collinear_three_kinds_same_object_all_overlap() {
+    let wall = Line2::new([0.0, 0.0], [3.0, 0.0], ArchKind::Wall, ArchId(0));
+    let opening = Line2::new([0.5, 0.0], [2.5, 0.0], ArchKind::Opening, ArchId(0));
+    let room = Line2::new([1.0, 0.0], [2.0, 0.0], ArchKind::Room, ArchId(0));
+    let m = merge_collinear(vec![wall, opening, room]);
+    assert_eq!(m.len(), 3, "{m:?}");
+    let kinds: Vec<ArchKind> = m.iter().map(|l| l.kind).collect();
+    assert!(kinds.contains(&ArchKind::Wall));
+    assert!(kinds.contains(&ArchKind::Opening));
+    assert!(kinds.contains(&ArchKind::Room));
+}
+
+#[test]
+fn section_view_beyond_lines_carry_kinds() {
+    let (m, [s, ..]) = house();
+    let mut d = m.clone();
+    d.push_opening(Opening::new(s, 3.0, 0.9, 2.1, OpeningKind::Door));
+    let sv = section_view(&build(&d), &y4(), [0.0, 0.0, 1.0]).expect("a vertical section view with up = +z exists");
+    let wall_lines: Vec<&Line2> = sv.beyond.iter().filter(|l| l.kind == ArchKind::Wall).collect();
+    assert!(!wall_lines.is_empty(), "no wall lines in beyond: {:?}", sv.beyond);
+}
+
+#[test]
+fn merge_collinear_empty_and_single() {
+    assert!(merge_collinear(vec![]).is_empty());
+    let l = Line2::new([0.0, 0.0], [1.0, 0.0], ArchKind::Wall, ArchId(0));
+    let m = merge_collinear(vec![l]);
+    assert_eq!(m.len(), 1);
+    assert_eq!(m[0].kind, ArchKind::Wall);
+    assert_eq!(m[0].object, ArchId(0));
+}
+
+#[test]
+fn section_rings_distinguish_wall_and_room_same_id() {
+    let (mut m, [_, e, _, w]) = house();
+    m.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+    m.rooms.push(Room {
+        id: ArchId(0),
+        level: 0,
+        polygon: vec![Vec2::new(0.1, 0.1), Vec2::new(9.9, 0.1), Vec2::new(9.9, 7.9), Vec2::new(0.1, 7.9)],
+        ..Default::default()
+    });
+    let cut = section_cut(&build(&m), &y4(), &front());
+    // The section at y=4 cuts the east (ArchId(1)) and west (ArchId(3)) walls, not the south (ArchId(0)).
+    let wall_e = cut.rings.iter().filter(|r| r.kind == ArchKind::Wall && r.object == e).count();
+    let wall_w = cut.rings.iter().filter(|r| r.kind == ArchKind::Wall && r.object == w).count();
+    let room0 = cut.rings.iter().filter(|r| r.kind == ArchKind::Room && r.object == ArchId(0)).count();
+    assert!(wall_e >= 1, "no wall ring for east wall: {:?}", cut.rings);
+    assert!(wall_w >= 1, "no wall ring for west wall: {:?}", cut.rings);
+    assert!(room0 >= 1, "no room ring for ArchId(0): {:?}", cut.rings);
+}
