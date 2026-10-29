@@ -28,6 +28,7 @@ pub mod roof;
 pub mod roofedge;
 pub mod room;
 pub mod stair;
+pub mod sun;
 pub mod symbol;
 pub mod wall;
 
