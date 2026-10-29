@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-29 11:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 11:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 6 of 13: The 3D view, properly — 5 of 15 segments merged · 2 of 9 acceptance checks**
 
-4,800 workspace tests passing at the last merge · 440 segments merged in all · 0 of 11 seats working
+4,800 workspace tests passing at the last merge · 440 segments merged in all · 0 of 10 seats working
 
 ## Phases
 
@@ -16,7 +16,7 @@ Updated 2026-10-29 11:00 UTC. This page and the card in the README are regenerat
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
-| 6 | The 3D view, properly | building | 2 / 9 | 5.9 h so far · expected done Oct 30 02:10–Oct 30 22:58 UTC |
+| 6 | The 3D view, properly | building | 2 / 9 | 6.1 h so far · expected done Oct 30 03:04–Oct 31 00:45 UTC |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
@@ -62,7 +62,6 @@ Updated 2026-10-29 11:00 UTC. This page and the card in the README are regenerat
 | claude-sonnet-a | sonnet | idle | 32 |
 | claude-sonnet-b | sonnet | idle | 26 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | merging | 443 |
-| kimi-k31 | k3.1-pro-highspeed | agent | 74 |
 | mai-flash | mai-code-1.1-flash | idle | 6 |
-| tturbo-mac | tturbo-ultraheretic | agent | 400 |
+| tturbo-mac | tturbo-ultraheretic | gate | 400 |
 | tturbo-mac2 | tturbo-ultraheretic | idle | 251 |
