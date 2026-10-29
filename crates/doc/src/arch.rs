@@ -1501,9 +1501,16 @@ impl ArchModel {
         self.walls.iter().map(|w| w.id)
     }
 
-    /// Whether the model has no walls.
+    /// Whether the model has no walls, openings, rooms, roofs, stairs, railings, cameras or views.
     pub fn is_empty(&self) -> bool {
         self.walls.is_empty()
+            && self.openings.is_empty()
+            && self.rooms.is_empty()
+            && self.roofs.is_empty()
+            && self.stairs.is_empty()
+            && self.railings.is_empty()
+            && self.cameras.is_empty()
+            && self.views.is_empty()
     }
 
     /// Look up a wall type by name (case-insensitive).
