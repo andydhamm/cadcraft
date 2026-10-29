@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-29 08:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-29 09:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 6 of 13: The 3D view, properly — 3 of 14 segments merged · 2 of 9 acceptance checks**
 
@@ -16,7 +16,7 @@ Updated 2026-10-29 08:45 UTC. This page and the card in the README are regenerat
 | 3 | Rooms, floors, ceilings and levels | done | 9 / 9 | 56.2 h |
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
-| 6 | The 3D view, properly | building | 2 / 9 | 3.6 h so far · expected done Oct 29 23:06–Oct 31 05:21 UTC |
+| 6 | The 3D view, properly | building | 2 / 9 | 3.9 h so far · expected done Oct 30 00:21–Oct 31 08:39 UTC |
 | 7 | Generated elevations and sections | planned | — | — |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
@@ -27,12 +27,12 @@ Updated 2026-10-29 08:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 6 segments
 
-9 queued, 3 merged, 1 gate, 1 working
+9 queued, 3 merged, 2 gate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p6-arch3d-camera` | arch3d::camera — orbit + full camera, projection, pixel rays | gate | bonsai-a |
-| `p6-doc-cameras` | Camera3d on the arch model | working | kimi-k31 |
+| `p6-doc-cameras` | Camera3d on the arch model | gate | kimi-k31 |
 
 ## Recent merges
 
@@ -62,7 +62,7 @@ Updated 2026-10-29 08:45 UTC. This page and the card in the README are regenerat
 | claude-sonnet-a | sonnet | idle | 30 |
 | claude-sonnet-b | sonnet | idle | 25 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 432 |
-| kimi-k31 | k3.1-pro-highspeed | agent | 73 |
+| kimi-k31 | k3.1-pro-highspeed | gate | 73 |
 | mai-flash | mai-code-1.1-flash | idle | 6 |
 | ornith-a | ornith15-397b-exl3-35 | held | 29 |
 | ornith-b | ornith15-397b-exl3-35 | held | 17 |
