@@ -773,23 +773,25 @@ mod tests {
         d.arch.push_opening(Opening::new(wid, 4.0, 0.9, 1.5, OpeningKind::Window));
 
         let polys = proxy_opening_polylines(&d.arch);
-        assert_eq!(polys.len(), 2, "expected two opening proxy rings");
+        assert!(polys.len() >= 4, "expected at least 4 opening proxy polylines (whole symbol per opening), got {}", polys.len(),);
 
-        // Each ring is on the opening's own layer.
-        let (dl, dts) = &polys[0];
-        let (wl, wts) = &polys[1];
-        assert_eq!(dl.as_str(), d.arch.openings[0].layer.as_str(), "door ring not on its layer");
-        assert_eq!(wl.as_str(), d.arch.openings[1].layer.as_str(), "window ring not on its layer");
-
-        // One ring per expected layer.
+        // Each opening's layer must have at least one proxy.
         let grouped = poly_by_layer(&polys);
-        assert!(!grouped.get("A-DOOR").map(|v| v.is_empty()).unwrap_or(true), "no proxy ring on A-DOOR");
-        assert!(!grouped.get("A-GLAZ").map(|v| v.is_empty()).unwrap_or(true), "no proxy ring on A-GLAZ");
+        let door_polys = grouped.get("A-DOOR").cloned().unwrap_or_default();
+        let glaz_polys = grouped.get("A-GLAZ").cloned().unwrap_or_default();
+        assert!(!door_polys.is_empty(), "no proxy ring on A-DOOR");
+        assert!(!glaz_polys.is_empty(), "no proxy ring on A-GLAZ");
 
-        // XDATA carries ARCHOPENING marker and the o{n} label.
-        assert!(dts.iter().any(|t| t.code == 1000 && t.str().trim() == ARCH_OPENING_MARKER));
-        assert!(dts.iter().any(|t| t.code == 1000 && t.str().trim().starts_with("o")));
-        assert!(wts.iter().any(|t| t.code == 1000 && t.str().trim().starts_with("o")));
+        // XDATA carries ARCHOPENING marker and the o{n} label on every polyline.
+        for (layer, polys) in grouped.iter() {
+            for poly_tags in polys {
+                assert!(
+                    poly_tags.iter().any(|t| t.code == 1000 && t.str().trim() == ARCH_OPENING_MARKER),
+                    "missing ARCHOPENING marker on layer {layer}",
+                );
+                assert!(poly_tags.iter().any(|t| t.code == 1000 && t.str().trim().starts_with("o")), "missing o{n} label on layer {layer}",);
+            }
+        }
     }
 
     #[test]
