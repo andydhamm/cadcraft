@@ -24,6 +24,36 @@ pub const MAX_ISLANDS: usize = 4096;
 const MAX_GAP_ENDS: usize = 50_000;
 const MAX_GAP_PAIRS: usize = 5_000_000;
 
+/// A soup of curves split and merged once, for many [`boundary_at`] queries on the same soup.
+pub struct Arrangement {
+    g: Graph,
+    comp: Vec<usize>,
+    core: Graph,
+}
+
+impl Arrangement {
+    /// Build the arrangement for `polys` (with `tol` and `gap`), or `None` when there are no
+    /// segments or the graph is too large to process.
+    pub fn new(polys: &[Vec<Vec2>], tol: f64, gap: f64) -> Option<Self> {
+        let g = build_gap(polys, tol, gap)?;
+        let comp = components(&g);
+        let core = prune(&g);
+        Some(Self { g, comp, core })
+    }
+
+    /// [`boundary_at_gap`] on the soup this arrangement was built from.
+    pub fn boundary_at(&self, p: Vec2) -> Option<Boundary> {
+        let ids = outer_face(&self.g, p)?;
+        let outer = points(&self.g, &ids)?;
+        let islands = islands_in(&self.g, &self.comp, &self.core, &ids, p);
+        let mut outer_sources: Vec<usize> =
+            ids.iter().zip(ids.iter().cycle().skip(1)).filter_map(|(&u, &v)| self.g.edge_src.get(&(u.min(v), u.max(v))).copied()).collect();
+        outer_sources.sort_unstable();
+        outer_sources.dedup();
+        Some(Boundary { outer, islands, outer_sources })
+    }
+}
+
 /// The closed boundary around a point and the islands inside it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Boundary {
@@ -391,12 +421,10 @@ fn outside(core: &Graph, u: usize, steps: usize) -> Option<Vec<Vec2>> {
 }
 
 /// Outlines of the groups of curves inside the face `outer` (vertex indices into `g`).
-fn islands(g: &Graph, outer: &[usize], p: Vec2) -> Vec<Island> {
-    let comp = components(g);
+fn islands_in(g: &Graph, comp: &[usize], core: &Graph, outer: &[usize], p: Vec2) -> Vec<Island> {
     let outer_comp: std::collections::HashSet<usize> = outer.iter().filter_map(|&i| comp.get(i).copied()).collect();
     let Some(outer_pts) = points(g, outer) else { return Vec::new() };
     let ob = Bounds2::from_points(outer_pts.iter().copied());
-    let core = prune(g);
     // Leftmost (then lowest) vertex still on a cycle, per component.
     let mut start: HashMap<usize, usize> = HashMap::new();
     let mut edges: HashMap<usize, usize> = HashMap::new();
@@ -433,7 +461,7 @@ fn islands(g: &Graph, outer: &[usize], p: Vec2) -> Vec<Island> {
             continue;
         }
         let steps = edges.get(&c).copied().unwrap_or(0).saturating_add(4);
-        let Some(lp) = outside(&core, u, steps) else { continue };
+        let Some(lp) = outside(core, u, steps) else { continue };
         let area = shoelace(&lp);
         let ib = Bounds2::from_points(lp.iter().copied());
         if lp.len() < 3 || !area.is_finite() || area <= 0.0 || !ob.contains_box(&ib) || point_in_polygon(&lp, p) {
@@ -555,15 +583,7 @@ pub fn boundary_at(polys: &[Vec<Vec2>], p: Vec2, tol: f64) -> Option<Boundary> {
 
 /// [`boundary_at`], with gaps of up to `gap` between curve ends closed (HPGAPTOL).
 pub fn boundary_at_gap(polys: &[Vec<Vec2>], p: Vec2, tol: f64, gap: f64) -> Option<Boundary> {
-    let g = build_gap(polys, tol, gap)?;
-    let ids = outer_face(&g, p)?;
-    let outer = points(&g, &ids)?;
-    let islands = islands(&g, &ids, p);
-    let mut outer_sources: Vec<usize> =
-        ids.iter().zip(ids.iter().cycle().skip(1)).filter_map(|(&u, &v)| g.edge_src.get(&(u.min(v), u.max(v))).copied()).collect();
-    outer_sources.sort_unstable();
-    outer_sources.dedup();
-    Some(Boundary { outer, islands, outer_sources })
+    Arrangement::new(polys, tol, gap)?.boundary_at(p)
 }
 
 /// The outside outline of curves that together enclose an area (counter-clockwise, dangling
@@ -648,6 +668,15 @@ mod tests {
     fn finds_square_around_point() {
         let l = enclosing_loop(&[square(0.0, 0.0, 10.0)], Vec2::new(5.0, 5.0), 1e-9).unwrap();
         assert!((shoelace(&l) - 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn an_arrangement_answers_like_boundary_at() {
+        let polys = vec![square(0.0, 0.0, 10.0), square(4.0, 4.0, 2.0), square(20.0, 20.0, 5.0)];
+        let arrangement = Arrangement::new(&polys, 1e-9, 0.0).unwrap();
+        for p in [Vec2::new(5.0, 5.0), Vec2::new(2.0, 2.0), Vec2::new(22.0, 22.0), Vec2::new(15.0, 15.0), Vec2::new(-1.0, -1.0)] {
+            assert_eq!(arrangement.boundary_at(p), boundary_at(&polys, p, 1e-9));
+        }
     }
 
     #[test]
