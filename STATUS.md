@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-30 06:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-30 06:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 8 of 13: Recognition from plain DXF — 6 of 23 segments merged · 0 of 10 acceptance checks**
 
@@ -18,7 +18,7 @@ Updated 2026-10-30 06:15 UTC. This page and the card in the README are regenerat
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
-| 8 | Recognition from plain DXF | building | 0 / 10 | 3.2 h so far · expected done Oct 30 20:32–Nov 01 05:18 UTC |
+| 8 | Recognition from plain DXF | building | 0 / 10 | 3.4 h so far · expected done Oct 30 21:53–Nov 01 09:10 UTC |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
@@ -27,12 +27,12 @@ Updated 2026-10-30 06:15 UTC. This page and the card in the README are regenerat
 
 ## Phase 8 segments
 
-14 queued, 6 merged, 3 working
+14 queued, 6 merged, 1 merging, 1 gate, 1 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p8-offset-is-the-centre` | One meaning of an opening's offset: the distance from the wall start to its CENTRE | working | mai-flash |
-| `p8-io-opening-proxies-whole-symbol` | Opening proxies on save carry the whole plan symbol (jambs, leaf, swing, frame, glass) | working | bonsai-a |
+| `p8-offset-is-the-centre` | One meaning of an opening's offset: the distance from the wall start to its CENTRE | merging | mai-flash |
+| `p8-io-opening-proxies-whole-symbol` | Opening proxies on save carry the whole plan symbol (jambs, leaf, swing, frame, glass) | gate | bonsai-a |
 | `p8-detect-skeleton` | crates/arch/src/detect: the API, units, and stub submodules | working | darwin-ws3 |
 
 ## Recent merges
@@ -56,14 +56,14 @@ Updated 2026-10-30 06:15 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 663 |
-| bonsai-b | bonsai2-27b | agent | 623 |
+| bonsai-a | bonsai2-27b | gate | 663 |
+| bonsai-b | bonsai2-27b | agent | 624 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | idle | 44 |
 | claude-sonnet-b | sonnet | idle | 42 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 510 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 511 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 88 |
-| mai-flash | mai-code-1.1-flash | agent | 19 |
-| tturbo-mac | tturbo-ultraheretic | agent | 447 |
+| mai-flash | mai-code-1.1-flash | merging | 20 |
+| tturbo-mac | tturbo-ultraheretic | gate | 447 |
 | tturbo-mac2 | tturbo-ultraheretic | idle | 271 |
