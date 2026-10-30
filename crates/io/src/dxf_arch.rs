@@ -1703,13 +1703,13 @@ mod tests {
         assert!(!polys.is_empty(), "a door must write its symbol proxies");
 
         for tags in &polys {
-            let vertex_count = tags.iter().find(|t| t.code == 90).map(|t| t.i64()).unwrap_or(0);
-            let xs: Vec<f64> = tags.iter().filter(|t| t.code == 10).map(|t| t.f64()).collect();
-            let ys: Vec<f64> = tags.iter().filter(|t| t.code == 20).map(|t| t.f64()).collect();
+            let vertex_count = tags.1.iter().find(|t| t.code == 90).map(|t| t.i64()).unwrap_or(0);
+            let xs: Vec<f64> = tags.1.iter().filter(|t| t.code == 10).map(|t| t.f64()).collect();
+            let ys: Vec<f64> = tags.1.iter().filter(|t| t.code == 20).map(|t| t.f64()).collect();
             let n = xs.len();
             assert_eq!(vertex_count as usize, n, "vertex count tag must match actual points");
             assert!(xs.iter().all(|v| v.is_finite()) && ys.iter().all(|v| v.is_finite()), "non-finite proxy coordinates");
-            let closed = tags.iter().any(|t| t.code == 70 && t.i64() == 1);
+            let closed = tags.1.iter().any(|t| t.code == 70 && t.i64() == 1);
             if closed {
                 assert_eq!(*xs.first().unwrap_or(&0.0), *xs.last().unwrap_or(&0.0), "closed proxy must end where it started");
                 assert_eq!(*ys.first().unwrap_or(&0.0), *ys.last().unwrap_or(&0.0), "closed proxy must end where it started");
