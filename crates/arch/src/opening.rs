@@ -264,7 +264,7 @@ pub fn place_opening(model: &ArchModel, mut o: Opening, fit: bool) -> Result<Ope
                     let mut overlap_ok = true;
                     for other in model.openings_on(o.host) {
                         if other.offset.is_finite() && other.width.is_finite() && other.rough_width.is_finite() {
-                            let b0 = other.offset - (other.rough_width - other.width) / 2.0;
+                            let b0 = other.offset - other.rough_width / 2.0;
                             let b1 = b0 + other.rough_width;
                             let gap = (b0 - c1).max(c0 - b1);
                             let need = if other.mull_group.is_some() { 0.0 } else { MIN_SEPARATION };
