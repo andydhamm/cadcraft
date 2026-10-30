@@ -1407,6 +1407,12 @@
 	Floor structure thickness	Товщина конструкції підлоги
 	Select walls for room detection	Виберіть стіни для виявлення кімнат
 	Room detection complete: {n} rooms	Виявлено кімнат: {n}
+	Delete View	Видалити вид
+	Pick 3D	Вибір 3D
+	Section	Різ
+	Sun	Сонце
+	View Sheet	Аркуш видів
+	Walkthrough	Обхід
 	cmd.room	Кімната
 	cmd.roomdetect	Виявити кімнати
 	cmd.level	Рівень
@@ -1414,6 +1420,7 @@
 	Architecture>Room Detect	Архітектура>Виявити кімнати
 	Architecture>Level	Архітектура>Рівень
 	Architecture>Stair	Архітектура>Сходи
+	Architecture>Railing	Архітектура>Огорожа
 	Check for Updates…	Перевірити оновлення…
 	CADCraft is up to date.	Встановлено найновішу версію CADCraft.
 	Could not check for updates.	Не вдалося перевірити оновлення.
