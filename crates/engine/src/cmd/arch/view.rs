@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn camera_list_does_not_mutate_the_document() {
         let mut s = Session::new();
-        s.execute("camera", &json!({ "save": "a" })).unwrap();
+        s.execute("camera", &json!({ "save": "a", "azimuth": 0.0 })).unwrap();
         let rev = s.doc().unwrap().arch_revision;
         let cams = s.doc().unwrap().arch.cameras.clone();
         s.execute("camera", &json!({ "list": true })).unwrap();
@@ -693,6 +693,7 @@ mod tests {
             &json!({
                 "save": "overview",
                 "kind": "orbit",
+                "azimuth": 0.0,
                 "distance": 20.0
             }),
         )
