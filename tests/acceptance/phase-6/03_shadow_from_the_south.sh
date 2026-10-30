@@ -3,7 +3,7 @@
 # Top-down at azimuth 0 the eye is north of the target, so the top of the image is south and the bottom is north.
 # The bar is relative, not a fixed ratio: a low winter sun lights the ground weakly, so lit vs shadow is close.
 set -uo pipefail
-tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+tmp=$(mktemp -d); trap '[ -n "${CHECK_ARTIFACTS_DIR:-}" ] && cp "$tmp"/*.png "$CHECK_ARTIFACTS_DIR"/ 2>/dev/null; rm -rf "$tmp"' EXIT
 cam='orbit,azimuth=0,elevation=89,distance=40,target=5,4,0'
 cargo run -q -p cadcraft-cli -- run --metric \
   --cmd 'wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.4,"exterior":true}' \

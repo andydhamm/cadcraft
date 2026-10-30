@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
-tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+tmp=$(mktemp -d); trap '[ -n "${CHECK_ARTIFACTS_DIR:-}" ] && cp "$tmp"/*.svg "$CHECK_ARTIFACTS_DIR"/ 2>/dev/null; rm -rf "$tmp"' EXIT
 W='wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.4,"exterior":true}'
 ins=$(cargo run -q -p cadcraft-cli -- run --metric --cmd "$W" \
   --cmd 'door {"wall":"w0","offset":3.0,"width":0.9,"height":2.1,"style":"hinged"}' \
