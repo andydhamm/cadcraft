@@ -1396,6 +1396,9 @@
 	Stair	Сходи
 	Deck	Тераса
 	Railing	Огорожа
+	cmd.stair	Сходи
+	cmd.railing	Огорожа
+	cmd.deck	Тераса
 	Interior (inner surfaces)	Внутрішній (внутрішні поверхні)
 	Standard (centre of walls)	Стандартний (центр стін)
 	Living (living areas)	Жилій (жилові зони)
