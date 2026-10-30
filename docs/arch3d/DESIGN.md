@@ -212,3 +212,43 @@ sun in the pane; SSAO/TAA/cascaded shadows; `ARCHDETECT` (ARCH-12); OBJ and IFC 
   - **`hlr`.** `OrthoView::new(dir,up)` / `::elevation([x,y])`; `visible_lines(scene,view) -> Vec<Line2>` tagged with (`ArchKind`, `ArchId`) since phase 7 (decision 22). Exact: depth difference is linear along an edge, so the hidden part is one interval; covering is closed (`EPS_SHEET`) so diagonals never leak; a triangle hides only what is over `EPS_DEPTH` (0.1 mm) behind its plane plus its slope across that band. `merge_collinear` joins runs of the same object only.
   - **`section`.** `Plane::new(point,normal)`; `section_cut(scene,plane,view) -> SectionCut{rings,lines}` — crossings computed once per welded edge and chained, so closed solids give CCW closed rings (open surfaces give lines); a corner exactly on the plane counts as in front. `section_view(scene,plane,up)` = cut + `visible_lines` beyond, each object's cut face hiding what lies inside its poché.
   - **What the HLR exposed:** walls were not cut by openings (fixed in phase 4, `a_window_beyond_a_section_shows_through_its_wall` now un-ignored and passing); the header is flush with both wall faces, so it draws as a rectangle above every opening — narrow it or drop it (still open after phase 7); casings are clamped inside the wall band instead of standing proud by `casing_depth`; `Opening::new` gives sill 0 to windows (the `window` command defaults 0.9), so tests set `sill` themselves.
+
+## Phase 8 plan
+
+Phase 8 plan (operator, level 2). Add to DESIGN.md when the phase lands:
+
+- **Decision 24: one meaning of opening offset, and arch drawings are metre drawings.**
+  - `Opening.offset` is the distance from the host wall's start to the opening's **centre**, everywhere. The 3D hole, `rough_offset` and the symbol's leaf and swing already read it that way. The plan symbol's jambs and frame, `poché_gaps` (the 2D wall cut) and `validate_placement`'s end limits read it as the start, so every 2D gap sat half a width off its door. Found while planning phase 8, because detection measures openings by their centre.
+  - The arch model is in metres. A drawing holding arch objects saves `$INSUNITS 6`; `touch_arch` sets it, and so does reading a record. `--metric` drawings used to save 4 (mm) for metre geometry.
+  - `ARCHDETECT` reads linework in drawing units scaled by `$INSUNITS`, or by its `units` parameter.
+  - Accepting candidates in a non-metre drawing converts the drawing to metres in the same undo step. Model space and insert placements are scaled, dimension, linetype and text scales follow, and sheet viewports keep framing the same content. The new walls then sit on the linework they came from, as when Chief converts an imported DWG to its units.
+- **Decision 25: detection is a pure pipeline in `arch::detect` (L2).** The stages are `flatten` → `walls` → `junctions` → `openings` → split unexplained gaps → `rooms`.
+  - **`flatten`** produces metric primitives. It handles INSERTs (nested, MINSERT arrays, layer-0 inheritance, depth 16, a 400,000-primitive budget), bulges and arcs, and fits tessellated arcs.
+  - **`walls`** pairs parallel face lines 0.04–0.6 m apart that are adjacent in offset, so nothing lies between them over more than half their length. Conflicts over a shared face keep the longer piece, then the one nearer a dominant thickness, then the thinner. Collinear pieces merge across gaps of up to 2.6 m, and the gaps are recorded.
+  - **`junctions`** snaps run ends into exact L corners (a bit-identical shared point) and T junctions (an end on the other centre line), and merges collinear runs. X crossings are left to the join solver.
+  - **`openings`** finds doors from swing arcs at a jamb, sliding doors from two leaf lines, and windows from glass lines strictly inside a band between jambs. A gap with no symbol is a cased candidate below the accept threshold. Every candidate is checked with `validate_placement`.
+  - **`rooms`** runs `room::detect_rooms` on the candidate walls and names each room from the label inside it (the MTEXT's first line, codes removed).
+  - **Layer names** (AIA/NCS) add to confidence and are never required. The corpus includes a plan with every entity on layer 0.
+  - **The command** `archdetect` (`{}` is a dry run) replies with candidates `c0…` in metres, each with a confidence and its evidence (layers, handles, rules). `accept` creates the candidates in one undo step, after validating every id first.
+  - **`cadcraft-cli convert plan.dxf out.glb`** detects first when the drawing has no arch objects. `--no-detect` turns that off.
+  - **The Detection Review panel** (Architecture > Detection Review) lists, checks and accepts candidates.
+- **Opening proxies carry the whole plan symbol** (jambs, leaf, swing, frame, glass), so a stripped or foreign-opened DXF still shows doors and windows. The synthetic corpus is made from them.
+- **The header is a lintel inset 10 mm from both wall faces**, so elevations no longer outline a rectangle above every opening (phase-7 gap).
+- **Proof on screen.** Check 10 photographs the app through egui_kittest + wgpu: the review panel over apartment.dxf, and the 3D pane after accepting. The gate keeps the PNGs (CHECK_ARTIFACTS_DIR, swarm 0a45de28), and the dashboard shows them under Gate images.
+
+Acceptance checks (10):
+- 01: offset is the centre in the gap, symbol, 3D hole and limits; no header rectangle.
+- 02: housekeeping, the runnable guide, `$INSUNITS 6`, whole-symbol proxies, the truth copy.
+- 03: synthetic corpus, P/R ≥ 0.95 for walls and ≥ 0.90 for doors and windows, over 5 plans plus nested-and-turned, mm-scaled and layer-less variants (51 walls, 24 doors, 35 windows).
+- 04: apartment.dxf, wall P/R ≥ 0.80, three named rooms, the dry run changes nothing.
+- 05: accept and undo, conversion, refusals.
+- 06: convert to GLB.
+- 07: real plans, reported only.
+- 08: 10,000+ entities under 2 s, hostile input.
+- 09: layers, wasm, i18n.
+- 10: screenshots.
+
+Operator items this phase:
+- Delete the orphans `docs/arch3d/tests.rs` and `tests/user_guide_examples.rs`; no crate compiles either, so the phase-7 guide tests went into a file nothing ran.
+- Add the three real plans: CC0 floor plans from Dryad/Zenodo, with ATTRIBUTION.md rows.
+
