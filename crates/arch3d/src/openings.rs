@@ -12,6 +12,10 @@ use cadcraft_geom::{Vec2, Vec3};
 
 use crate::mesh::Mesh;
 
+/// How far (metres) the opening header sits inside each wall face, so that
+/// hidden-line elevations hide it behind the wall above the rough opening.
+pub const HEADER_INSET: f64 = 0.01;
+
 /// Clamp a component centre offset (from the wall centre plane, measured along
 /// the wall normal) so that a component of depth `depth` fits inside the wall's
 /// `[-wall_t/2, +wall_t/2]` thickness band.
@@ -238,16 +242,18 @@ pub fn opening_meshes(walls: &BTreeMap<ArchId, &Wall>, o: &Opening, span: Option
         }
     }
 
-    // Header: centred on the wall centre plane (full thickness) and clipped
-    // to stay inside the host wall span top.
+    // Header: a lintel centred on the wall centre plane, `HEADER_INSET` inside
+    // both wall faces so an elevation hides it behind the wall above the
+    // opening; clipped to stay inside the host wall span top.
     let header_h = 0.2;
     let header_top = (frame_z1 + header_h).min(top);
     if header_top > frame_z1 + 1e-9 {
-        let header_off = band_offset(0.0, wall_t, wall_t);
+        let header_depth = if wall_t > 4.0 * HEADER_INSET { wall_t - 2.0 * HEADER_INSET } else { wall_t / 2.0 };
+        let header_off = band_offset(0.0, header_depth, wall_t);
         let h_a = center + dir * (-w / 2.0 - fw) + normal * header_off;
         let h_b = center + dir * (w / 2.0 + fw) + normal * header_off;
         let header_mat = format!("{}-header", kind_prefix);
-        if let Some(mesh) = box_between(h_a, h_b, frame_z1, header_top, wall_t, &header_mat, o.id) {
+        if let Some(mesh) = box_between(h_a, h_b, frame_z1, header_top, header_depth, &header_mat, o.id) {
             meshes.insert(header_mat, mesh);
         }
     }
@@ -486,6 +492,22 @@ mod tests {
                     assert!(z <= wall_height + 1e-6, "header exceeds wall height: z={}", z);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn the_header_is_inset_from_both_wall_faces() {
+        let t = 0.3;
+        let model = band_wall(t);
+        let o = window_opening();
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
+        let header = meshes.iter().find(|m| m.material.contains("header"));
+        assert!(header.is_some(), "no header mesh");
+        for m in header.into_iter() {
+            let lo = m.positions.iter().map(|p| p[1] as f64).fold(f64::MAX, f64::min);
+            let hi = m.positions.iter().map(|p| p[1] as f64).fold(f64::MIN, f64::max);
+            assert!((lo - (-t / 2.0 + HEADER_INSET)).abs() < 1e-5, "lo {lo}");
+            assert!((hi - (t / 2.0 - HEADER_INSET)).abs() < 1e-5, "hi {hi}");
         }
     }
 

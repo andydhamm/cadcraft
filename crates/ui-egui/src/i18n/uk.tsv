@@ -108,7 +108,7 @@
 	Block Reference	Посилання на блок
 	Block...	Блок...
 	Blocks	Блоки
-	Build 3D	Збудити 3D
+	Build 3D	Побудувати 3D
 	Blue	Синій
 	Bold	Жирний
 	Boolean	Булеві операції
@@ -1384,9 +1384,9 @@
 	Edit Command Aliases (PGP)...	Редагувати псевдоніми команд (PGP)...
 
 # Architecture (arch3d)
-	Door	Дверь
+	Door	Двері
 	Window	Вікно
-	Garage Door	Гаражна дверь
+	Garage Door	Гаражні ворота
 	Move Opening	Перемістити отвір
 	Level	Рівень
 	Automatic	Автоматичний
@@ -1425,6 +1425,17 @@
 	Architecture>Stair	Архітектура>Сходи
 	Architecture>Railing	Архітектура>Огорожа
 	Architecture>Deck	Архітектура>Тераса
+	Detect from Linework	Виявити з ліній
+	cmd.archdetect	Виявити з ліній
+	Architecture>Detect from Linework	Архітектура>Виявити з ліній
+	Detection Review	Перегляд виявлення
+	Architecture>Detection Review	Архітектура>Перегляд виявлення
+	Accept Selected	Прийняти вибране
+	Detect	Виявити
+	Walls	Стіни
+	Openings	Отвори
+	Rooms	Кімнати
+	Confidence	Достовірність
 	Check for Updates…	Перевірити оновлення…
 	CADCraft is up to date.	Встановлено найновішу версію CADCraft.
 	Could not check for updates.	Не вдалося перевірити оновлення.
