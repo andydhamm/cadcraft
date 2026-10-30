@@ -118,7 +118,7 @@ fn parse_pixel(v: Option<&Value>, size: (u32, u32)) -> Result<[f32; 2], EngineEr
         [x, y] => (finite(x, "pixel")?, finite(y, "pixel")?),
         _ => return Err(bad("pick3d", "`pixel` must be [x,y]")),
     };
-    if x < -1.0 || y < -1.0 || x > f64::from(size.0) + 1.0 || y > f64::from(size.1) + 1.0 {
+    if x < 0.0 || y < 0.0 || x > f64::from(size.0) || y > f64::from(size.1) {
         return Err(bad("pick3d", "`pixel` lies outside the viewport"));
     }
     Ok([x as f32, y as f32])

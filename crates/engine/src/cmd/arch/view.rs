@@ -57,7 +57,7 @@ fn run_view3d(s: &mut Session, _params: &Value) -> Result<Value, EngineError> {
 /// `0.35`, distance `10.0`, target the origin). Returns
 /// `{"ok":true,"azimuth":..,"elevation":..,"distance":..,"target":[x,y,z]}`.
 fn run_camera(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
-    let present = |k: &str| !matches!(params.get(k), None | Some(Value::Null));
+    let present = |k: &str| params.get(k).is_some();
     if present("save") {
         return camera_save(s, params);
     }
