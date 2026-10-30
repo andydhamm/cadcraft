@@ -141,6 +141,8 @@ pub struct Pane3d {
     doc: Option<u64>,
     /// Whether the orbit distance has been fitted to a scene yet.
     framed: bool,
+    /// The rectangle the pane last drew into, in points.
+    last_rect: Option<egui::Rect>,
 }
 
 impl Pane3d {
@@ -161,7 +163,13 @@ impl Pane3d {
             scene: None,
             doc: None,
             framed: false,
+            last_rect: None,
         }
+    }
+
+    /// The rectangle the pane last drew into, in points (`None` before the first draw).
+    pub fn last_rect(&self) -> Option<egui::Rect> {
+        self.last_rect
     }
 
     /// Load the drawing's active saved camera when it differs from the one last loaded.
@@ -413,6 +421,7 @@ pub fn draw(ui: &mut egui::Ui, pane: &mut Pane3d) {
     if response.clicked() || response.drag_started() {
         response.request_focus();
     }
+    pane.last_rect = Some(rect);
     let ppp = ui.ctx().pixels_per_point();
     let size = ((rect.width() * ppp).round().max(1.0) as u32, (rect.height() * ppp).round().max(1.0) as u32);
     if response.dragged() {
