@@ -640,6 +640,68 @@ mod tests {
     }
 
     #[test]
+    fn a_diagonal_crossing_face_stops_the_wall() {
+        let mut it = Vec::new();
+        // Horizontal wall with a 2 m gap (x=2..4), faces at y=0 and y=0.2
+        seg(&mut it, (0.0, 0.0), (2.0, 0.0), "A-WALL", None);
+        seg(&mut it, (4.0, 0.0), (6.0, 0.0), "A-WALL", None);
+        seg(&mut it, (0.0, 0.2), (2.0, 0.2), "A-WALL", None);
+        seg(&mut it, (4.0, 0.2), (6.0, 0.2), "A-WALL", None);
+        // Diagonal line crossing the band inside the gap
+        seg(&mut it, (2.5, -0.5), (3.5, 0.7), "A-WALL", None);
+        let runs = wall_runs(&lw(it));
+        // Two separate runs, not bridged across the gap
+        assert_eq!(runs.len(), 2, "{runs:?}");
+    }
+
+    #[test]
+    fn a_crossing_face_that_does_not_span_both_faces_does_not_stop() {
+        let mut it = Vec::new();
+        // Horizontal wall with a 2 m gap (x=2..4), faces at y=0 and y=0.2
+        seg(&mut it, (0.0, 0.0), (2.0, 0.0), "A-WALL", None);
+        seg(&mut it, (4.0, 0.0), (6.0, 0.0), "A-WALL", None);
+        seg(&mut it, (0.0, 0.2), (2.0, 0.2), "A-WALL", None);
+        seg(&mut it, (4.0, 0.2), (6.0, 0.2), "A-WALL", None);
+        // Short line that only crosses the top face, not the bottom
+        seg(&mut it, (2.5, 0.15), (3.5, 0.25), "A-WALL", None);
+        let runs = wall_runs(&lw(it));
+        // Bridged into one run because the line doesn't span the full band
+        assert_eq!(runs.len(), 1, "{runs:?}");
+    }
+
+    #[test]
+    fn a_crossing_face_at_the_gap_edge_does_not_stop() {
+        let mut it = Vec::new();
+        // Horizontal wall with a 2 m gap (x=2..4), faces at y=0 and y=0.2
+        seg(&mut it, (0.0, 0.0), (2.0, 0.0), "A-WALL", None);
+        seg(&mut it, (4.0, 0.0), (6.0, 0.0), "A-WALL", None);
+        seg(&mut it, (0.0, 0.2), (2.0, 0.2), "A-WALL", None);
+        seg(&mut it, (4.0, 0.2), (6.0, 0.2), "A-WALL", None);
+        // Vertical line exactly at the gap edge (x=2)
+        seg(&mut it, (2.0, -0.1), (2.0, 0.3), "A-WALL", None);
+        let runs = wall_runs(&lw(it));
+        // Bridged because the crossing is not strictly inside the gap
+        assert_eq!(runs.len(), 1, "{runs:?}");
+    }
+
+    #[test]
+    fn empty_linework_produces_no_walls() {
+        let it: Vec<Item> = Vec::new();
+        let runs = wall_runs(&lw(it));
+        assert!(runs.is_empty(), "{runs:?}");
+    }
+
+    #[test]
+    fn coincident_parallel_faces_are_not_a_wall() {
+        let mut it = Vec::new();
+        // Two identical segments: zero thickness, below MIN_THICKNESS
+        seg(&mut it, (0.0, 0.0), (5.0, 0.0), "A-WALL", None);
+        seg(&mut it, (0.0, 0.0), (5.0, 0.0), "A-WALL", None);
+        let runs = wall_runs(&lw(it));
+        assert!(runs.is_empty(), "{runs:?}");
+    }
+
+    #[test]
     fn random_segments_never_panic() {
         let mut s: u64 = 0x9E37_79B9_7F4A_7C15;
         let mut next = move || {
