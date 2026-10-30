@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-30 12:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-30 12:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 8 of 13: Recognition from plain DXF — 19 of 24 segments merged · 5 of 10 acceptance checks**
 
@@ -18,7 +18,7 @@ Updated 2026-10-30 12:15 UTC. This page and the card in the README are regenerat
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
-| 8 | Recognition from plain DXF | building | 5 / 10 | 9.2 h so far · expected done Oct 30 16:13–Oct 31 01:35 UTC |
+| 8 | Recognition from plain DXF | building | 5 / 10 | 9.4 h so far · expected done Oct 30 16:35–Oct 31 02:13 UTC |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
@@ -27,13 +27,13 @@ Updated 2026-10-30 12:15 UTC. This page and the card in the README are regenerat
 
 ## Phase 8 segments
 
-19 merged, 3 working, 2 queued
+19 merged, 2 gate, 2 queued, 1 merging
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p8-cli-convert-detects` | cadcraft-cli convert plan.dxf out.glb detects walls when the plan has none | working | bonsai-a |
-| `p8-ui-review-panel` | Detection Review panel: list, check, accept the candidates | working | claude-sonnet-a |
-| `p8-detect-tune-to-targets` | Corpus tests in the workspace, and the detector tuned until they meet the targets | working | bonsai-b |
+| `p8-cli-convert-detects` | cadcraft-cli convert plan.dxf out.glb detects walls when the plan has none | gate | bonsai-a |
+| `p8-ui-review-panel` | Detection Review panel: list, check, accept the candidates | merging | claude-sonnet-a |
+| `p8-detect-tune-to-targets` | Corpus tests in the workspace, and the detector tuned until they meet the targets | gate | bonsai-b |
 
 ## Recent merges
 
@@ -56,14 +56,14 @@ Updated 2026-10-30 12:15 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 683 |
-| bonsai-b | bonsai2-27b | agent | 644 |
+| bonsai-a | bonsai2-27b | gate | 683 |
+| bonsai-b | bonsai2-27b | gate | 644 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
-| claude-sonnet-a | sonnet | agent | 51 |
+| claude-sonnet-a | sonnet | merging | 52 |
 | claude-sonnet-b | sonnet | idle | 45 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 538 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | merging | 539 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 92 |
 | mai-flash | mai-code-1.1-flash | idle | 21 |
-| tturbo-mac | tturbo-ultraheretic | agent | 458 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 279 |
+| tturbo-mac | tturbo-ultraheretic | agent | 459 |
+| tturbo-mac2 | tturbo-ultraheretic | gate | 279 |
