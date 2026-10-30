@@ -159,6 +159,126 @@ fn viewsheet_refuses_a_view_name_that_is_not_an_id() {
 }
 
 #[test]
+fn viewsheet_works_with_a_single_view() {
+    let mut s = Session::new();
+    s.doc_mut().unwrap().arch.views.push(make_view(0, "v0", 50.0, 11.2, 5.7));
+
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "Single",
+            "views": ["v0"],
+            "paper": "ARCH D",
+            "landscape": true
+        }),
+    );
+
+    assert!(res.is_ok(), "viewsheet failed with single view: {:?}", res.err());
+    let val = res.unwrap();
+    let vps = val["viewports"].as_array().unwrap();
+    assert_eq!(vps.len(), 1);
+    assert_eq!(vps[0]["view"], "v0");
+}
+
+#[test]
+fn viewsheet_lays_out_three_views() {
+    let mut s = Session::new();
+    for i in 0..3 {
+        s.doc_mut().unwrap().arch.views.push(make_view(i, &format!("v{i}"), 50.0, 11.2, 5.7));
+    }
+
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "ThreeViews",
+            "views": ["v0", "v1", "v2"],
+            "paper": "ARCH D",
+            "landscape": true
+        }),
+    );
+
+    assert!(res.is_ok(), "viewsheet failed with three views: {:?}", res.err());
+    let val = res.unwrap();
+    let vps = val["viewports"].as_array().unwrap();
+    assert_eq!(vps.len(), 3);
+
+    // v0 and v1 on first row, v2 on second row
+    let y0 = vps[0]["center"][1].as_f64().unwrap();
+    let y1 = vps[1]["center"][1].as_f64().unwrap();
+    let y2 = vps[2]["center"][1].as_f64().unwrap();
+    assert!((y0 - y1).abs() < 0.001, "v0 and v1 should be on the same row");
+    assert!(y1 > y2, "v2 should be below v0 and v1");
+}
+
+#[test]
+fn viewsheet_handles_different_scales() {
+    let mut s = Session::new();
+    s.doc_mut().unwrap().arch.views.push(make_view(0, "v0", 50.0, 11.2, 5.7));
+    s.doc_mut().unwrap().arch.views.push(make_view(1, "v1", 100.0, 11.2, 5.7));
+
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "MixedScales",
+            "views": ["v0", "v1"],
+            "paper": "ARCH D",
+            "landscape": true
+        }),
+    );
+
+    assert!(res.is_ok(), "viewsheet failed with mixed scales: {:?}", res.err());
+    let val = res.unwrap();
+    let vps = val["viewports"].as_array().unwrap();
+    assert_eq!(vps.len(), 2);
+    assert_eq!(vps[0]["scale"], 20.0); // 1000/50
+    assert_eq!(vps[1]["scale"], 10.0); // 1000/100
+}
+
+#[test]
+fn viewsheet_refuses_a_view_without_generated_geometry() {
+    let mut s = Session::new();
+    let v = ArchView { id: ArchId(0), name: "v0".into(), scale: 50.0, ..Default::default() };
+    s.doc_mut().unwrap().arch.views.push(v);
+
+    let layouts_before = s.doc().unwrap().layouts.len();
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "NoGeom",
+            "views": ["v0"],
+            "paper": "ARCH D",
+            "landscape": true
+        }),
+    );
+
+    assert!(res.is_err(), "viewsheet should refuse a view without generated geometry");
+    assert_eq!(s.doc().unwrap().layouts.len(), layouts_before);
+}
+
+#[test]
+fn viewsheet_refuses_more_than_sixteen_views() {
+    let mut s = Session::new();
+    for i in 0..17 {
+        s.doc_mut().unwrap().arch.views.push(make_view(i, &format!("v{i}"), 50.0, 11.2, 5.7));
+    }
+
+    let views: Vec<String> = (0..17).map(|i| format!("v{i}")).collect();
+    let layouts_before = s.doc().unwrap().layouts.len();
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "TooMany",
+            "views": views,
+            "paper": "ARCH D",
+            "landscape": true
+        }),
+    );
+
+    assert!(res.is_err(), "viewsheet should refuse more than 16 views");
+    assert_eq!(s.doc().unwrap().layouts.len(), layouts_before);
+}
+
+#[test]
 fn viewsheet_takes_the_id_an_elevation_command_replies() {
     let mut s = Session::new();
     s.execute(
