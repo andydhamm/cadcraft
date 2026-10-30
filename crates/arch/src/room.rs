@@ -14,10 +14,10 @@
 //! exterior face) is the normal case and is skipped. No `unwrap`/`expect`/
 //! `panic!`/`unsafe`/`todo`/`unimplemented` anywhere.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use cadcraft_doc::{ArchModel, Room, RoomType, Wall};
-use cadcraft_geom::Vec2;
+use cadcraft_geom::{Bounds2, Vec2};
 
 use crate::poly::{ensure_ccw, region_area};
 
@@ -37,6 +37,138 @@ pub fn detect_rooms(model: &ArchModel) -> Vec<Room> {
         rooms.extend(detect_rooms_at_level(model, lvl.index));
     }
     rooms
+}
+
+fn clusters(soup: &[Vec<Vec2>]) -> Vec<usize> {
+    let n = soup.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    if n == 1 {
+        return vec![0];
+    }
+
+    fn find(parent: &mut [usize], i: usize) -> usize {
+        let mut root = i;
+        while parent.get(root).is_some_and(|&p| p != root) {
+            let next = match parent.get(root) {
+                Some(&value) => value,
+                None => break,
+            };
+            root = next;
+        }
+        let mut x = i;
+        while parent.get(x).is_some_and(|&p| p != root) {
+            let next = match parent.get(x) {
+                Some(&value) => value,
+                None => break,
+            };
+            if let Some(slot) = parent.get_mut(x) {
+                *slot = root;
+            }
+            x = next;
+        }
+        root
+    }
+
+    fn union(parent: &mut [usize], rank: &mut [usize], i: usize, j: usize) -> bool {
+        let ri = find(parent, i);
+        let rj = find(parent, j);
+        if ri == rj {
+            return false;
+        }
+        if rank.get(ri).copied().unwrap_or(0) < rank.get(rj).copied().unwrap_or(0) {
+            if let Some(slot) = parent.get_mut(ri) {
+                *slot = rj;
+            }
+        } else if rank.get(ri).copied().unwrap_or(0) > rank.get(rj).copied().unwrap_or(0) {
+            if let Some(slot) = parent.get_mut(rj) {
+                *slot = ri;
+            }
+        } else {
+            if let Some(slot) = parent.get_mut(rj) {
+                *slot = ri;
+            }
+            if let Some(slot) = rank.get_mut(ri) {
+                *slot += 1;
+            }
+        }
+        true
+    }
+
+    let mut parent: Vec<usize> = (0..n).collect();
+    let mut rank: Vec<usize> = vec![0; n];
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let mut boxes: HashMap<usize, Bounds2> = HashMap::new();
+        for i in 0..n {
+            let root = find(&mut parent, i);
+            let ring = soup.get(i).map(Vec::as_slice).unwrap_or(&[]);
+            let ring_box = Bounds2::from_points(ring.iter().copied());
+            if let Some(existing) = boxes.get_mut(&root) {
+                *existing = existing.union(&ring_box);
+            } else {
+                boxes.insert(root, ring_box);
+            }
+        }
+        let mut roots: Vec<usize> = boxes.keys().copied().collect();
+        roots.sort_by(|&a, &b| boxes[&a].min.x.total_cmp(&boxes[&b].min.x));
+        for i in 0..roots.len() {
+            let a = roots[i];
+            let a_box = boxes.get(&a).copied().unwrap_or(Bounds2::EMPTY);
+            for j in (i + 1)..roots.len() {
+                let b = roots[j];
+                let b_box = boxes.get(&b).copied().unwrap_or(Bounds2::EMPTY);
+                if b_box.min.x > a_box.max.x + 1e-6 {
+                    break;
+                }
+                if a_box.min.x <= b_box.max.x + 1e-6
+                    && b_box.min.x <= a_box.max.x + 1e-6
+                    && a_box.min.y <= b_box.max.y + 1e-6
+                    && b_box.min.y <= a_box.max.y + 1e-6
+                    && union(&mut parent, &mut rank, a, b)
+                {
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    let mut ids: HashMap<usize, usize> = HashMap::new();
+    let mut out = vec![0; n];
+    for i in 0..n {
+        let root = find(&mut parent, i);
+        let next = match ids.get(&root) {
+            Some(id) => *id,
+            None => {
+                let id = ids.len();
+                ids.insert(root, id);
+                id
+            }
+        };
+        out[i] = next;
+    }
+    out
+}
+
+fn inside_room(r: &Room, p: Vec2) -> bool {
+    if !p.is_finite() || r.polygon.is_empty() {
+        return false;
+    }
+    let bounds = Bounds2::from_points(r.polygon.iter().copied());
+    if bounds.is_empty() || !bounds.contains(p) {
+        return false;
+    }
+    if !cadcraft_geom::point_in_polygon(&r.polygon, p) {
+        return false;
+    }
+    for hole in &r.holes {
+        if !hole.is_empty() && cadcraft_geom::point_in_polygon(hole, p) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Detect rooms on one building level from the solved poché and divider walls.
@@ -68,7 +200,7 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
         }
         let mut closed = shape.polygon.clone();
         if !closed.is_empty() && closed.last() != Some(&closed[0]) {
-            closed.push(closed[0]); // append the first point to close the edge
+            closed.push(closed[0]);
         }
         if closed.len() >= 2 {
             soup.push(closed);
@@ -91,16 +223,17 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
     // each edge at its midpoint, plus the vertex-average centroid. Only finite
     // seeds are collected.
     let eps: f64 = 0.5;
-    let mut seeds: Vec<Vec2> = Vec::new();
-    for ring in &soup {
+    let mut seeds: Vec<(Vec2, usize)> = Vec::new();
+    for (ri, ring) in soup.iter().enumerate() {
         if ring.len() < 2 {
             continue;
         }
         let n = ring.len();
         for i in 0..n {
             let j = (i + 1) % n;
-            let a = &ring[i];
-            let b = &ring[j];
+            let a = ring.get(i).copied();
+            let b = ring.get(j).copied();
+            let (Some(a), Some(b)) = (a, b) else { continue };
             if !a.is_finite() || !b.is_finite() {
                 continue;
             }
@@ -112,10 +245,6 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
             }
             let mx = (a.x + b.x) * 0.5;
             let my = (a.y + b.y) * 0.5;
-            // Left and right normals of edge a -> b.
-            // One of them points toward the room; the other toward the poché
-            // or the exterior. With eps = 0.5 (well above half the max wall
-            // thickness of ~0.2 m) the in-room seed lands cleanly in the face.
             let nx_l = -dy / len;
             let ny_l = dx / len;
             let nx_r = dy / len;
@@ -123,13 +252,12 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
             let sl = Vec2::new(mx + nx_l * eps, my + ny_l * eps);
             let sr = Vec2::new(mx + nx_r * eps, my + ny_r * eps);
             if sl.is_finite() {
-                seeds.push(sl);
+                seeds.push((sl, ri));
             }
             if sr.is_finite() {
-                seeds.push(sr);
+                seeds.push((sr, ri));
             }
         }
-        // Vertex-average centroid.
         let mut cx = 0.0;
         let mut cy = 0.0;
         let mut cnt: usize = 0;
@@ -143,7 +271,7 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
         if cnt > 0 {
             let centroid = Vec2::new(cx / cnt as f64, cy / cnt as f64);
             if centroid.is_finite() {
-                seeds.push(centroid);
+                seeds.push((centroid, ri));
             }
         }
     }
@@ -156,10 +284,45 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
     let tol: f64 = 1e-9;
     let mut rooms: Vec<Room> = Vec::new();
     let mut seen: HashSet<(i64, i64, i64)> = HashSet::new();
+    let groups = clusters(&soup);
+    let mut group_rings: HashMap<usize, Vec<Vec<Vec2>>> = HashMap::new();
+    for (ring_idx, ring) in soup.iter().enumerate() {
+        let group_idx = groups.get(ring_idx).copied().unwrap_or(0);
+        group_rings.entry(group_idx).or_default().push(ring.clone());
+    }
+    let mut arrangements: HashMap<usize, Option<cadcraft_geom::region::Arrangement>> = HashMap::new();
+    let mut accepted: HashMap<usize, Vec<usize>> = HashMap::new();
 
-    for seed in &seeds {
-        let Some(b) = cadcraft_geom::region::boundary_at(&soup, *seed, tol) else {
-            // `None` => seed is in the unbounded exterior face: skip.
+    for (seed, ring_idx) in &seeds {
+        let group_idx = groups.get(*ring_idx).copied().unwrap_or(0);
+        let mut already_inside = false;
+        if let Some(room_ids) = accepted.get(&group_idx) {
+            for &room_idx in room_ids {
+                if let Some(room) = rooms.get(room_idx) {
+                    if inside_room(room, *seed) {
+                        already_inside = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if already_inside {
+            continue;
+        }
+
+        let arrangement = match arrangements.get(&group_idx) {
+            Some(existing) => existing.as_ref(),
+            None => {
+                let rings = group_rings.get(&group_idx).cloned().unwrap_or_default();
+                let built = if rings.is_empty() { None } else { cadcraft_geom::region::Arrangement::new(&rings, tol, 0.0) };
+                arrangements.insert(group_idx, built);
+                arrangements.get(&group_idx).and_then(|entry| entry.as_ref())
+            }
+        };
+        let Some(arrangement) = arrangement else {
+            continue;
+        };
+        let Some(b) = arrangement.boundary_at(*seed) else {
             continue;
         };
         if b.outer.len() < 3 {
@@ -183,15 +346,10 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
             continue;
         }
 
-        // A wall's own poché is a long, thin strip: its height (max distance from
-        // the bounding box of a long edge to the opposite side) is essentially its
-        // thickness. Reject faces that are this kind of strip, but keep genuine
-        // rooms whose bounding extent is comfortably larger than wall thickness.
         if is_poché_strip(&outer) {
             continue;
         }
 
-        // Dedup key: (outer centroid, area), each rounded to 1e-6.
         let oc = centroid(&outer);
         let key = (round6(oc.x), round6(oc.y), round6(area));
         if !seen.insert(key) {
@@ -202,8 +360,8 @@ pub fn detect_rooms_at_level(model: &ArchModel, level: u32) -> Vec<Room> {
             break;
         }
 
-        // `id` stays unassigned (the caller assigns the real one) and `standard_area` is filled by
-        // the area module later.
+        let room_idx = rooms.len();
+        accepted.entry(group_idx).or_default().push(room_idx);
         rooms.push(Room { room_type: RoomType::Other, level, polygon: outer, holes, interior_area: area, ..Default::default() });
     }
 
@@ -375,6 +533,60 @@ mod tests {
         m.walls.push(divider(0, 0.0, 2.5, 5.0, 2.5));
         let rooms = detect_rooms_at_level(&m, 0);
         assert_eq!(rooms.len(), 2, "divider should produce two rooms");
+    }
+
+    #[test]
+    fn a_hundred_separate_flats_give_three_rooms_each_quickly() {
+        let mut m = ArchModel::default();
+        let mut next_id = 0u32;
+        for i in 0..10 {
+            for j in 0..10 {
+                let ox = 13.0 * i as f64;
+                let oy = 10.0 * j as f64;
+                let flat = [
+                    (0.1, 0.1, 11.9, 0.1, 0.2),
+                    (11.9, 0.1, 11.9, 7.9, 0.2),
+                    (11.9, 7.9, 0.1, 7.9, 0.2),
+                    (0.1, 7.9, 0.1, 0.1, 0.2),
+                    (7.05, 0.1, 7.05, 7.9, 0.1),
+                    (7.05, 5.05, 11.9, 5.05, 0.1),
+                ];
+                for (x0, y0, x1, y1, t) in flat {
+                    m.walls.push(wall(next_id, 0, x0 + ox, y0 + oy, x1 + ox, y1 + oy, t));
+                    next_id += 1;
+                }
+            }
+        }
+        let start = std::time::Instant::now();
+        let rooms = detect_rooms_at_level(&m, 0);
+        let elapsed = start.elapsed();
+        assert_eq!(rooms.len(), 300, "expected 3 rooms × 100 flats");
+        assert!(elapsed.as_secs_f64() < 10.0, "room detection took {}s for 100 flats", elapsed.as_secs_f64());
+    }
+
+    #[test]
+    fn two_houses_apart_keep_their_own_rooms() {
+        let one = detect_rooms_at_level(&make_phase1_house(), 0);
+        let mut m = make_phase1_house();
+        for (idx, wall) in make_phase1_house().walls.iter().enumerate() {
+            let mut shifted = wall.clone();
+            shifted.id = ArchId(100 + idx as u32);
+            shifted.start = shifted.start + Vec2::new(30.0, 0.0);
+            shifted.end = shifted.end + Vec2::new(30.0, 0.0);
+            m.walls.push(shifted);
+        }
+
+        let all = detect_rooms_at_level(&m, 0);
+        assert_eq!(all.len(), one.len() * 2, "two houses should keep their separate room sets");
+
+        let mut single: Vec<f64> = one.iter().map(|r| r.interior_area).collect();
+        let mut all_areas: Vec<f64> = all.iter().map(|r| r.interior_area).collect();
+        single.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        all_areas.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        for area in &single {
+            let matches: usize = all_areas.iter().filter(|v| (*v - *area).abs() < 1e-3).count();
+            assert_eq!(matches, 2, "each single-house room area should appear twice");
+        }
     }
 
     #[test]
