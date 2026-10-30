@@ -94,15 +94,15 @@ pub fn score(det: &Detection, truth: &Truth, min_confidence: f64) -> Score {
     score.walls.truths = truth.walls.len();
 
     let mut wall_matches: Vec<(f64, usize, usize)> = Vec::new();
-    for (ci, cand) in &wall_cands {
+    for (ci, cand) in wall_cands.iter().enumerate() {
         for (ti, tw) in truth.walls.iter().enumerate() {
             let tw_start = Vec2::new(tw.start[0], tw.start[1]);
             let tw_end = Vec2::new(tw.end[0], tw.end[1]);
-            let dist = hausdorff_segment(cand.start, cand.end, tw_start, tw_end);
+            let dist = hausdorff_segment(cand.1.start, cand.1.end, tw_start, tw_end);
             let tol = (tw.thickness / 2.0).max(0.05);
-            let thick_diff = (cand.thickness - tw.thickness).abs();
+            let thick_diff = (cand.1.thickness - tw.thickness).abs();
             if dist <= tol && thick_diff <= 0.2 * tw.thickness {
-                wall_matches.push((dist, *ci, ti));
+                wall_matches.push((dist, ci, ti));
             }
         }
     }
@@ -144,13 +144,13 @@ pub fn score(det: &Detection, truth: &Truth, min_confidence: f64) -> Score {
 
 fn match_openings(cands: &[(usize, &OpeningCand)], truths: &[(usize, &TruthOpening)]) -> usize {
     let mut matches: Vec<(f64, usize, usize)> = Vec::new();
-    for (ci, cand) in cands {
-        for (ti, truth) in truths {
-            let tc = Vec2::new(truth.center[0], truth.center[1]);
-            let dist = (cand.center - tc).len();
-            let width_diff = (cand.width - truth.width).abs();
-            if dist <= 0.15 && width_diff <= 0.1 * truth.width {
-                matches.push((dist, *ci, *ti));
+    for (ci, cand) in cands.iter().enumerate() {
+        for (ti, truth) in truths.iter().enumerate() {
+            let tc = Vec2::new(truth.1.center[0], truth.1.center[1]);
+            let dist = (cand.1.center - tc).len();
+            let width_diff = (cand.1.width - truth.1.width).abs();
+            if dist <= 0.15 && width_diff <= 0.1 * truth.1.width {
+                matches.push((dist, ci, ti));
             }
         }
     }
