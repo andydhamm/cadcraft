@@ -21,21 +21,21 @@ fn lwpoly_archopenings_in_text(text: &str) -> Vec<(String, usize)> {
     let mut out = Vec::new();
     let mut i = 0;
     while i + 1 < lines.len() {
-        if lines[i] == "0" && lines[i + 1] == "LWPOLYLINE" {
+        if lines[i].trim() == "0" && lines[i + 1].trim() == "LWPOLYLINE" {
             let mut j = i + 2;
             let mut layer = String::from("");
             let mut vertex_count = 0;
             let mut has_archopening = false;
             while j < lines.len() {
-                if lines[j] == "0" && j + 1 < lines.len() {
+                if lines[j].trim() == "0" && j + 1 < lines.len() {
                     break; // next entity
                 }
                 if j + 1 < lines.len() {
-                    match lines[j] {
-                        "8" => layer = lines[j + 1].to_string(),
+                    match lines[j].trim() {
+                        "8" => layer = lines[j + 1].trim().to_string(),
                         "10" => vertex_count += 1,
                         "1000" => {
-                            if lines[j + 1] == "ARCHOPENING" {
+                            if lines[j + 1].trim() == "ARCHOPENING" {
                                 has_archopening = true;
                             }
                         }
@@ -47,7 +47,7 @@ fn lwpoly_archopenings_in_text(text: &str) -> Vec<(String, usize)> {
             if has_archopening {
                 out.push((layer, vertex_count));
             }
-            i = j + 1;
+            i = j;
         } else {
             i += 1;
         }
