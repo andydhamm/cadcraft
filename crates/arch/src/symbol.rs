@@ -68,7 +68,7 @@ pub fn opening_symbol(model: &ArchModel, o: &Opening) -> Option<Symbol> {
     match o.kind {
         OpeningKind::Door => {
             let style_lower = o.style.to_ascii_lowercase();
-            let is_sliding = style_lower.contains("slider") || style_lower.contains("bifold") || style_lower.contains("pocket");
+            let is_sliding = style_lower.contains("slid") || style_lower.contains("bifold") || style_lower.contains("pocket");
             if is_sliding {
                 if let (Some(a), Some(b)) = (wp(rough_start, -half), wp(rough_start, half)) {
                     polys.push(vec![a, b]);
@@ -357,6 +357,16 @@ mod tests {
             assert!(dx > 0.5, "leaf line {} too short in x: {:.6}", i, dx);
             assert!(dx > dy * 10.0, "leaf line {} not parallel to wall: dx={} dy={}", i, dx, dy);
         }
+    }
+
+    #[test]
+    fn a_door_styled_sliding_draws_leaves_not_a_swing() {
+        let mut m = ArchModel::default();
+        let h = test_wall(&mut m, Vec2::ZERO, Vec2::new(10.0, 0.0), 0.2);
+        let idx = opening_on(&mut m, h, 3.0, 1.8, OpeningKind::Door, "sliding");
+        let s = opening_symbol(&m, &m.openings[idx]).unwrap();
+        assert_eq!(s.polylines.len(), 4, "{:?}", s.polylines);
+        assert!(s.polylines.iter().all(|p| p.len() == 2), "a sliding door has no swing arc: {:?}", s.polylines);
     }
 
     #[test]
