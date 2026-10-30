@@ -37,7 +37,7 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("wall", "Wall", run_wall)
             .menu(&["Architecture", "Wall"])
             .alias(&["wal"])
-            .params("{points: [[x,y],...], thickness?, height?, exterior?, closed?, level?, type?, toCeiling?, divider?}")
+            .params("{points: [[x,y],...], thickness?, height?, exterior?, closed?, level?, type?, toCeiling?, divider?, retaining?, freeboard?, footing?}")
             .interactive(|_| Ok(Box::new(WallM::default()))),
     ]
 }
@@ -218,6 +218,22 @@ impl WallM {
     }
 }
 
+/// Parse an optional retaining-wall length (`freeboard` / `footing`): finite,
+/// 0..=5 m, and only allowed on a retaining wall.
+fn retaining_length(p: &Value, key: &str, retaining: bool) -> Result<Option<f64>> {
+    let Some(v) = p.get(key) else { return Ok(None) };
+    if v.is_null() {
+        return Ok(None);
+    }
+    if !retaining {
+        return Err(bad("wall", format!("`{key}` needs `retaining: true`")));
+    }
+    match v.as_f64() {
+        Some(x) if x.is_finite() && (0.0..=5.0).contains(&x) => Ok(Some(x)),
+        _ => Err(bad("wall", format!("`{key}` must be a finite number from 0 to 5 metres"))),
+    }
+}
+
 /// Run the `wall` command from JSON parameters. Never opens a dialog.
 fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     // --- Parse and validate points ---
@@ -239,6 +255,9 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
     let divider = bool_or(p, "divider", false);
     let to_ceiling = bool_or(p, "toCeiling", false);
     let has_exterior_param = p.as_object().is_some_and(|o| o.contains_key("exterior"));
+    let retaining = bool_or(p, "retaining", false);
+    let freeboard = retaining_length(p, "freeboard", retaining)?;
+    let footing = retaining_length(p, "footing", retaining)?;
 
     // Validate on read-only doc first to avoid empty undo steps on failure
     let d_read = s.doc()?;
@@ -392,6 +411,9 @@ fn run_wall(s: &mut Session, p: &Value) -> Result<Value> {
             base_level: base_level_idx,
             to_ceiling,
             divider,
+            retaining,
+            freeboard,
+            footing,
             exterior,
             wall_type: wall_type.clone(),
             layers: layers.clone(),
@@ -774,6 +796,53 @@ mod tests {
         });
         let _ = s.execute("wall", &p).unwrap();
         assert!(s.doc().unwrap().arch.walls[1].to_ceiling);
+    }
+
+    #[test]
+    fn wall_command_makes_a_retaining_wall() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0], [2.0, 2.0]],
+            "retaining": true,
+            "freeboard": 0.2,
+            "footing": 0.4,
+        });
+        s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 2);
+        for w in &d.arch.walls {
+            assert!(w.retaining);
+            assert_eq!(w.freeboard, Some(0.2));
+            assert_eq!(w.footing, Some(0.4));
+        }
+        s.execute("wall", &json!({"points": [[5.0, 0.0], [7.0, 0.0]], "retaining": true})).unwrap();
+        let w = &s.doc().unwrap().arch.walls[2];
+        assert!(w.retaining && w.freeboard.is_none() && w.footing.is_none());
+    }
+
+    #[test]
+    fn wall_command_refuses_freeboard_without_retaining() {
+        let mut s = new_session_with_level();
+        let p = json!({"points": [[0.0, 0.0], [2.0, 0.0]], "freeboard": 0.2});
+        assert!(s.execute("wall", &p).is_err());
+        let p = json!({"points": [[0.0, 0.0], [2.0, 0.0]], "footing": 0.2, "retaining": false});
+        assert!(s.execute("wall", &p).is_err());
+        assert!(s.doc().unwrap().arch.walls.is_empty());
+    }
+
+    #[test]
+    fn wall_command_refuses_bad_footing() {
+        let mut s = new_session_with_level();
+        for bad_value in [json!(-0.1), json!(5.5), json!("x"), json!(null)] {
+            let p = json!({"points": [[0.0, 0.0], [2.0, 0.0]], "retaining": true, "footing": bad_value});
+            let r = s.execute("wall", &p);
+            if bad_value.is_null() {
+                assert!(r.is_ok());
+            } else {
+                assert!(r.is_err(), "{bad_value}");
+            }
+        }
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 1);
     }
 
     #[test]
