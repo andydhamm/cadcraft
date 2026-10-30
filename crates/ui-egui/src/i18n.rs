@@ -511,11 +511,11 @@ mod uk_tests {
             assert_eq!(t("Room"), "Кімната");
             assert_eq!(t("Level"), "Рівень");
             assert_eq!(t("Wall"), "Стіна");
-            assert_eq!(t("Door"), "Дверь");
+            assert_eq!(t("Door"), "Двері");
             assert_eq!(t("Window"), "Вікно");
-            assert_eq!(t("Garage Door"), "Гаражна дверь");
+            assert_eq!(t("Garage Door"), "Гаражні ворота");
             assert_eq!(t("Move Opening"), "Перемістити отвір");
-            assert_eq!(t("Build 3D"), "Збудити 3D");
+            assert_eq!(t("Build 3D"), "Побудувати 3D");
             assert_eq!(t("Arch Inspect"), "Архітектурний огляд");
             assert_eq!(t("Arch Sample"), "Архітектурний зразок");
         });

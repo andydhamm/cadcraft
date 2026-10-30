@@ -108,7 +108,7 @@
 	Block Reference	Посилання на блок
 	Block...	Блок...
 	Blocks	Блоки
-	Build 3D	Збудити 3D
+	Build 3D	Побудувати 3D
 	Blue	Синій
 	Bold	Жирний
 	Boolean	Булеві операції
@@ -1384,9 +1384,9 @@
 	Edit Command Aliases (PGP)...	Редагувати псевдоніми команд (PGP)...
 
 # Architecture (arch3d)
-	Door	Дверь
+	Door	Двері
 	Window	Вікно
-	Garage Door	Гаражна дверь
+	Garage Door	Гаражні ворота
 	Move Opening	Перемістити отвір
 	Level	Рівень
 	Automatic	Автоматичний
