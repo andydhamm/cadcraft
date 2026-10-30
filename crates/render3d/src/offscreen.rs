@@ -567,11 +567,20 @@ impl Offscreen {
 /// DX12, browser WebGPU). The default set also starts the GL backend, and several threads starting
 /// EGL at once hung test binaries on cgyws2 (2026-10-25: the parallel render3d tests hung for
 /// 900 s until headless instances left GL out). The window's device comes from eframe and is
-/// unaffected.
+/// unaffected. Debug builds would also turn on wgpu's DEBUG flag, which names every labelled
+/// object through the Vulkan loader; that call crashed the render3d test binary (SIGSEGV, about
+/// one run in three on cgynb4, 2026-10-30) while another test thread created its own instance, so
+/// headless instances leave it out.
 pub fn headless_instance() -> wgpu::Instance {
+    wgpu::Instance::new(headless_descriptor())
+}
+
+/// The descriptor behind [`headless_instance`].
+fn headless_descriptor() -> wgpu::InstanceDescriptor {
     let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
     desc.backends = wgpu::Backends::PRIMARY;
-    wgpu::Instance::new(desc)
+    desc.flags.remove(wgpu::InstanceFlags::DEBUG);
+    desc
 }
 
 /// A device on the best available adapter, or `None` without an adapter or when the driver does
@@ -663,6 +672,16 @@ mod codec_tests {
 #[cfg(test)]
 mod offscreen_behavior_tests {
     use super::*;
+
+    #[test]
+    fn headless_instances_do_not_name_objects_for_debuggers() {
+        let desc = headless_descriptor();
+        assert_eq!(desc.backends, wgpu::Backends::PRIMARY);
+        assert!(
+            !desc.flags.contains(wgpu::InstanceFlags::DEBUG),
+            "DEBUG makes every labelled object a vkSetDebugUtilsObjectNameEXT call, which crashes in the loader while another thread creates an instance"
+        );
+    }
 
     fn with_offscreen<F>(size: (u32, u32), f: F)
     where
