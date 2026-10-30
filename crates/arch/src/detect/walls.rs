@@ -192,13 +192,16 @@ fn band_pieces(faces: &[FaceLine], ranges: &[(usize, usize)]) -> Vec<Piece> {
                 if common.is_empty() {
                     continue;
                 }
-                let covered = (i + 1..j).any(|k| faces.get(k).is_some_and(|fk| total(&intersect(&common, &fk.intervals)) > 0.5 * sum));
-                if covered {
-                    continue;
-                }
                 let min_len = 0.2f64.max(1.5 * t);
                 for &(lo, hi) in &common {
                     if hi - lo < min_len || pieces.len() >= MAX_PIECES {
+                        continue;
+                    }
+                    // Only a continuous intervening face makes this pair non-adjacent.
+                    // Disjoint glass lines may cover much of a wall without being its faces.
+                    let covered = (i + 1..j)
+                        .any(|k| faces.get(k).is_some_and(|fk| intersect(&[(lo, hi)], &fk.intervals).iter().any(|&(a, b)| b - a > 0.5 * (hi - lo))));
+                    if covered {
                         continue;
                     }
                     pieces.push(Piece {
