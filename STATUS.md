@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-30 19:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-30 19:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 8 of 13: Recognition from plain DXF — 27 of 27 segments merged · 9 of 10 acceptance checks**
 
-5,364 workspace tests passing at the last merge · 530 segments merged in all · 0 of 10 seats working
+5,364 workspace tests passing at the last merge · 530 segments merged in all · 0 of 11 seats working
 
 ## Phases
 
@@ -18,7 +18,7 @@ Updated 2026-10-30 19:15 UTC. This page and the card in the README are regenerat
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
-| 8 | Recognition from plain DXF | building | 9 / 10 | 16.2 h so far · expected done Oct 30 19:15–Oct 31 02:35 UTC |
+| 8 | Recognition from plain DXF | building | 9 / 10 | 16.4 h so far · expected done Oct 30 19:30–Oct 31 00:09 UTC |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
@@ -57,7 +57,8 @@ Updated 2026-10-30 19:15 UTC. This page and the card in the README are regenerat
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | idle | 53 |
 | claude-sonnet-b | sonnet | idle | 46 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 550 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 95 |
 | mai-flash | mai-code-1.1-flash | idle | 23 |
-| tturbo-mac | tturbo-ultraheretic | gate | 474 |
-| tturbo-mac2 | tturbo-ultraheretic | gate | 295 |
+| tturbo-mac | tturbo-ultraheretic | agent | 475 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 296 |
