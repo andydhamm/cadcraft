@@ -174,7 +174,10 @@ fn run_archdetect(s: &mut Session, p: &Value) -> Result<Value> {
 
     // (3) Detect on the unmutated drawing.
     let t0 = Instant::now();
-    let det = detect(s.doc()?, &DetectOptions { scale, layers }).map_err(|e| bad("archdetect", e.0))?;
+    let mut opts = DetectOptions::default();
+    opts.scale = scale;
+    opts.layers = layers;
+    let det = detect(s.doc()?, &opts).map_err(|e| bad("archdetect", e.0))?;
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
 
     // (4) Dry run.
