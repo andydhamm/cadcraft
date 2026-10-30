@@ -62,6 +62,13 @@ pub struct Item {
     pub poly: Option<u32>,
 }
 
+impl Item {
+    /// An item of linework.
+    pub fn new(prim: Prim, layer: impl Into<String>, source: Handle, poly: Option<u32>) -> Self {
+        Item { prim, layer: layer.into(), source, poly }
+    }
+}
+
 /// A text label in the drawing.
 #[derive(Clone, Debug)]
 pub struct Label {
@@ -71,13 +78,6 @@ pub struct Label {
     pub text: String,
     /// Source entity handle.
     pub source: Handle,
-}
-
-impl Item {
-    /// An item of linework.
-    pub fn new(prim: Prim, layer: &str, source: Handle, poly: Option<u32>) -> Item {
-        Item { prim, layer: layer.to_string(), source, poly }
-    }
 }
 
 impl Label {
