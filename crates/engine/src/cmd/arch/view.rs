@@ -265,6 +265,9 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
         cam.fov_deg = Some(f);
     }
     if kind == CameraKind::Orbit {
+        if cam.azimuth_deg.is_none() {
+            return Err(bad("camera", "an `orbit` camera needs `azimuth`"));
+        }
         if cam.elevation_deg.is_none() {
             cam.elevation_deg = Some(0.35);
         }
@@ -427,7 +430,7 @@ mod tests {
     #[test]
     fn camera_save_refuses_duplicate_and_non_finite() {
         let mut s = Session::new();
-        s.execute("camera", &json!({ "save": "a" })).unwrap();
+        s.execute("camera", &json!({ "save": "a", "azimuth": 0.0 })).unwrap();
         for p in [
             json!({ "save": "a" }),
             json!({ "save": "  " }),
@@ -800,7 +803,7 @@ mod tests {
     #[test]
     fn camera_save_can_be_undone() {
         let mut s = Session::new();
-        s.execute("camera", &json!({ "save": "a", "distance": 5.0 })).unwrap();
+        s.execute("camera", &json!({ "save": "a", "azimuth": 0.0, "distance": 5.0 })).unwrap();
         assert_eq!(cam_count(&s), 1);
         s.execute("u", &json!({})).unwrap();
         assert_eq!(cam_count(&s), 0);
@@ -822,7 +825,7 @@ mod tests {
     #[test]
     fn orbit_camera_can_have_explicit_eye() {
         let mut s = Session::new();
-        let r = s.execute("camera", &json!({ "save": "a", "kind": "orbit", "eye": [1.0, 2.0], "distance": 5.0 })).unwrap();
+        let r = s.execute("camera", &json!({ "save": "a", "kind": "orbit", "azimuth": 0.0, "eye": [1.0, 2.0], "distance": 5.0 })).unwrap();
         assert_eq!(r["active"], json!("a"));
         assert_eq!(r["cameras"][0]["eye"], json!([1.0, 2.0]));
         assert_eq!(r["cameras"][0]["kind"], json!("orbit"));
@@ -832,9 +835,9 @@ mod tests {
     #[test]
     fn camera_list_preserves_save_order() {
         let mut s = Session::new();
-        s.execute("camera", &json!({ "save": "first" })).unwrap();
-        s.execute("camera", &json!({ "save": "second" })).unwrap();
-        s.execute("camera", &json!({ "save": "third" })).unwrap();
+        s.execute("camera", &json!({ "save": "first", "azimuth": 0.0 })).unwrap();
+        s.execute("camera", &json!({ "save": "second", "azimuth": 0.0 })).unwrap();
+        s.execute("camera", &json!({ "save": "third", "azimuth": 0.0 })).unwrap();
         let l = s.execute("camera", &json!({ "list": true })).unwrap();
         let names: Vec<String> = l["cameras"].as_array().unwrap().iter().map(|c| c["name"].as_str().unwrap().to_string()).collect();
         assert_eq!(names, vec!["first", "second", "third"]);
@@ -844,8 +847,8 @@ mod tests {
     #[test]
     fn camera_use_sets_active_and_is_undone() {
         let mut s = Session::new();
-        s.execute("camera", &json!({ "save": "a" })).unwrap();
-        s.execute("camera", &json!({ "save": "b" })).unwrap();
+        s.execute("camera", &json!({ "save": "a", "azimuth": 0.0 })).unwrap();
+        s.execute("camera", &json!({ "save": "b", "azimuth": 0.0 })).unwrap();
         // active is now "b"
         let u = s.execute("camera", &json!({ "use": "a" })).unwrap();
         assert_eq!(u["active"], json!("a"));
