@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-30 20:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-30 20:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 9 of 13: Terrain and site — 0 of 25 segments merged · 0 of 12 acceptance checks**
 
@@ -19,7 +19,7 @@ Updated 2026-10-30 20:30 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 0 / 12 | 0.9 h so far · expected done Oct 31 05:11–Nov 01 23:36 UTC |
+| 9 | Terrain and site | building | 0 / 12 | 1.1 h so far · expected done Oct 31 05:26–Nov 01 23:51 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -31,8 +31,8 @@ Updated 2026-10-30 20:30 UTC. This page and the card in the README are regenerat
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p9-geom-cdt` | Constrained Delaunay triangulation (breaklines are edges) | working | bonsai-a |
-| `p9-geom-tin-ops` | TIN point location grid, clipping to a ring, contour chaining | gate | bonsai-b |
+| `p9-geom-cdt` | Constrained Delaunay triangulation (breaklines are edges) | gate | bonsai-a |
+| `p9-geom-tin-ops` | TIN point location grid, clipping to a ring, contour chaining | working | bonsai-b |
 | `p9-arch-terrain-csv` | Survey points from CSV | merging | claude-sonnet-a |
 | `p9-arch-terrain-pad` | Building pad and basement cuts | gate | mai-flash |
 | `p9-arch-plant` | Plant catalogue, growth and plan symbols | gate | darwin-ws3 |
@@ -59,14 +59,14 @@ Updated 2026-10-30 20:30 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 695 |
-| bonsai-b | bonsai2-27b | gate | 651 |
+| bonsai-a | bonsai2-27b | gate | 695 |
+| bonsai-b | bonsai2-27b | agent | 652 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | merging | 54 |
 | claude-sonnet-b | sonnet | merging | 47 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 551 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 95 |
-| mai-flash | mai-code-1.1-flash | gate | 23 |
-| tturbo-mac | tturbo-ultraheretic | agent | 477 |
+| mai-flash | mai-code-1.1-flash | gate | 24 |
+| tturbo-mac | tturbo-ultraheretic | gate | 477 |
 | tturbo-mac2 | tturbo-ultraheretic | gate | 299 |
