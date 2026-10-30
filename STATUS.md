@@ -1,8 +1,8 @@
 # arch3d build status
 
-Updated 2026-10-30 01:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-30 01:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 7 of 13: Generated elevations and sections — 12 of 12 segments merged · 6 of 9 acceptance checks**
+**Phase 7 of 13: Generated elevations and sections — 12 of 13 segments merged · 6 of 9 acceptance checks**
 
 5,071 workspace tests passing at the last merge · 483 segments merged in all · 0 of 11 seats working
 
@@ -17,7 +17,7 @@ Updated 2026-10-30 01:00 UTC. This page and the card in the README are regenerat
 | 4 | Automatic roofs | done | 11 / 11 | 52.1 h |
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
-| 7 | Generated elevations and sections | building | 6 / 9 | 7.8 h so far · expected done Oct 30 04:40–Oct 30 12:27 UTC |
+| 7 | Generated elevations and sections | building | 6 / 9 | 8.1 h so far · expected done Oct 30 03:39–Oct 30 10:43 UTC |
 | 8 | Recognition from plain DXF | planned | — | — |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
@@ -27,8 +27,11 @@ Updated 2026-10-30 01:00 UTC. This page and the card in the README are regenerat
 
 ## Phase 7 segments
 
-12 merged
+12 merged, 1 merging
 
+| Segment | What | State | Seat |
+|---|---|---|---|
+| `p7f-viewsheet-view-ids` | viewsheet finds each view by its id (v0, v1, ...), not by its name | merging | mai-flash |
 
 ## Recent merges
 
@@ -51,14 +54,14 @@ Updated 2026-10-30 01:00 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | idle | 652 |
-| bonsai-b | bonsai2-27b | idle | 611 |
+| bonsai-a | bonsai2-27b | merging | 654 |
+| bonsai-b | bonsai2-27b | agent | 612 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | idle | 41 |
 | claude-sonnet-b | sonnet | idle | 40 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | yielding | 498 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 498 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 87 |
-| mai-flash | mai-code-1.1-flash | idle | 14 |
+| mai-flash | mai-code-1.1-flash | merging | 15 |
 | tturbo-mac | tturbo-ultraheretic | agent | 440 |
-| tturbo-mac2 | tturbo-ultraheretic | idle | 267 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 267 |
