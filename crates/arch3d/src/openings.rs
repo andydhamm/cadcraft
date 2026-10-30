@@ -20,6 +20,9 @@ pub const HEADER_INSET: f64 = 0.01;
 /// the wall normal) so that a component of depth `depth` fits inside the wall's
 /// `[-wall_t/2, +wall_t/2]` thickness band.
 fn band_offset(off: f64, depth: f64, wall_t: f64) -> f64 {
+    if !wall_t.is_finite() || !depth.is_finite() {
+        return off;
+    }
     let min = -wall_t / 2.0 + depth / 2.0;
     let max = wall_t / 2.0 - depth / 2.0;
     if min > max { 0.0 } else { off.clamp(min, max) }
@@ -244,9 +247,9 @@ pub fn opening_meshes(walls: &BTreeMap<ArchId, &Wall>, o: &Opening, span: Option
 
     // Header: a lintel centred on the wall centre plane, `HEADER_INSET` inside
     // both wall faces so an elevation hides it behind the wall above the
-    // opening; clipped to stay inside the host wall span top.
+    // opening; clipped to stay inside the host wall height.
     let header_h = 0.2;
-    let header_top = (frame_z1 + header_h).min(top);
+    let header_top = (frame_z1 + header_h).min(wall.height);
     if header_top > frame_z1 + 1e-9 {
         let header_depth = if wall_t > 4.0 * HEADER_INSET { wall_t - 2.0 * HEADER_INSET } else { wall_t / 2.0 };
         let header_off = band_offset(0.0, header_depth, wall_t);
