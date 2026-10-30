@@ -314,6 +314,145 @@ fn viewsheet_takes_the_id_an_elevation_command_replies() {
 }
 
 #[test]
+fn viewsheet_refuses_when_views_do_not_fit_sheet_width() {
+    let mut s = Session::new();
+    // Create 4 very wide views that won't fit side by side on ARCH D
+    for i in 0..4 {
+        let v = make_view(i, &format!("v{i}"), 50.0, 50.0, 5.7);
+        s.doc_mut().unwrap().arch.views.push(v);
+    }
+
+    let layouts_before = s.doc().unwrap().layouts.len();
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "TooWide",
+            "views": ["v0", "v1", "v2", "v3"],
+            "paper": "ARCH D",
+            "landscape": true
+        }),
+    );
+
+    assert!(res.is_err(), "viewsheet should refuse when views don't fit width");
+    assert_eq!(s.doc().unwrap().layouts.len(), layouts_before);
+}
+
+#[test]
+fn viewsheet_refuses_when_views_do_not_fit_sheet_height() {
+    let mut s = Session::new();
+    // Create 4 very tall views that won't fit stacked on ARCH D
+    for i in 0..4 {
+        let v = make_view(i, &format!("v{i}"), 50.0, 11.2, 30.0);
+        s.doc_mut().unwrap().arch.views.push(v);
+    }
+
+    let layouts_before = s.doc().unwrap().layouts.len();
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "TooTall",
+            "views": ["v0", "v1", "v2", "v3"],
+            "paper": "ARCH D",
+            "landscape": true
+        }),
+    );
+
+    assert!(res.is_err(), "viewsheet should refuse when views don't fit height");
+    assert_eq!(s.doc().unwrap().layouts.len(), layouts_before);
+}
+
+#[test]
+fn viewsheet_refuses_when_layout_name_already_in_use() {
+    let mut s = Session::new();
+    s.doc_mut().unwrap().arch.views.push(make_view(0, "v0", 50.0, 11.2, 5.7));
+
+    // Create a layout with the same name first
+    s.execute("layout.new", &json!({"name": "Existing", "viewport": false})).unwrap();
+
+    let layouts_before = s.doc().unwrap().layouts.len();
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "Existing",
+            "views": ["v0"],
+            "paper": "ARCH D",
+            "landscape": true
+        }),
+    );
+
+    assert!(res.is_err(), "viewsheet should refuse duplicate layout name");
+    assert_eq!(s.doc().unwrap().layouts.len(), layouts_before);
+}
+
+#[test]
+fn viewsheet_works_in_portrait_orientation() {
+    let mut s = Session::new();
+    for i in 0..2 {
+        let v = make_view(i, &format!("v{i}"), 50.0, 11.2, 5.7);
+        s.doc_mut().unwrap().arch.views.push(v);
+    }
+
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "PortraitSheet",
+            "views": ["v0", "v1"],
+            "paper": "ARCH D",
+            "landscape": false
+        }),
+    );
+
+    assert!(res.is_ok(), "viewsheet failed in portrait: {:?}", res.err());
+    let val = res.unwrap();
+    assert_eq!(val["landscape"], false);
+    let vps = val["viewports"].as_array().unwrap();
+    assert_eq!(vps.len(), 2);
+}
+
+#[test]
+fn viewsheet_works_with_different_paper_size() {
+    let mut s = Session::new();
+    s.doc_mut().unwrap().arch.views.push(make_view(0, "v0", 50.0, 11.2, 5.7));
+
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "LetterSheet",
+            "views": ["v0"],
+            "paper": "Letter",
+            "landscape": true
+        }),
+    );
+
+    assert!(res.is_ok(), "viewsheet failed with Letter paper: {:?}", res.err());
+    let val = res.unwrap();
+    assert_eq!(val["paper"], "Letter");
+}
+
+#[test]
+fn viewsheet_refuses_view_with_zero_size_bounds() {
+    let mut s = Session::new();
+    // Create a view with zero extent
+    let mut v = make_view(0, "v0", 50.0, 0.0, 0.0);
+    v.generated.as_mut().unwrap().extent = [0.0, 0.0, 0.0, 0.0];
+    s.doc_mut().unwrap().arch.views.push(v);
+
+    let layouts_before = s.doc().unwrap().layouts.len();
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "ZeroBounds",
+            "views": ["v0"],
+            "paper": "ARCH D",
+            "landscape": true
+        }),
+    );
+
+    assert!(res.is_err(), "viewsheet should refuse view with zero bounds");
+    assert_eq!(s.doc().unwrap().layouts.len(), layouts_before);
+}
+
+#[test]
 fn viewsheet_refuses_bad_input_and_changes_nothing() {
     let mut s = Session::new();
 
