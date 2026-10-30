@@ -39,6 +39,8 @@ pub(crate) enum RenderError {
     CameraFull(String),
     #[error("--sun must be lat=DEG,date=YYYY-MM-DD,time=solar-noon|HH:MM, got `{0}`")]
     Sun(String),
+    #[error("--sun needs lat=DEG when the drawing has no site location")]
+    NoSiteLat,
     #[error("render: no GPU adapter")]
     NoAdapter,
     #[error("render: {0}")]
