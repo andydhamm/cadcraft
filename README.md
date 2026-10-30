@@ -34,6 +34,97 @@ arch3d's own model of the sample plan: walls, doors, windows and room floors fro
 
 ---
 
+<!-- arch3d: everything below this line is CADCraft's own README from storytold/cadcraft, refreshed by the swarm on every upstream sync. Edit arch3d's section above it. -->
+
+*CADCraft's README from [storytold/cadcraft](https://github.com/storytold/cadcraft/tree/f536bf406f01541006c81deec47ec842acc83158) at `f536bf406`.*
+
+<p align="center">
+  <a href="https://getartcraft.com/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/storytold/cadcraft/f536bf406f01541006c81deec47ec842acc83158/docs/brand/artcraft-logo-white.svg">
+      <img alt="ArtCraft" src="https://raw.githubusercontent.com/storytold/cadcraft/f536bf406f01541006c81deec47ec842acc83158/docs/brand/artcraft-logo.svg" width="200">
+    </picture>
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/storytold/cadcraft/f536bf406f01541006c81deec47ec842acc83158/assets/app-icon/hicolor/256x256/apps/ai.storyteller.cadcraft.png" width="128" height="128" alt="CADCraft icon: a drafting set square and compass arc on a blue grid tile">
+</p>
+
+<h1 align="center">CADCraft</h1>
+
+<p align="center">
+  <b>Computer-aided design and drafting; an open-source, modern 2D and 3D CAD application, built in pure Rust.</b>
+</p>
+
+<p align="center">
+  A fast, open-source CAD workflow: the command line, object snaps, layers,
+  dimensions, hatches, blocks and DXF drawings you already know. It runs natively on macOS,
+  Windows, Linux and FreeBSD, and in the browser via WebAssembly.<br>
+  <i>By the ArtCraft team.</i>
+</p>
+
+<p align="center">
+  <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-0b6f88?style=flat-square&logo=rust&logoColor=white">
+  <img alt="Runs on macOS, Windows, Linux, FreeBSD and the web" src="https://img.shields.io/badge/runs%20on-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux%20%C2%B7%20BSD%20%C2%B7%20Web-14a3c7?style=flat-square">
+  <img alt="License: MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-0b6f88?style=flat-square">
+  <img alt="Agent-drivable over MCP" src="https://img.shields.io/badge/agents-MCP-14a3c7?style=flat-square">
+  <img alt="Status: early development" src="https://img.shields.io/badge/status-early%20development-f07a3a?style=flat-square">
+  <br>
+  <a href="https://sonarcloud.io/project/overview?id=storytold_cadcraft"><img alt="Scanned by SonarCloud" src="https://img.shields.io/badge/Scanned_by-SonarCloud-4b9fd5?style=flat-square&logo=sonarqubecloud&logoColor=white"></a>
+  <a href="https://coderabbit.ai"><img alt="Reviewed by CodeRabbit" src="https://img.shields.io/coderabbit/prs/github/storytold/cadcraft?style=flat-square&label=Reviewed%20by%20CodeRabbit&logo=coderabbit"></a>
+</p>
+
+<p align="center">
+  <a href="https://discord.gg/artcraft"><img alt="Join the ArtCraft community on Discord" src="https://img.shields.io/badge/Join%20us%20on%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" height="40"></a>
+</p>
+
+<p align="center">
+  <a href="https://getartcraft.com/apps/cadcraft"><b>CADCraft on getartcraft.com</b></a> ·
+  <a href="https://getartcraft.com/">ArtCraft</a> ·
+  <a href="https://getartcraft.com/apps">All Crafting Apps</a>
+</p>
+
+<br>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/storytold/cadcraft/f536bf406f01541006c81deec47ec842acc83158/docs/images/ui-apartment.png" alt="CADCraft with an apartment floor plan open: hatched grey walls, blue windows, green door swings, furniture outlines, yellow room names with areas, a yellow room schedule table, a multileader note and cyan dimensions with architectural ticks; Tool Sets on the left, Layers and Properties on the right, the command line at the bottom" width="100%">
+  <br><sub><b>Apartment plan</b> (<a href="https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/examples/apartment.dxf">examples/apartment.dxf</a>): walls with pick-point hatching, TrueType MTEXT room labels, a TABLE, a multileader and architectural dimensions — built entirely from CADCraft commands.</sub>
+</p>
+
+> [!NOTE]
+> **ArtCraft is a community of artists from all walks of life.** Painters, photographers,
+> filmmakers, illustrators, designers, animators, hobbyists, and people who picked up a pencil
+> last week. If you make things, you're one of us. **[Come say hi on Discord](https://discord.gg/artcraft).**
+
+<p align="center">
+  <a href="#screenshots">Screenshots</a> ·
+  <a href="#why-cadcraft">Why CADCraft</a> ·
+  <a href="#what-works-today">What works today</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#drive-it-from-agents-mcp-and-the-cli">Agents, MCP and the CLI</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#roadmap">Roadmap</a> ·
+  <a href="#downloads">Downloads</a> ·
+  <a href="#the-crafting-apps">The Crafting Apps</a> ·
+  <a href="#license-and-credits">License and credits</a>
+</p>
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="https://raw.githubusercontent.com/storytold/cadcraft/f536bf406f01541006c81deec47ec842acc83158/docs/images/ui-layout.png" alt="A paper-space layout in CADCraft: a white sheet with a dashed printable area and a viewport showing the apartment plan at scale, the status bar showing the A1 Plan layout tab and a PAPER toggle"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/storytold/cadcraft/f536bf406f01541006c81deec47ec842acc83158/docs/images/ui-bracket.png" alt="CADCraft with a mounting bracket part drawing: front view with bolt holes, centre lines and dimensions, a hatched section view, notes and a title block"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Layouts</b>: paper space with viewports, page setups and PLOT to PDF. Double-click a viewport to work in model space through it.</sub></td>
+    <td><sub><b>Mounting bracket</b>: a two-view part drawing with centre lines, hidden lines, an ANSI31 section hatch and a title block.</sub></td>
+  </tr>
+</table>
+
+## Why CADCraft
+
 - **The workflow you know.** Type `L`, click two points, type `@5<45`, press Enter. The command
   line, prompts with clickable `[Keywords]`, AutoComplete, object snaps, polar tracking, ortho,
   direct distance entry, window and crossing selection, grips, and right-click-to-repeat behave
@@ -50,7 +141,7 @@ arch3d's own model of the sample plan: walls, doors, windows and room floors fro
 
 ## What works today
 
-CADCraft is in early, fast development. Honest status (see [ROADMAP.md](ROADMAP.md) for parity
+CADCraft is in early, fast development. Honest status (see [ROADMAP.md](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/ROADMAP.md) for parity
 numbers):
 
 | Area | Status |
@@ -63,11 +154,11 @@ numbers):
 | Layers & properties | Layers palette and Layer Properties Manager (on/off, freeze, lock, plot, colour, linetype), layer tools (isolate, freeze, off, lock, match, previous), Properties palette with per-object editing, linetypes, lineweights, colour index and true colour |
 | Annotation | All DIM* commands with full DIMSTYLE variables, overrides and every arrowhead, associative dimensions that follow geometry, MLEADER, TABLE, TrueType fonts (`.ttf`, `.otf`, `.ttc` collections), MTEXT formatting codes (fonts, heights, colours, stacked fractions), our own single-stroke drafting font |
 | Hatch & blocks | Pick-point hatch boundaries with islands, pattern, solid and gradient fills from our own pattern library, BLOCK/INSERT, attributes and nested blocks |
-| Files | DXF read (R12–2018, ASCII and binary) and write (R2000), including dimension styles, associativity, tables and constraints; DWG read (via the acadrust library) and write (R2000); PDF plotting, SVG and PNG export. Entities CADCraft doesn't model yet are not kept on save: see [file-format parity](docs/file-format-parity.md) |
+| Files | DXF read (R12–2018, ASCII and binary) and write (R2000), including dimension styles, associativity, tables and constraints; DWG read (via the acadrust library) and write (R2000); PDF plotting, SVG and PNG export. Entities CADCraft doesn't model yet are not kept on save: see [file-format parity](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/docs/file-format-parity.md) |
 | Layouts & plotting | Paper-space layouts, viewports (scale, lock, per-viewport layer freeze), MSPACE/PSPACE through viewports, page setups, PLOT and EXPORTPDF |
 | Parametric | Geometric and dimensional constraints, AUTOCONSTRAIN, PARAMETERS with expressions, conflict detection; constraints re-solve after every edit |
 | Grips | Hot grips with Space to cycle Stretch, Move, Rotate, Scale and Mirror |
-| Interface languages | English, Ukrainian (Українська), Brazilian Portuguese (Português (Brasil)), German (Deutsch), Spanish (Español), Czech (Čeština), Russian (Русский), French (Français), Simplified Chinese (简体中文, with an installed CJK font), Italian (Italiano), Korean (한국어, with an installed Hangul font), Swedish (Svenska), Arabic (العربية, with an installed Arabic font), Hungarian (Magyar) and Turkish (Türkçe), live switching and a remembered Auto/system-language choice; [details](docs/localization.md) |
+| Interface languages | English, Ukrainian (Українська), Brazilian Portuguese (Português (Brasil)), German (Deutsch), Spanish (Español), Czech (Čeština), Russian (Русский), French (Français), Simplified Chinese (简体中文, with an installed CJK font), Italian (Italiano), Korean (한국어, with an installed Hangul font), Swedish (Svenska), Arabic (العربية, with an installed Arabic font), Hungarian (Magyar) and Turkish (Türkçe), live switching and a remembered Auto/system-language choice; [details](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/docs/localization.md) |
 | Automation | MCP server, JSON control channel, `cadcraft-cli` (info, convert, run, commands, mcp) |
 
 ## Quick start
@@ -182,13 +273,13 @@ either framing. To frame a selection set, `zoom {"mode":"object"}` after selecti
 MCP tools include `command_line` (type at the prompt), `execute` (any command with JSON),
 `inspect_drawing`, `query_entities`, `render` (returns a PNG) and, when connected to the app,
 `screenshot` and `ui_click`. The desktop app's JSON control channel is documented in
-[docs/control-protocol.md](docs/control-protocol.md).
+[docs/control-protocol.md](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/docs/control-protocol.md).
 
 To run LISP routines, scripts and alias files, or to drive CADCraft from your own programs, see
-[docs/customization.md](docs/customization.md).
+[docs/customization.md](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/docs/customization.md).
 
 `cadcraft-cli --help` documents every subcommand and flag; exit codes, streams, environment
-variables and its RFC-0012 conventions are in [docs/cli.md](docs/cli.md).
+variables and its RFC-0012 conventions are in [docs/cli.md](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/docs/cli.md).
 
 ## Architecture
 
@@ -238,7 +329,7 @@ Drafting feedback is not an animation effect and stays as it is: rubber bands an
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the stage, measured parity and the estimate of remaining work, and [docs/gaps.md](docs/gaps.md) for everything still missing.
+See [ROADMAP.md](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/ROADMAP.md) for the stage, measured parity and the estimate of remaining work, and [docs/gaps.md](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/docs/gaps.md) for everything still missing.
 
 ## Downloads
 
@@ -354,22 +445,22 @@ And [**ArtCraft**](https://getartcraft.com/) itself, our AI image and video stud
 
 ## License and credits
 
-CADCraft is dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
-Copyright (c) 2026 ArtCraft Team and the CADCraft contributors. Required notices are in [NOTICE](NOTICE).
+CADCraft is dual-licensed under [MIT](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/LICENSE-MIT) or [Apache-2.0](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/LICENSE-APACHE), at your option.
+Copyright (c) 2026 ArtCraft Team and the CADCraft contributors. Required notices are in [NOTICE](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/NOTICE).
 
 Bundled fonts, icons, images and other assets keep their own open licenses; each one is listed
-with its author, source and license in [ATTRIBUTION.md](ATTRIBUTION.md).
+with its author, source and license in [ATTRIBUTION.md](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/ATTRIBUTION.md).
 
 CADCraft's icons, its single-stroke drafting font, its hatch patterns and its linetypes are all
 original work, drawn or defined in code. The sample drawings are generated in code too.
 
-The ArtCraft name, wordmark and logos in [`docs/brand/`](docs/brand/) are trademarks of the
+The ArtCraft name, wordmark and logos in [`docs/brand/`](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/docs/brand/) are trademarks of the
 ArtCraft Team and are not covered by this license. They may be used only unmodified, and only as
-part of this repository and CADCraft, under [`docs/brand/LICENSE-brand.txt`](docs/brand/LICENSE-brand.txt).
+part of this repository and CADCraft, under [`docs/brand/LICENSE-brand.txt`](https://github.com/storytold/cadcraft/blob/f536bf406f01541006c81deec47ec842acc83158/docs/brand/LICENSE-brand.txt).
 Forks and modified versions must remove them.
 
 <p align="center">
-  <a href="https://getartcraft.com/"><img alt="ArtCraft" src="docs/brand/artcraft-mark.svg" width="28"></a><br>
+  <a href="https://getartcraft.com/"><img alt="ArtCraft" src="https://raw.githubusercontent.com/storytold/cadcraft/f536bf406f01541006c81deec47ec842acc83158/docs/brand/artcraft-mark.svg" width="28"></a><br>
   <sub>Made by the <a href="https://getartcraft.com/">ArtCraft</a> team and community.</sub>
 </p>
 
