@@ -170,6 +170,13 @@ pub struct OpeningCand {
     pub evidence: Evidence,
 }
 
+impl OpeningCand {
+    /// A candidate of `width` centred `offset` along wall `host` at `center`, with no hinge or swing.
+    pub fn new(kind: CandKind, host: usize, offset: f64, center: Vec2, width: f64, style: impl Into<String>, confidence: f64) -> OpeningCand {
+        OpeningCand { kind, host, offset, center, width, style: style.into(), hinge: None, swing: None, confidence, evidence: Evidence::default() }
+    }
+}
+
 /// A room candidate.
 #[derive(Clone, Debug, Default)]
 pub struct RoomCand {
