@@ -737,6 +737,82 @@ mod tests {
     }
 
     #[test]
+    fn a_door_produces_a_header() {
+        let model = wall_model();
+        let o = door_opening();
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
+        let has_header = meshes.iter().any(|m| m.material == "door-header");
+        assert!(has_header, "missing door-header mesh");
+    }
+
+    #[test]
+    fn a_thin_wall_header_is_half_thickness() {
+        let t = 0.03;
+        let model = band_wall(t);
+        let o = window_opening();
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
+        let header = meshes.iter().find(|m| m.material.contains("header"));
+        assert!(header.is_some(), "no header mesh for thin wall");
+        for m in header.into_iter() {
+            let lo = m.positions.iter().map(|p| p[1] as f64).fold(f64::MAX, f64::min);
+            let hi = m.positions.iter().map(|p| p[1] as f64).fold(f64::MIN, f64::max);
+            assert!((hi - lo - t / 2.0).abs() < 1e-5, "thin-wall header depth wrong: {} vs {}", hi - lo, t / 2.0);
+        }
+    }
+
+    #[test]
+    fn header_respects_span_top() {
+        let model = wall_model();
+        let o = window_opening();
+        let meshes = opening_meshes(&walls_map(&model), &o, Some((0.0, 2.0)));
+        let header = meshes.iter().find(|m| m.material.contains("header"));
+        assert!(header.is_some(), "no header mesh with span");
+        for m in header.into_iter() {
+            for p in &m.positions {
+                assert!(p[2] as f64 <= 2.0 + 1e-6, "header exceeds span top: z={}", p[2] as f64);
+            }
+        }
+    }
+
+    #[test]
+    fn no_header_when_opening_reaches_wall_top() {
+        let model = wall_model();
+        let mut o = window_opening();
+        o.sill = 0.0;
+        o.height = 2.5;
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
+        let has_header = meshes.iter().any(|m| m.material.contains("header"));
+        assert!(!has_header, "header should not exist when opening reaches wall top");
+    }
+
+    #[test]
+    fn header_with_nan_wall_thickness_does_not_panic() {
+        let model = band_wall(f64::NAN);
+        let o = window_opening();
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
+        for m in &meshes {
+            for p in &m.positions {
+                let _ = p[0];
+            }
+        }
+    }
+
+    #[test]
+    fn header_depth_is_wall_thickness_minus_two_insets() {
+        let t = 0.3;
+        let model = band_wall(t);
+        let o = window_opening();
+        let meshes = opening_meshes(&walls_map(&model), &o, None);
+        let header = meshes.iter().find(|m| m.material.contains("header"));
+        assert!(header.is_some(), "no header mesh");
+        for m in header.into_iter() {
+            let lo = m.positions.iter().map(|p| p[1] as f64).fold(f64::MAX, f64::min);
+            let hi = m.positions.iter().map(|p| p[1] as f64).fold(f64::MIN, f64::max);
+            assert!((hi - lo - (t - 2.0 * HEADER_INSET)).abs() < 1e-5, "header depth wrong: {} vs {}", hi - lo, t - 2.0 * HEADER_INSET);
+        }
+    }
+
+    #[test]
     fn a_thin_wall_still_produces_meshes() {
         let model = band_wall(0.05);
         let o = window_opening();
