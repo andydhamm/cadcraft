@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-30 21:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-30 22:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 9 of 13: Terrain and site — 2 of 25 segments merged · 0 of 12 acceptance checks**
 
@@ -19,7 +19,7 @@ Updated 2026-10-30 21:45 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 0 / 12 | 2.1 h so far · expected done Oct 31 13:22–Nov 02 13:54 UTC |
+| 9 | Terrain and site | building | 0 / 12 | 2.4 h so far · expected done Oct 31 15:28–Nov 02 21:48 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,18 +27,18 @@ Updated 2026-10-30 21:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-15 queued, 3 working, 3 merging, 2 merged, 2 gate
+15 queued, 4 merging, 3 gate, 2 merged, 1 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p9-geom-cdt` | Constrained Delaunay triangulation (breaklines are edges) | working | bonsai-a |
-| `p9-geom-tin-ops` | TIN point location grid, clipping to a ring, contour chaining | working | bonsai-b |
+| `p9-geom-tin-ops` | TIN point location grid, clipping to a ring, contour chaining | gate | bonsai-b |
 | `p9-arch-terrain-pad` | Building pad and basement cuts | merging | mai-flash |
 | `p9-arch-plant` | Plant catalogue, growth and plan symbols | merging | darwin-ws3 |
-| `p9-cmd-site` | `site` command, and `sun` from the site | working | claude-sonnet-b |
+| `p9-cmd-site` | `site` command, and `sun` from the site | gate | claude-sonnet-b |
 | `p9-cmd-wall-retaining` | Retaining walls in the `wall` command | merging | claude-sonnet-a |
 | `p9-cli-render-sun-from-site` | `render --sun` takes the latitude and true north from the site | gate | bonsai-ws2-b |
-| `p9-small-convert-and-glb-names` | `convert` detection message counts; GLB floor and ceiling node names | gate | bonsai-ws2-a |
+| `p9-small-convert-and-glb-names` | `convert` detection message counts; GLB floor and ceiling node names | merging | bonsai-ws2-a |
 
 ## Recent merges
 
@@ -62,13 +62,13 @@ Updated 2026-10-30 21:45 UTC. This page and the card in the README are regenerat
 | Seat | Model | State | Rounds |
 |---|---|---|---|
 | bonsai-a | bonsai2-27b | agent | 697 |
-| bonsai-b | bonsai2-27b | agent | 654 |
-| bonsai-ws2-a | bonsai2-27b | gate | 700 |
+| bonsai-b | bonsai2-27b | gate | 654 |
+| bonsai-ws2-a | bonsai2-27b | merging | 701 |
 | bonsai-ws2-b | bonsai2-27b | gate | 651 |
 | claude-sonnet-a | sonnet | merging | 55 |
-| claude-sonnet-b | sonnet | agent | 47 |
+| claude-sonnet-b | sonnet | gate | 47 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | merging | 552 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 95 |
 | mai-flash | mai-code-1.1-flash | merging | 25 |
-| tturbo-mac | tturbo-ultraheretic | agent | 479 |
-| tturbo-mac2 | tturbo-ultraheretic | gate | 300 |
+| tturbo-mac | tturbo-ultraheretic | gate | 479 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 301 |
