@@ -193,9 +193,9 @@ fn an_empty_drawing_returns_no_candidates() {
     s.new_drawing(false);
     let r = dry(&mut s, json!({}));
     assert_eq!(r["units"], "m");
-    assert_eq!(arr(&r, "walls"), &[]);
-    assert_eq!(arr(&r, "openings"), &[]);
-    assert_eq!(arr(&r, "rooms"), &[]);
+    assert_eq!(arr(&r, "walls"), &[] as &[Value]);
+    assert_eq!(arr(&r, "openings"), &[] as &[Value]);
+    assert_eq!(arr(&r, "rooms"), &[] as &[Value]);
     assert_eq!(r["stats"]["entities"].as_u64(), Some(0));
     assert_eq!(s.undo().expect("undo"), None, "a dry run leaves no undo step");
 }
