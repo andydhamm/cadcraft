@@ -151,7 +151,7 @@ impl Cx<'_> {
         if self.out.labels.len() >= MAX_LABELS {
             return Err(DetectError(format!("the drawing has more than {MAX_LABELS} labels")));
         }
-        self.out.labels.push(Label { at, text, source });
+        self.out.labels.push(Label::new(at, text, source));
         Ok(())
     }
 
@@ -199,7 +199,7 @@ impl Cx<'_> {
         if self.out.items.len() >= MAX_PRIMITIVES {
             return Err(too_many());
         }
-        self.out.items.push(Item { prim, layer: layer.to_string(), source, poly });
+        self.out.items.push(Item::new(prim, layer, source, poly));
         Ok(())
     }
 }
@@ -286,7 +286,7 @@ mod tests {
     }
 
     fn opts(scale: f64) -> DetectOptions {
-        DetectOptions { scale, layers: None }
+        DetectOptions { scale, ..Default::default() }
     }
 
     fn seg(p: &Prim) -> (Vec2, Vec2) {
@@ -411,9 +411,9 @@ mod tests {
         let lw = flatten(&d, &opts(1.0)).unwrap();
         assert_eq!(lw.items.len(), 2);
         assert!(lw.items.iter().all(|i| i.layer == "ON"));
-        let only = DetectOptions { scale: 1.0, layers: Some(vec!["on".into()]) };
+        let only = DetectOptions { scale: 1.0, layers: Some(vec!["on".into()]), ..Default::default() };
         assert_eq!(flatten(&d, &only).unwrap().items.len(), 2);
-        let none = DetectOptions { scale: 1.0, layers: Some(vec!["other".into()]) };
+        let none = DetectOptions { scale: 1.0, layers: Some(vec!["other".into()]), ..Default::default() };
         assert!(flatten(&d, &none).unwrap().items.is_empty());
     }
 
