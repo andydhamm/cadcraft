@@ -264,8 +264,8 @@ mod tests {
         assert_eq!(runs[0].end, Vec2::new(10.0, 0.0));
         assert_eq!(runs[1].start, Vec2::new(10.0, 0.0));
         assert_eq!(runs[1].end, Vec2::new(10.0, 10.0));
-        assert!(runs[0].evidence.rules.contains("junction"));
-        assert!(runs[1].evidence.rules.contains("junction"));
+        assert!(runs[0].evidence.rules.iter().any(|r| r == "junction"));
+        assert!(runs[1].evidence.rules.iter().any(|r| r == "junction"));
     }
 
     #[test]
