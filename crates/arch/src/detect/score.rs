@@ -69,6 +69,9 @@ fn hausdorff_segment(a0: Vec2, a1: Vec2, b0: Vec2, b1: Vec2) -> f64 {
     let d2 = dist_point_segment(a1, b0, b1);
     let d3 = dist_point_segment(b0, a0, a1);
     let d4 = dist_point_segment(b1, a0, a1);
+    if d1.is_nan() || d2.is_nan() || d3.is_nan() || d4.is_nan() {
+        return f64::NAN;
+    }
     d1.max(d2).max(d3).max(d4)
 }
 
@@ -283,5 +286,98 @@ mod tests {
         det.openings.push(OpeningCand { kind: CandKind::Door, center: Vec2::new(0.0, 0.0), width: 0.9, confidence: 1.0, ..Default::default() });
         let s = score(&det, &truth, 0.5);
         assert_eq!(s.doors.matched, 1);
+    }
+
+    #[test]
+    fn nan_coordinates_do_not_match() {
+        let truth = Truth { walls: vec![TruthWall { start: [0.0, 0.0], end: [1.0, 0.0], thickness: 0.2 }], openings: vec![] };
+        let mut det = Detection::default();
+        det.walls.push(WallRun { start: Vec2::new(f64::NAN, 0.0), end: Vec2::new(1.0, 0.0), thickness: 0.2, confidence: 1.0, ..Default::default() });
+        let s = score(&det, &truth, 0.5);
+        assert_eq!(s.walls.matched, 0);
+    }
+
+    #[test]
+    fn zero_length_wall_matches_itself() {
+        let truth = Truth { walls: vec![TruthWall { start: [1.0, 1.0], end: [1.0, 1.0], thickness: 0.2 }], openings: vec![] };
+        let mut det = Detection::default();
+        det.walls.push(WallRun { start: Vec2::new(1.0, 1.0), end: Vec2::new(1.0, 1.0), thickness: 0.2, confidence: 1.0, ..Default::default() });
+        let s = score(&det, &truth, 0.5);
+        assert_eq!(s.walls.matched, 1);
+    }
+
+    #[test]
+    fn cased_openings_never_match() {
+        let truth = Truth {
+            walls: vec![],
+            openings: vec![
+                TruthOpening { kind: "door".into(), center: [0.0, 0.0], width: 0.9 },
+                TruthOpening { kind: "window".into(), center: [1.0, 0.0], width: 1.0 },
+            ],
+        };
+        let mut det = Detection::default();
+        det.openings.push(OpeningCand { kind: CandKind::Cased, center: Vec2::new(0.0, 0.0), width: 0.9, confidence: 1.0, ..Default::default() });
+        det.openings.push(OpeningCand { kind: CandKind::Cased, center: Vec2::new(1.0, 0.0), width: 1.0, confidence: 1.0, ..Default::default() });
+        let s = score(&det, &truth, 0.5);
+        assert_eq!(s.doors.matched, 0);
+        assert_eq!(s.windows.matched, 0);
+    }
+
+    #[test]
+    fn confidence_filters_candidates() {
+        let truth = Truth { walls: vec![TruthWall { start: [0.0, 0.0], end: [1.0, 0.0], thickness: 0.2 }], openings: vec![] };
+        let mut det = Detection::default();
+        det.walls.push(WallRun { start: Vec2::new(0.0, 0.0), end: Vec2::new(1.0, 0.0), thickness: 0.2, confidence: 0.4, ..Default::default() });
+        let s = score(&det, &truth, 0.5);
+        assert_eq!(s.walls.candidates, 0);
+        assert_eq!(s.walls.matched, 0);
+    }
+
+    #[test]
+    fn empty_detection_has_zero_recall() {
+        let truth = Truth { walls: vec![TruthWall { start: [0.0, 0.0], end: [1.0, 0.0], thickness: 0.2 }], openings: vec![] };
+        let det = Detection::default();
+        let s = score(&det, &truth, 0.5);
+        assert_eq!(s.walls.recall(), 0.0);
+        assert_eq!(s.walls.precision(), 0.0);
+    }
+
+    #[test]
+    fn non_empty_detection_vs_empty_truth() {
+        let truth = Truth::default();
+        let mut det = Detection::default();
+        det.walls.push(WallRun { start: Vec2::new(0.0, 0.0), end: Vec2::new(1.0, 0.0), thickness: 0.2, confidence: 1.0, ..Default::default() });
+        let s = score(&det, &truth, 0.5);
+        assert_eq!(s.walls.precision(), 0.0);
+        assert_eq!(s.walls.recall(), 1.0);
+    }
+
+    #[test]
+    fn huge_coordinates_do_not_overflow() {
+        let truth = Truth { walls: vec![TruthWall { start: [1e15, 1e15], end: [1e15 + 1.0, 1e15], thickness: 0.2 }], openings: vec![] };
+        let mut det = Detection::default();
+        det.walls.push(WallRun {
+            start: Vec2::new(1e15, 1e15),
+            end: Vec2::new(1e15 + 1.0, 1e15),
+            thickness: 0.2,
+            confidence: 1.0,
+            ..Default::default()
+        });
+        let s = score(&det, &truth, 0.5);
+        assert_eq!(s.walls.matched, 1);
+    }
+
+    #[test]
+    fn zero_thickness_wall_needs_exact_match() {
+        let truth = Truth { walls: vec![TruthWall { start: [0.0, 0.0], end: [1.0, 0.0], thickness: 0.0 }], openings: vec![] };
+        let mut det = Detection::default();
+        det.walls.push(WallRun { start: Vec2::new(0.0, 0.0), end: Vec2::new(1.0, 0.0), thickness: 0.0, confidence: 1.0, ..Default::default() });
+        let s = score(&det, &truth, 0.5);
+        assert_eq!(s.walls.matched, 1);
+
+        det.walls.clear();
+        det.walls.push(WallRun { start: Vec2::new(0.0, 0.0), end: Vec2::new(1.0, 0.0), thickness: 0.01, confidence: 1.0, ..Default::default() });
+        let s = score(&det, &truth, 0.5);
+        assert_eq!(s.walls.matched, 0);
     }
 }
