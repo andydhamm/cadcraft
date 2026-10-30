@@ -4,7 +4,7 @@ use super::args::RenderArgs;
 use super::open;
 use super::output::{OutputError, Streams, write_atomic};
 use cadcraft_engine::Session;
-use cadcraft_geom::{SiteLocation, Vec3};
+use cadcraft_geom::Vec3;
 use cadcraft_render3d::adapter::AdapterChoice;
 use cadcraft_render3d::camera::{Camera, MAX_DISTANCE, Orbit};
 use cadcraft_render3d::light::{Light, Sun};
@@ -216,7 +216,7 @@ pub(crate) fn render(a: &RenderArgs, io: &mut Streams) -> Result<(), RenderError
         Some((lat, date, time)) => {
             // An explicit `lat` wins; otherwise the site latitude stands in. With no site
             // location the existing refusal (reworded `NoSiteLat`) fires.
-            let lat = lat.copied().or_else(|| d.arch.site.as_ref().map(|site| site.latitude)).ok_or_else(|| RenderError::NoSiteLat)?;
+            let lat = lat.map(|v| *v).or_else(|| d.arch.site.as_ref().map(|site| site.latitude)).ok_or_else(|| RenderError::NoSiteLat)?;
             let sun =
                 cadcraft_arch::sun::sun_position(lat, date, time).ok_or_else(|| RenderError::Sun(format!("lat={lat},date={date},time={time}")))?;
             // Rotate the sun into drawing coordinates so shadows fall along the site's true
@@ -323,7 +323,6 @@ mod tests {
             "",
             "lat=51",
             "lat=51,date=2026-06-21",
-            "date=2026-06-21,time=12:00",
             "lat=51,date=2026-06-21,time=12:00,extra=1",
             "lat=51,lat=52,date=2026-06-21,time=12:00",
             "lat=abc,date=2026-06-21,time=12:00",
@@ -334,6 +333,12 @@ mod tests {
         ] {
             assert_eq!(parse_sun(bad), None, "`{bad}`");
         }
+    }
+
+    #[test]
+    fn parse_sun_allows_missing_lat() {
+        assert_eq!(parse_sun("date=2026-06-21,time=solar-noon"), Some((None, "2026-06-21".to_string(), "solar-noon".to_string())),);
+        assert_eq!(parse_sun("date=2026-12-21,time=09:30"), Some((None, "2026-12-21".to_string(), "09:30".to_string())),);
     }
 
     #[test]
