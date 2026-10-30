@@ -199,6 +199,23 @@ fn format_projected(pb: [f32; 4]) -> String {
     format!("PROJECTED {:.6},{:.6},{:.6},{:.6}", pb[0], pb[1], pb[2], pb[3])
 }
 
+/// The sun direction, in drawing coordinates, that `render` uses for a given `--sun` triple.
+/// An explicit latitude (from `--sun`) wins over the site latitude; with neither a site
+/// location nor an explicit latitude the `NoSiteLat` refusal fires. The resulting direction
+/// is rotated by the site's true north so shadows fall along the site's true north (a no-op
+/// when there is no site, which leaves the raw direction).
+fn sun_light_dir(
+    explicit_lat: Option<f64>,
+    date: &str,
+    time: &str,
+    site: Option<&cadcraft_doc::arch::SiteLocation>,
+) -> Result<[f64; 3], RenderError> {
+    let lat = explicit_lat.or_else(|| site.map(|s| s.latitude)).ok_or(RenderError::NoSiteLat)?;
+    let sun = cadcraft_arch::sun::sun_position(lat, date, time).ok_or(RenderError::Sun(format!("lat={lat},date={date},time={time}")))?;
+    let dir = cadcraft_arch::sun::sun_dir(&sun);
+    Ok(cadcraft_arch::site::true_to_drawing(site, dir))
+}
+
 pub(crate) fn render(a: &RenderArgs, io: &mut Streams) -> Result<(), RenderError> {
     let size = a.size.unwrap_or(DEFAULT_SIZE);
     let mut s = Session::empty();
@@ -215,13 +232,9 @@ pub(crate) fn render(a: &RenderArgs, io: &mut Streams) -> Result<(), RenderError
     let light = match &a.sun {
         Some((lat, date, time)) => {
             // An explicit `lat` wins; otherwise the site latitude stands in. With no site
-            // location the existing refusal (reworded `NoSiteLat`) fires.
-            let lat = lat.map(|v| *v).or_else(|| d.arch.site.as_ref().map(|site| site.latitude)).ok_or_else(|| RenderError::NoSiteLat)?;
-            let sun =
-                cadcraft_arch::sun::sun_position(lat, date, time).ok_or_else(|| RenderError::Sun(format!("lat={lat},date={date},time={time}")))?;
-            // Rotate the sun into drawing coordinates so shadows fall along the site's true
-            // north; without a site, `true_to_drawing` leaves the raw direction.
-            let [dx, dy, dz] = cadcraft_arch::site::true_to_drawing(d.arch.site.as_ref(), cadcraft_arch::sun::sun_dir(&sun));
+            // location the existing refusal (reworded `NoSiteLat`) fires. The direction is
+            // rotated by the site's true north.
+            let [dx, dy, dz] = sun_light_dir(*lat, date, time, d.arch.site.as_ref())?;
             Light::from_sun(&Sun { dir: [dx as f32, dy as f32, dz as f32], ..Sun::default() }, Light::DEFAULT.ambient)
         }
         None => Light::DEFAULT,
@@ -636,5 +649,38 @@ mod tests {
             panic!("target with whitespace");
         };
         assert_eq!(o.target, Vec3::new(5.0, 4.0, 0.0));
+    }
+
+    fn dirs_close(a: [f64; 3], b: [f64; 3]) -> bool {
+        a.iter().zip(b.iter()).all(|(x, y)| (x - y).abs() < 1e-6)
+    }
+
+    fn dirs_not_close(a: [f64; 3], b: [f64; 3]) -> bool {
+        !dirs_close(a, b)
+    }
+
+    #[test]
+    fn render_sun_uses_site_latitude_and_true_north() {
+        let date = "2026-06-21";
+        let time = "solar-noon";
+        let site = cadcraft_doc::arch::SiteLocation { latitude: 51.05, true_north: 0.0, ..Default::default() };
+        let site_north90 = cadcraft_doc::arch::SiteLocation { latitude: 51.05, true_north: 90.0, ..Default::default() };
+
+        // 1) No explicit latitude: the site latitude must stand in, and the result must equal
+        //    the direction computed by explicitly asking for that same latitude.
+        let via_site = sun_light_dir(None, date, time, Some(&site)).unwrap();
+        let via_explicit = sun_light_dir(Some(51.05), date, time, Some(&site)).unwrap();
+        assert!(dirs_close(via_site, via_explicit), "site latitude must equal an explicit 51.05 latitude");
+
+        // 2) An explicit latitude wins over the site latitude (and gives a different answer).
+        let explicit_win = sun_light_dir(Some(-20.0), date, time, Some(&site)).unwrap();
+        assert!(dirs_not_close(via_site, explicit_win), "an explicit latitude must win over the site latitude");
+
+        // 3) The site's true north rotates the shadow direction; true north 0 is a no-op.
+        let via_north90 = sun_light_dir(None, date, time, Some(&site_north90)).unwrap();
+        assert!(dirs_not_close(via_site, via_north90), "true north must rotate the shadow direction");
+
+        // 4) No site and no explicit latitude -> the NoSiteLat refusal fires.
+        assert!(matches!(sun_light_dir(None, date, time, None), Err(RenderError::NoSiteLat)));
     }
 }
