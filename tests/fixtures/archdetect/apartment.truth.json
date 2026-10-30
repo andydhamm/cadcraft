@@ -1,0 +1,27 @@
+{
+  "source": "examples/apartment.dxf",
+  "units": "mm",
+  "note": "Hand-written from the linework, in metres. Walls are centre lines with thickness; they continue through door gaps (a door is in its wall). Openings are kind, host, centre on the host's centre line, and finished width. Rooms are the label points of the three room names.",
+  "walls": [
+    {"id": "W1", "start": [0.1, 0.1], "end": [11.9, 0.1], "thickness": 0.2},
+    {"id": "W2", "start": [11.9, 0.1], "end": [11.9, 7.9], "thickness": 0.2},
+    {"id": "W3", "start": [11.9, 7.9], "end": [0.1, 7.9], "thickness": 0.2},
+    {"id": "W4", "start": [0.1, 7.9], "end": [0.1, 0.1], "thickness": 0.2},
+    {"id": "W5", "start": [7.05, 0.1], "end": [7.05, 7.9], "thickness": 0.1},
+    {"id": "W6", "start": [7.05, 5.05], "end": [11.9, 5.05], "thickness": 0.1}
+  ],
+  "openings": [
+    {"kind": "door", "host": "W5", "center": [7.05, 1.95], "width": 0.9},
+    {"kind": "door", "host": "W6", "center": [9.4, 5.05], "width": 0.8},
+    {"kind": "window", "host": "W1", "center": [2.5, 0.1], "width": 2.0},
+    {"kind": "window", "host": "W1", "center": [5.2, 0.1], "width": 2.0},
+    {"kind": "window", "host": "W1", "center": [9.6, 0.1], "width": 2.0},
+    {"kind": "window", "host": "W4", "center": [0.1, 5.3], "width": 2.0},
+    {"kind": "window", "host": "W2", "center": [11.9, 6.5], "width": 1.4}
+  ],
+  "rooms": [
+    {"name": "LIVING / DINING", "label": [3.5, 3.6]},
+    {"name": "BEDROOM", "label": [9.45, 3.6]},
+    {"name": "BATH", "label": [8.5, 6.4]}
+  ]
+}
