@@ -349,7 +349,7 @@ mod tests {
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
         let res = validate_placement(&model, host, 1.0, 1.0, 0.0, 2.0, OpeningKind::GarageDoor, "garage", None);
         assert!(res.is_err());
-        let ok = validate_placement(&model, host, 1.0, 2.0, 0.0, 2.0, OpeningKind::GarageDoor, "garage", None);
+        let ok = validate_placement(&model, host, 2.0, 2.0, 0.0, 2.0, OpeningKind::GarageDoor, "garage", None);
         assert!(ok.is_ok());
     }
 

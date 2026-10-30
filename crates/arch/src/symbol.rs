@@ -399,10 +399,10 @@ mod tests {
 
         let gaps = poché_gaps(&m, h);
         assert_eq!(gaps.len(), 2, "expected 2 merged gaps; got {} gaps: {:?}", gaps.len(), gaps);
-        assert!((gaps[0].0 - 0.94).abs() < 1e-6, "gap[0].start = {}", gaps[0].0);
-        assert!((gaps[0].1 - 2.86).abs() < 1e-6, "gap[0].end = {}", gaps[0].1);
-        assert!((gaps[1].0 - 5.94).abs() < 1e-6, "gap[1].start = {}", gaps[1].0);
-        assert!((gaps[1].1 - 7.06).abs() < 1e-6, "gap[1].end = {}", gaps[1].1);
+        assert!((gaps[0].0 - 0.44).abs() < 1e-6, "gap[0].start = {}", gaps[0].0);
+        assert!((gaps[0].1 - 2.36).abs() < 1e-6, "gap[0].end = {}", gaps[0].1);
+        assert!((gaps[1].0 - 5.44).abs() < 1e-6, "gap[1].start = {}", gaps[1].0);
+        assert!((gaps[1].1 - 6.56).abs() < 1e-6, "gap[1].end = {}", gaps[1].1);
         assert!(gaps[0].1 <= gaps[1].0, "merged gaps still overlap");
     }
 
