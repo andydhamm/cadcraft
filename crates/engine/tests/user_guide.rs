@@ -319,3 +319,60 @@ fn user_guide_title_and_latitude_are_right() {
     assert!(GUIDE.contains("Calgary, 51.05"), "the guide names Calgary, 51.05° N, as the examples' latitude");
     assert!(!GUIDE.contains("--command") && !GUIDE.contains("--params"), "the guide uses an invented `--command ... --params` syntax");
 }
+
+/// A dry run of archdetect on an empty drawing must succeed and report zero candidates.
+#[test]
+fn user_guide_archdetect_dry_run_on_empty() {
+    let mut session = Session::new();
+    let result = session.execute("archdetect", &serde_json::json!({"dryRun": true}));
+    assert!(result.is_ok(), "archdetect dry run on an empty drawing should succeed");
+    let reply = result.unwrap();
+    let walls = reply.get("walls").and_then(serde_json::Value::as_array);
+    let openings = reply.get("openings").and_then(serde_json::Value::as_array);
+    let rooms = reply.get("rooms").and_then(serde_json::Value::as_array);
+    assert!(walls.is_some(), "dry run reply should have a walls array");
+    assert!(openings.is_some(), "dry run reply should have an openings array");
+    assert!(rooms.is_some(), "dry run reply should have a rooms array");
+    assert_eq!(walls.unwrap().len(), 0, "empty drawing should detect no walls");
+    assert_eq!(openings.unwrap().len(), 0, "empty drawing should detect no openings");
+    assert_eq!(rooms.unwrap().len(), 0, "empty drawing should detect no rooms");
+}
+
+/// Hostile archdetect parameters are refused with nothing written.
+#[test]
+fn user_guide_archdetect_hostile_params() {
+    let mut session = Session::new();
+    // dryRun must be a boolean
+    let r = session.execute("archdetect", &serde_json::json!({"dryRun": "yes"}));
+    assert!(r.is_err(), "dryRun: \"yes\" should be refused");
+    // minConfidence must be in 0..=1
+    let r = session.execute("archdetect", &serde_json::json!({"dryRun": true, "minConfidence": 1.5}));
+    assert!(r.is_err(), "minConfidence 1.5 should be refused");
+    // accept must be "all" or an array of ids
+    let r = session.execute("archdetect", &serde_json::json!({"accept": "none"}));
+    assert!(r.is_err(), "accept: \"none\" should be refused");
+    // units must be one of the known unit names
+    let r = session.execute("archdetect", &serde_json::json!({"dryRun": true, "units": "yards"}));
+    assert!(r.is_err(), "units: \"yards\" should be refused");
+    // dryRun and accept together is refused
+    let r = session.execute("archdetect", &serde_json::json!({"dryRun": true, "accept": "all"}));
+    assert!(r.is_err(), "dryRun and accept together should be refused");
+}
+
+/// The "Detecting a plan" section documents everything the spec requires.
+#[test]
+fn user_guide_archdetect_section_completeness() {
+    let content = read_user_guide();
+    assert!(content.contains("Detecting a plan"), "the guide should have a Detecting a plan section");
+    assert!(content.contains("archdetect"), "the guide should mention the archdetect command");
+    assert!(content.contains("dryRun"), "the guide should document the dryRun parameter");
+    assert!(content.contains("accept"), "the guide should document the accept parameter");
+    assert!(content.contains("confidence"), "the guide should explain confidence scores");
+    assert!(content.contains("evidence"), "the guide should explain evidence");
+    assert!(content.contains("AIA"), "the guide should mention AIA layer names");
+    assert!(content.contains("INSERT"), "the guide should mention INSERT handling");
+    assert!(content.contains("$INSUNITS"), "the guide should mention $INSUNITS");
+    assert!(content.contains("Detection Review"), "the guide should mention the Detection Review panel");
+    assert!(content.contains("examples/apartment.dxf"), "the guide should use examples/apartment.dxf");
+    assert!(content.contains("apartment.glb"), "the guide should show convert to GLB");
+}
