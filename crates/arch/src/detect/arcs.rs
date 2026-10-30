@@ -74,10 +74,21 @@ fn circle_for_run(points: &[Vec2]) -> Option<(Vec2, f64, f64, f64)> {
         return None;
     }
 
-    let a = *points.first()?;
-    let mid_idx = points.len() / 2;
-    let b = *points.get(mid_idx)?;
-    let c = *points.last()?;
+    let first = *points.first()?;
+    let last = *points.last()?;
+
+    // For the circumcircle, use 3 distinct points.
+    // If first == last (closed circle), use first, second, and middle.
+    let (a, b, c) = if (first - last).len() <= ARC_TOL {
+        let second = *points.get(1)?;
+        let mid_idx = points.len() / 2;
+        let mid = *points.get(mid_idx)?;
+        (first, second, mid)
+    } else {
+        let mid_idx = points.len() / 2;
+        let mid = *points.get(mid_idx)?;
+        (first, mid, last)
+    };
 
     let ab = b - a;
     let ac = c - a;
@@ -99,7 +110,7 @@ fn circle_for_run(points: &[Vec2]) -> Option<(Vec2, f64, f64, f64)> {
         return None;
     }
 
-    let radius = a.dist(center);
+    let radius = first.dist(center);
     if !radius.is_finite() || !(0.05..=50.0).contains(&radius) {
         return None;
     }
@@ -161,21 +172,24 @@ fn circle_for_run(points: &[Vec2]) -> Option<(Vec2, f64, f64, f64)> {
         prev_len = Some(chord);
     }
 
-    let start = (a - center).angle();
-    let end = (c - center).angle();
+    let start = (first - center).angle();
+    let end = (last - center).angle();
     let mut sweep = end - start;
     if sweep > PI {
         sweep -= TAU;
-    } else if sweep < -PI {
+    } else if sweep <= -PI {
         sweep += TAU;
     }
 
-    if !sweep.is_finite() || sweep.abs() <= ARC_TOL || sweep.abs() > TAU + ARC_TOL {
-        return None;
+    let dir = orientation?;
+    // Adjust sweep to match the turning direction (handles arcs > 180°)
+    if dir > 0.0 && sweep <= 0.0 {
+        sweep += TAU;
+    } else if dir < 0.0 && sweep >= 0.0 {
+        sweep -= TAU;
     }
 
-    let dir = orientation?;
-    if (dir > 0.0 && sweep <= 0.0) || (dir < 0.0 && sweep >= 0.0) {
+    if !sweep.is_finite() || sweep.abs() <= ARC_TOL || sweep.abs() > TAU + ARC_TOL {
         return None;
     }
 
@@ -202,8 +216,12 @@ pub fn polyline_prims(points: &[Vec2], closed: bool) -> Vec<Prim> {
             add_segment(&mut out, a, b);
         }
         if closed {
-            if let (Some(first), Some(last)) = (finite.first().copied(), finite.last().copied()) {
-                add_segment(&mut out, last, first);
+            // Skip the closing segment if the last primitive is a full-circle arc (sweep ≈ 2π).
+            let is_full_circle = matches!(out.last(), Some(Prim::Arc { sweep, .. }) if (sweep - TAU).abs() < 1e-6);
+            if !is_full_circle {
+                if let (Some(first), Some(last)) = (finite.first().copied(), finite.last().copied()) {
+                    add_segment(&mut out, last, first);
+                }
             }
         }
         return out;
@@ -261,8 +279,12 @@ pub fn polyline_prims(points: &[Vec2], closed: bool) -> Vec<Prim> {
     }
 
     if closed {
-        if let (Some(first), Some(last)) = (finite.first().copied(), finite.last().copied()) {
-            add_segment(&mut out, last, first);
+        // Skip the closing segment if the last primitive is a full-circle arc (sweep ≈ 2π).
+        let is_full_circle = matches!(out.last(), Some(Prim::Arc { sweep, .. }) if (sweep - TAU).abs() < 1e-6);
+        if !is_full_circle {
+            if let (Some(first), Some(last)) = (finite.first().copied(), finite.last().copied()) {
+                add_segment(&mut out, last, first);
+            }
         }
     }
 
@@ -326,6 +348,152 @@ mod tests {
         assert_eq!(prims.len(), 2);
         assert!(matches!(prims[0], Prim::Seg { .. }));
         assert!(matches!(prims[1], Prim::Arc { .. }));
+    }
+
+    #[test]
+    fn a_clockwise_arc_has_negative_sweep() {
+        let radius = 0.9;
+        let hinge = Vec2::ZERO;
+        let dir = Vec2::X;
+        let perp = -Vec2::Y;
+        let mut pts = Vec::with_capacity(17);
+        for i in 0..=16usize {
+            let t = i as f64 / 16.0;
+            let ang = t * (PI / 2.0);
+            let p = hinge + dir * (radius * ang.cos()) + perp * (radius * ang.sin());
+            pts.push(p);
+        }
+
+        let prims = polyline_prims(&pts, false);
+        assert_eq!(prims.len(), 1, "CW quarter-circle should be one arc");
+        match prims[0] {
+            Prim::Arc { c, r, sweep, .. } => {
+                assert!((c - hinge).len() < 1e-9);
+                assert!((r - radius).abs() < 1e-9);
+                assert!((sweep.abs() - (PI / 2.0)).abs() <= 1e-9, "sweep should be -pi/2, got {}", sweep);
+                assert!(sweep < 0.0, "CW arc should have negative sweep, got {}", sweep);
+            }
+            Prim::Seg { .. } => panic!("should be an arc"),
+        }
+    }
+
+    #[test]
+    fn a_three_quarter_circle_is_one_arc() {
+        let radius = 1.0;
+        let hinge = Vec2::ZERO;
+        let dir = Vec2::X;
+        let perp = Vec2::Y;
+        let mut pts = Vec::with_capacity(33);
+        for i in 0..=32usize {
+            let t = i as f64 / 32.0;
+            let ang = t * (3.0 * PI / 2.0);
+            let p = hinge + dir * (radius * ang.cos()) + perp * (radius * ang.sin());
+            pts.push(p);
+        }
+
+        let prims = polyline_prims(&pts, false);
+        assert_eq!(prims.len(), 1, "270° arc should be one arc");
+        match prims[0] {
+            Prim::Arc { c, r, sweep, .. } => {
+                assert!((c - hinge).len() < 1e-9);
+                assert!((r - radius).abs() < 1e-9);
+                assert!((sweep - (3.0 * PI / 2.0)).abs() <= 1e-9, "sweep should be 3pi/2, got {}", sweep);
+                assert!(sweep > 0.0, "CCW arc should have positive sweep");
+            }
+            Prim::Seg { .. } => panic!("should be an arc"),
+        }
+    }
+
+    #[test]
+    fn a_small_radius_is_not_an_arc() {
+        let radius = 0.04;
+        let hinge = Vec2::ZERO;
+        let dir = Vec2::X;
+        let perp = Vec2::Y;
+        let mut pts = Vec::with_capacity(17);
+        for i in 0..=16usize {
+            let t = i as f64 / 16.0;
+            let ang = t * (PI / 2.0);
+            let p = hinge + dir * (radius * ang.cos()) + perp * (radius * ang.sin());
+            pts.push(p);
+        }
+
+        let prims = polyline_prims(&pts, false);
+        assert_eq!(prims.len(), 16, "r=0.04 is below the 0.05 minimum");
+        assert!(prims.iter().all(|p| matches!(p, Prim::Seg { .. })));
+    }
+
+    #[test]
+    fn a_large_radius_is_not_an_arc() {
+        let radius = 51.0;
+        let hinge = Vec2::ZERO;
+        let dir = Vec2::X;
+        let perp = Vec2::Y;
+        let mut pts = Vec::with_capacity(17);
+        for i in 0..=16usize {
+            let t = i as f64 / 16.0;
+            let ang = t * (PI / 2.0);
+            let p = hinge + dir * (radius * ang.cos()) + perp * (radius * ang.sin());
+            pts.push(p);
+        }
+
+        let prims = polyline_prims(&pts, false);
+        assert_eq!(prims.len(), 16, "r=51 is above the 50 maximum");
+        assert!(prims.iter().all(|p| matches!(p, Prim::Seg { .. })));
+    }
+
+    #[test]
+    fn collinear_points_are_one_segment() {
+        let mut pts = Vec::with_capacity(10);
+        for i in 0..10usize {
+            pts.push(Vec2::new(i as f64 * 0.1, 0.0));
+        }
+
+        let prims = polyline_prims(&pts, false);
+        assert_eq!(prims.len(), 1, "10 collinear points should be one segment");
+        match prims[0] {
+            Prim::Seg { a, b } => {
+                assert!((a - Vec2::ZERO).len() < 1e-9);
+                assert!((b - Vec2::new(0.9, 0.0)).len() < 1e-9);
+            }
+            Prim::Arc { .. } => panic!("collinear points should be a segment"),
+        }
+    }
+
+    #[test]
+    fn coincident_points_are_skipped() {
+        let pts = vec![Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0)];
+
+        let prims = polyline_prims(&pts, false);
+        assert_eq!(prims.len(), 2, "duplicates should be skipped");
+        assert!(prims.iter().all(|p| matches!(p, Prim::Seg { .. })));
+    }
+
+    #[test]
+    fn a_closed_circle_is_one_arc() {
+        let radius = 1.0;
+        let hinge = Vec2::new(2.0, 2.0);
+        let dir = Vec2::X;
+        let perp = Vec2::Y;
+        let mut pts = Vec::with_capacity(33);
+        for i in 0..=32usize {
+            let t = i as f64 / 32.0;
+            let ang = t * TAU;
+            let p = hinge + dir * (radius * ang.cos()) + perp * (radius * ang.sin());
+            pts.push(p);
+        }
+
+        let prims = polyline_prims(&pts, true);
+        assert_eq!(prims.len(), 1, "closed circle should be one arc");
+        match prims[0] {
+            Prim::Arc { c, r, sweep, .. } => {
+                assert!((c - hinge).len() < 1e-9);
+                assert!((r - radius).abs() < 1e-9);
+                assert!((sweep - TAU).abs() <= 1e-9, "sweep should be 2pi, got {}", sweep);
+                assert!(sweep > 0.0, "CCW circle should have positive sweep");
+            }
+            Prim::Seg { .. } => panic!("closed circle should be an arc"),
+        }
     }
 
     #[test]
