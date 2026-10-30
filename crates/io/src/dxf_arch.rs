@@ -236,7 +236,7 @@ fn opening_ring(w: &cadcraft_doc::Wall, o: &cadcraft_doc::arch::Opening) -> Opti
     if !offset.is_finite() || !width.is_finite() || !rough_width.is_finite() {
         return None;
     }
-    let rough_start = offset - (rough_width - width) / 2.0;
+    let rough_start = offset - rough_width / 2.0;
     let rough_end = rough_start + rough_width;
     if !rough_start.is_finite() || !rough_end.is_finite() {
         return None;

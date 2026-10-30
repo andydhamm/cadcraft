@@ -131,17 +131,18 @@ pub fn validate_placement(
 
     let offset = offset.clamp(0.0, len);
     let rough_width = width + ROUGH_ALLOWANCE;
-    let rough_off = offset - rough_width / 2.0;
+    let rough_start = offset - rough_width / 2.0;
+    let rough_end = rough_start + rough_width;
     let min_seg = min_segment(style);
-    if offset < min_seg {
+    if rough_start < min_seg {
         return Err(PlacementError("rough span extends past the start of the wall".into()));
     }
-    if offset + width > len - min_seg {
+    if rough_end > len - min_seg {
         return Err(PlacementError("rough span extends past the end of the wall".into()));
     }
 
-    let c0 = rough_off;
-    let c1 = rough_off + rough_width;
+    let c0 = rough_start;
+    let c1 = rough_end;
     for other in model.openings_on(host) {
         if ignore == Some(other.id) {
             continue;
