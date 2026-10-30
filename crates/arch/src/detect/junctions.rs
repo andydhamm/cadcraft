@@ -1,9 +1,7 @@
 //! Junction snapping.
 
-use super::{Evidence, WallRun};
-use crate::detect::constants::{MAX_THICKNESS, MIN_THICKNESS};
-use crate::detect::mod_::WallRun as _;
-use crate::geom::Vec2;
+use super::{Evidence, MAX_THICKNESS, MIN_THICKNESS, WallRun};
+use cadcraft_geom::Vec2;
 
 const L_TOL_EXTRA: f64 = 0.05;
 const T_TOL_EXTRA: f64 = 0.05;
@@ -59,7 +57,7 @@ fn within_end_bounds(p: Vec2, run: &WallRun, tol: f64) -> bool {
 
 fn add_junction_confidence(r: &mut WallRun) {
     r.confidence = (r.confidence + CONF_BUMP).min(1.0);
-    if !r.evidence.rules.contains("junction") {
+    if !r.evidence.rules.iter().any(|rule| rule == "junction") {
         r.evidence.rules.push("junction".to_string());
     }
 }
@@ -104,7 +102,6 @@ pub fn snap_junctions(runs: &mut Vec<WallRun>) {
             if e_dir == Vec2::ZERO {
                 continue;
             }
-            // Find matching end F in another run
             for j in 0..n {
                 if i == j {
                     continue;
@@ -117,97 +114,115 @@ pub fn snap_junctions(runs: &mut Vec<WallRun>) {
                 let angle = angle_between(e_dir, f_dir);
                 let non_parallel = angle > ANGLE_L_T && angle < std::f64::consts::PI - ANGLE_L_T;
 
-                // L case
                 if non_parallel {
-                    let tol = e.thickness.max(f.thickness) + L_TOL_EXTRA;
-                    if ends_near(e, f, tol) {
-                        if let Some(p) = line_intersection(e.start, e_dir, f.start, f_dir) {
-                            if p.near(e_pos, tol) && p.near(f.start, tol) || p.near(e_pos, tol) && p.near(f.end, tol) {
-                                // Check if p is near one of f's ends
-                                let f_end = if p.near(f.start, tol) { f.start } else { f.end };
+                    let l_matched = false;
+
+                    // L case: another run's end F is near E; move both to the shared
+                    // intersection so the two centre-line ends coincide bit-for-bit.
+                    {
+                        let tol = e.thickness.max(f.thickness) + L_TOL_EXTRA;
+                        let f_end = if e_pos.near(f.start, tol) {
+                            Some(f.start)
+                        } else if e_pos.near(f.end, tol) {
+                            Some(f.end)
+                        } else {
+                            None
+                        };
+                        if let Some(f_end) = f_end {
+                            if let Some(p) = line_intersection(e.start, e_dir, f.start, f_dir) {
                                 if p.near(e_pos, tol) && p.near(f_end, tol) {
                                     move_end(runs.get_mut(i).unwrap(), end_kind, p);
                                     let f_kind = if f_end == f.start { "start" } else { "end" };
                                     move_end(runs.get_mut(j).unwrap(), f_kind, p);
                                     add_junction_confidence(runs.get_mut(i).unwrap());
                                     add_junction_confidence(runs.get_mut(j).unwrap());
+                                    l_matched = true;
                                 }
                             }
                         }
                     }
-                }
 
-                // T case
-                if non_parallel {
-                    let tol = e.thickness / 2.0 + f.thickness / 2.0 + T_TOL_EXTRA;
-                    if point_near_line(e_pos, f.start, f_dir, tol) && within_end_bounds(e_pos, f, f.thickness / 2.0) {
-                        if let Some(p) = line_intersection(e.start, e_dir, f.start, f_dir) {
-                            if p.near(e_pos, tol) {
-                                let move_dist = (p - e_pos).len();
-                                if move_dist <= MAX_MOVE {
-                                    let old = e_pos;
-                                    let shift = (old - p).dot(e_dir);
-                                    if end_kind == "start" {
-                                        shift_gaps(&mut runs[i], shift);
-                                        runs[i].start = p;
-                                    } else {
-                                        runs[i].end = p;
+                    // T case: E sits on another run's centre line; slide E to the
+                    // intersection so the T end lands exactly on the centre line.
+                    if !l_matched {
+                        let tol = e.thickness / 2.0 + f.thickness / 2.0 + T_TOL_EXTRA;
+                        if point_near_line(e_pos, f.start, f_dir, tol) && within_end_bounds(e_pos, f, f.thickness / 2.0) {
+                            if let Some(p) = line_intersection(e.start, e_dir, f.start, f_dir) {
+                                if p.near(e_pos, tol) {
+                                    let move_dist = (p - e_pos).len();
+                                    if move_dist > 0.0 && move_dist <= MAX_MOVE {
+                                        let shift = (e_pos - p).dot(e_dir);
+                                        if end_kind == "start" {
+                                            shift_gaps(&mut runs[i], shift);
+                                            runs[i].start = p;
+                                        } else {
+                                            runs[i].end = p;
+                                        }
+                                        add_junction_confidence(&mut runs[i]);
                                     }
-                                    add_junction_confidence(&mut runs[i]);
                                 }
                             }
                         }
                     }
                 }
 
-                // Collinear merge
+                // Collinear merge: f continues e's line with a small gap; splice them
+                // into one run (gaps concatenated, evidence unioned).
                 let angle_collin = angle_between(e_dir, f_dir);
-                if angle_collin < ANGLE_COLLINAR
+                let collinear = angle_collin < ANGLE_COLLINAR || angle_collin > std::f64::consts::PI - ANGLE_COLLINAR;
+                if collinear
                     && e.thickness > 0.0
-                    && (e.thickness - f.thickness).abs() <= 0.1 * e.thickness
+                    && (e.thickness - f.thickness).abs() <= THICKNESS_REL_TOL * e.thickness
                     && point_near_line(f.start, e.start, e_dir, OFFSET_TOL)
                 {
-                    // Check if f continues e's line with a small gap
-                    let f_near_end = if e_pos.near(f.start, GAP_MERGE_TOL) { f.start } else { f.end };
-                    if e_pos.near(f_near_end, GAP_MERGE_TOL) {
-                        // Merge: remove f, extend e
-                        let f_start = f.start;
-                        let f_end = f.end;
-                        let f_gaps = f.gaps.clone();
-                        let f_conf = f.confidence;
-                        let f_evidence = f.evidence.clone();
-                        drop(f);
-                        // Calculate shift for f's gaps
-                        let shift = (f_start - e.start).len();
-                        let mut merged_gaps = e.gaps.clone();
-                        for g in f_gaps.iter() {
-                            merged_gaps.push((g.0 + shift, g.1 + shift));
-                        }
-                        runs[i].gaps = merged_gaps;
-                        runs[i].confidence = (runs[i].confidence + f_conf).min(1.0);
-                        // Add f's evidence to e's
-                        for rule in f_evidence.rules.iter() {
-                            if !runs[i].evidence.rules.contains(rule) {
-                                runs[i].evidence.rules.push(rule.clone());
+                    // f must extend e (not overlap it): the near end of f is the one
+                    // opposite to the end of e we are processing.
+                    let f_near_end = if e_pos.near(f.start, GAP_MERGE_TOL) {
+                        Some(f.start)
+                    } else if e_pos.near(f.end, GAP_MERGE_TOL) {
+                        Some(f.end)
+                    } else {
+                        None
+                    };
+                    if let Some(f_near_end) = f_near_end {
+                        let extends = if end_kind == "end" { f_near_end == f.start } else { f_near_end == f.end };
+                        if extends {
+                            let f_start = f.start;
+                            let f_end = f.end;
+                            let f_gaps = f.gaps.clone();
+                            let f_conf = f.confidence;
+                            let f_evidence = f.evidence.clone();
+
+                            let shift = (f_start - e.start).len();
+                            let mut merged_gaps = e.gaps.clone();
+                            for g in f_gaps.iter() {
+                                merged_gaps.push((g.0 + shift, g.1 + shift));
                             }
-                        }
-                        for layer in f_evidence.layers.iter() {
-                            if !runs[i].evidence.layers.contains(layer) {
-                                runs[i].evidence.layers.push(layer.clone());
+                            runs[i].gaps = merged_gaps;
+                            runs[i].confidence = (runs[i].confidence + f_conf).min(1.0);
+                            for rule in f_evidence.rules.iter() {
+                                if !runs[i].evidence.rules.iter().any(|r| r == rule) {
+                                    runs[i].evidence.rules.push(rule.clone());
+                                }
                             }
-                        }
-                        for handle in f_evidence.handles.iter() {
-                            if !runs[i].evidence.handles.contains(handle) {
-                                runs[i].evidence.handles.push(*handle);
+                            for layer in f_evidence.layers.iter() {
+                                if !runs[i].evidence.layers.iter().any(|l| l == layer) {
+                                    runs[i].evidence.layers.push(layer.clone());
+                                }
                             }
+                            for handle in f_evidence.handles.iter() {
+                                if !runs[i].evidence.handles.contains(handle) {
+                                    runs[i].evidence.handles.push(*handle);
+                                }
+                            }
+                            if end_kind == "end" {
+                                runs[i].end = f_end;
+                            } else {
+                                runs[i].start = f_start;
+                            }
+                            runs.remove(j);
+                            break;
                         }
-                        if end_kind == "end" {
-                            runs[i].end = f_end;
-                        } else {
-                            runs[i].start = f_start;
-                        }
-                        runs.remove(j);
-                        break;
                     }
                 }
             }
