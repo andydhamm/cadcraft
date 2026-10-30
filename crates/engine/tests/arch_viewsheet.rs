@@ -412,7 +412,9 @@ fn viewsheet_works_in_portrait_orientation() {
 #[test]
 fn viewsheet_works_with_different_paper_size() {
     let mut s = Session::new();
-    s.doc_mut().unwrap().arch.views.push(make_view(0, "v0", 50.0, 11.2, 5.7));
+    // Smaller view that fits on Letter (279.4 mm wide in landscape) at 1:50.
+    // 5 m + 3 m growth = 8 m * 20 mm/m = 160 mm viewport + 50 mm margins = 210 mm < 279.4 mm.
+    s.doc_mut().unwrap().arch.views.push(make_view(0, "v0", 50.0, 5.0, 3.0));
 
     let res = s.execute(
         "viewsheet",
