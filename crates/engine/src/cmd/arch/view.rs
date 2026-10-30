@@ -266,7 +266,7 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
     }
     if kind == CameraKind::Orbit {
         if cam.azimuth_deg.is_none() {
-            cam.azimuth_deg = Some(0.0);
+            return Err(bad("camera", "an `orbit` camera needs `azimuth`"));
         }
         if cam.elevation_deg.is_none() {
             cam.elevation_deg = Some(0.35);
