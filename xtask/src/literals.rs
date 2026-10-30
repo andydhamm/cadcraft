@@ -590,7 +590,11 @@ mod tests {
         assert!(v.is_empty(), "{v:?}");
         // A literal inside a function inside an impl is still a literal.
         assert_eq!(
-            violations_in("crates/render3d/src/pipeline.rs", "impl Entry {\n    fn f() -> u32 {\n        let _ = Scene3d { meshes: vec![], floors: 0 };\n        0\n    }\n}\n").len(),
+            violations_in(
+                "crates/render3d/src/pipeline.rs",
+                "impl Entry {\n    fn f() -> u32 {\n        let _ = Scene3d { meshes: vec![], floors: 0 };\n        0\n    }\n}\n"
+            )
+            .len(),
             1
         );
         // So is a literal in an enum's impl, and one used as an enum discriminant's helper call.
