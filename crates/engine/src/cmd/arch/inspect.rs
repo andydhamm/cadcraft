@@ -96,6 +96,15 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
         obj.insert("thickness".to_string(), json!(w.thickness));
         obj.insert("height".to_string(), json!(w.height));
         obj.insert("exterior".to_string(), json!(w.exterior));
+        if w.retaining {
+            obj.insert("retaining".to_string(), json!(true));
+            obj.insert("freeboard".to_string(), json!(w.freeboard.unwrap_or(cadcraft_doc::arch::DEFAULT_RETAINING_FREEBOARD)));
+            obj.insert("footing".to_string(), json!(w.footing.unwrap_or(cadcraft_doc::arch::DEFAULT_RETAINING_FOOTING)));
+            if let Some((base, top)) = cadcraft_arch3d::wall_span(&d.arch, w) {
+                obj.insert("base".to_string(), json!(base));
+                obj.insert("top".to_string(), json!(top));
+            }
+        }
         obj.insert("kind".to_string(), json!(w.wall_type.to_string()));
         obj.insert("level".to_string(), json!(w.base_level));
 
@@ -351,6 +360,9 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
     if views_flag {
         out.insert("views".to_string(), super::views::views_json(&d.arch));
     }
+
+    // Site, terrain and plants (phase 9).
+    super::site_inspect::inspect_site(&d.arch, p, &mut out);
 
     Ok(Value::Object(out))
 }

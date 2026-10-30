@@ -423,6 +423,9 @@ fn write_entities(w: &mut W, d: &Drawing, ms_br: &str, ps_brs: &[(String, String
         for (kind, layer, tags) in crate::dxf_arch::proxy_view_entities(&d.arch) {
             proxy(&kind, &layer, tags);
         }
+        for (kind, layer, tags) in crate::dxf_site::proxy_site_entities(&d.arch) {
+            proxy(&kind, &layer, tags);
+        }
     }
     w.s(0, "ENDSEC");
 }

@@ -78,3 +78,10 @@ Generated-in-code assets are original and have no file to list:
 | `crates/ui-egui/src/i18n/hu.tsv` | @Skaywalker | Original Hungarian translations of CADCraft English strings | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | No proprietary localization resources copied |
 | `crates/ui-egui/src/i18n/tr.tsv` | @ogzhnklvz (AI-assisted) | Original Turkish translations of CADCraft English strings | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | No proprietary localization resources copied; written from the English strings, no other catalog used as a source; the running app reviewed by a native speaker |
 | `crates/ui-egui/src/i18n/el.tsv` | @Camthalion77 with ChatGPT (AI-assisted) | Original Greek translations of CADCraft English strings | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | No proprietary localization resources copied; independent native proofreading pending |
+
+## Code lifted from other projects
+
+- `crates/geom/src/tin.rs` (`triangulate`, `Tin::elevation_at`, `Tin::elevation_range`, `contours`): from the
+  `cadcraft-terrain` crate on the `main` branch of [zorgglubb/cadcraft](https://github.com/zorgglubb/cadcraft)
+  (commit 5da6d7b, `crates/terrain/src/tin.rs` and `contour.rs`), by zorgglubb, MIT OR Apache-2.0 (the same licence
+  as this repository). Folded into `geom` as one module with a plain error enum and a point cap.

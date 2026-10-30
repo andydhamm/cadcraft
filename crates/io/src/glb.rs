@@ -147,6 +147,13 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
             "stair" => format!("stair-s{}", m.object.0),
             "railing" => format!("railing-ra{}", m.object.0),
             "deck" => format!("deck-r{}", m.object.0),
+            "terrain" => "terrain".to_string(),
+            "plant-crown" => format!("plant-pl{}", m.object.0),
+            "plant-trunk" => format!("plant-pl{}-trunk", m.object.0),
+            mat if mat.starts_with("path-") => {
+                let kind = mat.trim_start_matches("path-").split('-').next().unwrap_or("path");
+                format!("{kind}-tm{}", m.object.0)
+            }
             _ => format!("{}-o{}", m.material, m.object.0),
         };
 

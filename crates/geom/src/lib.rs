@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 mod bounds;
+pub mod cdt;
 mod curve;
 mod fillet;
 mod intersect;
@@ -17,6 +18,8 @@ pub mod region;
 pub mod skeleton;
 mod spline;
 mod spline_fit;
+pub mod tin;
+pub mod tin_ops;
 mod vec;
 
 pub use bounds::Bounds2;
