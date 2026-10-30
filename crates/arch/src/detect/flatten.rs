@@ -445,4 +445,136 @@ mod tests {
             columns: None,
         }
     }
+
+    #[test]
+    fn an_empty_drawing_produces_empty_linework() {
+        let d = Drawing::new_metric();
+        let lw = flatten(&d, &opts(1.0)).unwrap();
+        assert_eq!(lw.entities, 0);
+        assert!(lw.items.is_empty());
+        assert!(lw.labels.is_empty());
+    }
+
+    #[test]
+    fn a_zero_length_line_is_kept() {
+        let mut d = Drawing::new_metric();
+        d.add(&Space::Model, common("0"), line((1.0, 2.0), (1.0, 2.0))).unwrap();
+        let lw = flatten(&d, &opts(1.0)).unwrap();
+        assert_eq!(lw.items.len(), 1);
+        let (a, b) = seg(&lw.items[0].prim);
+        assert!(a.dist(b) < 1e-12);
+    }
+
+    #[test]
+    fn nan_coordinates_are_dropped() {
+        let mut d = Drawing::new_metric();
+        let nan_line = EntityKind::Line(Line { a: Vec3::new(f64::NAN, 0.0, 0.0), b: Vec3::new(1.0, 1.0, 0.0) });
+        d.add(&Space::Model, common("0"), nan_line).unwrap();
+        let good_line = EntityKind::Line(Line { a: Vec3::new(0.0, 0.0, 0.0), b: Vec3::new(1.0, 1.0, 0.0) });
+        d.add(&Space::Model, common("0"), good_line).unwrap();
+        let lw = flatten(&d, &opts(1.0)).unwrap();
+        assert_eq!(lw.items.len(), 1);
+    }
+
+    #[test]
+    fn a_uniform_scaled_arc_transforms_correctly() {
+        let mut d = Drawing::new_metric();
+        define(&mut d, "B", &[("0", EntityKind::Circle(Circle { center: Vec3::ZERO, radius: 1.0 }))]);
+        let mut ins = insert("B", (0.0, 0.0), 0.0);
+        ins.scale = Vec3::new(2.0, 2.0, 1.0);
+        d.add(&Space::Model, common("0"), EntityKind::Insert(ins)).unwrap();
+        let lw = flatten(&d, &opts(1.0)).unwrap();
+        assert_eq!(lw.items.len(), 1);
+        match lw.items[0].prim {
+            Prim::Arc { c, r, sweep, .. } => {
+                assert!(c.dist(Vec2::ZERO) < 1e-9);
+                assert!((r - 2.0).abs() < 1e-9);
+                assert!((sweep - TAU).abs() < 1e-9);
+            }
+            other => panic!("expected arc, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_mirrored_matrix_reverses_arc_sweep() {
+        let mut d = Drawing::new_metric();
+        define(&mut d, "B", &[("0", EntityKind::Circle(Circle { center: Vec3::ZERO, radius: 1.0 }))]);
+        let mut ins = insert("B", (0.0, 0.0), 0.0);
+        ins.scale = Vec3::new(-1.0, 1.0, 1.0);
+        d.add(&Space::Model, common("0"), EntityKind::Insert(ins)).unwrap();
+        let lw = flatten(&d, &opts(1.0)).unwrap();
+        assert_eq!(lw.items.len(), 1);
+        match lw.items[0].prim {
+            Prim::Arc { r, sweep, .. } => {
+                assert!((r - 1.0).abs() < 1e-9);
+                assert!((sweep + TAU).abs() < 1e-9);
+            }
+            other => panic!("expected arc, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_arc_under_nonuniform_scale_tessellates() {
+        let mut d = Drawing::new_metric();
+        define(&mut d, "B", &[("0", EntityKind::Circle(Circle { center: Vec3::ZERO, radius: 1.0 }))]);
+        let mut ins = insert("B", (0.0, 0.0), 0.0);
+        ins.scale = Vec3::new(2.0, 1.0, 1.0);
+        d.add(&Space::Model, common("0"), EntityKind::Insert(ins)).unwrap();
+        let lw = flatten(&d, &opts(1.0)).unwrap();
+        assert_eq!(lw.items.len(), ARC_SEGMENTS);
+        for item in &lw.items {
+            assert!(matches!(item.prim, Prim::Seg { .. }));
+        }
+    }
+
+    #[test]
+    fn entities_count_only_model_space() {
+        let mut d = Drawing::new_metric();
+        define(&mut d, "B", &[("0", line((0.0, 0.0), (1.0, 0.0))), ("0", line((0.0, 1.0), (1.0, 1.0))), ("0", line((0.0, 2.0), (1.0, 2.0)))]);
+        d.add(&Space::Model, common("0"), EntityKind::Insert(insert("B", (0.0, 0.0), 0.0))).unwrap();
+        let lw = flatten(&d, &opts(1.0)).unwrap();
+        assert_eq!(lw.entities, 1);
+        assert_eq!(lw.items.len(), 3);
+    }
+
+    #[test]
+    fn a_closed_polyline_without_bulges_uses_polyline_prims() {
+        let mut d = Drawing::new_metric();
+        let vertices = vec![
+            PolyVertex::new(Vec2::new(0.0, 0.0)),
+            PolyVertex::new(Vec2::new(1.0, 0.0)),
+            PolyVertex::new(Vec2::new(1.0, 1.0)),
+            PolyVertex::new(Vec2::new(0.0, 1.0)),
+        ];
+        let pl = LwPolyline { vertices, closed: true, const_width: 0.0, elevation: 0.0, plinegen: false };
+        let h = d.add(&Space::Model, common("0"), EntityKind::LwPolyline(pl)).unwrap();
+        let lw = flatten(&d, &opts(1.0)).unwrap();
+        assert_eq!(lw.items.len(), 4);
+        for item in &lw.items {
+            assert_eq!(item.source, h);
+            assert!(item.poly.is_some());
+        }
+    }
+
+    #[test]
+    fn a_polyline_with_one_vertex_produces_nothing() {
+        let mut d = Drawing::new_metric();
+        let vertices = vec![PolyVertex::new(Vec2::new(0.0, 0.0))];
+        let pl = LwPolyline { vertices, closed: false, const_width: 0.0, elevation: 0.0, plinegen: false };
+        d.add(&Space::Model, common("0"), EntityKind::LwPolyline(pl)).unwrap();
+        let lw = flatten(&d, &opts(1.0)).unwrap();
+        assert!(lw.items.is_empty());
+    }
+
+    #[test]
+    fn label_text_handles_edge_cases() {
+        assert_eq!(label_text(""), "");
+        assert_eq!(label_text("   "), "");
+        assert_eq!(label_text("  HELLO  WORLD  "), "HELLO WORLD");
+        assert_eq!(label_text("A\\PB"), "A");
+        assert_eq!(label_text("A\\pB"), "A");
+        assert_eq!(label_text("A\\PB"), "A");
+        assert_eq!(label_text("{nested {inner}}"), "nested inner");
+        assert_eq!(label_text("A\\~B"), "A B");
+    }
 }
