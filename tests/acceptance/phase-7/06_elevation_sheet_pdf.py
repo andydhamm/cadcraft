@@ -5,6 +5,9 @@ import os, re
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p7lib.inc')).read())
 tmp = tempfile.mkdtemp()
 pdf, pngp = os.path.join(tmp, 'e.pdf'), os.path.join(tmp, 'e.png')
+import atexit, shutil
+atexit.register(lambda: [shutil.copy(f, os.environ['CHECK_ARTIFACTS_DIR']) for f in (pdf, pngp)
+                         if os.environ.get('CHECK_ARTIFACTS_DIR') and os.path.isfile(f)])  # kept by the gate
 _, rows, _, _ = run(HOUSE + ROOF + [
     'elevation {"side":"south","insert":[0,-20]}', 'elevation {"side":"east","insert":[16,-20]}',
     'elevation {"side":"north","insert":[0,-32]}', 'elevation {"side":"west","insert":[16,-32]}',
