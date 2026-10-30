@@ -144,10 +144,11 @@ impl TinIndex {
             if i < 0 { None } else { Some(i as usize) }
         }
     }
+        let i = t.floor() as i64;
+            if i < 0 { None } else { Some(i as usize) }
+        }
+    }
 }
-
-<<<<<<< REPLACE
-        for &i in &self.cells[row][col] {
             let Some(t) = tin.triangles.get(i) else { continue };
             let Some(a) = tin.points.get(t[0]) else { return None };
             let Some(b) = tin.points.get(t[1]) else { return None };
