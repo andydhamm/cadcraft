@@ -162,8 +162,8 @@ mod tests {
         let mut model = ArchModel::default();
         model.terrain = Some(Terrain::default());
         model.levels = vec![
-            Level { index: 0, name: "Basement".into(), elevation: -2.7, ceiling_height: 2.4, structure: 0.3 },
-            Level { index: 1, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 },
+            Level { index: 0, name: "Basement".into(), elevation: -2.7, ..Default::default() },
+            Level { index: 1, name: "Level 1".into(), elevation: 0.0, ..Default::default() },
         ];
         model.walls = vec![
             Wall {
