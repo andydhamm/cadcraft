@@ -51,8 +51,8 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
             return Err(EngineError::Other(format!("duplicate view: {v_name}")));
         }
 
-        // Find view in ArchModel
-        let view = arch.views.iter().find(|v| v.name == v_name).ok_or_else(|| EngineError::Other(format!("unknown view: {v_name}")))?;
+        // Find view in ArchModel by its id label (e.g. "v0"); names are not a valid lookup key.
+        let view = arch.view_by_label(v_name).ok_or_else(|| EngineError::Other(format!("unknown view: {v_name}")))?;
 
         if view.generated.is_none() {
             return Err(EngineError::Other(format!("view {v_name} has no generated geometry")));
