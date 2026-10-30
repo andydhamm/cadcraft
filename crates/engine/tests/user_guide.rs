@@ -68,3 +68,27 @@ fn user_guide_has_all_phase7_commands() {
         assert!(content.contains(expected), "user guide should document {expected}");
     }
 }
+
+#[test]
+fn user_guide_sun_winter_summer() {
+    // Sun position differs between solstices; both must compute without error.
+    execute_examples(&[
+        "sun {\"lat\":51.5,\"date\":\"2026-06-21\",\"time\":\"solar-noon\"}",
+        "sun {\"lat\":51.5,\"date\":\"2026-12-21\",\"time\":\"solar-noon\"}",
+        "sun {\"lat\":0,\"date\":\"2026-03-20\",\"time\":\"solar-noon\"}",
+    ]);
+}
+
+#[test]
+fn user_guide_camera_list_empty() {
+    // Listing cameras when none are saved must not error.
+    let mut session = Session::new();
+    let result = session.execute("camera", &serde_json::json!({"list": true}));
+    assert!(result.is_ok(), "camera list with no saved cameras should succeed");
+}
+
+#[test]
+fn user_guide_walkthrough_zero_movement() {
+    // A walkthrough step with zero movement is valid and returns the same eye.
+    execute_examples(&["walkthrough {\"eye\":[5,-10,1.6],\"yaw\":0,\"forward\":0,\"strafe\":0,\"turn\":0}"]);
+}
