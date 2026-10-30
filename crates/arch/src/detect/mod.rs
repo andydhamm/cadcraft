@@ -110,7 +110,7 @@ pub struct Evidence {
 }
 
 /// A detected wall run.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct WallRun {
     /// Start point in metres.
     pub start: Vec2,
@@ -138,7 +138,7 @@ pub enum CandKind {
 }
 
 /// An opening candidate.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct OpeningCand {
     /// Kind of opening.
     pub kind: CandKind,
