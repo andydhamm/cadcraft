@@ -376,3 +376,237 @@ fn user_guide_archdetect_section_completeness() {
     assert!(content.contains("examples/apartment.dxf"), "the guide should use examples/apartment.dxf");
     assert!(content.contains("apartment.glb"), "the guide should show convert to GLB");
 }
+
+/// Hostile sun parameters are refused with nothing written.
+#[test]
+fn user_guide_hostile_sun_params() {
+    let mut session = Session::new();
+    // lat must be in -90..=90
+    let r = session.execute("sun", &serde_json::json!({"lat":95.0,"date":"2026-06-21","time":"solar-noon"}));
+    assert!(r.is_err(), "lat 95 should be refused");
+    let r = session.execute("sun", &serde_json::json!({"lat":-95.0,"date":"2026-06-21","time":"solar-noon"}));
+    assert!(r.is_err(), "lat -95 should be refused");
+    // date must be valid
+    let r = session.execute("sun", &serde_json::json!({"lat":51.05,"date":"2026-13-01","time":"solar-noon"}));
+    assert!(r.is_err(), "month 13 should be refused");
+    let r = session.execute("sun", &serde_json::json!({"lat":51.05,"date":"not-a-date","time":"solar-noon"}));
+    assert!(r.is_err(), "non-date string should be refused");
+    // time must be solar-noon or HH:MM
+    let r = session.execute("sun", &serde_json::json!({"lat":51.05,"date":"2026-06-21","time":"noon"}));
+    assert!(r.is_err(), "time \"noon\" should be refused");
+    let r = session.execute("sun", &serde_json::json!({"lat":51.05,"date":"2026-06-21","time":"25:00"}));
+    assert!(r.is_err(), "hour 25 should be refused");
+    // missing required fields
+    let r = session.execute("sun", &serde_json::json!({"lat":51.05}));
+    assert!(r.is_err(), "missing date and time should be refused");
+}
+
+/// Hostile camera parameters are refused with nothing written.
+#[test]
+fn user_guide_hostile_camera_params() {
+    let mut session = Session::new();
+    // kind must be orbit or full
+    let r = session.execute("camera", &serde_json::json!({"save":"test","kind":"pan","eye":[0,0,1],"target":[0,0,0],"fov":60}));
+    assert!(r.is_err(), "kind \"pan\" should be refused");
+    // save requires name
+    let r = session.execute("camera", &serde_json::json!({"save":null,"kind":"full","eye":[0,0,1],"target":[0,0,0],"fov":60}));
+    assert!(r.is_err(), "null save name should be refused");
+    // use requires name
+    let r = session.execute("camera", &serde_json::json!({"use":null}));
+    assert!(r.is_err(), "null use name should be refused");
+    // delete requires name
+    let r = session.execute("camera", &serde_json::json!({"delete":null}));
+    assert!(r.is_err(), "null delete name should be refused");
+    // use of non-existent camera
+    let r = session.execute("camera", &serde_json::json!({"use":"nonexistent"}));
+    assert!(r.is_err(), "using non-existent camera should be refused");
+    // delete of non-existent camera
+    let r = session.execute("camera", &serde_json::json!({"delete":"nonexistent"}));
+    assert!(r.is_err(), "deleting non-existent camera should be refused");
+    // full camera requires eye and target
+    let r = session.execute("camera", &serde_json::json!({"save":"test","kind":"full","eye":[0,0,1]}));
+    assert!(r.is_err(), "full camera without target should be refused");
+    // orbit camera requires azimuth, elevation, distance
+    let r = session.execute("camera", &serde_json::json!({"save":"test","kind":"orbit","azimuth":0}));
+    assert!(r.is_err(), "orbit camera without elevation and distance should be refused");
+    // fov must be positive
+    let r = session.execute("camera", &serde_json::json!({"save":"test","kind":"full","eye":[0,0,1],"target":[0,0,0],"fov":0}));
+    assert!(r.is_err(), "fov 0 should be refused");
+}
+
+/// Hostile walkthrough parameters are refused with nothing written.
+#[test]
+fn user_guide_hostile_walkthrough_params() {
+    let mut session = Session::new();
+    // eye must have 3 components
+    let r = session.execute("walkthrough", &serde_json::json!({"eye":[0,0],"yaw":0,"forward":0,"strafe":0,"turn":0}));
+    assert!(r.is_err(), "eye with 2 components should be refused");
+    let r = session.execute("walkthrough", &serde_json::json!({"eye":[0,0,1,2],"yaw":0,"forward":0,"strafe":0,"turn":0}));
+    assert!(r.is_err(), "eye with 4 components should be refused");
+    // missing required fields
+    let r = session.execute("walkthrough", &serde_json::json!({"eye":[0,0,1]}));
+    assert!(r.is_err(), "missing yaw should be refused");
+    // non-finite values
+    let r = session.execute("walkthrough", &serde_json::json!({"eye":[0.0/0.0,0,1],"yaw":0,"forward":0,"strafe":0,"turn":0}));
+    assert!(r.is_err(), "NaN in eye should be refused");
+}
+
+/// Hostile pick3d parameters are refused with nothing written.
+#[test]
+fn user_guide_hostile_pick3d_params() {
+    let mut session = Session::new();
+    // size must have 2 components
+    let r = session
+        .execute("pick3d", &serde_json::json!({"camera":{"kind":"full","eye":[0,0,1],"target":[0,0,0],"fov":60},"size":[480],"pixel":[240,160]}));
+    assert!(r.is_err(), "size with 1 component should be refused");
+    // pixel must have 2 components
+    let r = session
+        .execute("pick3d", &serde_json::json!({"camera":{"kind":"full","eye":[0,0,1],"target":[0,0,0],"fov":60},"size":[480,320],"pixel":[240]}));
+    assert!(r.is_err(), "pixel with 1 component should be refused");
+    // pixel out of bounds
+    let r = session
+        .execute("pick3d", &serde_json::json!({"camera":{"kind":"full","eye":[0,0,1],"target":[0,0,0],"fov":60},"size":[480,320],"pixel":[500,160]}));
+    assert!(r.is_err(), "pixel x >= width should be refused");
+    let r = session
+        .execute("pick3d", &serde_json::json!({"camera":{"kind":"full","eye":[0,0,1],"target":[0,0,0],"fov":60},"size":[480,320],"pixel":[240,400]}));
+    assert!(r.is_err(), "pixel y >= height should be refused");
+    // negative pixel
+    let r = session
+        .execute("pick3d", &serde_json::json!({"camera":{"kind":"full","eye":[0,0,1],"target":[0,0,0],"fov":60},"size":[480,320],"pixel":[-1,160]}));
+    assert!(r.is_err(), "negative pixel x should be refused");
+}
+
+/// Hostile elevation parameters are refused with nothing written.
+#[test]
+fn user_guide_hostile_elevation_params() {
+    let mut session = Session::new();
+    // side must be valid
+    let r = session.execute("elevation", &serde_json::json!({"side":"up","insert":[0,0]}));
+    assert!(r.is_err(), "side \"up\" should be refused");
+    // insert must have 2 components
+    let r = session.execute("elevation", &serde_json::json!({"side":"south","insert":[0]}));
+    assert!(r.is_err(), "insert with 1 component should be refused");
+    // scale must be positive
+    let r = session.execute("elevation", &serde_json::json!({"side":"south","insert":[0,0],"scale":0}));
+    assert!(r.is_err(), "scale 0 should be refused");
+}
+
+/// Hostile section parameters are refused with nothing written.
+#[test]
+fn user_guide_hostile_section_params() {
+    let mut session = Session::new();
+    // from must have 2 components
+    let r = session.execute("section", &serde_json::json!({"from":[0],"to":[1,0],"insert":[0,0]}));
+    assert!(r.is_err(), "from with 1 component should be refused");
+    // to must have 2 components
+    let r = session.execute("section", &serde_json::json!({"from":[0,0],"to":[1],"insert":[0,0]}));
+    assert!(r.is_err(), "to with 1 component should be refused");
+    // from and to must be different
+    let r = session.execute("section", &serde_json::json!({"from":[0,0],"to":[0,0],"insert":[0,0]}));
+    assert!(r.is_err(), "from == to should be refused");
+}
+
+/// Hostile viewsheet parameters are refused with nothing written.
+#[test]
+fn user_guide_hostile_viewsheet_params() {
+    let mut session = Session::new();
+    // views must be non-empty
+    let r = session.execute("viewsheet", &serde_json::json!({"name":"Test","views":[]}));
+    assert!(r.is_err(), "empty views should be refused");
+    // views must be at most 16
+    let views: Vec<String> = (0..17).map(|i| format!("v{}", i)).collect();
+    let r = session.execute("viewsheet", &serde_json::json!({"name":"Test","views":views}));
+    assert!(r.is_err(), "17 views should be refused");
+    // views must be unique
+    let r = session.execute("viewsheet", &serde_json::json!({"name":"Test","views":["v0","v0"]}));
+    assert!(r.is_err(), "duplicate views should be refused");
+    // name must be a string
+    let r = session.execute("viewsheet", &serde_json::json!({"name":null,"views":["v0"]}));
+    assert!(r.is_err(), "null name should be refused");
+}
+
+/// The sh_blocks helper handles edge cases: no blocks, unterminated block, empty block.
+#[test]
+fn user_guide_sh_blocks_edge_cases() {
+    // No sh blocks at all
+    let blocks = sh_blocks("just some text\nno blocks here\n");
+    assert_eq!(blocks.len(), 0, "no sh blocks should yield empty vec");
+
+    // Empty sh block
+    let blocks = sh_blocks("```sh\n```\n");
+    assert_eq!(blocks.len(), 1, "one sh block should be found");
+    assert_eq!(blocks[0].len(), 0, "empty sh block should have no lines");
+
+    // Sh block with only blank lines
+    let blocks = sh_blocks("```sh\n\n\n```\n");
+    assert_eq!(blocks.len(), 1, "one sh block should be found");
+    assert_eq!(blocks[0].len(), 2, "two blank lines should be found");
+
+    // Multiple blocks
+    let blocks = sh_blocks("```sh\necho a\n```\ntext\n```sh\necho b\n```\n");
+    assert_eq!(blocks.len(), 2, "two sh blocks should be found");
+    assert_eq!(blocks[0][0], "echo a", "first block first line");
+    assert_eq!(blocks[1][0], "echo b", "second block first line");
+
+    // Line continuation
+    let blocks = sh_blocks("```sh\necho a \\\necho b\n```\n");
+    assert_eq!(blocks.len(), 1, "one sh block should be found");
+    assert_eq!(blocks[0].len(), 1, "continued lines should be joined");
+    assert!(blocks[0][0].contains("echo a"), "joined line should contain first part");
+    assert!(blocks[0][0].contains("echo b"), "joined line should contain second part");
+}
+
+/// The cmd_args helper handles edge cases: no --cmd, unquoted --cmd, multiple --cmd on one line.
+#[test]
+fn user_guide_cmd_args_edge_cases() {
+    // No --cmd at all
+    let cmds = cmd_args("cargo run -q -p cadcraft-cli -- run --metric");
+    assert_eq!(cmds.len(), 0, "no --cmd should yield empty vec");
+
+    // One --cmd
+    let cmds = cmd_args("cargo run -- run --cmd 'wall {\"x\":1}'");
+    assert_eq!(cmds.len(), 1, "one --cmd should be found");
+    assert_eq!(cmds[0], "wall {\"x\":1}", "cmd should be extracted");
+
+    // Multiple --cmd on one line
+    let cmds = cmd_args("cargo run -- run --cmd 'wall {\"x\":1}' --cmd 'door {\"y\":2}'");
+    assert_eq!(cmds.len(), 2, "two --cmd should be found");
+    assert_eq!(cmds[0], "wall {\"x\":1}", "first cmd");
+    assert_eq!(cmds[1], "door {\"y\":2}", "second cmd");
+
+    // --cmd with spaces in JSON
+    let cmds = cmd_args("cargo run -- run --cmd 'wall {\"points\": [[0, 0], [1, 0]]}'");
+    assert_eq!(cmds.len(), 1, "one --cmd should be found");
+    assert!(cmds[0].contains("[[0, 0], [1, 0]]"), "JSON with spaces should be preserved");
+}
+
+/// Views survive a save/reload round-trip through the engine.
+#[test]
+fn user_guide_views_round_trip() {
+    let mut session = Session::new();
+    // Build a simple house with a view
+    session
+        .execute("wall", &serde_json::json!({"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.4,"exterior":true}))
+        .expect("wall should succeed");
+    session.execute("elevation", &serde_json::json!({"side":"south","insert":[0,-20]})).expect("elevation should succeed");
+
+    // Verify the view exists
+    let inspect = session.execute("arch.inspect", &serde_json::json!({"views":true})).expect("inspect should succeed");
+    let views_before = inspect.get("views").and_then(serde_json::Value::as_array).expect("inspect should return views array");
+    assert_eq!(views_before.len(), 1, "one view should exist before save");
+
+    // Save and reload
+    let drawing = session.doc().expect("doc should exist").clone();
+    let mut session2 = Session::new();
+    session2.open_drawing(drawing, "test", None);
+
+    // Verify the view still exists after reload
+    let inspect2 = session2.execute("arch.inspect", &serde_json::json!({"views":true})).expect("inspect should succeed after reload");
+    let views_after = inspect2.get("views").and_then(serde_json::Value::as_array).expect("inspect should return views array after reload");
+    assert_eq!(views_after.len(), 1, "one view should exist after reload");
+
+    // Verify the view has the same id
+    let id_before = views_before[0].get("id").and_then(serde_json::Value::as_str);
+    let id_after = views_after[0].get("id").and_then(serde_json::Value::as_str);
+    assert_eq!(id_before, id_after, "view id should be preserved across reload");
+}
