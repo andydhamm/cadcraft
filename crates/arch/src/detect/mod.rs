@@ -259,13 +259,15 @@ pub fn detect(d: &Drawing, opts: &DetectOptions) -> Result<Detection, DetectErro
 /// Split wall runs at unexplained gaps and re-index openings.
 fn split_unexplained_gaps(walls: &mut Vec<WallRun>, openings: &mut Vec<OpeningCand>) {
     let mut new_walls = Vec::new();
-    let mut wall_map: Vec<(usize, usize)> = Vec::new(); // old_idx -> new_idx
+    // Map old wall index to list of (new_wall_index, start_offset, end_offset)
+    let mut wall_pieces: Vec<Vec<(usize, f64, f64)>> = vec![Vec::new(); walls.len()];
 
     for (i, w) in walls.iter().enumerate() {
         let len = w.start.dist(w.end);
         if len <= 0.0 {
+            let idx = new_walls.len();
             new_walls.push(w.clone());
-            wall_map.push((i, new_walls.len() - 1));
+            wall_pieces[i].push((idx, 0.0, len));
             continue;
         }
 
@@ -295,8 +297,9 @@ fn split_unexplained_gaps(walls: &mut Vec<WallRun>, openings: &mut Vec<OpeningCa
         }
 
         if splits.is_empty() {
+            let idx = new_walls.len();
             new_walls.push(w.clone());
-            wall_map.push((i, new_walls.len() - 1));
+            wall_pieces[i].push((idx, 0.0, len));
         } else {
             splits.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             splits.dedup();
@@ -306,21 +309,23 @@ fn split_unexplained_gaps(walls: &mut Vec<WallRun>, openings: &mut Vec<OpeningCa
                 if s > prev + 1e-6 && s < len - 1e-6 {
                     let start = w.start + dir * prev;
                     let end = w.start + dir * s;
+                    let idx = new_walls.len();
                     new_walls.push(WallRun {
                         start,
                         end,
                         thickness: w.thickness,
-                        gaps: Vec::new(), // Simplified for stub
+                        gaps: Vec::new(),
                         confidence: w.confidence,
                         evidence: w.evidence.clone(),
                     });
-                    wall_map.push((i, new_walls.len() - 1));
+                    wall_pieces[i].push((idx, prev, s));
                     prev = s;
                 }
             }
             if prev < len - 1e-6 {
                 let start = w.start + dir * prev;
                 let end = w.end;
+                let idx = new_walls.len();
                 new_walls.push(WallRun {
                     start,
                     end,
@@ -329,60 +334,28 @@ fn split_unexplained_gaps(walls: &mut Vec<WallRun>, openings: &mut Vec<OpeningCa
                     confidence: w.confidence,
                     evidence: w.evidence.clone(),
                 });
-                wall_map.push((i, new_walls.len() - 1));
+                wall_pieces[i].push((idx, prev, len));
             }
         }
     }
 
     // Re-index openings
     for o in openings.iter_mut() {
-        if let Some(&(_, new_idx)) = wall_map.iter().find(|(old, _)| *old == o.host) {
+        if o.host < wall_pieces.len() {
+            let pieces = &wall_pieces[o.host];
             // Find which piece contains the center
-            // For simplicity in stub, just map to first piece if multiple,
-            // but logic above creates multiple pieces.
-            // We need to find the specific piece.
-            let old_w = &walls[o.host];
-            let len = old_w.start.dist(old_w.end);
-            let dir = (old_w.end - old_w.start).normalized();
-            let center_dist = o.offset;
-
-            let mut found = new_idx;
-            let mut prev = 0.0;
-            let mut splits = Vec::new();
-            for (g_start, g_end) in &old_w.gaps {
-                if g_end - g_start > 0.3 {
-                    let mut covered = false;
-                    for o2 in openings.iter() {
-                        if o2.host == o.host {
-                            let rough_half = (o2.width + 0.12) / 2.0;
-                            let o_start = o2.offset - rough_half;
-                            let o_end = o2.offset + rough_half;
-                            if o_start < *g_end && o_end > *g_start {
-                                covered = true;
-                                break;
-                            }
-                        }
-                    }
-                    if !covered {
-                        splits.push(*g_start);
-                    }
-                }
-            }
-            splits.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            splits.dedup();
-
-            for &s in &splits {
-                if center_dist >= prev && center_dist < s {
-                    // This is the piece
+            let mut found = false;
+            for &(new_idx, start_off, end_off) in pieces {
+                if o.offset >= start_off - 1e-6 && o.offset <= end_off + 1e-6 {
+                    o.host = new_idx;
+                    found = true;
                     break;
                 }
-                if s > prev + 1e-6 && s < len - 1e-6 {
-                    prev = s;
-                    // Increment new_idx logic is tricky here without storing indices per split.
-                    // Stub simplification: just keep original mapping if complex.
-                }
             }
-            o.host = found;
+            if !found && !pieces.is_empty() {
+                // Fallback to first piece if not found (shouldn't happen with valid data)
+                o.host = pieces[0].0;
+            }
         }
     }
 
@@ -417,7 +390,7 @@ mod tests {
 
     #[test]
     fn detect_on_an_empty_drawing_finds_nothing() {
-        let d = Drawing::new();
+        let d = Drawing::new_metric();
         let opts = DetectOptions { scale: 1.0, layers: None };
         let res = detect(&d, &opts);
         assert!(res.is_ok());
@@ -429,7 +402,7 @@ mod tests {
 
     #[test]
     fn a_bad_scale_is_an_error_not_a_panic() {
-        let d = Drawing::new();
+        let d = Drawing::new_metric();
         let opts = DetectOptions { scale: 0.0, layers: None };
         assert!(detect(&d, &opts).is_err());
 
