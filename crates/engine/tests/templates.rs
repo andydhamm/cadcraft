@@ -34,7 +34,7 @@ fn hooks() {
 
 /// A drawing with an office layer and a title block circle, saved as a template.
 fn office_template(s: &mut Session, dir: &TempDir, name: &str) -> String {
-    s.execute("layer.new", &json!({ "name": "A-WALL", "color": 3 })).unwrap();
+    s.execute("layer.new", &json!({ "name": "A-OFFICE", "color": 3 })).unwrap();
     s.execute("circle", &json!({ "center": [5, 5], "radius": 2 })).unwrap();
     let p = dir.path_str(name);
     s.execute("saveas", &json!({ "path": p })).unwrap();
