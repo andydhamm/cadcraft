@@ -165,6 +165,38 @@ cargo run -q -p cadcraft-cli -- run --metric \
   --save sheet.dxf
 ```
 
+## Detecting a plan
+
+`archdetect` reads a plain DXF plan (walls as parallel face lines, doors from swing arcs or sliding leaves,
+windows from glass lines between jambs, rooms named from their labels) and proposes arch objects. AIA/NCS layer
+names raise the confidence, they are never required; `INSERT`s are read through; units come from `$INSUNITS` or
+the `units` parameter.
+
+A dry run (`{"dryRun":true}`) lists candidates with their confidence and evidence. Accepting candidates
+(`{"accept":"all"}` or a list of ids) creates the walls, openings and rooms in one undo step. If the drawing is
+not in metres, accepting converts it to metres in the same step.
+
+```sh
+cargo run -q -p cadcraft-cli -- run examples/apartment.dxf \
+  --cmd 'archdetect {"dryRun":true}' \
+  --cmd 'archdetect {"accept":"all"}' \
+  --cmd 'arch.inspect {"rooms":true}' \
+  --save apartment-3d.dxf
+```
+
+The reply for a dry run includes `walls`, `openings` and `rooms` arrays. Each candidate has an `id` (`c0`, `c1`,
+...), a `confidence` (0.0–1.0), and `evidence` (layers, handles, rules). The `accept` reply maps candidate ids
+to created arch ids (`w0`, `o0`, `r0`).
+
+You can also convert a DXF directly to a GLB, which runs detection first if no arch objects are present:
+
+```sh
+cargo run -q -p cadcraft-cli -- convert examples/apartment.dxf apartment.glb
+```
+
+The **Detection Review** panel (Architecture > Detection Review) lets you inspect, check and accept candidates
+interactively.
+
 ## Out of scope
 
 Not part of arch3d so far: SSAO, TAA, cascaded shadows, path tracing, artificial lights, animated walkthrough
