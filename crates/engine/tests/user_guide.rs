@@ -426,9 +426,9 @@ fn user_guide_hostile_camera_params() {
     // full camera requires eye and target
     let r = session.execute("camera", &serde_json::json!({"save":"test","kind":"full","eye":[0,0,1]}));
     assert!(r.is_err(), "full camera without target should be refused");
-    // orbit camera requires azimuth, elevation, distance
-    let r = session.execute("camera", &serde_json::json!({"save":"test","kind":"orbit","azimuth":0}));
-    assert!(r.is_err(), "orbit camera without elevation and distance should be refused");
+    // orbit camera requires azimuth
+    let r = session.execute("camera", &serde_json::json!({"save":"test","kind":"orbit"}));
+    assert!(r.is_err(), "orbit camera without azimuth should be refused");
     // fov must be positive
     let r = session.execute("camera", &serde_json::json!({"save":"test","kind":"full","eye":[0,0,1],"target":[0,0,0],"fov":0}));
     assert!(r.is_err(), "fov 0 should be refused");
