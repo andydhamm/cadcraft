@@ -73,6 +73,20 @@ pub struct Label {
     pub source: Handle,
 }
 
+impl Item {
+    /// An item of linework.
+    pub fn new(prim: Prim, layer: &str, source: Handle, poly: Option<u32>) -> Item {
+        Item { prim, layer: layer.to_string(), source, poly }
+    }
+}
+
+impl Label {
+    /// A text label.
+    pub fn new(at: Vec2, text: String, source: Handle) -> Label {
+        Label { at, text, source }
+    }
+}
+
 /// Flattened linework from a drawing.
 #[derive(Clone, Debug, Default)]
 pub struct Linework {
