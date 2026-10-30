@@ -164,7 +164,7 @@ pub struct OpeningCand {
 }
 
 /// A room candidate.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RoomCand {
     /// Polygon in metres.
     pub polygon: Vec<Vec2>,
