@@ -110,7 +110,7 @@ pub struct Evidence {
 }
 
 /// A detected wall run.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct WallRun {
     /// Start point in metres.
     pub start: Vec2,
@@ -163,7 +163,7 @@ pub struct OpeningCand {
 }
 
 /// A room candidate.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RoomCand {
     /// Polygon in metres.
     pub polygon: Vec<Vec2>,
