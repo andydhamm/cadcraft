@@ -94,7 +94,7 @@ fn ends_near(a: &WallRun, b: &WallRun, tol: f64) -> bool {
 
 pub fn snap_junctions(runs: &mut Vec<WallRun>) {
     let n = runs.len();
-    for i in 0..n {
+    'outer: for i in 0..n {
         for end_kind in ["start", "end"] {
             let e_start = runs[i].start;
             let e_end = runs[i].end;
@@ -239,7 +239,7 @@ pub fn snap_junctions(runs: &mut Vec<WallRun>) {
                                 runs[i].start = f_start;
                             }
                             runs.remove(j);
-                            break;
+                            break 'outer;
                         }
                     }
                 }
@@ -253,7 +253,9 @@ mod tests {
     use super::*;
 
     fn wr(start: Vec2, end: Vec2, thickness: f64) -> WallRun {
-        WallRun { start, end, thickness, gaps: Vec::new(), confidence: 0.5, evidence: Evidence::default() }
+        let mut w = WallRun::new(start, end, thickness);
+        w.confidence = 0.5;
+        w
     }
 
     #[test]

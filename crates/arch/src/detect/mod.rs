@@ -126,6 +126,13 @@ pub struct WallRun {
     pub evidence: Evidence,
 }
 
+impl WallRun {
+    /// A wall run with the given centre line and thickness.
+    pub fn new(start: Vec2, end: Vec2, thickness: f64) -> Self {
+        WallRun { start, end, thickness, gaps: Vec::new(), confidence: 0.0, evidence: Evidence::default() }
+    }
+}
+
 /// Kind of opening candidate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CandKind {
