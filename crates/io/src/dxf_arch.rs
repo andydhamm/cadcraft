@@ -292,41 +292,48 @@ pub(crate) fn proxy_polylines(m: &ArchModel) -> Vec<Vec<Tag>> {
         .collect()
 }
 
-/// The DXF groups of one closed LWPOLYLINE per opening proxy ring, on the opening's own
-/// layer (`A-DOOR` for doors/garage doors, `A-GLAZ` for windows), each tagged with the
-/// [`ARCH_OPENING_MARKER`] xdata and the opening's label (`o{n}`). Returns `Vec::new()`
-/// when there are no openings; the output is capped at
-/// [`cadcraft_arch::MAX_OPENINGS`] polylines.
+/// The DXF groups (after the common entity groups) of the whole plan symbol per opening:
+/// every polyline of `cadcraft_arch::symbol::opening_symbol` (jambs, leaf, the swing
+/// arc, frame and glass lines) is written as its own LWPOLYLINE on the opening's layer
+/// (`A-DOOR` for doors/garage doors, `A-GLAZ` for windows), each tagged with the
+/// [`ARCH_OPENING_MARKER`] xdata and the opening's label (`o{n}`). Group 70 is 1 only
+/// when the polyline's first and last points coincide, so a plan opened in another
+/// program, or with the arch record stripped, still shows the full door/window, swing
+/// arc included. When an opening has no symbol, the rough [`opening_ring`] is emitted as
+/// a single closed ring instead. The output is capped at
+/// `cadcraft_doc::arch::MAX_OPENINGS * 16` polylines.
 pub(crate) fn proxy_opening_polylines(m: &ArchModel) -> Vec<(String, Vec<Tag>)> {
-    m.openings
-        .iter()
-        .take(cadcraft_doc::arch::MAX_OPENINGS)
-        .filter_map(|o| {
-            let symbol = cadcraft_arch::symbol::opening_symbol(m, o);
-            let mut corners: Option<Vec<Vec2>> = symbol.as_ref().and_then(|s| s.polylines.first().cloned());
-            if corners.as_ref().map_or(true, |c| c.is_empty()) {
-                corners = m.wall(o.host).and_then(|w| opening_ring(w, o));
+    let mut out: Vec<(String, Vec<Tag>)> = Vec::new();
+    for o in m.openings.iter().take(cadcraft_doc::arch::MAX_OPENINGS) {
+        // Every polyline of the plan symbol is its own LWPOLYLINE; when the symbol
+        // yields no usable geometry, fall back to the rough opening ring.
+        let polys: Option<Vec<Vec<Vec2>>> = match cadcraft_arch::symbol::opening_symbol(m, o) {
+            Some(s) if s.polylines.iter().any(|c| !c.is_empty()) => Some(s.polylines),
+            _ => m.wall(o.host).and_then(|w| opening_ring(w, o)).map(|r| vec![r]),
+        };
+        let Some(polys) = polys else { continue };
+        let label = format!("o{}", o.id);
+        for c in &polys {
+            // Skip empty or non-finite geometry so hostile input is never written.
+            if c.is_empty() || !c.iter().all(|p| p.is_finite()) {
+                continue;
             }
-            let Some(corners) = corners else {
-                return None;
-            };
-            if corners.is_empty() {
-                return None;
-            }
-            let n = i64::try_from(corners.len()).ok()?;
+            let closed = c.first().map_or(false, |f| c.last() == Some(f));
             let mut t = Vec::new();
-            t.push(Tag::i(90, n));
-            t.push(Tag::i(70, 1));
-            for c in &corners {
-                t.push(Tag::f(10, c.x));
-                t.push(Tag::f(20, c.y));
+            t.push(Tag::i(90, i64::try_from(c.len()).unwrap_or_default()));
+            t.push(Tag::i(70, if closed { 1 } else { 0 }));
+            for p in c {
+                t.push(Tag::f(10, p.x));
+                t.push(Tag::f(20, p.y));
             }
             t.push(Tag::s(1001, crate::dxf_ext::APP));
             t.push(Tag::s(1000, ARCH_OPENING_MARKER));
-            t.push(Tag::s(1000, &format!("o{}", o.id)));
-            Some((o.layer.clone(), t))
-        })
-        .collect()
+            t.push(Tag::s(1000, &label));
+            out.push((o.layer.clone(), t));
+        }
+    }
+    out.truncate(cadcraft_doc::arch::MAX_OPENINGS * 16);
+    out
 }
 
 /// Emit the save-time view proxy geometry: generated linework and dimensions must not persist in
@@ -1684,7 +1691,8 @@ mod tests {
         assert!(ys.iter().all(|v| v.is_finite()), "y coords must be finite");
     }
 
-    /// Opening proxy polylines have the correct vertex count tag.
+    /// Every opening proxy polyline carries a vertex-count tag matching its vertex list,
+    /// and its closed flag (70) is consistent with its endpoints.
     #[test]
     fn proxy_opening_polylines_use_correct_vertex_count() {
         let mut m = ArchModel::default();
@@ -1692,12 +1700,21 @@ mod tests {
         m.push_opening(Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door));
 
         let polys = proxy_opening_polylines(&m);
-        assert_eq!(polys.len(), 1, "expected one opening proxy");
+        assert!(!polys.is_empty(), "a door must write its symbol proxies");
 
-        let (_, tags) = &polys[0];
-        let vertex_count = tags.iter().find(|t| t.code == 90).map(|t| t.i64()).unwrap_or(0);
-        let actual_points = tags.iter().filter(|t| t.code == 10).count();
-        assert_eq!(vertex_count as usize, actual_points, "vertex count tag must match actual points");
+        for tags in &polys {
+            let vertex_count = tags.iter().find(|t| t.code == 90).map(|t| t.i64()).unwrap_or(0);
+            let xs: Vec<f64> = tags.iter().filter(|t| t.code == 10).map(|t| t.f64()).collect();
+            let ys: Vec<f64> = tags.iter().filter(|t| t.code == 20).map(|t| t.f64()).collect();
+            let n = xs.len();
+            assert_eq!(vertex_count as usize, n, "vertex count tag must match actual points");
+            assert!(xs.iter().all(|v| v.is_finite()) && ys.iter().all(|v| v.is_finite()), "non-finite proxy coordinates");
+            let closed = tags.iter().any(|t| t.code == 70 && t.i64() == 1);
+            if closed {
+                assert_eq!(*xs.first().unwrap_or(&0.0), *xs.last().unwrap_or(&0.0), "closed proxy must end where it started");
+                assert_eq!(*ys.first().unwrap_or(&0.0), *ys.last().unwrap_or(&0.0), "closed proxy must end where it started");
+            }
+        }
     }
 
     /// A version-2 payload (which predates rooms) parses with an empty rooms vector.
