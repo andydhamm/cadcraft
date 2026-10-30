@@ -210,7 +210,7 @@ fn plain_dxf(lw: &Linework) -> String {
 }
 
 fn read_drawing(text: &str) -> Drawing {
-    match cadcraft_io::read(text) {
+    match cadcraft_io::read(text.as_bytes(), "plan.dxf") {
         Ok(drawing) => drawing,
         Err(error) => panic!("generated DXF did not read: {error}"),
     }
@@ -400,7 +400,7 @@ fn ten_thousand_entities_find_six_walls_per_tile_quickly() {
         .iter()
         .enumerate()
         .filter(|(_, count)| **count != 6)
-        .map(|(index, count)| format!("tile {index} ({}): {count} walls", tiles[index]))
+        .map(|(index, count)| format!("tile {index} ({:?}): {count} walls", tiles[index]))
         .collect();
     assert!(wrong.is_empty(), "per-tile wall counts differ: {}", wrong.join(", "));
 
