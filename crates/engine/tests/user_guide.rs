@@ -218,10 +218,7 @@ fn user_guide_title_and_latitude_are_right() {
     let title = GUIDE.trim_start().lines().next().unwrap_or_default();
     assert_eq!(title, "# arch3d user guide", "the user guide's title");
     for line in GUIDE.lines() {
-        assert!(
-            !(line.contains("51.05") && line.to_lowercase().contains("london")),
-            "51.05 N is Calgary, not London: {line}"
-        );
+        assert!(!(line.contains("51.05") && line.to_lowercase().contains("london")), "51.05 N is Calgary, not London: {line}");
     }
     assert!(GUIDE.contains("Calgary, 51.05"), "the guide names Calgary, 51.05° N, as the examples' latitude");
     assert!(!GUIDE.contains("--command") && !GUIDE.contains("--params"), "the guide uses an invented `--command ... --params` syntax");
