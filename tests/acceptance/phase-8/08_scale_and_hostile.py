@@ -115,6 +115,11 @@ A = 'examples/apartment.dxf'
 for bad in ('{"dryRun":"yes"}', '{"minConfidence":"x"}', '{"minConfidence":7}', '{"minConfidence":-1}', '{"units":"furlong"}',
             '{"layers":"A-WALL"}', '{"layers":[1,2]}', '{"accept":"all","minConfidence":1e400}', '[]', '"all"', '{"accept":null}'):
     rc, rr, so, se = run([f'archdetect {bad}', 'arch.inspect {"walls":true}'], file=A, expect_ok=False)
+    if rc != 0 and not rr and "invalid value" in se and "--cmd" in se:
+        # JSON that does not parse (1e400 overflows a double) is refused by the command line before the drawing is
+        # opened: nothing ran, so nothing changed.
+        print(f"ok: archdetect {bad}: refused by the command line before anything ran")
+        continue
     last = [r for r in rr if isinstance(r, dict) and isinstance(r.get('walls'), list) and 'revision' in r]
     if not last or last[-1]['walls'] or last[-1].get('revision', 0):
         fail(f"archdetect {bad} must be refused and change nothing: {(so + se)[-300:]}")
