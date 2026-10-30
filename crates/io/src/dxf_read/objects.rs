@@ -196,6 +196,10 @@ impl Objects {
         if let Some(m) = self.xrecord_text(crate::dxf_arch::ARCH_KEY).and_then(|t| crate::dxf_arch::parse_arch(&t)) {
             d.arch = m;
             d.arch_revision = 1;
+            if !d.arch.is_empty() {
+                // Arch geometry is metres whatever the file's header says (older saves said 4).
+                d.make_metric_units();
+            }
             repair_arch_counters(&mut d.arch);
             drop_arch_proxies(d, &rx.arch_proxies);
         }
