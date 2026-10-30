@@ -171,7 +171,7 @@ fn match_openings(cands: &[(usize, &OpeningCand)], truths: &[(usize, &TruthOpeni
 
 #[cfg(test)]
 mod tests {
-    use super::super::{CandKind, Detection, OpeningCand, WallRun};
+    use super::super::{CandKind, Detection, Evidence, OpeningCand, WallRun};
     use super::*;
     use cadcraft_geom::Vec2;
 
