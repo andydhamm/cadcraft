@@ -45,6 +45,9 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
     let doc = s.doc()?;
     let arch = &doc.arch;
 
+    // Determine if the drawing is metric (paper unit is mm).
+    let is_metric = cadcraft_render::paper::paper_unit_mm(doc) == 1.0;
+
     for v in views_val {
         let v_name = v.as_str().ok_or_else(|| EngineError::Other("view name must be string".into()))?;
         if !seen.insert(v_name.to_string()) {
@@ -56,6 +59,11 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
 
         if view.generated.is_none() {
             return Err(EngineError::Other(format!("view {v_name} has no generated geometry")));
+        }
+
+        // Validate scale is positive and finite.
+        if !view.scale.is_finite() || view.scale <= 0.0 {
+            return Err(EngineError::Other(format!("view {v_name} has an invalid scale: {}", view.scale)));
         }
 
         let bounds_opt = view.bounds();
@@ -70,22 +78,26 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
         let max_x = bounds[2];
         let max_y = bounds[3];
 
+        // Validate bounds are finite.
+        if !min_x.is_finite() || !min_y.is_finite() || !max_x.is_finite() || !max_y.is_finite() {
+            return Err(EngineError::Other(format!("view {v_name} has non-finite bounds")));
+        }
+
+        if (max_x - min_x).abs() < 1e-9 || (max_y - min_y).abs() < 1e-9 {
+            return Err(EngineError::Other(format!("view {v_name} has zero-size bounds")));
+        }
+
         // Grown bounds for dimensions
         let grown_min = Vec2::new(min_x - DIM_MARGIN_M, min_y - DIM_MARGIN_M);
         let grown_max = Vec2::new(max_x + DIM_MARGIN_M, max_y + DIM_MARGIN_M);
 
-        view_data.push((v_name.to_string(), view.scale, grown_min, grown_max));
+        view_data.push((v_name.to_string(), view.scale, grown_min, grown_max, min_x, min_y, max_x, max_y));
     }
 
     // Calculate layout
     // k = paper units per model meter (mm/m for metric)
-    // Metric drawing assumed for now (mm).
     // k = 1000 / scale. e.g. scale 50 (1:50) -> 20 mm/m.
     // If imperial, k = 1000 / 25.4 / scale.
-    // We assume metric for simplicity as per typical arch workflows in this codebase unless units are checked.
-    // Checking units:
-    let is_metric = true; // Default to metric for arch3d
-
     let mut viewports_info = Vec::new();
 
     struct ViewportInfo {
@@ -94,21 +106,26 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
         k: f64,
         w_mm: f64,
         h_mm: f64,
+        w_mm_nogrow: f64,
+        h_mm_nogrow: f64,
         center_model: Vec2,
     }
 
-    for (name, scale, min, max) in view_data {
+    for (name, scale, gmin, gmax, min_x, min_y, max_x, max_y) in view_data {
         let k = if is_metric { 1000.0 / scale } else { 1000.0 / 25.4 / scale };
 
-        let w_model = max.x - min.x;
-        let h_model = max.y - min.y;
+        let w_model = gmax.x - gmin.x;
+        let h_model = gmax.y - gmin.y;
 
         let w_mm = w_model * k;
         let h_mm = h_model * k;
 
-        let center_model = Vec2::new((min.x + max.x) / 2.0, (min.y + max.y) / 2.0);
+        let w_mm_nogrow = (max_x - min_x) * k;
+        let h_mm_nogrow = (max_y - min_y) * k;
 
-        viewports_info.push(ViewportInfo { name, scale, k, w_mm, h_mm, center_model });
+        let center_model = Vec2::new((gmin.x + gmax.x) / 2.0, (gmin.y + gmax.y) / 2.0);
+
+        viewports_info.push(ViewportInfo { name, scale, k, w_mm, h_mm, w_mm_nogrow, h_mm_nogrow, center_model });
     }
 
     // Layout logic: 2 per row
@@ -118,9 +135,9 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
 
     for (i, info) in viewports_info.iter().enumerate() {
         if i % 2 == 0 {
-            col0_w = col0_w.max(info.w_mm);
+            col0_w = col0_w.max(info.w_mm_nogrow);
         } else {
-            col1_w = col1_w.max(info.w_mm);
+            col1_w = col1_w.max(info.w_mm_nogrow);
         }
     }
 
@@ -164,11 +181,11 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
 
         // Row height is max height of the two views in this row
         let current_row_h = if is_col0 {
-            let next_h = viewports_info.get(i + 1).map(|n| n.h_mm).unwrap_or(0.0);
-            info.h_mm.max(next_h)
+            let next_h = viewports_info.get(i + 1).map(|n| n.h_mm_nogrow).unwrap_or(0.0);
+            info.h_mm_nogrow.max(next_h)
         } else {
-            let prev_h = viewports_info.get(i - 1).map(|n| n.h_mm).unwrap_or(0.0);
-            info.h_mm.max(prev_h)
+            let prev_h = viewports_info.get(i - 1).map(|n| n.h_mm_nogrow).unwrap_or(0.0);
+            info.h_mm_nogrow.max(prev_h)
         };
 
         // Check vertical fit
