@@ -38,6 +38,7 @@ mod panel_state;
 pub mod spacemouse;
 pub mod switch;
 // The External References palette.
+pub mod archdetect_review;
 pub mod xrefs;
 
 pub mod dyngrips;
@@ -86,6 +87,18 @@ pub const RECENT_FILES: usize = 9;
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
     pub docking: docking::Workspace,
+    /// The last ARCHDETECT dry-run reply the Detection Review panel lists.
+    #[serde(skip)]
+    pub archdetect: Option<Value>,
+    /// The candidate ids ticked in the Detection Review panel.
+    #[serde(skip)]
+    pub archdetect_checked: std::collections::BTreeSet<String>,
+    /// The Detection Review panel's last accept result or error.
+    #[serde(skip)]
+    pub archdetect_note: String,
+    /// Where the Detection Review panel was last drawn.
+    #[serde(skip)]
+    pub archdetect_rect: Option<egui::Rect>,
 
     pub interface_language: i18n::Preference,
     pub show_toolsets: bool,
@@ -176,6 +189,10 @@ impl Default for UiState {
     fn default() -> Self {
         UiState {
             docking: docking::default_workspace(),
+            archdetect: None,
+            archdetect_checked: Default::default(),
+            archdetect_note: String::new(),
+            archdetect_rect: None,
 
             interface_language: i18n::Preference::default(),
             show_toolsets: true,
