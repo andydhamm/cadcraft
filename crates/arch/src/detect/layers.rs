@@ -154,4 +154,117 @@ mod tests {
         assert_eq!(layer_role("BUILDING|A-WALL"), LayerRole::Wall);
         assert_eq!(layer_role("A$B$C$A-ROOM"), LayerRole::Room);
     }
+
+    #[test]
+    fn mixed_xref_separators() {
+        // When both | and $ appear, the last separator of either kind wins
+        assert_eq!(layer_role("PLAN|XREF$A-WALL"), LayerRole::Wall);
+        assert_eq!(layer_role("PLAN$XREF|A-DOOR"), LayerRole::Door);
+        assert_eq!(layer_role("A$B|C$A-GLAZ"), LayerRole::Window);
+        assert_eq!(layer_role("X|Y$Z|A-ROOM"), LayerRole::Room);
+    }
+
+    #[test]
+    fn wall_face_allowed_by_role() {
+        assert!(wall_face_allowed(LayerRole::Wall));
+        assert!(wall_face_allowed(LayerRole::Room));
+        assert!(wall_face_allowed(LayerRole::Other));
+        assert!(!wall_face_allowed(LayerRole::Door));
+        assert!(!wall_face_allowed(LayerRole::Window));
+        assert!(!wall_face_allowed(LayerRole::Annotation));
+        assert!(!wall_face_allowed(LayerRole::Furniture));
+    }
+
+    #[test]
+    fn role_bonus_matches() {
+        assert_eq!(role_bonus(LayerRole::Wall, LayerRole::Wall), 0.15);
+        assert_eq!(role_bonus(LayerRole::Door, LayerRole::Door), 0.15);
+        assert_eq!(role_bonus(LayerRole::Window, LayerRole::Window), 0.15);
+        assert_eq!(role_bonus(LayerRole::Room, LayerRole::Room), 0.15);
+        assert_eq!(role_bonus(LayerRole::Annotation, LayerRole::Annotation), 0.15);
+        assert_eq!(role_bonus(LayerRole::Furniture, LayerRole::Furniture), 0.15);
+        assert_eq!(role_bonus(LayerRole::Other, LayerRole::Other), 0.15);
+    }
+
+    #[test]
+    fn role_bonus_no_match() {
+        assert_eq!(role_bonus(LayerRole::Wall, LayerRole::Door), 0.0);
+        assert_eq!(role_bonus(LayerRole::Door, LayerRole::Wall), 0.0);
+        assert_eq!(role_bonus(LayerRole::Window, LayerRole::Room), 0.0);
+        assert_eq!(role_bonus(LayerRole::Other, LayerRole::Wall), 0.0);
+        assert_eq!(role_bonus(LayerRole::Wall, LayerRole::Other), 0.0);
+        assert_eq!(role_bonus(LayerRole::Annotation, LayerRole::Furniture), 0.0);
+    }
+
+    #[test]
+    fn case_insensitive_layer_names() {
+        assert_eq!(layer_role("a-wall"), LayerRole::Wall);
+        assert_eq!(layer_role("A-Wall"), LayerRole::Wall);
+        assert_eq!(layer_role("a-door"), LayerRole::Door);
+        assert_eq!(layer_role("A-Door"), LayerRole::Door);
+        assert_eq!(layer_role("a-glaz"), LayerRole::Window);
+        assert_eq!(layer_role("A-Glaz"), LayerRole::Window);
+        assert_eq!(layer_role("a-furn"), LayerRole::Furniture);
+        assert_eq!(layer_role("a-anno"), LayerRole::Annotation);
+        assert_eq!(layer_role("a-room"), LayerRole::Room);
+        assert_eq!(layer_role("A-ROOM"), LayerRole::Room);
+    }
+
+    #[test]
+    fn double_and_triple_separators() {
+        assert_eq!(layer_role("A--WALL"), LayerRole::Wall);
+        assert_eq!(layer_role("A-WALL--DOOR"), LayerRole::Door);
+        assert_eq!(layer_role("A---WALL"), LayerRole::Wall);
+        assert_eq!(layer_role("-WALL-"), LayerRole::Wall);
+        assert_eq!(layer_role("_WALL_"), LayerRole::Wall);
+        assert_eq!(layer_role(" WALL "), LayerRole::Wall);
+        assert_eq!(layer_role("A-WALL-_-DOOR"), LayerRole::Door);
+    }
+
+    #[test]
+    fn both_door_and_window_words() {
+        // When both door and window words appear, Door wins
+        assert_eq!(layer_role("A-DOOR-WINDOW"), LayerRole::Door);
+        assert_eq!(layer_role("A-WINDOW-DOOR"), LayerRole::Door);
+        assert_eq!(layer_role("DOOR_AND_WINDOW"), LayerRole::Door);
+        assert_eq!(layer_role("A-DR-WDW"), LayerRole::Door);
+    }
+
+    #[test]
+    fn european_and_partition_words() {
+        assert_eq!(layer_role("MUR"), LayerRole::Wall);
+        assert_eq!(layer_role("WAND"), LayerRole::Wall);
+        assert_eq!(layer_role("PRHT"), LayerRole::Wall);
+        assert_eq!(layer_role("A-PRHT"), LayerRole::Wall);
+        assert_eq!(layer_role("A-MUR"), LayerRole::Wall);
+        assert_eq!(layer_role("A-WAND"), LayerRole::Wall);
+        assert_eq!(layer_role("mur-interieur"), LayerRole::Wall);
+    }
+
+    #[test]
+    fn layer_names_with_numbers() {
+        assert_eq!(layer_role("A-WALL-1"), LayerRole::Wall);
+        assert_eq!(layer_role("WALL2"), LayerRole::Other);
+        assert_eq!(layer_role("A-DOOR-01"), LayerRole::Door);
+        assert_eq!(layer_role("A-GLAZ-2"), LayerRole::Window);
+        assert_eq!(layer_role("WALL-123"), LayerRole::Wall);
+        assert_eq!(layer_role("1-WALL"), LayerRole::Wall);
+    }
+
+    #[test]
+    fn single_unrecognized_words() {
+        assert_eq!(layer_role("W"), LayerRole::Other);
+        assert_eq!(layer_role("D"), LayerRole::Other);
+        assert_eq!(layer_role("X"), LayerRole::Other);
+        assert_eq!(layer_role("A"), LayerRole::Other);
+        assert_eq!(layer_role("B"), LayerRole::Other);
+    }
+
+    #[test]
+    fn long_layer_names() {
+        assert_eq!(layer_role("A-WALL-STRUCTURAL-LOAD-BEARING-EXT"), LayerRole::Wall);
+        assert_eq!(layer_role("A-DOOR-HDWD-SINGLE-ACTIVE-32X80"), LayerRole::Door);
+        assert_eq!(layer_role("A-GLAZ-FIXED-CURTAIN-WALL-ALUM"), LayerRole::Window);
+        assert_eq!(layer_role("A-ANNO-DIMS-GENERAL-1_4"), LayerRole::Annotation);
+    }
 }
