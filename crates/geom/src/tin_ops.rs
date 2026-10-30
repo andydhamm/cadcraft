@@ -1,9 +1,11 @@
 //! Operations on a [`Tin`]: a grid index for point location, clipping to a ring, and chaining
 //! contour segments into polylines.
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use crate::Vec2;
+use crate::Vec3;
 use crate::tin::{ContourSegment, Tin, barycentric};
 
 /// A uniform grid over a TIN's triangles for fast point location.
@@ -36,47 +38,39 @@ impl TinIndex {
         let mut y_min = f64::MAX;
         let mut y_max = f64::MIN;
         for t in tin.triangles.iter() {
-            let mut (tx_min, tx_max) = (f64::MAX, f64::MIN);
-            let mut (ty_min, ty_max) = (f64::MAX, f64::MIN);
-            let ok = [t[0], t[1], t[2]]
-                .iter()
-                .all(|k| {
-                    match tin.points.get(*k) {
-                        Some(p) => {
-                            if p.x.is_finite() && p.y.is_finite() {
-                                tx_min = tx_min.min(p.x);
-                                tx_max = tx_max.max(p.x);
-                                ty_min = ty_min.min(p.y);
-                                ty_max = ty_max.max(p.y);
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        None => false,
+            let (mut tx_min, mut tx_max) = (f64::MAX, f64::MIN);
+            let (mut ty_min, mut ty_max) = (f64::MAX, f64::MIN);
+            let ok = [t[0], t[1], t[2]].iter().all(|k| match tin.points.get(*k) {
+                Some(p) => {
+                    if p.x.is_finite() && p.y.is_finite() {
+                        tx_min = tx_min.min(p.x);
+                        tx_max = tx_max.max(p.x);
+                        ty_min = ty_min.min(p.y);
+                        ty_max = ty_max.max(p.y);
+                        true
+                    } else {
+                        false
                     }
-                });
+                }
+                None => false,
+            });
             if ok {
                 x_min = x_min.min(tx_min);
                 x_max = x_max.max(tx_max);
                 y_min = y_min.min(ty_min);
                 y_max = y_max.max(ty_max);
-                tri_bbs.push(Some(((tx_min, ty_min), (tx_max, ty_max))));
+                tri_bbs.push(Some(([tx_min, ty_min], [tx_max, ty_max])));
             } else {
                 tri_bbs.push(None);
             }
         }
 
         let span = |min: f64, max: f64| -> bool { max.is_finite() && max > min };
-        let width = if span(x_min, x_max) { n.sqrt() } else { 1 };
         let width = (n as f64).sqrt().ceil().clamp(1.0, 1024.0) as usize;
-        let height = if span(y_min, y_max) { n.sqrt() } else { 1 };
         let height = (n as f64).sqrt().ceil().clamp(1.0, 1024.0) as usize;
 
         // Fill cells.
-        let cells: Vec<Vec<usize>> = (0..height)
-            .map(|_| vec![0; width])
-            .collect();
+        let cells: Vec<Vec<usize>> = (0..height).map(|_| vec![0; width]).collect();
         if span(x_min, x_max) && span(y_min, y_max) {
             let dx = (x_max - x_min) / width as f64;
             let dy = (y_max - y_min) / height as f64;
@@ -85,11 +79,7 @@ impl TinIndex {
                     return 0;
                 }
                 let t = (v - min) / span;
-                if t >= (side - 1) as f64 {
-                    side - 1
-                } else {
-                    t.floor() as i64 as usize
-                }
+                if t >= (side - 1) as f64 { side - 1 } else { t.floor() as i64 as usize }
             };
             for (i, tbb) in tri_bbs.iter().enumerate() {
                 let Some(((tx_min, ty_min), (tx_max, ty_max))) = tbb else {
@@ -210,11 +200,7 @@ const EPS: f64 = 1e-9;
 /// Quantise `c` to the nearest multiple of `EPS` and return a hashable key.
 fn quant(c: f64) -> i64 {
     let q = (c / EPS).round();
-    if q.is_finite() && q > -(i64::MIN as f64) && q < (i64::MAX as f64) {
-        q as i64
-    } else {
-        0
-    }
+    if q.is_finite() && q > -(i64::MIN as f64) && q < (i64::MAX as f64) { q as i64 } else { 0 }
 }
 
 /// Chain segments that share endpoints (same elevation) into polylines.
@@ -232,84 +218,142 @@ pub fn chain_contours(segs: &[ContourSegment]) -> Vec<ContourLine> {
         }
     }
     let mut lines: Vec<ContourLine> = Vec::new();
-    for (elevation, ids) in by_elev {
-        let n = ids.len();
-        if n == 0 {
-            continue;
-        }
-        // Quantised endpoint -> list of segment indices and endpoint position.
+    let mut used: Vec<bool> = vec![false; segs.len()];
+    for (_elev, ids) in by_elev {
+        // Quantised endpoint -> list of segment indices (global) meeting there.
         let mut endpoints: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
         for &i in &ids {
             let s = &segs[i];
-            endpoints
-                .entry((quant(s.start.x), quant(s.start.y)))
-                .or_default()
-                .push(i);
-            endpoints
-                .entry((quant(s.end.x), quant(s.end.y)))
-                .or_default()
-                .push(i);
+            endpoints.entry((quant(s.start.x), quant(s.start.y))).or_default().push(i);
+            endpoints.entry((quant(s.end.x), quant(s.end.y))).or_default().push(i);
         }
-        let mut used = vec![false; n];
-        // Open lines: walk from endpoints used by exactly one segment.
-        for (key, segs_at) in endpoints.iter() {
+        // Open lines: walk from each endpoint touched by exactly one segment.
+        for (key, segs_at) in &endpoints {
             if segs_at.len() != 1 {
                 continue;
             }
-            if used[*segs_at.first().unwrap_or(&0)] {
+            let first = *segs_at.first().unwrap();
+            if used[first] {
                 continue;
             }
-            let start_key = if is_endpoint(segs[*segs_at[0]], key) {
-                *key
-            } else {
-                // the other endpoint of the segment
-                let s = &segs[segs_at[0]];
-                let other = if quant(s.start.x) == key.0 && quant(s.start.y) == key.1 {
-                    (quant(s.end.x), quant(s.end.y))
-                } else {
-                    (quant(s.start.x), quant(s.start.y))
-                };
-                other
-            };
-            let line = walk_line(&segs, &ids, &endpoints, &mut used, *segs_at[0], start_key);
-            lines.push(line);
+            lines.push(walk_line(segs, &endpoints, &mut used, first, *key));
         }
-        // Closed loops from remaining segments.
-        for (key, segs_at) in endpoints.iter() {
+        // Closed loops from the remaining degree-two segments.
+        for (key, segs_at) in &endpoints {
             if segs_at.len() != 2 {
                 continue;
             }
-            let s = segs_at[0];
-            if used[s] {
+            let a = segs_at[0];
+            let b = segs_at[1];
+            if used[a] || used[b] {
                 continue;
             }
-            // find the other segment at the same key
-            let other = segs_at[1];
-            if used[other] {
-                continue;
-            }
-            let line = walk_loop(&segs, &ids, &endpoints, &mut used, s, key);
-            lines.push(line);
+            lines.push(walk_loop(segs, &endpoints, &mut used, a, *key));
         }
     }
-    lines.sort_by(|a, b| {
-        a.elevation
-            .total_cmp(&b.elevation)
-            .then_with(|| a.points.first().unwrap().cmp(&b.points.first().unwrap()))
-            .then_with(|| a.points.get(1).unwrap().cmp(&b.points.get(1).unwrap()))
-    });
+    lines.sort_by(lines_cmp);
     lines
 }
 
-// Helper functions omitted for brevity (implementation details)
-fn is_endpoint(_s: &ContourSegment, _key: (i64, i64)) -> bool {
-    true
+/// Total-order comparator: elevation, then first point (x, then y).
+fn lines_cmp(a: &ContourLine, b: &ContourLine) -> Ordering {
+    let ce = a.elevation.total_cmp(&b.elevation);
+    if ce != Ordering::Equal {
+        return ce;
+    }
+    match (a.points.first(), b.points.first()) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Less,
+        (Some(_), None) => Ordering::Greater,
+        (Some(pa), Some(pb)) => {
+            let cx = pa.x.total_cmp(&pb.x);
+            if cx != Ordering::Equal {
+                return cx;
+            }
+            pa.y.total_cmp(&pb.y)
+        }
+    }
 }
-fn walk_line(_segs: &[ContourSegment], _ids: &[usize], _endpoints: &HashMap<(i64, i64), Vec<usize>>, _used: &mut Vec<bool>, _i: usize, _start: (i64, i64)) -> ContourLine {
-    ContourLine::default()
+
+/// The quantised key of the segment's other endpoint.
+fn other_key_of(s: &ContourSegment, key: (i64, i64)) -> (i64, i64) {
+    let sk = (quant(s.start.x), quant(s.start.y));
+    if sk == key { (quant(s.end.x), quant(s.end.y)) } else { sk }
 }
-fn walk_loop(_segs: &[ContourSegment], _ids: &[usize], _endpoints: &HashMap<(i64, i64), Vec<usize>>, _used: &mut Vec<bool>, _i: usize, _key: (i64, i64)) -> ContourLine {
-    ContourLine::default()
+
+/// The un-quantised point at `key` of segment `s`.
+fn point_of(s: &ContourSegment, key: (i64, i64)) -> Vec2 {
+    let sk = (quant(s.start.x), quant(s.start.y));
+    if sk == key { s.start } else { s.end }
+}
+
+/// Walk a maximal open polyline from segment `i` entering through `start_key`.
+fn walk_line(
+    segs: &[ContourSegment],
+    endpoints: &HashMap<(i64, i64), Vec<usize>>,
+    used: &mut Vec<bool>,
+    i: usize,
+    start_key: (i64, i64),
+) -> ContourLine {
+    let elevation = segs[i].elevation;
+    let mut points = Vec::new();
+    points.push(point_of(&segs[i], start_key));
+    let mut back_key = start_key;
+    let mut cur = i;
+    used[cur] = true;
+    loop {
+        let front_key = other_key_of(&segs[cur], back_key);
+        let next_idx = match endpoints.get(&front_key) {
+            Some(list) => list.iter().copied().find(|&j| !used[j]),
+            None => None,
+        };
+        points.push(point_of(&segs[cur], front_key));
+        match next_idx {
+            Some(j) => {
+                back_key = front_key;
+                cur = j;
+                used[j] = true;
+            }
+            None => break,
+        }
+    }
+    ContourLine { elevation, points, closed: false }
+}
+
+/// Walk a closed loop starting at segment `i` entering through `start_key`.
+fn walk_loop(
+    segs: &[ContourSegment],
+    endpoints: &HashMap<(i64, i64), Vec<usize>>,
+    used: &mut Vec<bool>,
+    i: usize,
+    start_key: (i64, i64),
+) -> ContourLine {
+    let elevation = segs[i].elevation;
+    let mut points = Vec::new();
+    points.push(point_of(&segs[i], start_key));
+    let mut back_key = start_key;
+    let mut cur = i;
+    used[cur] = true;
+    loop {
+        let front_key = other_key_of(&segs[cur], back_key);
+        if front_key == start_key {
+            break;
+        }
+        let next_idx = match endpoints.get(&front_key) {
+            Some(list) => list.iter().copied().find(|&j| !used[j]),
+            None => None,
+        };
+        points.push(point_of(&segs[cur], front_key));
+        match next_idx {
+            Some(j) => {
+                back_key = front_key;
+                cur = j;
+                used[j] = true;
+            }
+            None => break,
+        }
+    }
+    ContourLine { elevation, points, closed: true }
 }
 
 #[cfg(test)]
@@ -345,11 +389,7 @@ mod tests {
         tin.points.push(Vec3::new(4.0, 0.0, 0.0));
         tin.points.push(Vec3::new(2.0, 2.0, 0.0));
         tin.triangles.push([0, 1, 2]);
-        retain_inside(&mut tin, &[
-            Vec2::new(0.0, 0.0),
-            Vec2::new(2.0, 1.0),
-            Vec2::new(0.0, 2.0),
-        ]);
+        retain_inside(&mut tin, &[Vec2::new(0.0, 0.0), Vec2::new(2.0, 1.0), Vec2::new(0.0, 2.0)]);
         assert_eq!(tin.triangles.len(), 1);
     }
 
