@@ -67,7 +67,8 @@ pub fn find_rooms(walls: &[WallRun], labels: &[Label]) -> Vec<RoomCand> {
             area,
             label: best.map(|(l, _)| l.at),
             confidence,
-            evidence: Evidence { layers: Vec::new(), handles, rules },
+            evidence: Evidence { handles, rules, ..Default::default() },
+            ..Default::default()
         });
     }
     out
@@ -100,18 +101,11 @@ mod tests {
     use cadcraft_doc::Handle;
 
     fn run(a: (f64, f64), b: (f64, f64), t: f64) -> WallRun {
-        WallRun {
-            start: Vec2::new(a.0, a.1),
-            end: Vec2::new(b.0, b.1),
-            thickness: t,
-            gaps: Vec::new(),
-            confidence: 1.0,
-            evidence: Evidence::default(),
-        }
+        WallRun { start: Vec2::new(a.0, a.1), end: Vec2::new(b.0, b.1), thickness: t, confidence: 1.0, ..Default::default() }
     }
 
     fn label(x: f64, y: f64, t: &str) -> Label {
-        Label { at: Vec2::new(x, y), text: t.into(), source: Handle(1) }
+        Label::new(Vec2::new(x, y), t.into(), Handle(1))
     }
 
     fn apartment() -> Vec<WallRun> {
