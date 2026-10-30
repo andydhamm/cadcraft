@@ -87,6 +87,16 @@ fn wall_mesh_names(json: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Return the names of all meshes found in a GLB's JSON chunk.
+fn all_mesh_names(json: &Value) -> Vec<String> {
+    json["meshes"].as_array().map(|arr| arr.iter().filter_map(|m| m["name"].as_str()).map(|n| n.to_string()).collect()).unwrap_or_default()
+}
+
+/// Check if a mesh name suggests it's a door or window.
+fn is_opening(name: &str) -> bool {
+    name.starts_with("door-") || name.starts_with("window-") || name.starts_with("opening-")
+}
+
 #[test]
 fn convert_writes_a_glb_from_a_wall_plan() {
     let dir = temp_dir("convert_writes_a_glb_from_a_wall_plan");
@@ -237,4 +247,76 @@ fn run_export_without_input_file() {
     let out = run_cli(&["run".into(), "--export".into(), out_glb.to_string_lossy().into()]);
     assert!(!out.status.success(), "run --export without input should fail");
     assert!(!out_glb.exists(), "no output should be written without input");
+}
+
+#[test]
+fn convert_detects_walls_in_a_plain_plan() {
+    let dir = temp_dir("convert_detects_walls_in_a_plain_plan");
+    // Use the example apartment.dxf which contains linework but no arch objects initially
+    let in_dxf = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/apartment.dxf");
+    if !in_dxf.exists() {
+        // Skip if example file not present (e.g. in some CI environments)
+        return;
+    }
+    let out_glb = dir.join("apartment.glb");
+
+    let out = run_cli(&["convert".into(), in_dxf.to_string_lossy().into(), out_glb.to_string_lossy().into()]);
+    assert!(out.status.success(), "convert failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("archdetect:"), "stderr should contain archdetect line: {stderr}");
+
+    assert!(is_glb(&out_glb), "convert did not write a valid GLB");
+    let json = glb_json(&out_glb);
+    let names = all_mesh_names(&json);
+
+    // Should have wall meshes
+    let wall_names: Vec<_> = names.iter().filter(|n| n.starts_with("wall-w")).collect();
+    assert!(!wall_names.is_empty(), "expected wall meshes in detected plan");
+
+    // Should have opening meshes (doors/windows)
+    let opening_names: Vec<_> = names.iter().filter(|n| is_opening(n)).collect();
+    assert!(!opening_names.is_empty(), "expected opening meshes in detected plan");
+}
+
+#[test]
+fn no_detect_keeps_linework_only() {
+    let dir = temp_dir("no_detect_keeps_linework_only");
+    let in_dxf = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/apartment.dxf");
+    if !in_dxf.exists() {
+        return;
+    }
+    let out_glb = dir.join("apartment_no_detect.glb");
+
+    let out = run_cli(&["convert".into(), "--no-detect".into(), in_dxf.to_string_lossy().into(), out_glb.to_string_lossy().into()]);
+    assert!(out.status.success(), "convert failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!stderr.contains("archdetect:"), "stderr should NOT contain archdetect line with --no-detect");
+
+    assert!(is_glb(&out_glb), "convert did not write a valid GLB");
+    let json = glb_json(&out_glb);
+    let names = all_mesh_names(&json);
+
+    // Should NOT have wall meshes because detection was disabled
+    let wall_names: Vec<_> = names.iter().filter(|n| n.starts_with("wall-w")).collect();
+    assert!(wall_names.is_empty(), "expected no wall meshes with --no-detect");
+}
+
+#[test]
+fn a_plan_with_walls_is_not_detected_again() {
+    let dir = temp_dir("a_plan_with_walls_is_not_detected_again");
+    let in_dxf = wall_plan(&dir);
+    let out_glb = dir.join("walls.glb");
+
+    let out = run_cli(&["convert".into(), in_dxf.to_string_lossy().into(), out_glb.to_string_lossy().into()]);
+    assert!(out.status.success(), "convert failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!stderr.contains("archdetect:"), "stderr should NOT contain archdetect line for plan with existing walls");
+
+    assert!(is_glb(&out_glb), "convert did not write a valid GLB");
+    let json = glb_json(&out_glb);
+    let names = wall_mesh_names(&json);
+    assert_eq!(names.len(), 5, "expected 5 wall meshes from existing walls");
 }

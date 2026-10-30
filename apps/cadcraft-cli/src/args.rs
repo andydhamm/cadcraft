@@ -149,6 +149,9 @@ pub(crate) struct ConvertArgs {
     /// Allow an output that is an input file, replacing the original
     #[arg(long)]
     pub(crate) in_place: bool,
+    /// Do not run ARCHDETECT on a plan without arch objects
+    #[arg(long)]
+    pub(crate) no_detect: bool,
     #[command(flatten)]
     pub(crate) settings: Settings,
 }
