@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-30 03:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-30 03:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 8 of 13: Recognition from plain DXF — 2 of 2 segments merged**
 
@@ -18,7 +18,7 @@ Updated 2026-10-30 03:15 UTC. This page and the card in the README are regenerat
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
-| 8 | Recognition from plain DXF | planning | — | 0.2 h so far · expected done Oct 30 04:12–Oct 30 20:27 UTC |
+| 8 | Recognition from plain DXF | planning | — | 0.4 h so far · expected done Oct 30 04:27–Oct 30 20:42 UTC |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
@@ -60,5 +60,5 @@ Updated 2026-10-30 03:15 UTC. This page and the card in the README are regenerat
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | yielding | 505 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 87 |
 | mai-flash | mai-code-1.1-flash | idle | 15 |
-| tturbo-mac | tturbo-ultraheretic | agent | 443 |
+| tturbo-mac | tturbo-ultraheretic | agent | 444 |
 | tturbo-mac2 | tturbo-ultraheretic | idle | 271 |
