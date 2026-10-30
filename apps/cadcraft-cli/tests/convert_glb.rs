@@ -320,3 +320,51 @@ fn a_plan_with_walls_is_not_detected_again() {
     let names = wall_mesh_names(&json);
     assert_eq!(names.len(), 5, "expected 5 wall meshes from existing walls");
 }
+
+#[test]
+fn convert_detects_on_empty_plan() {
+    let dir = temp_dir("convert_detects_on_empty_plan");
+    let in_dxf = empty_plan(&dir);
+    let out_glb = dir.join("empty_detected.glb");
+
+    let out = run_cli(&["convert".into(), in_dxf.to_string_lossy().into(), out_glb.to_string_lossy().into()]);
+    assert!(out.status.success(), "convert failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("archdetect:"), "stderr should contain archdetect line for empty plan: {stderr}");
+
+    assert!(is_glb(&out_glb), "convert did not write a valid GLB for empty plan with detection");
+    let json = glb_json(&out_glb);
+    let names = wall_mesh_names(&json);
+    assert_eq!(names.len(), 0, "expected 0 wall meshes for empty plan even after detection, got {}", names.len());
+}
+
+#[test]
+fn convert_no_detect_on_empty_plan() {
+    let dir = temp_dir("convert_no_detect_on_empty_plan");
+    let in_dxf = empty_plan(&dir);
+    let out_glb = dir.join("empty_no_detect.glb");
+
+    let out = run_cli(&["convert".into(), "--no-detect".into(), in_dxf.to_string_lossy().into(), out_glb.to_string_lossy().into()]);
+    assert!(out.status.success(), "convert failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!stderr.contains("archdetect:"), "stderr should NOT contain archdetect line with --no-detect");
+
+    assert!(is_glb(&out_glb), "convert did not write a valid GLB");
+}
+
+#[test]
+fn convert_does_not_detect_for_non_glb_output() {
+    let dir = temp_dir("convert_does_not_detect_for_non_glb_output");
+    let in_dxf = empty_plan(&dir);
+    let out_dxf = dir.join("empty_out.dxf");
+
+    let out = run_cli(&["convert".into(), in_dxf.to_string_lossy().into(), out_dxf.to_string_lossy().into()]);
+    assert!(out.status.success(), "convert failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!stderr.contains("archdetect:"), "stderr should NOT contain archdetect line for non-GLB output: {stderr}");
+
+    assert!(out_dxf.exists(), "output DXF should exist");
+}
