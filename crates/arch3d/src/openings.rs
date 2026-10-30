@@ -767,12 +767,12 @@ mod tests {
     fn header_respects_span_top() {
         let model = wall_model();
         let o = window_opening();
-        let meshes = opening_meshes(&walls_map(&model), &o, Some((0.0, 2.0)));
+        let meshes = opening_meshes(&walls_map(&model), &o, Some((0.0, 2.5)));
         let header = meshes.iter().find(|m| m.material.contains("header"));
         assert!(header.is_some(), "no header mesh with span");
         for m in header.into_iter() {
             for p in &m.positions {
-                assert!(p[2] as f64 <= 2.0 + 1e-6, "header exceeds span top: z={}", p[2] as f64);
+                assert!(p[2] as f64 <= 2.5 + 1e-6, "header exceeds span top: z={}", p[2] as f64);
             }
         }
     }
