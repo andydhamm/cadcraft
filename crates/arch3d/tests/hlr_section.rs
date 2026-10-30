@@ -224,6 +224,18 @@ fn elevation_lines_carry_the_kind_of_their_object() {
 }
 
 #[test]
+fn elevation_draws_nothing_of_a_door_above_its_rough_top() {
+    let (mut m, [s, ..]) = house();
+    m.push_opening(Opening::new(s, 3.0, 0.9, 2.1, OpeningKind::Door));
+    let v = visible_lines(&build(&m), &front());
+    let opening: Vec<&Line2> = v.iter().filter(|l| l.kind == ArchKind::Opening).collect();
+    assert!(!opening.is_empty(), "{v:?}");
+    for l in opening {
+        assert!(l.a[1] <= 2.22 + TOL && l.b[1] <= 2.22 + TOL, "{l:?}");
+    }
+}
+
+#[test]
 fn section_rings_carry_the_kind_of_their_object() {
     let (mut m, _) = house();
     m.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
