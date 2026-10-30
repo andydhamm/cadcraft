@@ -836,6 +836,55 @@ mod tests {
     }
 
     #[test]
+    fn two_doors_on_the_same_wall_are_both_found() {
+        let walls = [run((0.0, 0.0), (10.0, 0.0), 0.2, &[(1.0, 1.9), (4.0, 4.8)])];
+        let items = vec![
+            arc((1.0, 0.0), 0.9, 0.0, 90.0, "A-DOOR"),
+            seg((1.0, 0.0), (1.9, 0.0), "A-DOOR"),
+            arc((4.0, 0.0), 0.8, 0.0, 90.0, "A-DOOR"),
+            seg((4.0, 0.0), (4.8, 0.0), "A-DOOR"),
+        ];
+        let found = find_openings(&lw(items), &walls);
+        let doors: Vec<&OpeningCand> = accepted(&found).into_iter().filter(|o| o.kind == CandKind::Door).collect();
+        assert_eq!(doors.len(), 2, "{found:#?}");
+        let d1 = doors.iter().find(|o| (o.offset - 1.45).abs() < 0.01).expect("first door");
+        let d2 = doors.iter().find(|o| (o.offset - 4.4).abs() < 0.01).expect("second door");
+        assert!((d1.width - 0.9).abs() < 1e-9, "{d1:?}");
+        assert!((d2.width - 0.8).abs() < 1e-9, "{d2:?}");
+    }
+
+    #[test]
+    fn a_right_hinge_door_is_found() {
+        let walls = [run((0.0, 0.0), (6.0, 0.0), 0.2, &[(3.0, 3.9)])];
+        let items = vec![arc((3.9, 0.0), 0.9, 180.0, 270.0, "A-DOOR"), seg((3.0, 0.0), (3.9, 0.0), "A-DOOR")];
+        let found = find_openings(&lw(items), &walls);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        let d = &found[0];
+        assert_eq!(d.hinge, Some(Hinge::Right), "{d:?}");
+        assert!((d.offset - 3.45).abs() < 1e-9, "{d:?}");
+    }
+
+    #[test]
+    fn a_door_swinging_in_is_found() {
+        let walls = [run((0.0, 0.0), (6.0, 0.0), 0.2, &[(2.0, 2.9)])];
+        let items = vec![arc((2.0, 0.0), 0.9, 0.0, 90.0, "A-DOOR"), seg((2.0, 0.0), (2.9, 0.0), "A-DOOR")];
+        let found = find_openings(&lw(items), &walls);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        let d = &found[0];
+        assert_eq!(d.swing, Some(Swing::In), "{d:?}");
+    }
+
+    #[test]
+    fn a_gap_at_the_boundary_is_a_cased_opening() {
+        let walls = [run((0.0, 0.0), (6.0, 0.0), 0.2, &[(2.0, 2.6)])];
+        let found = find_openings(&Linework::default(), &walls);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        let c = &found[0];
+        assert_eq!(c.kind, CandKind::Cased, "{c:?}");
+        assert!((c.width - 0.6).abs() < 1e-9, "{c:?}");
+    }
+
+    #[test]
     fn hostile_linework_never_panics() {
         let big = 1.0e300;
         let walls = [
