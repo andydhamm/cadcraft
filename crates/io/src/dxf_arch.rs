@@ -1889,6 +1889,84 @@ mod tests {
         assert!(chunks.is_some(), "a model with only a railing must write an XRECORD");
     }
 
+    /// An empty model produces no opening proxy polylines.
+    #[test]
+    fn proxy_opening_polylines_empty_model() {
+        let m = ArchModel::default();
+        let polys = proxy_opening_polylines(&m);
+        assert_eq!(polys.len(), 0, "empty model should produce no opening proxies");
+    }
+
+    /// An opening with NaN coordinates is skipped (its proxy is not written).
+    #[test]
+    fn proxy_opening_polylines_nan_coordinates() {
+        let mut m = ArchModel::default();
+        let wid = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        // Opening with NaN offset
+        let mut o1 = Opening::new(wid, 1.0, 0.9, 2.1, OpeningKind::Door);
+        o1.offset = f64::NAN;
+        m.push_opening(o1);
+        // Opening with NaN width
+        let mut o2 = Opening::new(wid, 3.0, 0.9, 2.1, OpeningKind::Door);
+        o2.width = f64::NAN;
+        m.push_opening(o2);
+        // Valid opening
+        m.push_opening(Opening::new(wid, 5.0, 0.9, 2.1, OpeningKind::Door));
+
+        let polys = proxy_opening_polylines(&m);
+        // The two NaN openings should be skipped; only the valid one produces proxies.
+        // The valid door produces multiple polylines (jambs, leaf, swing, frame).
+        assert!(polys.len() >= 4, "valid opening should produce at least 4 proxy polylines, got {}", polys.len());
+        // All coordinates must be finite
+        for (layer, tags) in &polys {
+            for t in tags {
+                if t.code == 10 || t.code == 20 {
+                    assert!(t.f64().is_finite(), "non-finite coordinate in proxy on layer {}", layer);
+                }
+            }
+        }
+    }
+
+    /// The total number of opening proxy polylines is capped at MAX_OPENINGS * 16.
+    #[test]
+    fn proxy_opening_polylines_cap_is_respected() {
+        let mut m = ArchModel::default();
+        let wid = m.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(100.0, 0.0), 0.2));
+        // Add MAX_OPENINGS + 10 openings, each at a different offset
+        let count = cadcraft_doc::arch::MAX_OPENINGS + 10;
+        for i in 0..count {
+            let offset = 0.5 + i as f64 * 0.1;
+            m.push_opening(Opening::new(wid, offset, 0.9, 2.1, OpeningKind::Door));
+        }
+
+        let polys = proxy_opening_polylines(&m);
+        assert!(
+            polys.len() <= cadcraft_doc::arch::MAX_OPENINGS * 16,
+            "proxy count {} exceeds cap {}",
+            polys.len(),
+            cadcraft_doc::arch::MAX_OPENINGS * 16
+        );
+    }
+
+    /// An opening at huge coordinates produces finite proxy polylines.
+    #[test]
+    fn proxy_opening_polylines_huge_coordinates() {
+        let mut m = ArchModel::default();
+        let wid = m.push_wall(Wall::new(Vec2::new(1e15, 1e15), Vec2::new(1e15 + 10.0, 1e15), 0.2));
+        m.push_opening(Opening::new(wid, 5.0, 0.9, 2.1, OpeningKind::Door));
+
+        let polys = proxy_opening_polylines(&m);
+        assert!(!polys.is_empty(), "opening at huge coordinates should produce proxies");
+
+        for (layer, tags) in &polys {
+            for t in tags {
+                if t.code == 10 || t.code == 20 {
+                    assert!(t.f64().is_finite(), "non-finite coordinate in proxy on layer {}", layer);
+                }
+            }
+        }
+    }
+
     /// A model with only stairs (no walls, openings, rooms, roofs, railings) still writes the record.
     #[test]
     fn arch_chunks_writes_record_for_stairs_only() {
