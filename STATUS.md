@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-30 06:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-30 06:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 8 of 13: Recognition from plain DXF — 4 of 23 segments merged · 0 of 10 acceptance checks**
+**Phase 8 of 13: Recognition from plain DXF — 6 of 23 segments merged · 0 of 10 acceptance checks**
 
-5,160 workspace tests passing at the last merge · 490 segments merged in all · 0 of 11 seats working
+5,162 workspace tests passing at the last merge · 492 segments merged in all · 0 of 11 seats working
 
 ## Phases
 
@@ -18,7 +18,7 @@ Updated 2026-10-30 06:00 UTC. This page and the card in the README are regenerat
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
-| 8 | Recognition from plain DXF | building | 0 / 10 | 2.9 h so far · expected done Oct 31 00:35–Nov 02 14:55 UTC |
+| 8 | Recognition from plain DXF | building | 0 / 10 | 3.2 h so far · expected done Oct 30 20:32–Nov 01 05:18 UTC |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
@@ -27,20 +27,19 @@ Updated 2026-10-30 06:00 UTC. This page and the card in the README are regenerat
 
 ## Phase 8 segments
 
-14 queued, 4 merged, 3 gate, 1 merging, 1 escalate
+14 queued, 6 merged, 3 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p8-offset-is-the-centre` | One meaning of an opening's offset: the distance from the wall start to its CENTRE | gate | mai-flash |
-| `p8-header-inside-the-wall` | The opening header sits inside the wall, so elevations draw no rectangle above openings | merging | claude-sonnet-b |
-| `p8-io-opening-proxies-whole-symbol` | Opening proxies on save carry the whole plan symbol (jambs, leaf, swing, frame, glass) | gate | bonsai-a |
-| `p8-housekeeping-guide-readme-uk` | User guide that runs (phases 6-7), current README, uk.tsv Двері | escalate |  |
-| `p8-detect-skeleton` | crates/arch/src/detect: the API, units, and stub submodules | gate | darwin-ws3 |
+| `p8-offset-is-the-centre` | One meaning of an opening's offset: the distance from the wall start to its CENTRE | working | mai-flash |
+| `p8-io-opening-proxies-whole-symbol` | Opening proxies on save carry the whole plan symbol (jambs, leaf, swing, frame, glass) | working | bonsai-a |
+| `p8-detect-skeleton` | crates/arch/src/detect: the API, units, and stub submodules | working | darwin-ws3 |
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 30 06:09 | `p8-header-inside-the-wall` | merged | 5,162 pass | claude-sonnet-b |
 | Oct 30 05:38 | `p8-engine-convert-to-metres` | merged | 5,160 pass | claude-sonnet-a |
 | Oct 30 05:09 | `harden-p7-engine-viewsheet` | refused | 0 pass | tturbo-mac |
 | Oct 30 04:36 | `p8-arch-drawings-are-metres` | merged | 5,157 pass | claude-sonnet-a |
@@ -52,20 +51,19 @@ Updated 2026-10-30 06:00 UTC. This page and the card in the README are regenerat
 | Oct 30 00:50 | `p7-user-guide-runs` | merged | 5,071 pass | kimi-k31 |
 | Oct 30 00:36 | `harden-p6-cmd-sun` | merged | 5,068 pass | tturbo-mac2 |
 | Oct 30 00:02 | `harden-p7-arch3d-views` | merged | 5,062 pass | tturbo-mac |
-| Oct 29 23:56 | `p7-engine-viewsheet` | merged | 5,056 pass | darwin-ws3 |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | gate | 662 |
-| bonsai-b | bonsai2-27b | gate | 622 |
+| bonsai-a | bonsai2-27b | agent | 663 |
+| bonsai-b | bonsai2-27b | agent | 623 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | idle | 44 |
-| claude-sonnet-b | sonnet | merging | 42 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 509 |
+| claude-sonnet-b | sonnet | idle | 42 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 510 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 88 |
-| mai-flash | mai-code-1.1-flash | gate | 18 |
+| mai-flash | mai-code-1.1-flash | agent | 19 |
 | tturbo-mac | tturbo-ultraheretic | agent | 447 |
 | tturbo-mac2 | tturbo-ultraheretic | idle | 271 |
