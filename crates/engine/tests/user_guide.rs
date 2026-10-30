@@ -14,7 +14,14 @@ fn read_user_guide() -> String {
 fn execute_examples(commands: &[&str]) {
     let mut session = Session::new();
     for command in commands {
-        if let Err(error) = session.execute(command) {
+        let Some((id, json)) = command.split_once(' ') else {
+            panic!("user-guide command `{command}` should have the form `<id> <json>`");
+        };
+        let params: serde_json::Value = match serde_json::from_str(json) {
+            Ok(params) => params,
+            Err(error) => panic!("user-guide command `{command}` has invalid JSON: {error}"),
+        };
+        if let Err(error) = session.execute(id, &params) {
             panic!("user-guide command `{command}` failed: {error:?}");
         }
     }
