@@ -373,7 +373,7 @@ mod tests {
             wr(Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 0.2),
         ];
         snap_junctions(&mut runs);
-        let count = runs[0].evidence.rules.iter().filter(|r| r == "junction").count();
+        let count = runs[0].evidence.rules.iter().filter(|r| *r == "junction").count();
         assert_eq!(count, 1);
     }
 
