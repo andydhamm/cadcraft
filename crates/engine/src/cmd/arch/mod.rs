@@ -12,6 +12,7 @@ pub const DEFAULT_INT_THICKNESS: f64 = 0.1;
 /// Default wall height when the model has no level (the derived floor-to-floor of the default level).
 pub const DEFAULT_WALL_HEIGHT: f64 = 2.7;
 
+pub mod archdetect;
 pub mod build3d;
 pub mod deck;
 pub mod inspect;
@@ -70,5 +71,6 @@ pub fn specs() -> Vec<CommandSpec> {
     v.extend(railing::specs());
     v.extend(sun::specs());
     v.extend(sheet::specs());
+    v.extend(archdetect::specs());
     v
 }
