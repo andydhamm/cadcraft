@@ -233,3 +233,72 @@ fn an_empty_model_generates_an_empty_view() {
         assert!(g.error.is_none());
     }
 }
+
+#[test]
+fn section_depth_limits_the_beyond_lines() {
+    let (m, ..) = house();
+    let full = view_of(&m, &section());
+    let mut v = section();
+    v.depth = Some(0.0);
+    let shallow = view_of(&m, &v);
+    assert!(shallow.error.is_none(), "{:?}", shallow.error);
+    // With zero depth no mesh beyond the plane survives, so the beyond lines vanish
+    // while the cut rings remain.
+    assert!(shallow.lines.len() <= full.lines.len());
+    assert!(!shallow.rings.is_empty(), "the cut rings must survive a zero depth");
+}
+
+#[test]
+fn section_fails_when_viewer_looks_along_the_cut() {
+    let (m, ..) = house();
+    let v = ArchView { name: "A".into(), kind: ViewKind::Section, look: [1.0, 0.0], cut: Some([[-1.0, 4.0], [11.0, 4.0]]), ..Default::default() };
+    let g = view_of(&m, &v);
+    assert!(g.error.is_some(), "viewer looking along the cut line must fail");
+    assert!(g.lines.is_empty() && g.rings.is_empty());
+}
+
+#[test]
+fn section_fails_on_a_zero_length_cut() {
+    let (m, ..) = house();
+    let v = ArchView { name: "A".into(), kind: ViewKind::Section, look: [0.0, 1.0], cut: Some([[4.0, 4.0], [4.0, 4.0]]), ..Default::default() };
+    let g = view_of(&m, &v);
+    assert!(g.error.is_some(), "a zero-length cut must fail");
+}
+
+#[test]
+fn diagonal_elevation_works() {
+    let (m, ..) = house();
+    let v = ArchView { name: "SE".into(), look: [1.0, 1.0], ..Default::default() };
+    let g = view_of(&m, &v);
+    assert!(g.error.is_none(), "{:?}", g.error);
+    assert!(!g.lines.is_empty(), "a diagonal elevation must produce lines");
+}
+
+#[test]
+fn elevation_with_huge_coordinates() {
+    let mut m = ArchModel::default();
+    m.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
+    m.push_wall(Wall {
+        start: Vec2::new(1e15, 0.0),
+        end: Vec2::new(1e15 + 10.0, 0.0),
+        thickness: 0.2,
+        height: 2.4,
+        exterior: true,
+        base_level: 0,
+        ..Default::default()
+    });
+    let g = view_of(&m, &south());
+    assert!(g.error.is_none(), "{:?}", g.error);
+    assert!(!g.lines.is_empty(), "the distant wall must be visible");
+    assert!(g.extent[0] > 1e14, "the extent must be near the wall position");
+}
+
+#[test]
+fn scope_far_away_excludes_everything() {
+    let (m, ..) = house();
+    let mut v = south();
+    v.scope = Some([[100.0, 100.0], [110.0, 110.0]]);
+    let g = view_of(&m, &v);
+    assert!(g.lines.is_empty(), "a scope far from the house must exclude all meshes");
+    assert!(g.rings.is_empty());
+}
