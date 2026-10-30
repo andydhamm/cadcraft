@@ -33,7 +33,7 @@ fn execute_examples(commands: &[&str]) {
 #[test]
 fn user_guide_examples_parse() {
     execute_examples(&[
-        "sun {\"lat\":51.5,\"date\":\"2026-06-21\",\"time\":\"solar-noon\"}",
+        "sun {\"lat\":51.05,\"date\":\"2026-06-21\",\"time\":\"solar-noon\"}",
         "walkthrough {\"eye\":[5,-10,1.6],\"yaw\":0,\"forward\":2,\"strafe\":0,\"turn\":0}",
         "arch.inspect {\"views\":true}",
     ]);
@@ -75,8 +75,8 @@ fn user_guide_has_all_phase7_commands() {
 fn user_guide_sun_winter_summer() {
     // Sun position differs between solstices; both must compute without error.
     execute_examples(&[
-        "sun {\"lat\":51.5,\"date\":\"2026-06-21\",\"time\":\"solar-noon\"}",
-        "sun {\"lat\":51.5,\"date\":\"2026-12-21\",\"time\":\"solar-noon\"}",
+        "sun {\"lat\":51.05,\"date\":\"2026-06-21\",\"time\":\"solar-noon\"}",
+        "sun {\"lat\":51.05,\"date\":\"2026-12-21\",\"time\":\"solar-noon\"}",
         "sun {\"lat\":0,\"date\":\"2026-03-20\",\"time\":\"solar-noon\"}",
     ]);
 }
@@ -180,7 +180,7 @@ fn user_guide_sh_blocks_execute_through_the_engine() {
                 continue;
             }
 
-            let mut session = Session::empty();
+            let mut session = Session::new();
 
             // Check if it's a run with a file argument (e.g. run examples/apartment.dxf)
             if let Some(rest) = line.strip_prefix("cargo run -q -p cadcraft-cli -- run ") {
@@ -201,14 +201,11 @@ fn user_guide_sh_blocks_execute_through_the_engine() {
                     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
                     let full_path = repo_root.join(&path_str);
 
-                    // In the test environment, we might not have the actual file if it's not committed or linked.
-                    // However, the prompt says "acceptance check 02 runs every ```sh block ... with examples/ linked in".
-                    // For this unit test, we'll try to read it. If it fails, we might skip or panic depending on strictness.
-                    // Let's assume the file exists for the purpose of the test if it's referenced.
                     if full_path.exists() {
-                        match read(&full_path) {
+                        let bytes = fs::read(&full_path).unwrap_or_else(|e| panic!("failed to read {}: {e}", full_path.display()));
+                        match read(&bytes, &full_path) {
                             Ok(drawing) => {
-                                session.open_drawing(drawing);
+                                session.open_drawing(drawing, "apartment", Some(full_path.to_string_lossy().into_owned()));
                             }
                             Err(e) => {
                                 panic!("failed to read {}: {e}", full_path.display());
@@ -216,10 +213,6 @@ fn user_guide_sh_blocks_execute_through_the_engine() {
                         }
                     } else {
                         // If the file doesn't exist in the test env, we create a new drawing to avoid crashing
-                        // but log a warning or just proceed.
-                        // For strict compliance, if the guide says it uses apartment.dxf, we should have it.
-                        // But since we can't guarantee file presence in all CI environments without linking,
-                        // we'll fall back to a new drawing if missing, though this might make archdetect fail.
                         session.new_drawing(true);
                     }
                 } else if rest.contains("--metric") {
@@ -249,8 +242,6 @@ fn user_guide_sh_blocks_execute_through_the_engine() {
                     }
                 }
                 if let Err(error) = session.execute(id, &params) {
-                    // archdetect might fail if the file wasn't loaded correctly or is empty in test env
-                    // But we expect it to work if the file is present.
                     panic!("sh block {}: user-guide command `{command}` failed: {error:?}", b + 1);
                 }
                 ids.push(id.to_string());
@@ -268,11 +259,6 @@ fn user_guide_sh_blocks_execute_through_the_engine() {
 /// The archdetect block in the user guide runs through the engine.
 #[test]
 fn user_guide_archdetect_block_runs() {
-    // We need to simulate the environment where examples/apartment.dxf is available.
-    // Since we can't guarantee file presence in all unit test contexts without complex setup,
-    // this test specifically checks the syntax and execution flow if the file is present.
-    // If the file is missing, we skip the execution part but verify the block exists.
-
     let blocks = sh_blocks(GUIDE);
     let mut found_archdetect = false;
 
@@ -294,9 +280,12 @@ fn user_guide_archdetect_block_runs() {
                         plot: Some(stand_in_plot),
                     });
 
-                    let mut session = Session::empty();
-                    match read(&dxf_path) {
-                        Ok(drawing) => session.open_drawing(drawing),
+                    let mut session = Session::new();
+                    let bytes = fs::read(&dxf_path).unwrap_or_else(|e| panic!("failed to read apartment.dxf: {e}"));
+                    match read(&bytes, &dxf_path) {
+                        Ok(drawing) => {
+                            session.open_drawing(drawing, "apartment", Some(dxf_path.to_string_lossy().into_owned()));
+                        }
                         Err(e) => panic!("failed to read apartment.dxf: {e}"),
                     }
 
