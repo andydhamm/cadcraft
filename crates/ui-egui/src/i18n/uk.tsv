@@ -1425,6 +1425,17 @@
 	Architecture>Stair	Архітектура>Сходи
 	Architecture>Railing	Архітектура>Огорожа
 	Architecture>Deck	Архітектура>Тераса
+	Detect from Linework	Виявити з ліній
+	cmd.archdetect	Виявити з ліній
+	Architecture>Detect from Linework	Архітектура>Виявити з ліній
+	Detection Review	Перегляд виявлення
+	Architecture>Detection Review	Архітектура>Перегляд виявлення
+	Accept Selected	Прийняти вибране
+	Detect	Виявити
+	Walls	Стіни
+	Openings	Отвори
+	Rooms	Кімнати
+	Confidence	Достовірність
 	Check for Updates…	Перевірити оновлення…
 	CADCraft is up to date.	Встановлено найновішу версію CADCraft.
 	Could not check for updates.	Не вдалося перевірити оновлення.
