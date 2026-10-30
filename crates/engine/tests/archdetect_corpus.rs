@@ -11,7 +11,9 @@ use cadcraft_arch::detect::{self, CandKind, DEFAULT_MIN_CONFIDENCE, DetectOption
 use cadcraft_doc::{Drawing, Handle};
 use cadcraft_geom::Vec2;
 
-const DEFAULT: DetectOptions = DetectOptions { scale: 1.0, layers: None };
+fn options(scale: f64) -> DetectOptions {
+    DetectOptions { scale, ..Default::default() }
+}
 
 #[derive(Clone, Copy)]
 struct OpeningTruth {
@@ -216,11 +218,26 @@ fn read_drawing(text: &str) -> Drawing {
     }
 }
 
-fn detect_drawing(drawing: &Drawing) -> Detection {
-    match detect::detect(drawing, &DEFAULT) {
+fn dxf_units_scale(text: &str) -> f64 {
+    let lines: Vec<&str> = text.lines().collect();
+    lines
+        .iter()
+        .position(|line| line.trim() == "$INSUNITS")
+        .and_then(|index| lines.get(index + 2))
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .and_then(detect::units_scale)
+        .map_or(1.0, |(_, scale)| scale)
+}
+
+fn detect_with_scale(drawing: &Drawing, scale: f64) -> Detection {
+    match detect::detect(drawing, &options(scale)) {
         Ok(detection) => detection,
         Err(error) => panic!("detection failed: {error}"),
     }
+}
+
+fn detect_drawing(drawing: &Drawing) -> Detection {
+    detect_with_scale(drawing, 1.0)
 }
 
 fn detect_linework(lw: &Linework) -> Detection {
@@ -346,8 +363,9 @@ fn synthetic_corpus_meets_the_targets() {
 
 #[test]
 fn apartment_walls_and_rooms_meet_the_targets() {
-    let drawing = read_drawing(include_str!("../../../examples/apartment.dxf"));
-    let detection = detect_drawing(&drawing);
+    let text = include_str!("../../../examples/apartment.dxf");
+    let drawing = read_drawing(text);
+    let detection = detect_with_scale(&drawing, dxf_units_scale(text));
     let truth = synthetic_plan(PlanSpec { name: "apartment-truth", offset: (0.0, 0.0), quarter_turns: 0, layerless: false });
     let mut notes = String::new();
     let walls = score_walls("apartment", &detection, &truth.walls, &mut notes);
