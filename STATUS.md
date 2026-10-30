@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-30 14:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-30 15:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 8 of 13: Recognition from plain DXF — 24 of 24 segments merged · 7 of 10 acceptance checks**
 
-5,314 workspace tests passing at the last merge · 519 segments merged in all · 0 of 11 seats working
+5,317 workspace tests passing at the last merge · 520 segments merged in all · 0 of 11 seats working
 
 ## Phases
 
@@ -18,7 +18,7 @@ Updated 2026-10-30 14:45 UTC. This page and the card in the README are regenerat
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
-| 8 | Recognition from plain DXF | building | 7 / 10 | 11.7 h so far · expected done Oct 30 16:12–Oct 30 23:50 UTC |
+| 8 | Recognition from plain DXF | building | 7 / 10 | 11.9 h so far · expected done Oct 30 16:29–Oct 31 00:16 UTC |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
@@ -34,6 +34,7 @@ Updated 2026-10-30 14:45 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 30 14:48 | `harden-p8-guide-archdetect` | merged | 5,317 pass | tturbo-mac2 |
 | Oct 30 14:39 | `p8-detect-tune-to-targets` | merged | 5,314 pass | kimi-k31 |
 | Oct 30 14:13 | `harden-p8-cmd-archdetect` | merged | 5,311 pass | tturbo-mac2 |
 | Oct 30 13:36 | `p8-guide-archdetect` | merged | 5,303 pass | darwin-ws3 |
@@ -45,7 +46,6 @@ Updated 2026-10-30 14:45 UTC. This page and the card in the README are regenerat
 | Oct 30 11:49 | `harden-p8-detect-score` | merged | 5,281 pass | tturbo-mac2 |
 | Oct 30 11:21 | `harden-p8-detect-layers` | merged | 5,262 pass | tturbo-mac |
 | Oct 30 11:03 | `p8-detect-junctions` | merged | 5,251 pass | bonsai-a |
-| Oct 30 10:56 | `harden-p8-detect-arcs` | merged | 5,244 pass | tturbo-mac |
 
 ## Seats active in the last hour
 
@@ -57,8 +57,8 @@ Updated 2026-10-30 14:45 UTC. This page and the card in the README are regenerat
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | idle | 53 |
 | claude-sonnet-b | sonnet | idle | 45 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 547 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | yielding | 547 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 95 |
 | mai-flash | mai-code-1.1-flash | idle | 21 |
-| tturbo-mac | tturbo-ultraheretic | agent | 464 |
-| tturbo-mac2 | tturbo-ultraheretic | merging | 285 |
+| tturbo-mac | tturbo-ultraheretic | gate | 464 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 285 |
