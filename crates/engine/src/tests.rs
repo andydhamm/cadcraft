@@ -345,6 +345,15 @@ fn fillet_two_lines() {
 }
 
 #[test]
+fn offset_zero_distance_is_rejected() {
+    let mut s = Session::new();
+    s.execute("line", &json!({"points": [[0, 0], [10, 0]]})).unwrap();
+    let r = s.execute("offset", &json!({"handle": "100", "distance": 0, "side": [1, 1]}));
+    assert!(r.is_err(), "offset distance 0 made a coincident copy: {r:?}");
+    assert_eq!(s.doc().unwrap().model.len(), 1);
+}
+
+#[test]
 fn offset_circle_and_polyline() {
     let mut s = Session::new();
     let c = s.execute("circle", &json!({"center": [0, 0], "radius": 5})).unwrap();
@@ -1443,6 +1452,18 @@ fn hostile_variable_like_input_never_panics() {
     // The session is still usable afterwards.
     s.cmdline("pickadd").unwrap();
     assert!(setvar_prompt_open(&s));
+}
+
+#[test]
+fn chamfer_rejects_negative_distances() {
+    let mut s = Session::new();
+    let h1 = s.execute("line", &json!({"points": [[0, 0], [10, 0]]})).unwrap();
+    let h2 = s.execute("line", &json!({"points": [[0, 0], [0, 10]]})).unwrap();
+    let before = format!("{:?}", s.doc().unwrap().model.iter().map(|e| e.kind.clone()).collect::<Vec<_>>());
+    let r = s.execute("chamfer", &json!({"h1": h1["handles"][0], "h2": h2["handles"][0], "p1": [5, 0], "p2": [0, 5], "d1": -3, "d2": 2}));
+    assert!(r.is_err(), "negative chamfer distance accepted: {r:?}");
+    let after = format!("{:?}", s.doc().unwrap().model.iter().map(|e| e.kind.clone()).collect::<Vec<_>>());
+    assert_eq!(before, after);
 }
 
 #[test]
