@@ -264,8 +264,12 @@ pub fn polyline_prims(points: &[Vec2], closed: bool) -> Vec<Prim> {
     }
 
     if closed {
-        if let (Some(first), Some(last)) = (finite.first().copied(), finite.last().copied()) {
-            add_segment(&mut out, last, first);
+        // Skip the closing segment if the last primitive is a full-circle arc (sweep ≈ 2π).
+        let is_full_circle = matches!(out.last(), Some(Prim::Arc { sweep, .. }) if (sweep - TAU).abs() < 1e-6);
+        if !is_full_circle {
+            if let (Some(first), Some(last)) = (finite.first().copied(), finite.last().copied()) {
+                add_segment(&mut out, last, first);
+            }
         }
     }
 
