@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-30 04:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-30 04:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 8 of 13: Recognition from plain DXF — 2 of 23 segments merged · 0 of 10 acceptance checks**
 
@@ -18,7 +18,7 @@ Updated 2026-10-30 04:15 UTC. This page and the card in the README are regenerat
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
-| 8 | Recognition from plain DXF | building | 0 / 10 | 1.2 h so far · expected done Oct 30 11:44–Nov 01 02:34 UTC |
+| 8 | Recognition from plain DXF | building | 0 / 10 | 1.4 h so far · expected done Oct 30 11:59–Nov 01 02:49 UTC |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
@@ -27,15 +27,15 @@ Updated 2026-10-30 04:15 UTC. This page and the card in the README are regenerat
 
 ## Phase 8 segments
 
-15 queued, 3 gate, 2 merged, 2 working, 1 merging
+15 queued, 4 gate, 2 merged, 1 merging, 1 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p8-offset-is-the-centre` | One meaning of an opening's offset: the distance from the wall start to its CENTRE | working | mai-flash |
+| `p8-offset-is-the-centre` | One meaning of an opening's offset: the distance from the wall start to its CENTRE | gate | mai-flash |
 | `p8-header-inside-the-wall` | The opening header sits inside the wall, so elevations draw no rectangle above openings | gate | claude-sonnet-b |
 | `p8-arch-drawings-are-metres` | A drawing with arch objects is a metre drawing: $INSUNITS 6 | merging | claude-sonnet-a |
-| `p8-io-opening-proxies-whole-symbol` | Opening proxies on save carry the whole plan symbol (jambs, leaf, swing, frame, glass) | working | bonsai-a |
-| `p8-housekeeping-guide-readme-uk` | User guide that runs (phases 6-7), current README, uk.tsv Двері | gate | bonsai-b |
+| `p8-io-opening-proxies-whole-symbol` | Opening proxies on save carry the whole plan symbol (jambs, leaf, swing, frame, glass) | gate | bonsai-a |
+| `p8-housekeeping-guide-readme-uk` | User guide that runs (phases 6-7), current README, uk.tsv Двері | working | bonsai-b |
 | `p8-detect-skeleton` | crates/arch/src/detect: the API, units, and stub submodules | gate | darwin-ws3 |
 
 ## Recent merges
@@ -59,14 +59,14 @@ Updated 2026-10-30 04:15 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 660 |
-| bonsai-b | bonsai2-27b | gate | 618 |
+| bonsai-a | bonsai2-27b | gate | 660 |
+| bonsai-b | bonsai2-27b | agent | 619 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | merging | 43 |
 | claude-sonnet-b | sonnet | gate | 41 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 507 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 87 |
-| mai-flash | mai-code-1.1-flash | agent | 16 |
-| tturbo-mac | tturbo-ultraheretic | gate | 444 |
+| mai-flash | mai-code-1.1-flash | gate | 16 |
+| tturbo-mac | tturbo-ultraheretic | agent | 445 |
 | tturbo-mac2 | tturbo-ultraheretic | idle | 271 |
