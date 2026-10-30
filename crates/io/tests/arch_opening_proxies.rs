@@ -26,23 +26,19 @@ fn lwpoly_archopenings_in_text(text: &str) -> Vec<(String, usize)> {
             let mut layer = String::from("");
             let mut vertex_count = 0;
             let mut has_archopening = false;
-            while j < lines.len() {
-                if lines[j].trim() == "0" && j + 1 < lines.len() {
+            // DXF tags are code/value pairs. Advancing one line at a time would
+            // mistake a coordinate value of 0 for the next entity's group code.
+            while j + 1 < lines.len() {
+                if lines[j].trim() == "0" {
                     break; // next entity
                 }
-                if j + 1 < lines.len() {
-                    match lines[j].trim() {
-                        "8" => layer = lines[j + 1].trim().to_string(),
-                        "10" => vertex_count += 1,
-                        "1000" => {
-                            if lines[j + 1].trim() == "ARCHOPENING" {
-                                has_archopening = true;
-                            }
-                        }
-                        _ => {}
-                    }
+                match (lines[j].trim(), lines[j + 1].trim()) {
+                    ("8", value) => layer = value.to_string(),
+                    ("10", _) => vertex_count += 1,
+                    ("1000", "ARCHOPENING") => has_archopening = true,
+                    _ => {}
                 }
-                j += 1;
+                j += 2;
             }
             if has_archopening {
                 out.push((layer, vertex_count));
@@ -125,12 +121,13 @@ fn a_stripped_drawing_keeps_the_door_swing_as_linework() {
     // Without the record, no openings in the model.
     assert_eq!(stripped.arch.openings.len(), 0, "openings should be empty when the arch record is stripped",);
 
-    // Every proxy LWPOLYLINE (door + window) survived as plain linework.
-    let door = lwpoly_count_marker(&stripped, "ARCHOPENING");
-    assert!(door >= 4, "expected >= 4 ARCHOPENING LWPOLYLINEs to survive stripping, got {door}",);
+    // Every proxy LWPOLYLINE (door + window) survived as plain linework. Count
+    // the entities themselves rather than requiring proxy xdata as metadata.
+    let arch = lwpoly_archopenings_in_text(&text);
+    let surviving = stripped.model.iter().filter(|e| matches!(&e.kind, EntityKind::LwPolyline(_))).count();
+    assert!(surviving >= arch.len(), "expected at least {} opening LWPOLYLINEs to survive stripping, got {surviving}", arch.len());
 
     // The door's swing arc is among the A-DOOR LWPOLYLINEs and has at least 8 vertices.
-    let arch = lwpoly_archopenings_in_text(&text);
     let max_vertices: usize = arch.iter().filter(|(layer, _)| layer.as_str() == "A-DOOR").map(|(_, n)| *n).max().unwrap_or(0);
     assert!(max_vertices >= 8, "door swing arc (>= 8 vertices) missing: max A-DOOR LWPOLYLINE vertices = {max_vertices}",);
 }
