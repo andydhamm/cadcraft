@@ -69,6 +69,9 @@ fn hausdorff_segment(a0: Vec2, a1: Vec2, b0: Vec2, b1: Vec2) -> f64 {
     let d2 = dist_point_segment(a1, b0, b1);
     let d3 = dist_point_segment(b0, a0, a1);
     let d4 = dist_point_segment(b1, a0, a1);
+    if d1.is_nan() || d2.is_nan() || d3.is_nan() || d4.is_nan() {
+        return f64::NAN;
+    }
     d1.max(d2).max(d3).max(d4)
 }
 
