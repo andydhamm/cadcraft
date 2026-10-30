@@ -298,7 +298,7 @@ struct Merged {
 }
 
 /// Step 5: merge collinear pieces of the same thickness.
-fn merge_pieces(pieces: &[Piece]) -> Vec<Merged> {
+fn merge_pieces(pieces: &[Piece], crossed: &dyn Fn(&Piece, f64, f64) -> bool) -> Vec<Merged> {
     let mut order: Vec<usize> = (0..pieces.len()).filter(|&i| pieces.get(i).is_some_and(|p| p.alive)).collect();
     order.sort_by(|&a, &b| match (pieces.get(a), pieces.get(b)) {
         (Some(p), Some(q)) => p.dir.cmp(&q.dir).then(p.c.total_cmp(&q.c)).then(p.lo.total_cmp(&q.lo)),
@@ -333,7 +333,7 @@ fn merge_pieces(pieces: &[Piece]) -> Vec<Merged> {
         for i in members {
             let Some(p) = pieces.get(i) else { continue };
             match cur.as_mut() {
-                Some(m) if p.lo <= m.hi + MAX_GAP => {
+                Some(m) if p.lo <= m.hi + MAX_GAP && !(p.lo > m.hi + 1e-6 && crossed(p, m.hi, p.lo)) => {
                     if p.lo > m.hi + 1e-6 {
                         m.gaps.push((m.hi, p.lo));
                     }
@@ -389,7 +389,40 @@ pub fn wall_runs(lw: &Linework) -> Vec<WallRun> {
     let mut pieces = band_pieces(&faces, &ranges);
     let dom = dominant_thicknesses(&pieces);
     resolve_conflicts(&mut pieces, faces.len(), &dom);
-    let merged = merge_pieces(&pieces);
+    let crossers: Vec<(Vec2, Vec2)> = lw
+        .items
+        .iter()
+        .take(MAX_PRIMITIVES)
+        .filter_map(|it| match it.prim {
+            Prim::Seg { a, b } => {
+                if !(a.x.is_finite() && a.y.is_finite() && b.x.is_finite() && b.y.is_finite()) {
+                    return None;
+                }
+                let len = a.dist(b);
+                if len < MIN_FACE_LEN || !wall_face_allowed(layer_role(&it.layer)) {
+                    return None;
+                }
+                Some((a, b))
+            }
+            _ => None,
+        })
+        .collect();
+    let crossed = |p: &Piece, lo: f64, hi: f64| {
+        const EPS: f64 = 0.01;
+        let d = unit(p.dir, &dirs);
+        let n = normal(d);
+        let (o0, o1) = (p.c - p.t / 2.0, p.c + p.t / 2.0);
+        crossers.iter().any(|&(a, b)| {
+            let (oa, ob) = (a.x * n.x + a.y * n.y, b.x * n.x + b.y * n.y);
+            if oa.min(ob) > o0 + EPS || oa.max(ob) < o1 - EPS || (ob - oa).abs() < 1e-9 {
+                return false;
+            }
+            let (sa, sb) = (a.x * d.x + a.y * d.y, b.x * d.x + b.y * d.y);
+            let s = sa + (sb - sa) * (p.c - oa) / (ob - oa);
+            s > lo + EPS && s < hi - EPS
+        })
+    };
+    let merged = merge_pieces(&pieces, &crossed);
 
     let caps = Caps::new(lw);
     let mut polys: HashMap<u32, Vec<usize>> = HashMap::new();
@@ -513,6 +546,14 @@ mod tests {
         Linework { items, ..Default::default() }
     }
 
+    fn flat(it: &mut Vec<Item>, ox: f64, oy: f64, poly: u32) {
+        let rects =
+            [(0.0, 0.0, 12.0, 8.0), (0.2, 0.2, 11.8, 7.8), (7.0, 0.2, 7.1, 1.5), (7.0, 2.4, 7.1, 7.8), (7.1, 5.0, 9.0, 5.1), (9.8, 5.0, 11.8, 5.1)];
+        for (i, &(x0, y0, x1, y1)) in rects.iter().enumerate() {
+            rect(it, x0 + ox, y0 + oy, x1 + ox, y1 + oy, "A-WALL", Some(poly + i as u32));
+        }
+    }
+
     #[test]
     fn apartment_faces_give_six_wall_runs_merged_across_door_gaps() {
         let mut it = Vec::new();
@@ -541,6 +582,35 @@ mod tests {
         let runs = wall_runs(&lw(it));
         assert_eq!(runs.len(), 2, "{runs:?}");
         assert!(runs.iter().all(|r| (r.thickness - 0.1).abs() < 1e-6));
+    }
+
+    #[test]
+    fn neighbouring_flats_side_by_side_keep_their_own_walls() {
+        let mut it = Vec::new();
+        flat(&mut it, 0.0, 0.0, 1);
+        flat(&mut it, 13.0, 0.0, 7);
+        let runs = wall_runs(&lw(it));
+        assert_eq!(runs.len(), 12, "{runs:?}");
+        assert!(runs.iter().all(|r| r.start.dist(r.end) <= 12.5 + 1e-6), "{runs:?}");
+    }
+
+    #[test]
+    fn stacked_flats_keep_their_own_partitions() {
+        let mut it = Vec::new();
+        flat(&mut it, 0.0, 0.0, 1);
+        flat(&mut it, 0.0, 10.0, 7);
+        let runs = wall_runs(&lw(it));
+        assert_eq!(runs.len(), 12, "{runs:?}");
+        assert!(runs.iter().all(|r| r.start.dist(r.end) <= 12.5 + 1e-6), "{runs:?}");
+    }
+
+    #[test]
+    fn a_layer_0_door_leaf_inside_a_gap_does_not_split_its_wall() {
+        let mut it = Vec::new();
+        flat(&mut it, 0.0, 0.0, 1);
+        seg(&mut it, (7.1, 1.55), (8.0, 1.55), "0", None);
+        let runs = wall_runs(&lw(it));
+        assert_eq!(runs.len(), 6, "{runs:?}");
     }
 
     #[test]
