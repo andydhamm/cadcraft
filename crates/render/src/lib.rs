@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 mod arch;
+mod arch_site;
 pub mod clip;
 mod dim;
 mod fill;

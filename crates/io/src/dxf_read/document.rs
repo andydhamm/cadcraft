@@ -69,6 +69,7 @@ pub(super) fn parse_entities(
                 || crate::dxf_arch::is_view_proxy(tags)
                 || crate::dxf_arch::is_room_proxy(tags)
                 || crate::dxf_arch::is_roof_proxy(tags)
+                || crate::dxf_site::is_site_proxy(tags)
             {
                 rx.arch_proxies.push(h);
             }

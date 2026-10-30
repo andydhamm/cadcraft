@@ -1440,3 +1440,25 @@
 	CADCraft is up to date.	Встановлено найновішу версію CADCraft.
 	Could not check for updates.	Не вдалося перевірити оновлення.
 	Save changes to block "{name}"?	Зберегти зміни в блоці «{name}»?
+	Site Location	Розташування ділянки
+	cmd.site	Розташування ділянки
+	Architecture>Site Location	Архітектура>Розташування ділянки
+	Terrain	Рельєф
+	cmd.terrain	Рельєф
+	Architecture>Terrain	Архітектура>Рельєф
+	Terrain Modifier	Модифікатор рельєфу
+	cmd.terrain.modify	Модифікатор рельєфу
+	Architecture>Terrain Modifier	Архітектура>Модифікатор рельєфу
+	Terrain Elevation	Висота рельєфу
+	cmd.terrain.query	Висота рельєфу
+	Contours	Горизонталі
+	cmd.terrain.contours	Горизонталі
+	Cut and Fill	Виїмка і насип
+	cmd.terrain.volumes	Виїмка і насип
+	Delete Terrain	Видалити рельєф
+	cmd.terrain.delete	Видалити рельєф
+	Plant	Рослина
+	cmd.plant	Рослина
+	Architecture>Plant	Архітектура>Рослина
+	Plant Species	Види рослин
+	cmd.plant.species	Види рослин

@@ -23,14 +23,17 @@ pub mod graph;
 pub mod join;
 pub mod label;
 pub mod opening;
+pub mod plant;
 pub mod poly;
 pub mod railing;
 pub mod roof;
 pub mod roofedge;
 pub mod room;
+pub mod site;
 pub mod stair;
 pub mod sun;
 pub mod symbol;
+pub mod terrain;
 pub mod wall;
 
 #[cfg(test)]

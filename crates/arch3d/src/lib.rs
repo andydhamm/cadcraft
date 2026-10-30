@@ -15,11 +15,13 @@ pub mod hlr;
 pub mod mesh;
 pub mod openings;
 pub mod pick;
+pub mod plant;
 pub mod probe;
 pub mod railing;
 pub mod ray;
 pub mod roof;
 pub mod section;
+pub mod site;
 pub mod stairs;
 pub mod views;
 pub mod walls;
@@ -102,6 +104,12 @@ fn raw_wall_mesh(wall: &Wall, base: f64, top: f64, object: ArchId) -> Option<Mes
 /// `to_ceiling` else `height)`. Returns `None` when the span is degenerate
 /// (non-finite, or `top <= base`) — such walls are skipped.
 pub fn wall_span(model: &ArchModel, w: &Wall) -> Option<(f64, f64)> {
+    // A retaining wall on a terrain follows the ground on each side (phase 9).
+    if w.retaining
+        && let Some(span) = site::retaining_span(model, w)
+    {
+        return Some(span);
+    }
     let level = model.levels.iter().rev().find(|l| l.index == w.base_level).or(model.levels.last());
     let base = level.map(|l| l.elevation).unwrap_or(0.0);
     let h = if w.to_ceiling { level.map(|l| l.ceiling_height).unwrap_or(w.height) } else { w.height };
@@ -165,6 +173,12 @@ pub struct Scene3d {
     pub stairs: usize,
     pub railings: usize,
     pub decks: usize,
+    /// Phase 9: 1 when the terrain solid was built, else 0.
+    pub terrain: usize,
+    /// Roads, driveways and sidewalks built.
+    pub paths: usize,
+    /// Plants built.
+    pub plants: usize,
 }
 
 impl Scene3d {
@@ -339,6 +353,10 @@ impl Scene3d {
             }
         }
 
+        let site = site::site_meshes(model);
+        let (terrain, paths, plants) = (site.terrain, site.paths, site.plants);
+        meshes.extend(site.meshes);
+
         meshes.retain(|m| !m.positions.is_empty() && mesh_is_finite(m));
 
         let bounds = match meshes.first() {
@@ -360,6 +378,9 @@ impl Scene3d {
             stairs: stairs_count,
             railings: railings_count,
             decks: decks_count,
+            terrain,
+            paths,
+            plants,
         }
     }
 
@@ -454,10 +475,13 @@ impl Scene3d {
 
         let mut openings_built = 0;
         let wall_map: BTreeMap<ArchId, &Wall> = model.walls.iter().map(|w| (w.id, w)).collect();
-        let prev_by_object: BTreeMap<ArchId, Vec<Mesh>> = prev.meshes.iter().fold(BTreeMap::new(), |mut m, mesh| {
-            m.entry(mesh.object).or_default().push(mesh.clone());
-            m
-        });
+        // Site meshes (terrain, paths, plants) are rebuilt every time, never reused: their ids
+        // number apart from the building's, so grouping them by id would mix them in.
+        let prev_by_object: BTreeMap<ArchId, Vec<Mesh>> =
+            prev.meshes.iter().filter(|m| !site::is_site_material(&m.material)).fold(BTreeMap::new(), |mut m, mesh| {
+                m.entry(mesh.object).or_default().push(mesh.clone());
+                m
+            });
         for opening in &model.openings {
             let span = wall_map.get(&opening.host).and_then(|w| wall_span(model, w));
             if dirty.contains(&opening.id) {
@@ -637,6 +661,10 @@ impl Scene3d {
             }
         }
 
+        let site = site::site_meshes(model);
+        let (terrain, paths, plants) = (site.terrain, site.paths, site.plants);
+        meshes.extend(site.meshes);
+
         meshes.retain(|m| !m.positions.is_empty() && mesh_is_finite(m));
 
         let bounds = match meshes.first() {
@@ -658,6 +686,9 @@ impl Scene3d {
             stairs: stairs_count,
             railings: railings_count,
             decks: decks_count,
+            terrain,
+            paths,
+            plants,
         }
     }
 }

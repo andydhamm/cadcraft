@@ -19,6 +19,7 @@ pub mod inspect;
 pub mod level;
 pub mod opening;
 pub mod pick;
+pub mod plant;
 pub mod railing;
 pub mod roofauto;
 pub mod roofplane;
@@ -26,9 +27,14 @@ pub mod room;
 pub mod roomdetect;
 pub mod sample;
 pub mod sheet;
+pub mod site;
+pub(crate) mod site_inspect;
 pub mod stair;
 pub mod stretch;
 pub mod sun;
+pub mod terrain;
+pub mod terrain_modify;
+pub mod terrain_query;
 pub(crate) mod units;
 pub mod view;
 pub mod views;
@@ -72,5 +78,10 @@ pub fn specs() -> Vec<CommandSpec> {
     v.extend(sun::specs());
     v.extend(sheet::specs());
     v.extend(archdetect::specs());
+    v.extend(site::specs());
+    v.extend(terrain::specs());
+    v.extend(terrain_modify::specs());
+    v.extend(terrain_query::specs());
+    v.extend(plant::specs());
     v
 }

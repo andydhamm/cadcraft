@@ -8,6 +8,9 @@ use crate::Handle;
 use cadcraft_geom::{Bounds2, Vec2};
 use serde::{Deserialize, Serialize};
 
+pub mod site;
+pub use site::*;
+
 /// A stable identifier for an architectural object.
 ///
 /// Assigned by [`ArchModel::add_wall`]; monotonically increasing within a drawing.
@@ -373,6 +376,17 @@ pub struct Wall {
     /// Eave height above the level floor; `None` means derive from level.
     #[serde(default)]
     pub eave_height: Option<f64>,
+    /// A retaining wall: a terrain breakline whose top and bottom follow the ground on each side
+    /// (phase 9). Its top is the high side's grade plus `freeboard`, its bottom the low side's
+    /// grade minus `footing`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub retaining: bool,
+    /// `None` = [`DEFAULT_RETAINING_FREEBOARD`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freeboard: Option<f64>,
+    /// `None` = [`DEFAULT_RETAINING_FOOTING`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub footing: Option<f64>,
 }
 
 fn default_wall_type() -> String {
@@ -406,6 +420,9 @@ impl Wall {
             roof_pitch: None,
             roof_overhang: None,
             eave_height: None,
+            retaining: false,
+            freeboard: None,
+            footing: None,
         }
     }
 }
@@ -430,6 +447,9 @@ impl Default for Wall {
             roof_pitch: None,
             roof_overhang: None,
             eave_height: None,
+            retaining: false,
+            freeboard: None,
+            footing: None,
         }
     }
 }
@@ -1431,6 +1451,19 @@ pub struct ArchModel {
     pub views: Vec<ArchView>,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub next_view_id: u32,
+    // Phase 9: the site. Each is skipped when empty, so a model without a site writes the
+    // payload it wrote before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub site: Option<SiteLocation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain: Option<Terrain>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plants: Vec<Plant>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub next_plant_id: u32,
+    /// Species the user added (the built-in catalogue is in `arch::plant`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plant_species: Vec<PlantSpecies>,
 }
 
 impl Default for ArchModel {
@@ -1452,6 +1485,11 @@ impl Default for ArchModel {
             active_camera: None,
             views: Vec::new(),
             next_view_id: 0,
+            site: None,
+            terrain: None,
+            plants: Vec::new(),
+            next_plant_id: 0,
+            plant_species: Vec::new(),
             levels: vec![Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 }],
             types: vec![
                 WallType {
@@ -1528,6 +1566,10 @@ impl ArchModel {
             && self.railings.is_empty()
             && self.cameras.is_empty()
             && self.views.is_empty()
+            && self.site.is_none()
+            && self.terrain.is_none()
+            && self.plants.is_empty()
+            && self.plant_species.is_empty()
     }
 
     /// Look up a wall type by name (case-insensitive).

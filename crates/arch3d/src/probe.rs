@@ -24,6 +24,16 @@ pub(crate) const MAX_PROBE_TRIANGLES: usize = 1_000_000;
 /// list. Unrecognised materials map to `"wall"`.
 pub fn part_of(mesh: &Mesh) -> &'static str {
     let m = mesh.material.to_lowercase();
+    // Site parts first (phase 9): a path's own material could be any word.
+    if m == "terrain" {
+        return "terrain";
+    }
+    if m.starts_with("path-") {
+        return "path";
+    }
+    if m.starts_with("plant-") {
+        return "plant";
+    }
     if m.contains("glass") {
         return "glass";
     }

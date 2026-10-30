@@ -22,7 +22,7 @@ pub fn arch_handle(id: ArchId) -> Handle {
 ///
 /// A layer that exists and is off, frozen, or — while plotting — marked no-plot is skipped.
 /// A missing layer is never skipped, so it draws as before.
-fn arch_layer_skipped(d: &Drawing, layer: &str, plotting: bool) -> bool {
+pub(crate) fn arch_layer_skipped(d: &Drawing, layer: &str, plotting: bool) -> bool {
     d.layer(layer).map_or(false, |l| !l.on || l.frozen || (plotting && !l.plot))
 }
 
@@ -319,6 +319,7 @@ pub fn build_arch(d: &Drawing, _opts: &Options, plotting: bool) -> DisplayList {
     }
 
     push_views(d, &mut list, plotting);
+    crate::arch_site::push_site(d, &mut list, plotting);
 
     list
 }
@@ -453,7 +454,7 @@ fn flight_outline(s: &cadcraft_doc::arch::Stair) -> Option<[Vec2; 5]> {
 }
 
 /// Append one polyline prim of `pts` tagged `handle`.
-fn push_polyline(list: &mut DisplayList, handle: Handle, ink: &crate::Ink, pts: &[Vec2]) {
+pub(crate) fn push_polyline(list: &mut DisplayList, handle: Handle, ink: &crate::Ink, pts: &[Vec2]) {
     let start = u32::try_from(list.verts.len()).unwrap_or(u32::MAX);
     for &p in pts {
         list.bounds.add(p);
