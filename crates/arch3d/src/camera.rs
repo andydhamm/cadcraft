@@ -194,17 +194,22 @@ impl Orbit {
     }
 
     /// A comfortable orbit that frames `bounds`: target at the box centre and a
-    /// distance large enough for the whole box to fit, at a pleasant 30°/30° angle.
+    /// distance at which the box's bounding sphere fits the vertical field of view
+    /// with a 10 % margin, at a pleasant 30°/30° angle. The sphere contains the whole
+    /// box, so it fits from any angle, and a view at least as wide as tall shows all of it.
     pub fn fit(b: &Bounds3) -> Self {
         let min = b.min;
         let max = b.max;
         let c = Vec3::new((min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0, (min[2] + max[2]) / 2.0);
-        // Diagonal length gives a distance that fits the box from any angle.
-        let half_diag = (0.5 * (max[0] - min[0]).abs() + 0.5 * (max[1] - min[1]).abs() + 0.5 * (max[2] - min[2]).abs()).max(0.1);
-        // Distance = diagonal / (2 * sin(fov/2)) so the far diagonal just fits vertically.
+        let dx = max[0] - min[0];
+        let dy = max[1] - min[1];
+        let dz = max[2] - min[2];
+        // Radius of the box's bounding sphere (half the space diagonal).
+        let r = 0.5 * (dx * dx + dy * dy + dz * dz).sqrt();
+        // A sphere of radius r fits a fov when distance >= r / sin(fov/2); add 10 % margin.
         let fov = 45.0;
         let s = (fov * std::f64::consts::PI / 360.0).sin();
-        let dist = (half_diag * 3.0_f64.sqrt() / s).clamp(MIN_DISTANCE, MAX_DISTANCE);
+        let dist = (1.1 * r.max(0.1) / s).clamp(MIN_DISTANCE, MAX_DISTANCE);
         Orbit::new(c, 30.0, 30.0, dist, fov)
     }
 }
@@ -480,6 +485,43 @@ fn project_points(camera: &Camera, points: impl Iterator<Item = [f64; 3]>, size:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn corners(b: &Bounds3) -> Vec<[f64; 3]> {
+        let mut v = Vec::new();
+        for x in [b.min[0], b.max[0]] {
+            for y in [b.min[1], b.max[1]] {
+                for z in [b.min[2], b.max[2]] {
+                    v.push([x, y, z]);
+                }
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn orbit_fit_keeps_every_corner_in_view() {
+        let b = Bounds3::new([0.0, 0.0, 0.0], [12.0, 8.0, 2.7]);
+        let fit = Orbit::fit(&b);
+        for az in (0..360).step_by(30) {
+            for el in [0.0, 20.0, 45.0, 80.0] {
+                let cam = Camera::Orbit(Orbit::new(fit.target, az as f64, el, fit.distance, fit.fov_deg));
+                for c in corners(&b) {
+                    let p = project_point(&cam, (900, 900), c).expect("corner projects");
+                    assert!((0.0..=900.0).contains(&p[0]) && (0.0..=900.0).contains(&p[1]), "az {az} el {el} corner {c:?} -> {p:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn orbit_fit_fills_a_wide_view() {
+        let b = Bounds3::new([0.0, 0.0, 0.0], [12.0, 8.0, 2.7]);
+        let fit = Orbit::fit(&b);
+        let cam = Camera::Orbit(Orbit::new(fit.target, 0.0, 20.0, fit.distance, fit.fov_deg));
+        let r = projected_bounds(&cam, &b, (1600, 900));
+        let (sx, sy) = (f64::from(r[2] - r[0]), f64::from(r[3] - r[1]));
+        assert!(sx >= 0.35 * 1600.0 || sy >= 0.35 * 900.0, "spans {sx} x {sy}");
+    }
 
     #[test]
     fn full_camera_ray_at_the_centre_points_at_the_target() {
