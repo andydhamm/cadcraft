@@ -789,7 +789,7 @@ mod tests {
                     poly_tags.iter().any(|t| t.code == 1000 && t.str().trim() == ARCH_OPENING_MARKER),
                     "missing ARCHOPENING marker on layer {layer}",
                 );
-                assert!(poly_tags.iter().any(|t| t.code == 1000 && t.str().trim().starts_with("o")), "missing o{n} label on layer {layer}",);
+                assert!(poly_tags.iter().any(|t| t.code == 1000 && t.str().trim().starts_with("o")), "missing opening label on layer {layer}");
             }
         }
     }
