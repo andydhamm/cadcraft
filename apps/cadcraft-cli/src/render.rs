@@ -78,9 +78,11 @@ pub(crate) fn parse_adapter(s: &str) -> Option<AdapterChoice> {
     AdapterChoice::parse(s)
 }
 
-/// Parse `lat=DEG,date=YYYY-MM-DD,time=solar-noon|HH:MM` into `(lat, date, time)`. All three are
-/// required, unknown or repeated fields are refused, and the sun must be computable for them.
-pub(crate) fn parse_sun(s: &str) -> Option<(f64, String, String)> {
+/// Parse `date=YYYY-MM-DD,time=solar-noon|HH:MM[,lat=DEG]` into `(lat, date, time)`. `date`
+/// and `time` are always required; `lat` is optional (render falls back to the site latitude
+/// when it is missing). When `lat` is given the sun must be computable for the triple; unknown
+/// or repeated fields are refused and a non-finite latitude is rejected.
+pub(crate) fn parse_sun(s: &str) -> Option<(Option<f64>, String, String)> {
     let (mut lat, mut date, mut time) = (None, None, None);
     for t in s.split(',').map(str::trim) {
         let (k, v) = t.split_once('=').map(|(k, v)| (k.trim(), v.trim()))?;
@@ -91,8 +93,10 @@ pub(crate) fn parse_sun(s: &str) -> Option<(f64, String, String)> {
             _ => return None,
         }
     }
-    let (lat, date, time) = (lat?, date?, time?);
-    cadcraft_arch::sun::sun_position(lat, &date, &time)?;
+    let (date, time) = (date?, time?);
+    if let Some(lat) = lat {
+        cadcraft_arch::sun::sun_position(lat, &date, &time)?;
+    }
     Some((lat, date, time))
 }
 
@@ -210,10 +214,15 @@ pub(crate) fn render(a: &RenderArgs, io: &mut Streams) -> Result<(), RenderError
     let pb = cadcraft_render3d::camera::projected_scene_bounds(&camera, &scene, size);
     let light = match &a.sun {
         Some((lat, date, time)) => {
+            // An explicit `lat` wins; otherwise the site latitude stands in. With no site
+            // location the existing refusal (reworded `NoSiteLat`) fires.
+            let lat = lat.copied().or_else(|| d.arch.site.as_ref().map(|site| site.latitude)).ok_or_else(|| RenderError::NoSiteLat)?;
             let sun =
-                cadcraft_arch::sun::sun_position(*lat, date, time).ok_or_else(|| RenderError::Sun(format!("lat={lat},date={date},time={time}")))?;
-            let [x, y, z] = cadcraft_arch::sun::sun_dir(&sun);
-            Light::from_sun(&Sun { dir: [x as f32, y as f32, z as f32], ..Sun::default() }, Light::DEFAULT.ambient)
+                cadcraft_arch::sun::sun_position(lat, date, time).ok_or_else(|| RenderError::Sun(format!("lat={lat},date={date},time={time}")))?;
+            // Rotate the sun into drawing coordinates so shadows fall along the site's true
+            // north; without a site, `true_to_drawing` leaves the raw direction.
+            let [dx, dy, dz] = cadcraft_arch::site::true_to_drawing(d.arch.site.as_ref(), cadcraft_arch::sun::sun_dir(&sun));
+            Light::from_sun(&Sun { dir: [dx as f32, dy as f32, dz as f32], ..Sun::default() }, Light::DEFAULT.ambient)
         }
         None => Light::DEFAULT,
     };
