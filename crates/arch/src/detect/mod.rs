@@ -220,7 +220,7 @@ pub fn detect(d: &Drawing, opts: &DetectOptions) -> Result<Detection, DetectErro
 
     split_unexplained_gaps(&mut walls, &mut openings);
 
-    let rooms = rooms::find_rooms(&walls, &lw.labels);
+    let mut rooms = rooms::find_rooms(&walls, &lw.labels);
 
     // Deterministic ordering
     walls.sort_by(|a, b| {
@@ -269,7 +269,7 @@ fn split_unexplained_gaps(walls: &mut Vec<WallRun>, openings: &mut Vec<OpeningCa
             continue;
         }
 
-        let dir = (w.end - w.start).normalize();
+        let dir = (w.end - w.start).normalized();
         let mut splits = Vec::new();
 
         // Find gaps > 0.3m not covered by openings
@@ -343,7 +343,7 @@ fn split_unexplained_gaps(walls: &mut Vec<WallRun>, openings: &mut Vec<OpeningCa
             // We need to find the specific piece.
             let old_w = &walls[o.host];
             let len = old_w.start.dist(old_w.end);
-            let dir = (old_w.end - old_w.start).normalize();
+            let dir = (old_w.end - old_w.start).normalized();
             let center_dist = o.offset;
 
             let mut found = new_idx;
