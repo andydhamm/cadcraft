@@ -191,6 +191,7 @@ fn dry_runs_are_deterministic() {
 fn an_empty_drawing_returns_no_candidates() {
     let mut s = Session::empty();
     s.new_drawing(false);
+    s.doc_mut().expect("doc").header.set_i64("INSUNITS", 6);
     let r = dry(&mut s, json!({}));
     assert_eq!(r["units"], "m");
     assert_eq!(arr(&r, "walls"), &[] as &[Value]);
@@ -273,4 +274,43 @@ fn dry_run_ignores_min_confidence() {
     assert_eq!(arr(&low, "walls").len(), arr(&high, "walls").len(), "dry run should return all walls");
     assert_eq!(arr(&low, "openings").len(), arr(&high, "openings").len(), "dry run should return all openings");
     assert_eq!(arr(&low, "rooms").len(), arr(&high, "rooms").len(), "dry run should return all rooms");
+}
+
+#[test]
+fn accept_empty_array_creates_nothing() {
+    let mut s = two_rooms(1.0, 6);
+    let before = s.doc().expect("doc").clone();
+    let a = s.execute("archdetect", &json!({"accept": []})).expect("accept");
+    assert_eq!(a["walls"].as_u64(), Some(0));
+    assert_eq!(a["openings"].as_u64(), Some(0));
+    assert_eq!(a["rooms"].as_u64(), Some(0));
+    assert_eq!(*s.doc().expect("doc"), before);
+    assert_eq!(s.undo().expect("undo"), None, "accepting nothing leaves no undo step");
+}
+
+#[test]
+fn dry_run_with_layers_filter() {
+    let mut s = two_rooms(1.0, 6);
+    let r = dry(&mut s, json!({"layers": ["A-WALL"]}));
+    assert!(!arr(&r, "walls").is_empty(), "walls should be detected on A-WALL");
+}
+
+#[test]
+fn hostile_zero_length_and_collinear_lines() {
+    let mut s = Session::empty();
+    s.new_drawing(false);
+    s.doc_mut().expect("doc").header.set_i64("INSUNITS", 6);
+    // Zero-length line
+    line(&mut s, "A-WALL", (0.0, 0.0), (0.0, 0.0), 1.0);
+    // Collinear lines
+    line(&mut s, "A-WALL", (0.0, 0.0), (1.0, 0.0), 1.0);
+    line(&mut s, "A-WALL", (1.0, 0.0), (2.0, 0.0), 1.0);
+    line(&mut s, "A-WALL", (2.0, 0.0), (3.0, 0.0), 1.0);
+    // Huge coordinates
+    line(&mut s, "A-WALL", (0.0, 0.0), (1e10, 0.0), 1.0);
+    let r = dry(&mut s, json!({}));
+    // Should not panic and should return valid JSON
+    assert!(r["walls"].is_array());
+    assert!(r["openings"].is_array());
+    assert!(r["rooms"].is_array());
 }
