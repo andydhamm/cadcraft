@@ -41,8 +41,10 @@ mb = re.search(rb'/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]', b)
 if not mb or abs(float(mb.group(1)) - 2592) > 1 or abs(float(mb.group(2)) - 1728) > 1:
     fail(f"PDF page is not ARCH D landscape (2592 x 1728 pt): {mb.group(0) if mb else 'no MediaBox'}")
 ops = 0
-for m in re.finditer(rb'stream\r?\n(.*?)\r?\nendstream', b, re.S):
-    s = m.group(1)
+# Each stream is exactly its /Length bytes (10-29: a regex up to 'endstream' cut a FlateDecode stream whose last byte
+# was 0x0D, so it would not inflate and a sheet of 349 segments counted as none).
+for m in re.finditer(rb'/Length\s+(\d+)[^>]*>>\s*stream\r?\n', b):
+    s = b[m.end():m.end() + int(m.group(1))]
     try:
         s = zlib.decompress(s)
     except zlib.error:

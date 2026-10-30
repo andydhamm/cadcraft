@@ -22,7 +22,12 @@ if after[1].get('scale') != 100:
     fail(f"section scale {after[1].get('scale')}, want 100")
 def proxies(path):
     t = open(path, 'r', errors='replace').read().replace('\r\n', '\n')
-    ents = t.split('\n  0\nENTITIES\n', 1)[-1].split('\n  0\nENDSEC', 1)[0]
+    # A section's name follows group code 2: '  0 SECTION / 2 ENTITIES' (10-29: splitting on '0 ENTITIES' matched
+    # nothing and counted the HEADER, so a file full of proxies read as none).
+    m = re.search(r'\n  0\nSECTION\n  2\nENTITIES\n(.*?)\n  0\nENDSEC', '\n' + t, re.S)
+    if not m:
+        fail(f"{os.path.basename(path)} has no ENTITIES section")
+    ents = m.group(1)
     return {lay: len(re.findall(r'\n  8\n' + lay + r'\n', '\n' + ents)) for lay in ('A-ELEV', 'A-SECT')}
 pa, pb = proxies(a), proxies(b2)
 if pa['A-ELEV'] == 0 or pa['A-SECT'] == 0:
