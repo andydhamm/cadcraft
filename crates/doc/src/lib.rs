@@ -254,6 +254,15 @@ impl Drawing {
     /// Bump the architectural revision counter (call after any edit to `self.arch`).
     pub fn touch_arch(&mut self) {
         self.arch_revision = self.arch_revision.saturating_add(1);
+        if !self.arch.is_empty() {
+            self.make_metric_units();
+        }
+    }
+
+    /// The arch model is in metres, so a drawing that holds arch objects is a metre drawing.
+    pub fn make_metric_units(&mut self) {
+        self.header.set_i64("INSUNITS", 6);
+        self.header.set_i64("MEASUREMENT", 1);
     }
 
     pub fn layer(&self, name: &str) -> Option<&Layer> {
