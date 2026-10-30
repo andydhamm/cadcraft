@@ -7,20 +7,20 @@ use std::f64::consts::PI;
 /// The built-in catalogue.
 pub fn catalogue() -> Vec<PlantSpecies> {
     let mut v = Vec::new();
-    v.push(species("Sugar Maple", PlantForm::DeciduousTree, cadcraft_doc::arch::CrownShape::Sphere, 20.0, 12.0, 2.5, 40));
-    v.push(species("Red Oak", PlantForm::DeciduousTree, cadcraft_doc::arch::CrownShape::Sphere, 22.0, 15.0, 2.5, 50));
-    v.push(species("Paper Birch", PlantForm::DeciduousTree, cadcraft_doc::arch::CrownShape::Ellipsoid, 15.0, 8.0, 2.0, 25));
-    v.push(species("Trembling Aspen", PlantForm::DeciduousTree, cadcraft_doc::arch::CrownShape::Ellipsoid, 15.0, 6.0, 2.0, 20));
-    v.push(species("Colorado Blue Spruce", PlantForm::EvergreenTree, cadcraft_doc::arch::CrownShape::Cone, 15.0, 5.0, 1.5, 30));
-    v.push(species("Eastern White Pine", PlantForm::EvergreenTree, cadcraft_doc::arch::CrownShape::Cone, 25.0, 10.0, 1.5, 40));
-    v.push(species("Douglas Fir", PlantForm::EvergreenTree, cadcraft_doc::arch::CrownShape::Cone, 30.0, 8.0, 1.5, 50));
-    v.push(species("Common Lilac", PlantForm::Shrub, cadcraft_doc::arch::CrownShape::Sphere, 3.0, 2.5, 0.6, 8));
-    v.push(species("Red Osier Dogwood", PlantForm::Shrub, cadcraft_doc::arch::CrownShape::Sphere, 2.5, 3.0, 0.5, 5));
-    v.push(species("Boxwood", PlantForm::Shrub, cadcraft_doc::arch::CrownShape::Sphere, 1.2, 1.2, 0.3, 10));
-    v.push(species("Mugo Pine", PlantForm::Shrub, cadcraft_doc::arch::CrownShape::Ellipsoid, 1.5, 3.0, 0.4, 15));
-    v.push(species("Creeping Juniper", PlantForm::GroundCover, cadcraft_doc::arch::CrownShape::Ellipsoid, 0.3, 2.0, 0.1, 6));
-    v.push(species("Wild Strawberry", PlantForm::GroundCover, cadcraft_doc::arch::CrownShape::Ellipsoid, 0.2, 0.6, 0.05, 3));
-    v.push(species("Bearberry", PlantForm::GroundCover, cadcraft_doc::arch::CrownShape::Ellipsoid, 0.2, 1.5, 0.05, 5));
+    v.push(species("Sugar Maple", PlantForm::DeciduousTree, cadcraft_doc::arch::CrownShape::Sphere, 20.0, 12.0, 2.5, 40.0));
+    v.push(species("Red Oak", PlantForm::DeciduousTree, cadcraft_doc::arch::CrownShape::Sphere, 22.0, 15.0, 2.5, 50.0));
+    v.push(species("Paper Birch", PlantForm::DeciduousTree, cadcraft_doc::arch::CrownShape::Ellipsoid, 15.0, 8.0, 2.0, 25.0));
+    v.push(species("Trembling Aspen", PlantForm::DeciduousTree, cadcraft_doc::arch::CrownShape::Ellipsoid, 15.0, 6.0, 2.0, 20.0));
+    v.push(species("Colorado Blue Spruce", PlantForm::EvergreenTree, cadcraft_doc::arch::CrownShape::Cone, 15.0, 5.0, 1.5, 30.0));
+    v.push(species("Eastern White Pine", PlantForm::EvergreenTree, cadcraft_doc::arch::CrownShape::Cone, 25.0, 10.0, 1.5, 40.0));
+    v.push(species("Douglas Fir", PlantForm::EvergreenTree, cadcraft_doc::arch::CrownShape::Cone, 30.0, 8.0, 1.5, 50.0));
+    v.push(species("Common Lilac", PlantForm::Shrub, cadcraft_doc::arch::CrownShape::Sphere, 3.0, 2.5, 0.6, 8.0));
+    v.push(species("Red Osier Dogwood", PlantForm::Shrub, cadcraft_doc::arch::CrownShape::Sphere, 2.5, 3.0, 0.5, 5.0));
+    v.push(species("Boxwood", PlantForm::Shrub, cadcraft_doc::arch::CrownShape::Sphere, 1.2, 1.2, 0.3, 10.0));
+    v.push(species("Mugo Pine", PlantForm::Shrub, cadcraft_doc::arch::CrownShape::Ellipsoid, 1.5, 3.0, 0.4, 15.0));
+    v.push(species("Creeping Juniper", PlantForm::GroundCover, cadcraft_doc::arch::CrownShape::Ellipsoid, 0.3, 2.0, 0.1, 6.0));
+    v.push(species("Wild Strawberry", PlantForm::GroundCover, cadcraft_doc::arch::CrownShape::Ellipsoid, 0.2, 0.6, 0.05, 3.0));
+    v.push(species("Bearberry", PlantForm::GroundCover, cadcraft_doc::arch::CrownShape::Ellipsoid, 0.2, 1.5, 0.05, 5.0));
     v
 }
 
