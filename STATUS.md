@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-30 13:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-30 13:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 8 of 13: Recognition from plain DXF — 21 of 24 segments merged · 6 of 10 acceptance checks**
+**Phase 8 of 13: Recognition from plain DXF — 22 of 24 segments merged · 6 of 10 acceptance checks**
 
-5,293 workspace tests passing at the last merge · 514 segments merged in all · 0 of 11 seats working
+5,294 workspace tests passing at the last merge · 515 segments merged in all · 0 of 11 seats working
 
 ## Phases
 
@@ -18,7 +18,7 @@ Updated 2026-10-30 13:15 UTC. This page and the card in the README are regenerat
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
-| 8 | Recognition from plain DXF | building | 6 / 10 | 10.2 h so far · expected done Oct 30 16:10–Oct 31 00:48 UTC |
+| 8 | Recognition from plain DXF | building | 6 / 10 | 10.4 h so far · expected done Oct 30 15:52–Oct 30 23:58 UTC |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
@@ -27,11 +27,10 @@ Updated 2026-10-30 13:15 UTC. This page and the card in the README are regenerat
 
 ## Phase 8 segments
 
-21 merged, 1 merging, 1 gate, 1 working
+22 merged, 1 gate, 1 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p8-ui-review-screenshots` | Screenshot test: the review panel and the 3D pane, rendered with wgpu (check 10) | merging | claude-sonnet-a |
 | `p8-guide-archdetect` | User guide: detecting walls, doors, windows and rooms in a plain DXF | gate | darwin-ws3 |
 | `p8-detect-tune-to-targets` | Corpus tests in the workspace, and the detector tuned until they meet the targets | working | bonsai-b |
 
@@ -39,6 +38,7 @@ Updated 2026-10-30 13:15 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 30 13:19 | `p8-ui-review-screenshots` | merged | 5,294 pass | claude-sonnet-a |
 | Oct 30 12:58 | `p8-cli-convert-detects` | merged | 5,293 pass | darwin-ws3 |
 | Oct 30 12:37 | `p8-ui-review-panel` | merged | 5,290 pass | claude-sonnet-a |
 | Oct 30 12:11 | `p8-cmd-archdetect` | merged | 5,287 pass | claude-sonnet-a |
@@ -50,20 +50,19 @@ Updated 2026-10-30 13:15 UTC. This page and the card in the README are regenerat
 | Oct 30 10:13 | `upstream-sync-f536bf406` | merged | 5,232 pass | claude-sonnet-a |
 | Oct 30 09:57 | `harden-p8-detect-flatten` | merged | 5,232 pass | tturbo-mac2 |
 | Oct 30 09:46 | `p8-detect-walls` | merged | 5,222 pass | claude-sonnet-b |
-| Oct 30 09:18 | `p8-detect-rooms` | merged | 5,216 pass | claude-sonnet-a |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 685 |
-| bonsai-b | bonsai2-27b | agent | 647 |
+| bonsai-a | bonsai2-27b | agent | 686 |
+| bonsai-b | bonsai2-27b | agent | 648 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
-| claude-sonnet-a | sonnet | merging | 53 |
+| claude-sonnet-a | sonnet | idle | 53 |
 | claude-sonnet-b | sonnet | idle | 45 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 539 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 540 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 92 |
 | mai-flash | mai-code-1.1-flash | idle | 21 |
 | tturbo-mac | tturbo-ultraheretic | merging | 461 |
-| tturbo-mac2 | tturbo-ultraheretic | gate | 281 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 282 |
