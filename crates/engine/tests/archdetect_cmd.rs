@@ -186,3 +186,131 @@ fn dry_runs_are_deterministic() {
         assert_eq!(a[k], b[k], "{k}");
     }
 }
+
+#[test]
+fn an_empty_drawing_returns_no_candidates() {
+    let mut s = Session::empty();
+    s.new_drawing(false);
+    s.doc_mut().expect("doc").header.set_i64("INSUNITS", 6);
+    let r = dry(&mut s, json!({}));
+    assert_eq!(r["units"], "m");
+    assert_eq!(arr(&r, "walls"), &[] as &[Value]);
+    assert_eq!(arr(&r, "openings"), &[] as &[Value]);
+    assert_eq!(arr(&r, "rooms"), &[] as &[Value]);
+    assert_eq!(r["stats"]["entities"].as_u64(), Some(0));
+    assert_eq!(s.undo().expect("undo"), None, "a dry run leaves no undo step");
+}
+
+#[test]
+fn accept_specific_ids_creates_only_those() {
+    let mut s = two_rooms(1.0, 6);
+    let r = dry(&mut s, json!({}));
+
+    let wall_ids: Vec<&str> = arr(&r, "walls").iter().map(|w| w["id"].as_str().expect("id")).take(2).collect();
+
+    let a = s.execute("archdetect", &json!({"accept": wall_ids})).expect("accept");
+    assert_eq!(a["walls"].as_u64(), Some(2));
+    assert_eq!(a["openings"].as_u64(), Some(0));
+    assert_eq!(a["rooms"].as_u64(), Some(0));
+
+    let d = s.doc().expect("doc");
+    assert_eq!(d.arch.walls.len(), 2);
+    assert_eq!(d.arch.openings.len(), 0);
+    assert_eq!(d.arch.rooms.len(), 0);
+
+    s.undo().expect("undo");
+    let d = s.doc().expect("doc");
+    assert_eq!(d.arch.walls.len(), 0);
+}
+
+#[test]
+fn min_confidence_filters_during_accept() {
+    let mut s = two_rooms(1.0, 6);
+    let r = dry(&mut s, json!({}));
+
+    let total_walls = arr(&r, "walls").len();
+    let high_conf_walls = arr(&r, "walls").iter().filter(|w| w["confidence"].as_f64().expect("confidence") >= 0.9).count();
+
+    let a = s.execute("archdetect", &json!({"accept": "all", "minConfidence": 0.9})).expect("accept");
+    assert_eq!(a["walls"].as_u64(), Some(high_conf_walls as u64));
+
+    s.undo().expect("undo");
+
+    let b = s.execute("archdetect", &json!({"accept": "all"})).expect("accept");
+    let default_walls = b["walls"].as_u64().expect("walls") as usize;
+    assert!(default_walls >= high_conf_walls, "default should accept at least the high-confidence walls");
+    assert!(default_walls <= total_walls, "default should not accept more walls than exist");
+}
+
+#[test]
+fn the_accepted_map_keys_are_candidate_ids_and_values_are_labels() {
+    let mut s = two_rooms(1.0, 6);
+    let r = dry(&mut s, json!({}));
+    let total = arr(&r, "walls").len() + arr(&r, "openings").len() + arr(&r, "rooms").len();
+
+    let a = s.execute("archdetect", &json!({"accept": "all"})).expect("accept");
+    let accepted = a["accepted"].as_object().expect("accepted map");
+
+    for key in accepted.keys() {
+        assert!(key.starts_with('c'), "key {key} should be a candidate id");
+    }
+
+    for value in accepted.values() {
+        let v = value.as_str().expect("value is string");
+        assert!(v.starts_with('w') || v.starts_with('o') || v.starts_with('r'), "value {v} should be a wall, opening or room label");
+    }
+
+    let created = a["walls"].as_u64().expect("walls") + a["openings"].as_u64().expect("openings") + a["rooms"].as_u64().expect("rooms");
+    assert_eq!(accepted.len(), created as usize, "accepted map size should match created objects");
+    assert!(created as usize <= total, "should not create more than the candidates");
+}
+
+#[test]
+fn dry_run_ignores_min_confidence() {
+    let mut s = two_rooms(1.0, 6);
+    let low = dry(&mut s, json!({"minConfidence": 0.0}));
+    let high = dry(&mut s, json!({"minConfidence": 0.99}));
+
+    assert_eq!(arr(&low, "walls").len(), arr(&high, "walls").len(), "dry run should return all walls");
+    assert_eq!(arr(&low, "openings").len(), arr(&high, "openings").len(), "dry run should return all openings");
+    assert_eq!(arr(&low, "rooms").len(), arr(&high, "rooms").len(), "dry run should return all rooms");
+}
+
+#[test]
+fn accept_empty_array_creates_nothing() {
+    let mut s = two_rooms(1.0, 6);
+    let before = s.doc().expect("doc").clone();
+    let a = s.execute("archdetect", &json!({"accept": []})).expect("accept");
+    assert_eq!(a["walls"].as_u64(), Some(0));
+    assert_eq!(a["openings"].as_u64(), Some(0));
+    assert_eq!(a["rooms"].as_u64(), Some(0));
+    assert_eq!(*s.doc().expect("doc"), before);
+    assert_eq!(s.undo().expect("undo"), None, "accepting nothing leaves no undo step");
+}
+
+#[test]
+fn dry_run_with_layers_filter() {
+    let mut s = two_rooms(1.0, 6);
+    let r = dry(&mut s, json!({"layers": ["A-WALL"]}));
+    assert!(!arr(&r, "walls").is_empty(), "walls should be detected on A-WALL");
+}
+
+#[test]
+fn hostile_zero_length_and_collinear_lines() {
+    let mut s = Session::empty();
+    s.new_drawing(false);
+    s.doc_mut().expect("doc").header.set_i64("INSUNITS", 6);
+    // Zero-length line
+    line(&mut s, "A-WALL", (0.0, 0.0), (0.0, 0.0), 1.0);
+    // Collinear lines
+    line(&mut s, "A-WALL", (0.0, 0.0), (1.0, 0.0), 1.0);
+    line(&mut s, "A-WALL", (1.0, 0.0), (2.0, 0.0), 1.0);
+    line(&mut s, "A-WALL", (2.0, 0.0), (3.0, 0.0), 1.0);
+    // Huge coordinates
+    line(&mut s, "A-WALL", (0.0, 0.0), (1e10, 0.0), 1.0);
+    let r = dry(&mut s, json!({}));
+    // Should not panic and should return valid JSON
+    assert!(r["walls"].is_array());
+    assert!(r["openings"].is_array());
+    assert!(r["rooms"].is_array());
+}

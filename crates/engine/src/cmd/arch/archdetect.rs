@@ -215,6 +215,9 @@ fn run_archdetect(s: &mut Session, p: &Value) -> Result<Value> {
             return Err(bad("archdetect", format!("opening {} needs its host wall {}, which is not accepted", opening_id(&det, i), wall_id(o.host))));
         }
     }
+    if chosen.is_empty() {
+        return Ok(json!({"accepted": {}, "walls": 0, "openings": 0, "rooms": 0, "converted": Value::Null}));
+    }
     let n_walls = chosen.iter().filter(|&&n| n < det.walls.len()).count();
     let n_open = chosen.iter().filter(|&&n| n >= det.walls.len() && n < det.walls.len() + det.openings.len()).count();
     let n_rooms = chosen.len() - n_walls - n_open;
