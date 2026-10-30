@@ -71,7 +71,7 @@ impl TinIndex {
         let height = (n as f64).sqrt().ceil().clamp(1.0, 1024.0) as usize;
 
         // Fill cells.
-        let cells: Vec<Vec<Vec<usize>>> = (0..height).map(|_| vec![Vec::new(); width]).collect();
+        let mut cells: Vec<Vec<Vec<usize>>> = (0..height).map(|_| vec![Vec::new(); width]).collect();
         if span(x_min, x_max) && span(y_min, y_max) {
             let dx = (x_max - x_min) / width as f64;
             let dy = (y_max - y_min) / height as f64;
