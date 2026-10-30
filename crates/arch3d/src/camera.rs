@@ -694,11 +694,11 @@ mod tests {
     fn orbit_fit_distance_matches_formula() {
         let b = Bounds3::new([0.0, 0.0, 0.0], [12.0, 8.0, 2.7]);
         let fit = Orbit::fit(&b);
-        let dx = 12.0;
-        let dy = 8.0;
-        let dz = 2.7;
+        let dx: f64 = 12.0;
+        let dy: f64 = 8.0;
+        let dz: f64 = 2.7;
         let r = 0.5 * (dx * dx + dy * dy + dz * dz).sqrt();
-        let fov = 45.0;
+        let fov: f64 = 45.0;
         let s = (fov * std::f64::consts::PI / 360.0).sin();
         let expected_dist = (1.1 * r.max(0.1) / s).clamp(MIN_DISTANCE, MAX_DISTANCE);
         assert!((fit.distance - expected_dist).abs() < 1e-12);
