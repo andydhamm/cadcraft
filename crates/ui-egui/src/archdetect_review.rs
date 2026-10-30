@@ -70,7 +70,7 @@ fn zoom_params(reply: &Value, c: &Value) -> Option<Value> {
     if pts.is_empty() {
         return None;
     }
-    let size = (hi[0] - lo[0]).max(hi[1] - lo[1]).max(num(c, "width")).max(1.0) * 1.6;
+    let size = (hi[0] - lo[0]).max(hi[1] - lo[1]).max(num(c, "width")).max(num(c, "thickness")).max(1.0) * 1.6;
     Some(json!({"center": [(lo[0] + hi[0]) / 2.0 / scale, (lo[1] + hi[1]) / 2.0 / scale], "height": size / scale}))
 }
 
