@@ -455,6 +455,72 @@ fn viewsheet_refuses_view_with_zero_size_bounds() {
 }
 
 #[test]
+#[test]
+fn viewsheet_refuses_view_with_non_finite_scale() {
+    let mut s = Session::new();
+    let mut v = make_view(0, "v0", f64::NAN, 11.2, 5.7);
+    v.scale = f64::NAN;
+    s.doc_mut().unwrap().arch.views.push(v);
+
+    let layouts_before = s.doc().unwrap().layouts.len();
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "NanScale",
+            "views": ["v0"],
+            "paper": "ARCH D",
+            "landscape": true
+        }),
+    );
+
+    assert!(res.is_err(), "viewsheet should refuse a view with a non-finite scale");
+    assert_eq!(s.doc().unwrap().layouts.len(), layouts_before);
+}
+
+#[test]
+fn viewsheet_refuses_view_with_non_finite_bounds() {
+    let mut s = Session::new();
+    let mut v = make_view(0, "v0", 50.0, 11.2, 5.7);
+    v.generated.as_mut().unwrap().extent = [f64::NAN, 0.0, 11.2, 5.7];
+    s.doc_mut().unwrap().arch.views.push(v);
+
+    let layouts_before = s.doc().unwrap().layouts.len();
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "NanBounds",
+            "views": ["v0"],
+            "paper": "ARCH D",
+            "landscape": true
+        }),
+    );
+
+    assert!(res.is_err(), "viewsheet should refuse a view with non-finite bounds");
+    assert_eq!(s.doc().unwrap().layouts.len(), layouts_before);
+}
+
+#[test]
+fn viewsheet_refuses_view_with_zero_scale() {
+    let mut s = Session::new();
+    let mut v = make_view(0, "v0", 0.0, 11.2, 5.7);
+    v.scale = 0.0;
+    s.doc_mut().unwrap().arch.views.push(v);
+
+    let layouts_before = s.doc().unwrap().layouts.len();
+    let res = s.execute(
+        "viewsheet",
+        &json!({
+            "name": "ZeroScale",
+            "views": ["v0"],
+            "paper": "ARCH D",
+            "landscape": true
+        }),
+    );
+
+    assert!(res.is_err(), "viewsheet should refuse a view with a zero scale");
+    assert_eq!(s.doc().unwrap().layouts.len(), layouts_before);
+}
+
 fn viewsheet_refuses_bad_input_and_changes_nothing() {
     let mut s = Session::new();
 

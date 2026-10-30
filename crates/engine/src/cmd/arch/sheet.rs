@@ -45,6 +45,9 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
     let doc = s.doc()?;
     let arch = &doc.arch;
 
+    // Determine if the drawing is metric (paper unit is mm).
+    let is_metric = cadcraft_render::paper::paper_unit_mm(doc) == 1.0;
+
     for v in views_val {
         let v_name = v.as_str().ok_or_else(|| EngineError::Other("view name must be string".into()))?;
         if !seen.insert(v_name.to_string()) {
@@ -56,6 +59,11 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
 
         if view.generated.is_none() {
             return Err(EngineError::Other(format!("view {v_name} has no generated geometry")));
+        }
+
+        // Validate scale is positive and finite.
+        if !view.scale.is_finite() || view.scale <= 0.0 {
+            return Err(EngineError::Other(format!("view {v_name} has an invalid scale: {}", view.scale)));
         }
 
         let bounds_opt = view.bounds();
@@ -70,6 +78,11 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
         let max_x = bounds[2];
         let max_y = bounds[3];
 
+        // Validate bounds are finite.
+        if !min_x.is_finite() || !min_y.is_finite() || !max_x.is_finite() || !max_y.is_finite() {
+            return Err(EngineError::Other(format!("view {v_name} has non-finite bounds")));
+        }
+
         if (max_x - min_x).abs() < 1e-9 || (max_y - min_y).abs() < 1e-9 {
             return Err(EngineError::Other(format!("view {v_name} has zero-size bounds")));
         }
@@ -83,13 +96,8 @@ pub fn run_viewsheet(s: &mut Session, params: &Value) -> Result<Value> {
 
     // Calculate layout
     // k = paper units per model meter (mm/m for metric)
-    // Metric drawing assumed for now (mm).
     // k = 1000 / scale. e.g. scale 50 (1:50) -> 20 mm/m.
     // If imperial, k = 1000 / 25.4 / scale.
-    // We assume metric for simplicity as per typical arch workflows in this codebase unless units are checked.
-    // Checking units:
-    let is_metric = true; // Default to metric for arch3d
-
     let mut viewports_info = Vec::new();
 
     struct ViewportInfo {
