@@ -272,9 +272,9 @@ fn split_unexplained_gaps(walls: &mut Vec<WallRun>, openings: &mut Vec<OpeningCa
         }
 
         let dir = (w.end - w.start).normalized();
-        let mut splits = Vec::new();
 
-        // Find gaps > 0.3m not covered by openings
+        // Collect unexplained gaps to remove
+        let mut gaps_to_remove: Vec<(f64, f64)> = Vec::new();
         for (g_start, g_end) in &w.gaps {
             if g_end - g_start > 0.3 {
                 let mut covered = false;
@@ -291,24 +291,25 @@ fn split_unexplained_gaps(walls: &mut Vec<WallRun>, openings: &mut Vec<OpeningCa
                     }
                 }
                 if !covered {
-                    splits.push(*g_start);
+                    gaps_to_remove.push((*g_start, *g_end));
                 }
             }
         }
 
-        if splits.is_empty() {
+        if gaps_to_remove.is_empty() {
             let idx = new_walls.len();
             new_walls.push(w.clone());
             wall_pieces[i].push((idx, 0.0, len));
         } else {
-            splits.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            splits.dedup();
+            // Sort gaps by start
+            gaps_to_remove.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
             let mut prev = 0.0;
-            for &s in &splits {
-                if s > prev + 1e-6 && s < len - 1e-6 {
+            for (g_start, g_end) in gaps_to_remove {
+                // Create a wall piece from prev to g_start
+                if g_start > prev + 1e-6 {
                     let start = w.start + dir * prev;
-                    let end = w.start + dir * s;
+                    let end = w.start + dir * g_start;
                     let idx = new_walls.len();
                     new_walls.push(WallRun {
                         start,
@@ -318,10 +319,13 @@ fn split_unexplained_gaps(walls: &mut Vec<WallRun>, openings: &mut Vec<OpeningCa
                         confidence: w.confidence,
                         evidence: w.evidence.clone(),
                     });
-                    wall_pieces[i].push((idx, prev, s));
-                    prev = s;
+                    wall_pieces[i].push((idx, prev, g_start));
                 }
+                // Move prev to the end of the gap
+                prev = g_end;
             }
+
+            // Create the final piece from the last gap end to the wall end
             if prev < len - 1e-6 {
                 let start = w.start + dir * prev;
                 let end = w.end;
