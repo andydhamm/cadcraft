@@ -247,9 +247,9 @@ pub fn opening_meshes(walls: &BTreeMap<ArchId, &Wall>, o: &Opening, span: Option
 
     // Header: a lintel centred on the wall centre plane, `HEADER_INSET` inside
     // both wall faces so an elevation hides it behind the wall above the
-    // opening; clipped to stay inside the host wall height.
+    // opening; clipped to stay inside the host wall span.
     let header_h = 0.2;
-    let header_top = (frame_z1 + header_h).min(wall.height);
+    let header_top = (frame_z1 + header_h).min(top);
     if header_top > frame_z1 + 1e-9 {
         let header_depth = if wall_t > 4.0 * HEADER_INSET { wall_t - 2.0 * HEADER_INSET } else { wall_t / 2.0 };
         let header_off = band_offset(0.0, header_depth, wall_t);
