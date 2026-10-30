@@ -3,8 +3,8 @@
 //! Pure Rust, no new dependency: a single binary buffer, one bufferView and one
 //! accessor per attribute (`componentType` 5126/5125, `type` VEC3/VEC2/SCALAR,
 //! `min`/`max` on POSITION), one mesh + node per [`Mesh`] named by material
-//! (`wall-w{n}`, `<material>-o{n}`, or roof: `roof-r{n}p{m}`,
-//! `roof-r{n}-fascia`, `roof-r{n}-soffit`),
+//! (`wall-w{n}`, `floor-r{n}`/`ceiling-r{n}`, `deck-r{n}`, roof:
+//! `roof-r{n}p{m}`, `roof-r{n}-fascia`, `roof-r{n}-soffit`; other `<material>-o{n}`),
 //! one material per distinct `Mesh::material` (flat pbrMetallicRoughness base
 //! colour via [`cadcraft_color`]), and one scene. The GLB header magic is
 //! `0x46546C67`, little-endian, 4-byte aligned.
@@ -147,6 +147,8 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
             "stair" => format!("stair-s{}", m.object.0),
             "railing" => format!("railing-ra{}", m.object.0),
             "deck" => format!("deck-r{}", m.object.0),
+            "floor" => format!("floor-r{}", m.object.0),
+            "ceiling" => format!("ceiling-r{}", m.object.0),
             "terrain" => "terrain".to_string(),
             "plant-crown" => format!("plant-pl{}", m.object.0),
             "plant-trunk" => format!("plant-pl{}-trunk", m.object.0),
@@ -1519,5 +1521,29 @@ mod tests {
         assert!(mat_names.contains(&"stair".to_string()));
         assert!(mat_names.contains(&"railing".to_string()));
         assert!(mat_names.contains(&"deck".to_string()));
+    }
+
+    /// Floor and ceiling nodes are named by the room's id (`floor-r{n}` /
+    /// `ceiling-r{n}`), not the default `<material>-o{n}` arm.
+    #[test]
+    fn glb_names_floors_and_ceilings_by_room() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "floor".into();
+            m.object = ArchId(3);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "ceiling".into();
+            m.object = ArchId(3);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert!(mesh_names.contains(&"floor-r3".to_string()), "missing floor-r3: {:?}", mesh_names);
+        assert!(mesh_names.contains(&"ceiling-r3".to_string()), "missing ceiling-r3: {:?}", mesh_names,);
     }
 }
