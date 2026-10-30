@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-30 05:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-30 06:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 8 of 13: Recognition from plain DXF — 4 of 23 segments merged · 0 of 10 acceptance checks**
 
@@ -18,7 +18,7 @@ Updated 2026-10-30 05:45 UTC. This page and the card in the README are regenerat
 | 5 | Stairs, railings and decks | done | 9 / 9 | 16.1 h |
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
-| 8 | Recognition from plain DXF | building | 0 / 10 | 2.7 h so far · expected done Oct 30 22:44–Nov 02 07:43 UTC |
+| 8 | Recognition from plain DXF | building | 0 / 10 | 2.9 h so far · expected done Oct 31 00:35–Nov 02 14:55 UTC |
 | 9 | Terrain and site | planned | — | — |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
@@ -27,14 +27,14 @@ Updated 2026-10-30 05:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 8 segments
 
-14 queued, 4 merged, 4 gate, 1 merging
+14 queued, 4 merged, 3 gate, 1 merging, 1 escalate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p8-offset-is-the-centre` | One meaning of an opening's offset: the distance from the wall start to its CENTRE | gate | mai-flash |
 | `p8-header-inside-the-wall` | The opening header sits inside the wall, so elevations draw no rectangle above openings | merging | claude-sonnet-b |
 | `p8-io-opening-proxies-whole-symbol` | Opening proxies on save carry the whole plan symbol (jambs, leaf, swing, frame, glass) | gate | bonsai-a |
-| `p8-housekeeping-guide-readme-uk` | User guide that runs (phases 6-7), current README, uk.tsv Двері | gate | kimi-k31 |
+| `p8-housekeeping-guide-readme-uk` | User guide that runs (phases 6-7), current README, uk.tsv Двері | escalate |  |
 | `p8-detect-skeleton` | crates/arch/src/detect: the API, units, and stub submodules | gate | darwin-ws3 |
 
 ## Recent merges
@@ -59,13 +59,13 @@ Updated 2026-10-30 05:45 UTC. This page and the card in the README are regenerat
 | Seat | Model | State | Rounds |
 |---|---|---|---|
 | bonsai-a | bonsai2-27b | gate | 662 |
-| bonsai-b | bonsai2-27b | gate | 621 |
+| bonsai-b | bonsai2-27b | gate | 622 |
 | bonsai-ws2-a | bonsai2-27b | held | 700 |
 | bonsai-ws2-b | bonsai2-27b | held | 650 |
 | claude-sonnet-a | sonnet | idle | 44 |
 | claude-sonnet-b | sonnet | merging | 42 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 509 |
-| kimi-k31 | k3.1-pro-highspeed | gate | 87 |
+| kimi-k31 | k3.1-pro-highspeed | idle | 88 |
 | mai-flash | mai-code-1.1-flash | gate | 18 |
-| tturbo-mac | tturbo-ultraheretic | gate | 446 |
+| tturbo-mac | tturbo-ultraheretic | agent | 447 |
 | tturbo-mac2 | tturbo-ultraheretic | idle | 271 |
