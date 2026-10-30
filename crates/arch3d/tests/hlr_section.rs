@@ -236,6 +236,32 @@ fn elevation_draws_nothing_of_a_door_above_its_rough_top() {
 }
 
 #[test]
+fn a_window_header_is_hidden_in_elevation() {
+    let (mut m, [s, ..]) = house();
+    let mut o = Opening::new(s, 4.0, 0.9, 1.2, OpeningKind::Window);
+    o.sill = 0.9;
+    m.push_opening(o);
+    let v = visible_lines(&build(&m), &front());
+    let opening: Vec<&Line2> = v.iter().filter(|l| l.kind == ArchKind::Opening).collect();
+    assert!(!opening.is_empty(), "{v:?}");
+    for l in opening {
+        assert!(l.a[1] <= 2.22 + TOL && l.b[1] <= 2.22 + TOL, "window header shows above rough top: {l:?}");
+    }
+}
+
+#[test]
+fn a_garage_door_header_is_hidden_in_elevation() {
+    let (mut m, [s, ..]) = house();
+    m.push_opening(Opening::new(s, 5.0, 3.0, 2.2, OpeningKind::GarageDoor));
+    let v = visible_lines(&build(&m), &front());
+    let opening: Vec<&Line2> = v.iter().filter(|l| l.kind == ArchKind::Opening).collect();
+    assert!(!opening.is_empty(), "{v:?}");
+    for l in opening {
+        assert!(l.a[1] <= 2.32 + TOL && l.b[1] <= 2.32 + TOL, "garage door header shows above rough top: {l:?}");
+    }
+}
+
+#[test]
 fn section_rings_carry_the_kind_of_their_object() {
     let (mut m, _) = house();
     m.levels.push(Level { index: 0, elevation: 0.0, ceiling_height: 2.4, ..Default::default() });
