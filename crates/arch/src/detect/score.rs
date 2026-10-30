@@ -230,7 +230,9 @@ mod tests {
             // The `score` function for openings does NOT use `host`. It only uses `center`, `width`, `kind`.
             // So `host` in `OpeningCand` is irrelevant for `score`.
             // So I can set `host: 0` for all openings in the test.
+        }
 
+        for to in &truth.openings {
             let kind = if to.kind.eq_ignore_ascii_case("door") { CandKind::Door } else { CandKind::Window };
             det.openings.push(OpeningCand {
                 kind,
