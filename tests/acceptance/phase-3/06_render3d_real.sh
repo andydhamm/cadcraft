@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # render3d really draws: depth-tested, lit image. SKIP only on exit 3 (NO_ADAPTER).
 set -uo pipefail
-tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+tmp=$(mktemp -d); trap '[ -n "${CHECK_ARTIFACTS_DIR:-}" ] && cp "$tmp"/*.png "$CHECK_ARTIFACTS_DIR"/ 2>/dev/null; rm -rf "$tmp"' EXIT
 cargo run -q -p cadcraft-cli -- run --metric \
   --cmd 'wall {"points":[[0,0],[10,0],[10,8],[0,8],[0,0]],"thickness":0.2,"height":2.7,"exterior":true}' \
   --cmd 'wall {"points":[[0,3],[10,3]],"thickness":0.1}' --cmd 'roomdetect {}' \
