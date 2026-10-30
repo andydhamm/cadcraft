@@ -199,39 +199,6 @@ mod tests {
             });
         }
 
-        // Map truth wall IDs to their index in det.walls
-        let mut wall_id_to_idx = std::collections::HashMap::new();
-        for (i, tw) in truth.walls.iter().enumerate() {
-            // TruthWall doesn't have an ID field in the struct definition provided in the prompt's context,
-            // but the JSON has "id". The TruthWall struct in the file doesn't have an id field.
-            // Wait, looking at TruthWall definition:
-            // pub struct TruthWall { pub start: [f64; 2], pub end: [f64; 2], pub thickness: f64 }
-            // It does NOT have an id field.
-            // But the JSON has "id": "W1".
-            // The test needs to map openings to walls.
-            // The truth openings have "host": "W5".
-            // We need to find which wall in truth.walls corresponds to "W5".
-            // Since TruthWall doesn't store the ID, we can't easily map "W5" to an index unless we parse the JSON manually or add ID to TruthWall.
-            // However, the prompt says "Replace the score stub... keep the Truth/Pr/Score types p8-detect-skeleton defined."
-            // If I cannot change TruthWall, I must assume the order in truth.walls matches the order of IDs or I need to parse the JSON differently.
-            // Actually, looking at the JSON: W1, W2, W3, W4, W5, W6.
-            // The openings refer to W5, W6, W1, W4, W2.
-            // If TruthWall doesn't have an ID, I can't map "W5" to index 4.
-            // Let's check if I can add `id` to `TruthWall`. The prompt says "keep the Truth/Pr/Score types p8-detect-skeleton defined".
-            // This implies I shouldn't change the struct definition if it was defined by another engineer.
-            // BUT, if the test fails because I can't map hosts, maybe I should assume the host index is implicit or I need to parse the JSON to get IDs.
-            // Let's look at the `Truth` struct again.
-            // pub struct Truth { pub walls: Vec<TruthWall>, ... }
-            // pub struct TruthWall { pub start: [f64; 2], pub end: [f64; 2], pub thickness: f64 }
-            // There is no ID.
-            // However, the JSON has IDs.
-            // If I cannot add ID to TruthWall, I cannot map "W5" to an index.
-            // Perhaps the `host` in `OpeningCand` is just an index, and for the test "perfect detection", we can just assign arbitrary hosts or assume 1-to-1 mapping if we don't care about host correctness for scoring?
-            // The `score` function for openings does NOT use `host`. It only uses `center`, `width`, `kind`.
-            // So `host` in `OpeningCand` is irrelevant for `score`.
-            // So I can set `host: 0` for all openings in the test.
-        }
-
         for to in &truth.openings {
             let kind = if to.kind.eq_ignore_ascii_case("door") { CandKind::Door } else { CandKind::Window };
             det.openings.push(OpeningCand {
