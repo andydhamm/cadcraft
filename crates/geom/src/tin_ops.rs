@@ -11,8 +11,9 @@ use crate::tin::{ContourSegment, Tin, barycentric};
 /// A uniform grid over a TIN's triangles for fast point location.
 #[derive(Clone, Debug, Default)]
 pub struct TinIndex {
-    /// Cells, row-major, `height` rows of `width` columns.
-    cells: Vec<Vec<usize>>,
+    /// Cells, row-major, `height` rows of `width` columns; each cell
+    /// holds the triangle indices whose bounding box overlaps it.
+    cells: Vec<Vec<Vec<usize>>>,
     x_min: f64,
     x_max: f64,
     y_min: f64,
@@ -70,7 +71,7 @@ impl TinIndex {
         let height = (n as f64).sqrt().ceil().clamp(1.0, 1024.0) as usize;
 
         // Fill cells.
-        let cells: Vec<Vec<usize>> = (0..height).map(|_| vec![0; width]).collect();
+        let cells: Vec<Vec<Vec<usize>>> = (0..height).map(|_| vec![Vec::new(); width]).collect();
         if span(x_min, x_max) && span(y_min, y_max) {
             let dx = (x_max - x_min) / width as f64;
             let dy = (y_max - y_min) / height as f64;
@@ -82,9 +83,13 @@ impl TinIndex {
                 if t >= (side - 1) as f64 { side - 1 } else { t.floor() as i64 as usize }
             };
             for (i, tbb) in tri_bbs.iter().enumerate() {
-                let Some(((tx_min, ty_min), (tx_max, ty_max))) = tbb else {
+                let Some(tbb) = tbb else {
                     continue;
                 };
+                let tx_min = tbb.0[0];
+                let tx_max = tbb.0[1];
+                let ty_min = tbb.1[0];
+                let ty_max = tbb.1[1];
                 let col0 = cell(tx_min, x_min, x_max - x_min, width);
                 let col1 = cell(tx_max, x_min, x_max - x_min, width);
                 let row0 = cell(ty_min, y_min, y_max - y_min, height);
@@ -109,6 +114,71 @@ impl TinIndex {
         let col = self.cell_index(p.x, self.x_min, self.x_max, self.width)?;
         let row = self.cell_index(p.y, self.y_min, self.y_max, self.height)?;
         for &i in &self.cells[row][col] {
+            let Some(t) = tin.triangles.get(i) else { continue };
+            let Some(a) = tin.points.get(t[0]) else { return None };
+            let Some(b) = tin.points.get(t[1]) else { return None };
+            let Some(c) = tin.points.get(t[2]) else { return None };
+            let a = Vec2::new(a.x, a.y);
+            let b = Vec2::new(b.x, b.y);
+            let c = Vec2::new(c.x, c.y);
+            if let Some((u, v, w)) = barycentric(a, b, c, p) {
+                return Some((i, [u, v, w]));
+            }
+        }
+        None
+    }
+
+    fn cell_index(&self, v: f64, min: f64, max: f64, side: usize) -> Option<usize> {
+        if !(v >= min && v <= max) {
+            return None;
+        }
+        let span = max - min;
+        if span <= 0.0 {
+            return Some(0);
+        }
+        let t = (v - min) / span * side as f64;
+        if t >= (side - 1) as f64 {
+            Some(side - 1)
+        } else {
+            let i = t.floor() as i64;
+            if i < 0 { None } else { Some(i as usize) }
+        }
+    }
+}
+
+<<<<<<< REPLACE
+        for &i in &self.cells[row][col] {
+            let Some(t) = tin.triangles.get(i) else { continue };
+            let Some(a) = tin.points.get(t[0]) else { return None };
+            let Some(b) = tin.points.get(t[1]) else { return None };
+            let Some(c) = tin.points.get(t[2]) else { return None };
+            let a = Vec2::new(a.x, a.y);
+            let b = Vec2::new(b.x, b.y);
+            let c = Vec2::new(c.x, c.y);
+            if let Some((u, v, w)) = barycentric(a, b, c, p) {
+                return Some((i, [u, v, w]));
+            }
+        }
+        None
+    }
+
+    fn cell_index(&self, v: f64, min: f64, max: f64, side: usize) -> Option<usize> {
+        if !(v >= min && v <= max) {
+            return None;
+        }
+        let span = max - min;
+        if span <= 0.0 {
+            return Some(0);
+        }
+        let t = (v - min) / span * side as f64;
+        if t >= (side - 1) as f64 {
+            Some(side - 1)
+        } else {
+            let i = t.floor() as i64;
+            if i < 0 { None } else { Some(i as usize) }
+        }
+    }
+}
             let Some(t) = tin.triangles.get(i) else { continue };
             let Some(a) = tin.points.get(t[0]) else { return None };
             let Some(b) = tin.points.get(t[1]) else { return None };
@@ -210,11 +280,11 @@ fn quant(c: f64) -> i64 {
 /// without repeating the first point. Output is by elevation ascending, then
 /// first point (x, then y).
 pub fn chain_contours(segs: &[ContourSegment]) -> Vec<ContourLine> {
-    // Group by exact elevation, keeping input order within each group.
-    let mut by_elev: HashMap<f64, Vec<usize>> = HashMap::new();
+    // Group by exact elevation (bit pattern), keeping input order within each group.
+    let mut by_elev: HashMap<u64, Vec<usize>> = HashMap::new();
     for (i, s) in segs.iter().enumerate() {
         if s.elevation.is_finite() && s.start.is_finite() && s.end.is_finite() {
-            by_elev.entry(s.elevation).or_default().push(i);
+            by_elev.entry(s.elevation.to_bits()).or_default().push(i);
         }
     }
     let mut lines: Vec<ContourLine> = Vec::new();
