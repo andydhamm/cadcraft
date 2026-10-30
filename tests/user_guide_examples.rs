@@ -96,3 +96,40 @@ fn user_guide_out_of_scope_list() {
         "Should mention Gamepad as out of scope"
     );
 }
+
+#[test]
+fn user_guide_london_is_51_5() {
+    let content = read_user_guide();
+    // The design log pins 51.05 N as Calgary; London is 51.5 N.
+    if content.contains("London") {
+        assert!(
+            content.contains("51.5"),
+            "Guide calls London 51.05 N but it is 51.5 N"
+        );
+    }
+}
+
+#[test]
+fn user_guide_camera_uses_save_use_keys() {
+    let content = read_user_guide();
+    // camera takes save/use/delete/list keys, not "action":"save"
+    for block in extract_sh_blocks(&content) {
+        if block.contains("camera") {
+            assert!(
+                !block.contains("\"action\""),
+                "camera examples should use save/use/delete/list keys, not action: {}",
+                block
+            );
+        }
+    }
+}
+
+#[test]
+fn user_guide_walkthrough_shows_params() {
+    let content = read_user_guide();
+    // walkthrough is a calculator {eye, yaw, forward, strafe, turn}, not a mode switch
+    assert!(
+        content.contains("walkthrough") && content.contains("eye"),
+        "walkthrough example should show its params (eye, yaw, forward, strafe, turn)"
+    );
+}
