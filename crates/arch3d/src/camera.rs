@@ -652,4 +652,93 @@ mod tests {
         assert!(ray_at(&cam, size, [f64::NAN as f32, 32.0]).is_none(), "NaN pixel should be None");
         assert!(ray_at(&cam, (0u32, 64u32), [32.0, 32.0]).is_none(), "zero width should be None");
     }
+
+    #[test]
+    fn orbit_fit_empty_bounds() {
+        let b = Bounds3::new([5.0, 3.0, 1.0], [5.0, 3.0, 1.0]);
+        let fit = Orbit::fit(&b);
+        // Target should be at the center (the single point)
+        assert!((fit.target - Vec3::new(5.0, 3.0, 1.0)).len() < 1e-12);
+        // Distance should be finite and within bounds
+        assert!(fit.distance.is_finite());
+        assert!(fit.distance >= MIN_DISTANCE);
+        assert!(fit.distance <= MAX_DISTANCE);
+        // The point should project to the center of the viewport
+        let cam = Camera::Orbit(fit);
+        let p = project_point(&cam, (100, 100), [5.0, 3.0, 1.0]).unwrap();
+        assert!((p[0] - 50.0).abs() < 1.0);
+        assert!((p[1] - 50.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn orbit_fit_huge_bounds_clamps_to_max_distance() {
+        let b = Bounds3::new([0.0, 0.0, 0.0], [1e7, 1e7, 1e7]);
+        let fit = Orbit::fit(&b);
+        assert_eq!(fit.distance, MAX_DISTANCE);
+        assert!(fit.target.is_finite());
+    }
+
+    #[test]
+    fn orbit_fit_nan_bounds_do_not_panic() {
+        let b = Bounds3::new([f64::NAN, 0.0, 0.0], [10.0, 10.0, 10.0]);
+        let fit = Orbit::fit(&b);
+        // Should not panic; NaN propagates
+        assert!(fit.target.x.is_nan());
+        let b2 = Bounds3::new([0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
+        let fit2 = Orbit::fit(&b2);
+        assert!(fit2.target.is_finite());
+        assert!(fit2.distance.is_finite());
+    }
+
+    #[test]
+    fn orbit_fit_distance_matches_formula() {
+        let b = Bounds3::new([0.0, 0.0, 0.0], [12.0, 8.0, 2.7]);
+        let fit = Orbit::fit(&b);
+        let dx: f64 = 12.0;
+        let dy: f64 = 8.0;
+        let dz: f64 = 2.7;
+        let r = 0.5 * (dx * dx + dy * dy + dz * dz).sqrt();
+        let fov: f64 = 45.0;
+        let s = (fov * std::f64::consts::PI / 360.0).sin();
+        let expected_dist = (1.1 * r.max(0.1) / s).clamp(MIN_DISTANCE, MAX_DISTANCE);
+        assert!((fit.distance - expected_dist).abs() < 1e-12);
+        assert_eq!(fit.fov_deg, 45.0);
+        assert_eq!(fit.azimuth, 30.0);
+        assert_eq!(fit.elevation, 30.0);
+    }
+
+    #[test]
+    fn orbit_fit_margin_keeps_corners_inside_viewport() {
+        let b = Bounds3::new([0.0, 0.0, 0.0], [12.0, 8.0, 2.7]);
+        let fit = Orbit::fit(&b);
+        let cam = Camera::Orbit(fit);
+        let size = (1000, 1000);
+        let mut min_px = f32::MAX;
+        let mut min_py = f32::MAX;
+        let mut max_px = f32::MIN;
+        let mut max_py = f32::MIN;
+        for c in corners(&b) {
+            let p = project_point(&cam, size, c).unwrap();
+            min_px = min_px.min(p[0]);
+            min_py = min_py.min(p[1]);
+            max_px = max_px.max(p[0]);
+            max_py = max_py.max(p[1]);
+        }
+        // With 10% margin, corners should not be at the very edge
+        assert!(min_px > 0.0, "left edge clipped");
+        assert!(min_py > 0.0, "top edge clipped");
+        assert!(max_px < 1000.0, "right edge clipped");
+        assert!(max_py < 1000.0, "bottom edge clipped");
+    }
+
+    #[test]
+    fn orbit_fit_tiny_bounds_use_minimum_radius() {
+        let b = Bounds3::new([0.0, 0.0, 0.0], [0.05, 0.05, 0.05]);
+        let fit = Orbit::fit(&b);
+        // r = 0.5 * sqrt(3 * 0.05^2) = 0.0433 < 0.1, so r.max(0.1) = 0.1
+        let fov = 45.0;
+        let s = (fov * std::f64::consts::PI / 360.0).sin();
+        let expected_dist = (1.1 * 0.1 / s).clamp(MIN_DISTANCE, MAX_DISTANCE);
+        assert!((fit.distance - expected_dist).abs() < 1e-12);
+    }
 }
