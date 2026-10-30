@@ -9,7 +9,7 @@ use crate::{
 
 /// `sun` command spec.
 pub fn specs() -> Vec<CommandSpec> {
-    vec![CommandSpec::new("sun", "Sun", run_sun).menu(&["Architecture", "Sun"]).params("{lat,date,time}").noundo()]
+    vec![CommandSpec::new("sun", "Sun", run_sun).menu(&["Architecture", "Sun"]).params("{lat?, date, time}").noundo()]
 }
 
 /// Report the sun's elevation, azimuth and direction vector.
@@ -17,16 +17,23 @@ pub fn specs() -> Vec<CommandSpec> {
 /// `lat` is a finite number in [-90, 90]; `date` is `YYYY-MM-DD`; `time` is `solar-noon` or
 /// `HH:MM`. Anything missing or invalid is refused, never clamped. The document is not touched.
 /// Returns `{"ok":true,"elevation":deg,"azimuth":deg,"dir":[x,y,z],"lat":..,"date":..,"time":..}`.
-fn run_sun(_s: &mut Session, params: &Value) -> Result<Value, EngineError> {
-    let lat = f64_req("sun", params, "lat")?;
+fn run_sun(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
+    let site = s.doc()?.arch.site.clone();
+    let lat = match (params.get("lat"), &site) {
+        (None | Some(Value::Null), Some(site)) => site.latitude,
+        (None | Some(Value::Null), None) => return Err(bad("sun", "`lat` is required when the drawing has no site location")),
+        _ => f64_req("sun", params, "lat")?,
+    };
     if lat.abs() > 90.0 {
         return Err(bad("sun", "`lat` must be within -90..90"));
     }
     let date = params.get("date").and_then(Value::as_str).ok_or_else(|| bad("sun", "`date` (string) is required"))?;
     let time = params.get("time").and_then(Value::as_str).ok_or_else(|| bad("sun", "`time` (solar-noon or HH:MM) is required"))?;
     let sun = cadcraft_arch::sun::sun_position(lat, date, time).ok_or_else(|| bad("sun", "invalid `date` or `time`"))?;
-    let dir = cadcraft_arch::sun::sun_dir(&sun);
+    let dir = cadcraft_arch::site::true_to_drawing(site.as_ref(), cadcraft_arch::sun::sun_dir(&sun));
+    let true_north = site.as_ref().map_or(0.0, |x| x.true_north);
     Ok(json!({
+        "trueNorth": true_north,
         "ok": true,
         "elevation": sun.elevation_deg,
         "azimuth": sun.azimuth_deg,
@@ -75,6 +82,29 @@ mod tests {
         for p in &bads {
             assert!(s.execute("sun", p).is_err(), "should refuse {p}");
         }
+    }
+
+    #[test]
+    fn sun_uses_the_site_latitude_and_true_north() {
+        let mut s = Session::new();
+        s.execute("site", &json!({ "latitude": 51.05, "trueNorth": 30.0 })).unwrap();
+        let r = s.execute("sun", &json!({ "date": "2026-06-21", "time": "solar-noon" })).unwrap();
+        assert_eq!(r["trueNorth"], json!(30.0));
+        let d: Vec<f64> = r["dir"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+        let n = (d[0] * d[0] + d[1] * d[1]).sqrt();
+        let (sx, sy) = (-d[0] / n, -d[1] / n);
+        assert!((sx + 0.5).abs() < 1e-3 && (sy - 0.866).abs() < 1e-3, "shadow {sx},{sy}");
+        // An explicit lat still wins.
+        let r = s.execute("sun", &json!({ "lat": 0.0, "date": "2026-06-21", "time": "solar-noon" })).unwrap();
+        assert_eq!(r["lat"], json!(0.0));
+    }
+
+    #[test]
+    fn sun_without_site_or_lat_is_refused() {
+        let mut s = Session::new();
+        assert!(s.execute("sun", &json!({ "date": "2026-06-21", "time": "solar-noon" })).is_err());
+        let r = s.execute("sun", &json!({ "lat": 10.0, "date": "2026-06-21", "time": "solar-noon" })).unwrap();
+        assert_eq!(r["trueNorth"], json!(0.0));
     }
 
     #[test]
