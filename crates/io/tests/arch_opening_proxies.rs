@@ -1,6 +1,7 @@
 use cadcraft_doc::arch::{Opening, OpeningKind};
 use cadcraft_doc::{Drawing, EntityKind, Wall};
 use cadcraft_geom::Vec2;
+use cadcraft_io::{read_dxf, write_dxf};
 
 /// Counts LWPOLYLINE entities in the parsed drawing that carry `marker` in their
 /// CADCRAFT xdata.
@@ -66,7 +67,7 @@ fn opening_proxies_carry_the_whole_symbol() {
     d.arch.push_opening(Opening::new(wid, 2.5, 0.9, 2.1, OpeningKind::Door));
     d.arch.push_opening(Opening::new(wid, 6.5, 1.5, 1.2, OpeningKind::Window));
 
-    let text = crate::write_dxf(&d);
+    let text = write_dxf(&d);
     let arch = lwpoly_archopenings_in_text(&text);
 
     let door = arch.iter().filter(|(l, _)| l.as_str() == "A-DOOR").count();
@@ -87,14 +88,14 @@ fn opening_proxies_are_dropped_on_read_with_the_record() {
     d.arch.push_opening(Opening::new(wid, 2.5, 0.9, 2.1, OpeningKind::Door));
     d.arch.push_opening(Opening::new(wid, 6.5, 1.5, 1.2, OpeningKind::Window));
 
-    let first_text = crate::write_dxf(&d);
-    let first = crate::read_dxf(first_text.as_bytes()).unwrap();
+    let first_text = write_dxf(&d);
+    let first = read_dxf(first_text.as_bytes()).unwrap();
 
     // No ARCHOPENING-tagged LWPOLYLINEs survive the read while the record is present.
     assert_eq!(lwpoly_count_marker(&first, "ARCHOPENING"), 0, "ARCHOPENING-tagged LWPOLYLINEs survived the first read",);
 
-    let second_text = crate::write_dxf(&first);
-    let second = crate::read_dxf(second_text.as_bytes()).unwrap();
+    let second_text = write_dxf(&first);
+    let second = read_dxf(second_text.as_bytes()).unwrap();
 
     assert_eq!(lwpoly_count_marker(&second, "ARCHOPENING"), 0, "ARCHOPENING-tagged LWPOLYLINEs survived the second read",);
     assert_eq!(second.arch.openings.len(), 2, "openings changed on round trip");
@@ -118,8 +119,8 @@ fn a_stripped_drawing_keeps_the_door_swing_as_linework() {
     d.arch.push_opening(Opening::new(wid, 6.5, 1.5, 1.2, OpeningKind::Window));
 
     // Rename the CADCRAFT_ARCH key so the reader does not find an arch record.
-    let text = crate::write_dxf(&d).replace("CADCRAFT_ARCH", "STRIPPED_ARCH");
-    let stripped = crate::read_dxf(text.as_bytes()).unwrap();
+    let text = write_dxf(&d).replace("CADCRAFT_ARCH", "STRIPPED_ARCH");
+    let stripped = read_dxf(text.as_bytes()).unwrap();
 
     // Without the record, no openings in the model.
     assert_eq!(stripped.arch.openings.len(), 0, "openings should be empty when the arch record is stripped",);
