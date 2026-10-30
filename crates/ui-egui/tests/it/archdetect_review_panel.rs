@@ -45,6 +45,10 @@ fn ids(reply: &Value, key: &str) -> Vec<String> {
     reply[key].as_array().into_iter().flatten().filter_map(|c| c["id"].as_str().map(str::to_owned)).collect()
 }
 
+fn all_ids(reply: &Value) -> Vec<String> {
+    ["walls", "openings", "rooms"].iter().flat_map(|k| ids(reply, k)).collect()
+}
+
 #[test]
 fn review_panel_lists_the_candidates_of_a_dry_run() {
     let mut h = harness(two_rooms());
@@ -105,4 +109,120 @@ fn unchecking_a_wall_unchecks_its_openings() {
     h.state_mut().ui.archdetect_checked.remove(&host);
     h.run_steps(3);
     assert!(!h.state().ui.archdetect_checked.contains(&id));
+}
+
+/// Detecting an empty drawing lists no candidates and does not crash.
+#[test]
+fn detect_with_empty_drawing_shows_no_candidates() {
+    let mut app = CadApp::new(Session::default(), Services::default());
+    app.ui.in_window_menu = false;
+    app.session.doc_mut().unwrap().header.set_i64("INSUNITS", 6);
+    app.run("archdetect.review", Value::Null).unwrap();
+    let mut h = harness(app);
+    h.get_by_label("Detect").click();
+    h.run_steps(4);
+    let reply = h.state().ui.archdetect.clone().expect("a dry-run reply");
+    assert!(ids(&reply, "walls").is_empty(), "{reply}");
+    assert!(ids(&reply, "openings").is_empty(), "{reply}");
+    assert!(ids(&reply, "rooms").is_empty(), "{reply}");
+}
+
+/// Accept with no candidates checked creates nothing.
+#[test]
+fn accept_with_no_checked_candidates_does_nothing() {
+    let mut h = harness(two_rooms());
+    h.get_by_label("Detect").click();
+    h.run_steps(4);
+    h.state_mut().ui.archdetect_checked.clear();
+    h.run_steps(2);
+    h.get_by_label("Accept Selected").click();
+    h.run_steps(4);
+    let doc = h.state().session.doc().unwrap();
+    assert_eq!(doc.arch.walls.len(), 0, "{}", h.state().ui.archdetect_note);
+    assert_eq!(doc.arch.openings.len(), 0);
+    assert_eq!(doc.arch.rooms.len(), 0);
+}
+
+/// Select All then Accept Selected creates every candidate.
+#[test]
+fn select_all_and_accept_creates_all() {
+    let mut h = harness(two_rooms());
+    h.get_by_label("Detect").click();
+    h.run_steps(4);
+    let reply = h.state().ui.archdetect.clone().expect("a dry-run reply");
+    let walls = ids(&reply, "walls").len();
+    let openings = ids(&reply, "openings").len();
+    let rooms = ids(&reply, "rooms").len();
+    h.get_by_label("Select All").click();
+    h.run_steps(2);
+    h.get_by_label("Accept Selected").click();
+    h.run_steps(4);
+    let doc = h.state().session.doc().unwrap();
+    assert_eq!(doc.arch.walls.len(), walls, "{}", h.state().ui.archdetect_note);
+    assert_eq!(doc.arch.openings.len(), openings);
+    assert_eq!(doc.arch.rooms.len(), rooms);
+}
+
+/// Detecting twice gives the same candidates (idempotent).
+#[test]
+fn detect_twice_does_not_duplicate() {
+    let mut h = harness(two_rooms());
+    h.get_by_label("Detect").click();
+    h.run_steps(4);
+    let reply1 = h.state().ui.archdetect.clone().expect("a dry-run reply");
+    let walls1 = ids(&reply1, "walls").len();
+    let openings1 = ids(&reply1, "openings").len();
+    let rooms1 = ids(&reply1, "rooms").len();
+    h.get_by_label("Detect").click();
+    h.run_steps(4);
+    let reply2 = h.state().ui.archdetect.clone().expect("a dry-run reply");
+    let walls2 = ids(&reply2, "walls").len();
+    let openings2 = ids(&reply2, "openings").len();
+    let rooms2 = ids(&reply2, "rooms").len();
+    assert_eq!(walls1, walls2);
+    assert_eq!(openings1, openings2);
+    assert_eq!(rooms1, rooms2);
+}
+
+/// Accept clears the candidate list and checked set.
+#[test]
+fn clear_after_accept_clears_the_list() {
+    let mut h = harness(two_rooms());
+    h.get_by_label("Detect").click();
+    h.run_steps(4);
+    assert!(h.state().ui.archdetect.is_some());
+    h.get_by_label("Accept Selected").click();
+    h.run_steps(4);
+    assert!(h.state().ui.archdetect.is_none());
+    assert!(h.state().ui.archdetect_checked.is_empty());
+}
+
+/// The Clear button unchecks all candidates but keeps the list.
+#[test]
+fn clear_button_clears_checks_but_keeps_list() {
+    let mut h = harness(two_rooms());
+    h.get_by_label("Detect").click();
+    h.run_steps(4);
+    let reply = h.state().ui.archdetect.clone().expect("a dry-run reply");
+    let total = all_ids(&reply).len();
+    assert!(total > 0);
+    h.get_by_label("Clear").click();
+    h.run_steps(2);
+    assert!(h.state().ui.archdetect.is_some(), "Clear keeps the list");
+    assert!(h.state().ui.archdetect_checked.is_empty(), "Clear unchecks all");
+}
+
+/// Select All checks every candidate, including low-confidence ones.
+#[test]
+fn select_all_checks_every_candidate() {
+    let mut h = harness(two_rooms());
+    h.get_by_label("Detect").click();
+    h.run_steps(4);
+    let reply = h.state().ui.archdetect.clone().expect("a dry-run reply");
+    let all = all_ids(&reply);
+    h.get_by_label("Select All").click();
+    h.run_steps(2);
+    for id in &all {
+        assert!(h.state().ui.archdetect_checked.contains(id), "Select All checks {id}");
+    }
 }
