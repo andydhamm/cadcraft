@@ -131,17 +131,18 @@ pub fn validate_placement(
 
     let offset = offset.clamp(0.0, len);
     let rough_width = width + ROUGH_ALLOWANCE;
-    let rough_off = offset - rough_width / 2.0;
+    let rough_start = offset - rough_width / 2.0;
+    let rough_end = rough_start + rough_width;
     let min_seg = min_segment(style);
-    if offset < min_seg {
+    if rough_start < min_seg {
         return Err(PlacementError("rough span extends past the start of the wall".into()));
     }
-    if offset + width > len - min_seg {
+    if rough_end > len - min_seg {
         return Err(PlacementError("rough span extends past the end of the wall".into()));
     }
 
-    let c0 = rough_off;
-    let c1 = rough_off + rough_width;
+    let c0 = rough_start;
+    let c1 = rough_end;
     for other in model.openings_on(host) {
         if ignore == Some(other.id) {
             continue;
@@ -263,7 +264,7 @@ pub fn place_opening(model: &ArchModel, mut o: Opening, fit: bool) -> Result<Ope
                     let mut overlap_ok = true;
                     for other in model.openings_on(o.host) {
                         if other.offset.is_finite() && other.width.is_finite() && other.rough_width.is_finite() {
-                            let b0 = other.offset - (other.rough_width - other.width) / 2.0;
+                            let b0 = other.offset - other.rough_width / 2.0;
                             let b1 = b0 + other.rough_width;
                             let gap = (b0 - c1).max(c0 - b1);
                             let need = if other.mull_group.is_some() { 0.0 } else { MIN_SEPARATION };
@@ -348,7 +349,7 @@ mod tests {
         let host = wall(&mut model, Vec2::ZERO, Vec2::new(5.0, 0.0), 0.2);
         let res = validate_placement(&model, host, 1.0, 1.0, 0.0, 2.0, OpeningKind::GarageDoor, "garage", None);
         assert!(res.is_err());
-        let ok = validate_placement(&model, host, 1.0, 2.0, 0.0, 2.0, OpeningKind::GarageDoor, "garage", None);
+        let ok = validate_placement(&model, host, 2.0, 2.0, 0.0, 2.0, OpeningKind::GarageDoor, "garage", None);
         assert!(ok.is_ok());
     }
 

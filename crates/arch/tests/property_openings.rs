@@ -77,6 +77,65 @@ fn house_with_openings() -> (ArchModel, Vec<ArchId>) {
     (model, hosts)
 }
 
+#[test]
+fn poche_gaps_are_rough_spans_centred_on_the_offset() {
+    let mut model = ArchModel::default();
+    let wall = model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    let door = place_opening(&model, Opening::new(wall, 3.0, 0.9, 2.1, OpeningKind::Door), false).unwrap();
+    model.push_opening(door);
+
+    let gaps = poché_gaps(&model, wall);
+    assert_eq!(gaps.len(), 1, "expected one gap, got {:?}", gaps);
+    assert!((gaps[0].0 - 2.49).abs() < 1e-9, "gap start {} != 2.49", gaps[0].0);
+    assert!((gaps[0].1 - 3.51).abs() < 1e-9, "gap end {} != 3.51", gaps[0].1);
+}
+
+#[test]
+fn symbol_spans_exactly_the_poche_gap() {
+    let mut model = ArchModel::default();
+    let wall = model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    let door = place_opening(&model, Opening::new(wall, 3.0, 0.9, 2.1, OpeningKind::Door), false).unwrap();
+    model.push_opening(door);
+
+    let gap = poché_gaps(&model, wall);
+    let sym = opening_symbol(&model, &model.openings[0]).unwrap();
+    let jamb_xs: Vec<f64> =
+        sym.polylines.iter().filter_map(|p| if p.len() == 2 && (p[0].x - p[1].x).abs() < 1e-9 { Some(p[0].x) } else { None }).collect();
+    assert_eq!(jamb_xs.len(), 2, "expected 2 jambs, got {:?}", jamb_xs);
+    assert!(
+        (jamb_xs.iter().copied().fold(f64::INFINITY, f64::min) - gap[0].0).abs() < 1e-9,
+        "symbol start {:?} doesn't match gap {:?}",
+        jamb_xs,
+        gap
+    );
+    assert!(
+        (jamb_xs.iter().copied().fold(f64::NEG_INFINITY, f64::max) - gap[0].1).abs() < 1e-9,
+        "symbol end {:?} doesn't match gap {:?}",
+        jamb_xs,
+        gap
+    );
+}
+
+#[test]
+fn placement_limits_measure_the_centred_rough_span() {
+    let mut model = ArchModel::default();
+    let wall = model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    for (offset, ok) in [(0.5, false), (0.8, true), (9.3, true), (9.5, false)] {
+        let res = validate_placement(&model, wall, offset, 0.9, 0.0, 2.1, OpeningKind::Door, "hinged", None);
+        assert_eq!(res.is_ok(), ok, "offset {offset} should {}: {:?}", if ok { "succeed" } else { "fail" }, res);
+    }
+}
+
+#[test]
+fn fit_slides_a_centred_opening_inside_the_wall() {
+    let mut model = ArchModel::default();
+    let wall = model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    let placed = place_opening(&model, Opening::new(wall, 0.0, 0.9, 2.1, OpeningKind::Door), true).unwrap();
+    assert!((placed.offset - 0.66).abs() < 1e-9, "offset {} should be 0.66", placed.offset);
+    assert!((placed.width - 0.9).abs() < 1e-9, "width {} should stay 0.9", placed.width);
+    assert!((placed.rough_width - 1.02).abs() < 1e-9, "rough width {} should be 1.02", placed.rough_width);
+}
+
 /// Seeded random wall graphs with random (including hostile: NaN / Inf / negative)
 /// openings. `validate_placement`, `place_opening`, `opening_symbol` and
 /// `poché_gaps` must never panic.

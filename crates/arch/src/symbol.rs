@@ -47,7 +47,7 @@ pub fn opening_symbol(model: &ArchModel, o: &Opening) -> Option<Symbol> {
     let width = if o.width.is_finite() && o.width > 0.0 { o.width } else { 0.9 };
     let rough_width = if o.rough_width.is_finite() && o.rough_width > 0.0 { o.rough_width } else { width + 0.12 };
 
-    let rough_start = offset - (rough_width - width) / 2.0;
+    let rough_start = offset - rough_width / 2.0;
     let rough_end = rough_start + rough_width;
     let finished_start = offset - width / 2.0;
     let finished_end = finished_start + width;
@@ -237,7 +237,7 @@ pub fn poché_gaps(model: &ArchModel, host: ArchId) -> Vec<(f64, f64)> {
         if o.width <= 0.0 || o.rough_width <= 0.0 {
             continue;
         }
-        let rough_start = o.offset - (o.rough_width - o.width) / 2.0;
+        let rough_start = crate::opening::rough_offset(o);
         let rough_end = rough_start + o.rough_width;
         if rough_start.is_finite() && rough_end.is_finite() {
             intervals.push((rough_start, rough_end));
@@ -399,10 +399,10 @@ mod tests {
 
         let gaps = poché_gaps(&m, h);
         assert_eq!(gaps.len(), 2, "expected 2 merged gaps; got {} gaps: {:?}", gaps.len(), gaps);
-        assert!((gaps[0].0 - 0.94).abs() < 1e-6, "gap[0].start = {}", gaps[0].0);
-        assert!((gaps[0].1 - 2.86).abs() < 1e-6, "gap[0].end = {}", gaps[0].1);
-        assert!((gaps[1].0 - 5.94).abs() < 1e-6, "gap[1].start = {}", gaps[1].0);
-        assert!((gaps[1].1 - 7.06).abs() < 1e-6, "gap[1].end = {}", gaps[1].1);
+        assert!((gaps[0].0 - 0.44).abs() < 1e-6, "gap[0].start = {}", gaps[0].0);
+        assert!((gaps[0].1 - 2.36).abs() < 1e-6, "gap[0].end = {}", gaps[0].1);
+        assert!((gaps[1].0 - 5.44).abs() < 1e-6, "gap[1].start = {}", gaps[1].0);
+        assert!((gaps[1].1 - 6.56).abs() < 1e-6, "gap[1].end = {}", gaps[1].1);
         assert!(gaps[0].1 <= gaps[1].0, "merged gaps still overlap");
     }
 

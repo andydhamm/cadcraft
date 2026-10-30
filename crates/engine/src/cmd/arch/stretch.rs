@@ -387,16 +387,17 @@ mod tests {
     fn stretching_start_with_opening_at_start() {
         let mut s = Session::new();
         s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0]]})).expect("wall command");
-        // Door near the start
-        s.execute("door", &json!({"wall": "w0", "offset": 0.2, "width": 1.0, "height": 2.1})).expect("door at start");
+        // Door centred at the start-valid minimum; with a 1.0 m door, the rough span
+        // is [0.44, 1.56], so the centre must sit at least 0.8 m from the wall start.
+        s.execute("door", &json!({"wall": "w0", "offset": 0.8, "width": 1.0, "height": 2.1})).expect("door at start");
 
-        // Stretch start to (-1, 0): door offset should become 1.2
+        // Stretch start to (-1, 0): the door stays centred and moves with the wall.
         let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "start", "to": [-1.0, 0.0]}));
         assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
 
         let d = s.doc().expect("doc");
         let door = d.arch.opening(ArchId(0)).expect("door");
-        assert!((door.offset - 1.2).abs() < 1e-6, "door offset should be 1.2: {}", door.offset);
+        assert!((door.offset - 1.8).abs() < 1e-6, "door offset should be 1.8: {}", door.offset);
     }
 
     #[test]
@@ -469,25 +470,24 @@ mod tests {
         let mut s = Session::new();
         // w0 = (0,0)-(10,0), w1 = (10,0)-(10,10)
         s.execute("wall", &json!({"points": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]})).expect("wall command");
-        // Door near the shared point (10,0) on w1, offset 0.5 (so the rough span fits)
-        s.execute("door", &json!({"wall": "w1", "offset": 0.5, "width": 1.0, "height": 2.1})).expect("door on w1");
+        // The door is centred on the wall: a 1.0 m door with a rough span of 1.12 can sit
+        // at offset 0.8 on the start segment, and the stretch keeps it on the new wall axis.
+        s.execute("door", &json!({"wall": "w1", "offset": 0.8, "width": 1.0, "height": 2.1})).expect("door on w1");
 
-        // Stretch w0's end to (12, 0): w1's start moves to (12, 0), door should stay at (12, 0.5)
         let res = s.execute("arch.wall.stretch", &json!({"wall": "w0", "end": "end", "to": [12.0, 0.0]}));
         assert!(matches!(res, Ok(_)), "stretch should succeed: {:?}", res);
 
         let d = s.doc().expect("doc");
         let w1 = d.arch.wall(ArchId(1)).expect("w1");
         let door = d.arch.opening(ArchId(0)).expect("door");
-        // Door's old world position (10, 0.5) is projected onto the new wall line (12,0)-(10,10),
-        // giving (615/52, 45/52) = (11.8269..., 0.8653...).
         let door_world = w1.start + (w1.end - w1.start).normalized() * door.offset;
         assert!(
-            (door_world - Vec2::new(11.826923076923077, 0.8653846153846155)).len() < 1e-6,
-            "door world start should be (11.8269..., 0.8653...): ({}, {})",
+            (door_world - Vec2::new(11.76923076923077, 1.153846153846154)).len() < 1e-6,
+            "door world position should stay on the stretched wall axis: ({}, {})",
             door_world.x,
             door_world.y
         );
+        assert!((door.offset - 1.1766968108291043).abs() < 1e-6, "door offset should follow the stretched wall axis: {}", door.offset);
     }
 
     #[test]
