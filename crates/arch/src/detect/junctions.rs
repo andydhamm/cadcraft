@@ -211,10 +211,19 @@ pub fn snap_junctions(runs: &mut Vec<WallRun>) {
                             let f_conf = runs[j].confidence;
                             let f_evidence = runs[j].evidence.clone();
 
-                            let shift = (f_start - e_start).len();
-                            let mut merged_gaps = runs[i].gaps.clone();
-                            for g in f_gaps.iter() {
-                                merged_gaps.push((g.0 + shift, g.1 + shift));
+                            let mut merged_gaps;
+                            if end_kind == "end" {
+                                let shift = (f_start - e_start).len();
+                                merged_gaps = runs[i].gaps.clone();
+                                for g in f_gaps.iter() {
+                                    merged_gaps.push((g.0 + shift, g.1 + shift));
+                                }
+                            } else {
+                                let shift = (e_start - f_start).len();
+                                merged_gaps = f_gaps;
+                                for g in runs[i].gaps.iter() {
+                                    merged_gaps.push((g.0 + shift, g.1 + shift));
+                                }
                             }
                             runs[i].gaps = merged_gaps;
                             runs[i].confidence = (runs[i].confidence + f_conf).min(1.0);
@@ -329,6 +338,63 @@ mod tests {
         // Start moved from (0.1, 0.0) to (0.0, 0.0), shift = 0.1
         assert_eq!(runs[0].start, Vec2::new(0.0, 0.0));
         assert_eq!(runs[0].gaps, vec![(1.1, 2.1)]);
+    }
+
+    #[test]
+    fn empty_run_list_is_fine() {
+        let mut runs = vec![];
+        snap_junctions(&mut runs);
+        assert!(runs.is_empty());
+    }
+
+    #[test]
+    fn zero_length_run_is_skipped() {
+        let mut runs = vec![wr(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0), 0.2), wr(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2)];
+        snap_junctions(&mut runs);
+        assert_eq!(runs[0].start, Vec2::new(0.0, 0.0));
+        assert_eq!(runs[0].end, Vec2::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn confidence_is_capped_at_one() {
+        let mut runs = vec![wr(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2), wr(Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 0.2)];
+        runs[0].confidence = 0.95;
+        runs[1].confidence = 0.95;
+        snap_junctions(&mut runs);
+        assert_eq!(runs[0].confidence, 1.0);
+        assert_eq!(runs[1].confidence, 1.0);
+    }
+
+    #[test]
+    fn junction_rule_added_once_per_run() {
+        let mut runs = vec![
+            wr(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2),
+            wr(Vec2::new(0.0, 0.0), Vec2::new(0.0, 10.0), 0.2),
+            wr(Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), 0.2),
+        ];
+        snap_junctions(&mut runs);
+        let count = runs[0].evidence.rules.iter().filter(|r| r == "junction").count();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn collinear_merge_at_start_shifts_gaps() {
+        let mut runs = vec![wr(Vec2::new(5.0, 0.0), Vec2::new(10.0, 0.0), 0.2), wr(Vec2::new(0.0, 0.0), Vec2::new(4.99, 0.0), 0.2)];
+        runs[0].gaps = vec![(2.0, 3.0)];
+        runs[1].gaps = vec![(1.0, 1.5)];
+        snap_junctions(&mut runs);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].start, Vec2::new(0.0, 0.0));
+        assert_eq!(runs[0].end, Vec2::new(10.0, 0.0));
+        assert!(runs[0].gaps.contains(&(1.0, 1.5)));
+        assert!(runs[0].gaps.contains(&(7.0, 8.0)));
+    }
+
+    #[test]
+    fn an_end_moves_at_most_zero_point_six_metres() {
+        let mut runs = vec![wr(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2), wr(Vec2::new(10.7, 0.0), Vec2::new(10.7, 10.0), 0.2)];
+        snap_junctions(&mut runs);
+        assert_eq!(runs[0].end, Vec2::new(10.0, 0.0));
     }
 
     #[test]
