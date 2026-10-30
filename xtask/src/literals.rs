@@ -362,11 +362,38 @@ fn not_a_struct_literal(c: &[char], s: usize) -> bool {
         }
         start = seg;
     }
+    if in_enum_body(c, start) {
+        return true;
+    }
     match prev_nonws(c, start) {
         Some(p) if c[p] == '>' && p >= 1 && c[p - 1] == '-' => true,
         Some(p) if is_ident(c[p]) => NON_LITERAL_BEFORE.contains(&word_ending_at(c, p + 1).as_str()),
         _ => false,
     }
+}
+
+/// Whether `s` sits directly in the body of an `enum` declaration, where `Name {` declares a variant.
+fn in_enum_body(c: &[char], s: usize) -> bool {
+    // The innermost `{` still open at `s`.
+    let mut depth = 0usize;
+    let mut open = None;
+    for i in (0..s).rev() {
+        match c[i] {
+            '}' => depth += 1,
+            '{' if depth == 0 => {
+                open = Some(i);
+                break;
+            }
+            '{' => depth -= 1,
+            _ => {}
+        }
+    }
+    let Some(open) = open else {
+        return false;
+    };
+    // Its header runs back to the previous `;`, `{` or `}`: `#[derive(..)] pub enum Name<T> {`.
+    let from = (0..open).rev().find(|&i| matches!(c[i], ';' | '{' | '}')).map_or(0, |i| i + 1);
+    words(&c[from..open]).iter().any(|&(a, b)| c[from + a..from + b].iter().collect::<String>() == "enum")
 }
 
 /// Literals `Name { .. }` of any struct in `names`: `(name, line, exhaustive)`.
@@ -548,6 +575,27 @@ mod tests {
     fn flags_a_path_qualified_literal_and_a_literal_in_a_tests_dir() {
         assert_eq!(
             violations_in("crates/arch3d/tests/golden.rs", "fn t() { let _ = cadcraft_arch3d::Scene3d { meshes: vec![], floors: 1 }; }").len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_variant_declared_in_an_enum_body_is_not_a_literal() {
+        // 10-30: crates/arch/src/detect/mod.rs declared `pub struct Item`, and the variant `Item { .. }` declared in
+        // ui-egui's `pub enum Entry` (menus.rs) was reported as an exhaustive literal of it.
+        let v = violations_in(
+            "crates/ui-egui/src/menus.rs",
+            "/// A menu entry.\n#[derive(Clone, Debug)]\npub enum Entry {\n    Scene3d { meshes: String, floors: bool },\n    Sub { label: String, children: Vec<Entry> },\n}\n",
+        );
+        assert!(v.is_empty(), "{v:?}");
+        // A literal inside a function inside an impl is still a literal.
+        assert_eq!(
+            violations_in("crates/render3d/src/pipeline.rs", "impl Entry {\n    fn f() -> u32 {\n        let _ = Scene3d { meshes: vec![], floors: 0 };\n        0\n    }\n}\n").len(),
+            1
+        );
+        // So is a literal in an enum's impl, and one used as an enum discriminant's helper call.
+        assert_eq!(
+            violations_in("crates/render3d/src/pipeline.rs", "enum K { A }\nfn g() { let _ = Scene3d { meshes: vec![], floors: 0 }; }\n").len(),
             1
         );
     }
