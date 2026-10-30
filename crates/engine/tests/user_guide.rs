@@ -525,6 +525,44 @@ fn user_guide_hostile_viewsheet_params() {
     assert!(r.is_err(), "null name should be refused");
 }
 
+/// A sh block whose last line ends with a backslash is handled correctly.
+#[test]
+fn user_guide_sh_blocks_last_line_continues() {
+    let blocks = sh_blocks("```sh\necho a \\\necho b \\\n```\n");
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].len(), 1);
+    assert!(blocks[0][0].contains("echo a"));
+    assert!(blocks[0][0].contains("echo b"));
+}
+
+/// All --cmd arguments in the guide have valid JSON.
+#[test]
+fn user_guide_all_cmd_json_is_valid() {
+    let blocks = sh_blocks(GUIDE);
+    for lines in blocks {
+        for line in lines {
+            let cmds = cmd_args(&line);
+            for cmd in cmds {
+                let Some((id, json)) = cmd.split_once(' ') else {
+                    panic!("cmd `{cmd}` should have form `<id> <json>`");
+                };
+                let result = serde_json::from_str::<serde_json::Value>(json);
+                assert!(result.is_ok(), "cmd `{cmd}` has invalid JSON");
+            }
+        }
+    }
+}
+
+/// The guide documents the key phase 7 commands with their parameters.
+#[test]
+fn user_guide_documents_phase7_parameters() {
+    assert!(GUIDE.contains("\"side\":\"south\""), "guide should show elevation side parameter");
+    assert!(GUIDE.contains("\"from\""), "guide should show section from parameter");
+    assert!(GUIDE.contains("\"to\""), "guide should show section to parameter");
+    assert!(GUIDE.contains("\"views\""), "guide should show viewsheet views parameter");
+    assert!(GUIDE.contains("\"paper\""), "guide should show viewsheet paper parameter");
+}
+
 /// The sh_blocks helper handles edge cases: no blocks, unterminated block, empty block.
 #[test]
 fn user_guide_sh_blocks_edge_cases() {

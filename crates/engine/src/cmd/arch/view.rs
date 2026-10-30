@@ -264,6 +264,14 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
         }
         cam.fov_deg = Some(f);
     }
+    if kind == CameraKind::Orbit {
+        if cam.elevation_deg.is_none() {
+            cam.elevation_deg = Some(0.35);
+        }
+        if cam.distance.is_none() {
+            cam.distance = Some(10.0);
+        }
+    }
     if kind == CameraKind::Full {
         if eye_3d.is_none() && eye_2d.is_none() {
             return Err(bad("camera", "a `full` camera needs `eye`"));
