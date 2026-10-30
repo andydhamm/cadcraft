@@ -87,4 +87,57 @@ mod tests {
         assert_eq!(doc.arch_revision, before);
         assert_eq!(doc.arch.walls.len(), n);
     }
+
+    #[test]
+    fn sun_command_accepts_boundary_latitudes() {
+        let mut s = Session::new();
+        let r = s.execute("sun", &json!({ "lat": 90.0, "date": "2024-06-21", "time": "solar-noon" })).unwrap();
+        assert_eq!(r["ok"], json!(true), "lat=90 should be accepted");
+        let r = s.execute("sun", &json!({ "lat": -90.0, "date": "2024-06-21", "time": "solar-noon" })).unwrap();
+        assert_eq!(r["ok"], json!(true), "lat=-90 should be accepted");
+    }
+
+    #[test]
+    fn sun_command_refuses_nan_latitude() {
+        let mut s = Session::new();
+        let r = s.execute("sun", &json!({ "lat": f64::NAN, "date": "2024-06-21", "time": "12:00" }));
+        assert!(r.is_err(), "NaN latitude should be refused");
+    }
+
+    #[test]
+    fn sun_command_winter_solstice_elevation() {
+        let mut s = Session::new();
+        let r = s.execute("sun", &json!({ "lat": 51.05, "date": "2024-12-21", "time": "solar-noon" })).unwrap();
+        assert_eq!(r["ok"], json!(true));
+        let el = r["elevation"].as_f64().unwrap();
+        // Winter solstice: elevation = 90 - lat - 23.44 = 15.51
+        assert!((el - 15.5).abs() < 1.0, "winter solstice elevation {el}");
+    }
+
+    #[test]
+    fn sun_command_dir_is_unit_vector() {
+        let mut s = Session::new();
+        let r = s.execute("sun", &json!({ "lat": 51.05, "date": "2024-06-21", "time": "solar-noon" })).unwrap();
+        let d: Vec<f64> = r["dir"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        assert!((len - 1.0).abs() < 1e-6, "dir should be unit vector, got len {len}");
+    }
+
+    #[test]
+    fn sun_command_leap_year_date() {
+        let mut s = Session::new();
+        let r = s.execute("sun", &json!({ "lat": 0.0, "date": "2024-02-29", "time": "solar-noon" }));
+        assert!(r.is_ok(), "2024-02-29 is a valid leap year date");
+        let r = s.execute("sun", &json!({ "lat": 0.0, "date": "2023-02-29", "time": "solar-noon" }));
+        assert!(r.is_err(), "2023-02-29 is not a valid date");
+    }
+
+    #[test]
+    fn sun_command_echoes_input() {
+        let mut s = Session::new();
+        let r = s.execute("sun", &json!({ "lat": 45.5, "date": "2024-07-15", "time": "14:30" })).unwrap();
+        assert_eq!(r["lat"], json!(45.5));
+        assert_eq!(r["date"], json!("2024-07-15"));
+        assert_eq!(r["time"], json!("14:30"));
+    }
 }
