@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-30 23:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-30 23:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 9 of 13: Terrain and site — 5 of 25 segments merged · 0 of 12 acceptance checks**
 
@@ -19,7 +19,7 @@ Updated 2026-10-30 23:15 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 0 / 12 | 3.6 h so far · expected done Oct 31 12:00–Nov 01 05:06 UTC |
+| 9 | Terrain and site | building | 0 / 12 | 3.9 h so far · expected done Oct 31 13:07–Nov 01 07:23 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,14 +27,14 @@ Updated 2026-10-30 23:15 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-14 queued, 5 merged, 3 gate, 3 working
+14 queued, 5 merged, 4 gate, 1 merging, 1 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p9-geom-cdt` | Constrained Delaunay triangulation (breaklines are edges) | gate | kimi-k31 |
-| `p9-geom-tin-ops` | TIN point location grid, clipping to a ring, contour chaining | working | bonsai-a |
-| `p9-cmd-site` | `site` command, and `sun` from the site | working | bonsai-b |
-| `p9-cmd-plant` | `plant` and `plant.species` commands | gate | mai-flash |
+| `p9-geom-tin-ops` | TIN point location grid, clipping to a ring, contour chaining | gate | bonsai-a |
+| `p9-cmd-site` | `site` command, and `sun` from the site | gate | bonsai-b |
+| `p9-cmd-plant` | `plant` and `plant.species` commands | merging | mai-flash |
 | `p9-cli-render-sun-from-site` | `render --sun` takes the latitude and true north from the site | gate | bonsai-ws2-b |
 | `p9-small-convert-and-glb-names` | `convert` detection message counts; GLB floor and ceiling node names | working | claude-sonnet-b |
 
@@ -59,14 +59,14 @@ Updated 2026-10-30 23:15 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 701 |
-| bonsai-b | bonsai2-27b | agent | 659 |
-| bonsai-ws2-a | bonsai2-27b | agent | 701 |
-| bonsai-ws2-b | bonsai2-27b | gate | 656 |
+| bonsai-a | bonsai2-27b | gate | 701 |
+| bonsai-b | bonsai2-27b | gate | 659 |
+| bonsai-ws2-a | bonsai2-27b | gate | 701 |
+| bonsai-ws2-b | bonsai2-27b | gate | 657 |
 | claude-sonnet-a | sonnet | idle | 55 |
 | claude-sonnet-b | sonnet | agent | 48 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 554 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 555 |
 | kimi-k31 | k3.1-pro-highspeed | gate | 95 |
-| mai-flash | mai-code-1.1-flash | gate | 25 |
+| mai-flash | mai-code-1.1-flash | merging | 26 |
 | tturbo-mac | tturbo-ultraheretic | agent | 481 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 303 |
+| tturbo-mac2 | tturbo-ultraheretic | gate | 303 |
