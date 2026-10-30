@@ -594,4 +594,72 @@ mod tests {
         let m = ArchModel::default();
         assert!(detect_rooms(&m).is_empty());
     }
+
+    #[test]
+    fn a_single_wall_makes_no_room() {
+        let mut m = ArchModel::default();
+        m.walls.push(wall(0, 0, 0.0, 0.0, 10.0, 0.0, 0.2));
+        let rooms = detect_rooms_at_level(&m, 0);
+        assert!(rooms.is_empty(), "one wall cannot enclose a room");
+    }
+
+    #[test]
+    fn walls_with_nan_coordinates_are_ignored() {
+        let mut m = ArchModel::default();
+        // A valid 5x5 enclosure.
+        m.walls.push(wall(0, 0, 0.0, 0.0, 5.0, 0.0, 0.2));
+        m.walls.push(wall(1, 0, 5.0, 0.0, 5.0, 5.0, 0.2));
+        m.walls.push(wall(2, 0, 5.0, 5.0, 0.0, 5.0, 0.2));
+        m.walls.push(wall(3, 0, 0.0, 5.0, 0.0, 0.0, 0.2));
+        // A wall with NaN in one endpoint.
+        m.walls.push(wall(4, 0, f64::NAN, 0.0, 5.0, 2.5, 0.1));
+        let rooms = detect_rooms_at_level(&m, 0);
+        assert_eq!(rooms.len(), 1, "NaN wall should not break detection");
+    }
+
+    #[test]
+    fn a_point_wall_is_ignored() {
+        let mut m = ArchModel::default();
+        // A valid 5x5 enclosure.
+        m.walls.push(wall(0, 0, 0.0, 0.0, 5.0, 0.0, 0.2));
+        m.walls.push(wall(1, 0, 5.0, 0.0, 5.0, 5.0, 0.2));
+        m.walls.push(wall(2, 0, 5.0, 5.0, 0.0, 5.0, 0.2));
+        m.walls.push(wall(3, 0, 0.0, 5.0, 0.0, 0.0, 0.2));
+        // A "wall" where start == end.
+        m.walls.push(wall(4, 0, 2.5, 2.5, 2.5, 2.5, 0.1));
+        let rooms = detect_rooms_at_level(&m, 0);
+        assert_eq!(rooms.len(), 1, "point wall should not break detection");
+    }
+
+    #[test]
+    fn collinear_adjacent_walls_form_one_room() {
+        let mut m = ArchModel::default();
+        // A 10x8 rectangle built from 8 walls (two per side, collinear pairs).
+        m.walls.push(wall(0, 0, 0.0, 0.0, 5.0, 0.0, 0.2));
+        m.walls.push(wall(1, 0, 5.0, 0.0, 10.0, 0.0, 0.2));
+        m.walls.push(wall(2, 0, 10.0, 0.0, 10.0, 4.0, 0.2));
+        m.walls.push(wall(3, 0, 10.0, 4.0, 10.0, 8.0, 0.2));
+        m.walls.push(wall(4, 0, 10.0, 8.0, 5.0, 8.0, 0.2));
+        m.walls.push(wall(5, 0, 5.0, 8.0, 0.0, 8.0, 0.2));
+        m.walls.push(wall(6, 0, 0.0, 8.0, 0.0, 4.0, 0.2));
+        m.walls.push(wall(7, 0, 0.0, 4.0, 0.0, 0.0, 0.2));
+        let rooms = detect_rooms_at_level(&m, 0);
+        assert_eq!(rooms.len(), 1, "collinear wall pairs should form one room");
+        // Interior area should be roughly 10*8 minus wall thickness effects.
+        assert!(rooms[0].interior_area > 70.0, "area too small: {}", rooms[0].interior_area);
+    }
+
+    #[test]
+    fn a_room_just_above_the_minimum_area_is_detected() {
+        let mut m = ArchModel::default();
+        // A small square room, interior roughly 0.5x0.5 = 0.25 m² (above MIN_ROOM_AREA of 0.1).
+        // Centre lines at 0.15 and 0.65, thickness 0.1, so interior is 0.4x0.4 = 0.16 m².
+        m.walls.push(wall(0, 0, 0.05, 0.05, 0.75, 0.05, 0.1));
+        m.walls.push(wall(1, 0, 0.75, 0.05, 0.75, 0.75, 0.1));
+        m.walls.push(wall(2, 0, 0.75, 0.75, 0.05, 0.75, 0.1));
+        m.walls.push(wall(3, 0, 0.05, 0.75, 0.05, 0.05, 0.1));
+        let rooms = detect_rooms_at_level(&m, 0);
+        assert_eq!(rooms.len(), 1, "small room above minimum area should be detected");
+        assert!(rooms[0].interior_area > MIN_ROOM_AREA);
+    }
 }

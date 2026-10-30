@@ -897,4 +897,42 @@ mod tests {
         polys.push(vec![Vec2::new(0.0, 1.05), Vec2::new(5.0, 1.05)]);
         assert_eq!(snap_ends(&polys, 0.1, 1e-9), polys);
     }
+
+    #[test]
+    fn arrangement_on_empty_soup_is_none() {
+        assert!(Arrangement::new(&[], 1e-9, 0.0).is_none());
+    }
+
+    #[test]
+    fn arrangement_is_reusable_for_many_queries() {
+        // Build one arrangement, query it for many different points.
+        let polys = vec![square(0.0, 0.0, 20.0), square(5.0, 5.0, 5.0), square(12.0, 12.0, 5.0)];
+        let arrangement = Arrangement::new(&polys, 1e-9, 0.0).unwrap();
+        // Point inside the outer square but outside both inner squares.
+        let b1 = arrangement.boundary_at(Vec2::new(2.0, 2.0)).unwrap();
+        assert!((shoelace(&b1.outer) - 400.0).abs() < 1e-9);
+        assert_eq!(b1.islands.len(), 2);
+        // Point inside the first inner square.
+        let b2 = arrangement.boundary_at(Vec2::new(7.0, 7.0)).unwrap();
+        assert!((shoelace(&b2.outer) - 25.0).abs() < 1e-9);
+        assert!(b2.islands.is_empty());
+        // Point inside the second inner square.
+        let b3 = arrangement.boundary_at(Vec2::new(14.0, 14.0)).unwrap();
+        assert!((shoelace(&b3.outer) - 25.0).abs() < 1e-9);
+        assert!(b3.islands.is_empty());
+        // Point outside everything.
+        assert!(arrangement.boundary_at(Vec2::new(-5.0, -5.0)).is_none());
+        // Same point twice gives the same result (deterministic).
+        let b1_again = arrangement.boundary_at(Vec2::new(2.0, 2.0)).unwrap();
+        assert_eq!(b1, b1_again);
+    }
+
+    #[test]
+    fn arrangement_with_degenerate_polylines() {
+        // Single-point polylines, duplicate consecutive points, and a normal square.
+        let polys = vec![vec![Vec2::new(1.0, 1.0)], vec![Vec2::new(2.0, 2.0), Vec2::new(2.0, 2.0)], square(0.0, 0.0, 10.0)];
+        let arrangement = Arrangement::new(&polys, 1e-9, 0.0).unwrap();
+        let b = arrangement.boundary_at(Vec2::new(5.0, 5.0)).unwrap();
+        assert!((shoelace(&b.outer) - 100.0).abs() < 1e-9);
+    }
 }
