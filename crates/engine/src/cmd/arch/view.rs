@@ -274,6 +274,14 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
             return Err(bad("camera", "`eye` must differ from `target`"));
         }
     }
+    if kind == CameraKind::Orbit {
+        if cam.elevation_deg.is_none() {
+            return Err(bad("camera", "an `orbit` camera needs `elevation`"));
+        }
+        if cam.distance.is_none() {
+            return Err(bad("camera", "an `orbit` camera needs `distance`"));
+        }
+    }
     let name = cam.name.clone();
     let doc = s.doc_mut()?;
     doc.arch.set_camera(cam).map_err(|e| bad("camera", format!("cannot save camera: {e}")))?;
