@@ -74,10 +74,21 @@ fn circle_for_run(points: &[Vec2]) -> Option<(Vec2, f64, f64, f64)> {
         return None;
     }
 
-    let a = *points.first()?;
-    let mid_idx = points.len() / 2;
-    let b = *points.get(mid_idx)?;
-    let c = *points.last()?;
+    let first = *points.first()?;
+    let last = *points.last()?;
+
+    // For the circumcircle, use 3 distinct points.
+    // If first == last (closed circle), use first, second, and middle.
+    let (a, b, c) = if (first - last).len() <= ARC_TOL {
+        let second = *points.get(1)?;
+        let mid_idx = points.len() / 2;
+        let mid = *points.get(mid_idx)?;
+        (first, second, mid)
+    } else {
+        let mid_idx = points.len() / 2;
+        let mid = *points.get(mid_idx)?;
+        (first, mid, last)
+    };
 
     let ab = b - a;
     let ac = c - a;
@@ -99,7 +110,7 @@ fn circle_for_run(points: &[Vec2]) -> Option<(Vec2, f64, f64, f64)> {
         return None;
     }
 
-    let radius = a.dist(center);
+    let radius = first.dist(center);
     if !radius.is_finite() || !(0.05..=50.0).contains(&radius) {
         return None;
     }
@@ -161,8 +172,8 @@ fn circle_for_run(points: &[Vec2]) -> Option<(Vec2, f64, f64, f64)> {
         prev_len = Some(chord);
     }
 
-    let start = (a - center).angle();
-    let end = (c - center).angle();
+    let start = (first - center).angle();
+    let end = (last - center).angle();
     let mut sweep = end - start;
     if sweep > PI {
         sweep -= TAU;
