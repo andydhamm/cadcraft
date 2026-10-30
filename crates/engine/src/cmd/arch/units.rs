@@ -13,7 +13,6 @@ use cadcraft_geom::{Mat3, Vec2};
 ///
 /// Returns the number of model-space entities converted. A non-finite or non-positive `scale` is
 /// refused before anything changes. Only `d` is touched, so the caller's undo step covers it.
-#[allow(dead_code)] // called by ARCHDETECT acceptance, which lands separately
 pub(crate) fn convert_drawing_to_metres(d: &mut Drawing, scale: f64) -> Result<usize, String> {
     if !scale.is_finite() || scale <= 0.0 {
         return Err(format!("the unit scale must be a positive number, not {scale}"));
