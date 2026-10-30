@@ -479,7 +479,8 @@ pub fn wall_runs(lw: &Linework) -> Vec<WallRun> {
         handles.dedup();
         rules.sort();
         rules.dedup();
-        runs.push(WallRun { start, end, thickness: t, gaps, confidence: conf.clamp(0.0, 1.0), evidence: Evidence { layers, handles, rules } });
+        let evidence = Evidence { layers, handles, rules, ..Default::default() };
+        runs.push(WallRun { start, end, thickness: t, gaps, confidence: conf.clamp(0.0, 1.0), evidence, ..Default::default() });
     }
     runs.sort_by(|a, b| {
         a.start.x.total_cmp(&b.start.x).then(a.start.y.total_cmp(&b.start.y)).then(a.end.x.total_cmp(&b.end.x)).then(a.end.y.total_cmp(&b.end.y))
@@ -494,12 +495,8 @@ mod tests {
     use cadcraft_doc::Handle;
 
     fn seg(items: &mut Vec<Item>, a: (f64, f64), b: (f64, f64), layer: &str, poly: Option<u32>) {
-        items.push(Item {
-            prim: Prim::Seg { a: Vec2::new(a.0, a.1), b: Vec2::new(b.0, b.1) },
-            layer: layer.to_string(),
-            source: Handle(items.len() as u64 + 1),
-            poly,
-        });
+        let prim = Prim::Seg { a: Vec2::new(a.0, a.1), b: Vec2::new(b.0, b.1) };
+        items.push(Item::new(prim, layer, Handle(items.len() as u64 + 1), poly));
     }
 
     fn rect(items: &mut Vec<Item>, x0: f64, y0: f64, x1: f64, y1: f64, layer: &str, poly: Option<u32>) {
@@ -510,7 +507,7 @@ mod tests {
     }
 
     fn lw(items: Vec<Item>) -> Linework {
-        Linework { items, labels: Vec::new(), entities: 0 }
+        Linework { items, ..Default::default() }
     }
 
     #[test]

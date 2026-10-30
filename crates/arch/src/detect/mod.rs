@@ -62,6 +62,13 @@ pub struct Item {
     pub poly: Option<u32>,
 }
 
+impl Item {
+    /// An item of linework.
+    pub fn new(prim: Prim, layer: impl Into<String>, source: Handle, poly: Option<u32>) -> Self {
+        Item { prim, layer: layer.into(), source, poly }
+    }
+}
+
 /// A text label in the drawing.
 #[derive(Clone, Debug)]
 pub struct Label {
@@ -96,7 +103,7 @@ pub struct Evidence {
 }
 
 /// A detected wall run.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct WallRun {
     /// Start point in metres.
     pub start: Vec2,
