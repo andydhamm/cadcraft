@@ -110,3 +110,9 @@ The following features are explicitly out of scope for Phase 6:
 - Artificial Lights
 - Path-based Walkthrough Animation
 - Gamepad and 3D Mouse support
+
+## Phase 7: Elevations, Sections and Sheets
+
+Phase 7 adds linked `elevation` and `section` views. Generated view geometry can be queried with `arch.inspect {"views":true}`, and an unwanted view can be removed with `view.delete`.
+
+The `viewsheet` command places views on a layout. The worked example uses four elevations of the phase-1 house with a gable roof on an ARCH D landscape sheet at 1:50. The sheet can then be plotted with `exportpdf {"layout":"Elevations"}`.
