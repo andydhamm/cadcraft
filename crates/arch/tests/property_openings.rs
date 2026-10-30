@@ -231,6 +231,7 @@ fn poché_gap_is_symmetric_around_offset() {
     let wall_id = model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
     let o = Opening::new(wall_id, 3.0, 0.9, 2.1, OpeningKind::Door);
     let placed = place_opening(&model, o, false).unwrap();
+    let rough_w = placed.rough_width;
     model.push_opening(placed);
 
     let gap = poché_gaps(&model, wall_id);
@@ -239,7 +240,7 @@ fn poché_gap_is_symmetric_around_offset() {
     let gap_centre = (gap[0].0 + gap[0].1) / 2.0;
     assert!((gap_centre - 3.0).abs() < 1e-9, "gap centre {} != offset 3.0", gap_centre);
     // The gap should be exactly rough_width wide
-    assert!((gap[0].1 - gap[0].0 - placed.rough_width).abs() < 1e-9, "gap width {} != rough_width {}", gap[0].1 - gap[0].0, placed.rough_width);
+    assert!((gap[0].1 - gap[0].0 - rough_w).abs() < 1e-9, "gap width {} != rough_width {}", gap[0].1 - gap[0].0, rough_w);
 }
 
 /// The symbol spans exactly the poché gap for all opening kinds.
