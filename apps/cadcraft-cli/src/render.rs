@@ -4,7 +4,7 @@ use super::args::RenderArgs;
 use super::open;
 use super::output::{OutputError, Streams, write_atomic};
 use cadcraft_engine::Session;
-use cadcraft_geom::Vec3;
+use cadcraft_geom::{SiteLocation, Vec3};
 use cadcraft_render3d::adapter::AdapterChoice;
 use cadcraft_render3d::camera::{Camera, MAX_DISTANCE, Orbit};
 use cadcraft_render3d::light::{Light, Sun};
