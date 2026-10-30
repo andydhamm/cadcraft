@@ -227,10 +227,10 @@ pub fn chain_contours(segs: &[ContourSegment]) -> Vec<ContourLine> {
     for (_elev, ids) in by_elev {
         // Quantised endpoint -> list of segment indices (global) meeting there.
         let mut endpoints: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
-        for &i in &ids {
-            let s = &segs[i];
-            endpoints.entry((quant(s.start.x), quant(s.start.y))).or_default().push(i);
-            endpoints.entry((quant(s.end.x), quant(s.end.y))).or_default().push(i);
+        for i in &ids {
+            let s = &segs[*i];
+            endpoints.entry((quant(s.start.x), quant(s.start.y))).or_default().push(*i);
+            endpoints.entry((quant(s.end.x), quant(s.end.y))).or_default().push(*i);
         }
         // Open lines: walk from each endpoint touched by exactly one segment.
         for (key, segs_at) in &endpoints {
@@ -389,12 +389,21 @@ mod tests {
 
     #[test]
     fn retain_inside_drops_triangles_outside_a_concave_ring() {
+        // A concave ring: a 4x4 square with the corner (4,4) notched in to (2,2), so the
+        // polygon is non-convex (reflex at (2,2)).
+        let ring = [Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 4.0), Vec2::new(2.0, 2.0), Vec2::new(0.0, 4.0)];
         let mut tin = Tin::default();
-        tin.points.push(Vec3::new(0.0, 0.0, 0.0));
-        tin.points.push(Vec3::new(4.0, 0.0, 0.0));
-        tin.points.push(Vec3::new(2.0, 2.0, 0.0));
+        // Kept: centroid (1.5, 5/6) lies inside the concave ring.
+        tin.points.push(Vec3::new(1.0, 1.0, 0.0));
+        tin.points.push(Vec3::new(2.0, 1.0, 0.0));
+        tin.points.push(Vec3::new(1.5, 1.5, 0.0));
         tin.triangles.push([0, 1, 2]);
-        retain_inside(&mut tin, &[Vec2::new(0.0, 0.0), Vec2::new(2.0, 1.0), Vec2::new(0.0, 2.0)]);
+        // Dropped: centroid (5.0, 2.0) lies outside the ring (right of it).
+        tin.points.push(Vec3::new(5.0, 1.0, 0.0));
+        tin.points.push(Vec3::new(5.0, 3.0, 0.0));
+        tin.points.push(Vec3::new(4.5, 2.0, 0.0));
+        tin.triangles.push([3, 4, 5]);
+        retain_inside(&mut tin, &ring);
         assert_eq!(tin.triangles.len(), 1);
     }
 
