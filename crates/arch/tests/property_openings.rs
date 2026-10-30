@@ -223,3 +223,106 @@ fn opening_gaps_never_overlap() {
         }
     }
 }
+
+/// The poché gap is symmetric around the offset: the offset is the centre of the gap.
+#[test]
+fn poché_gap_is_symmetric_around_offset() {
+    let mut model = ArchModel::default();
+    let wall_id = model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    let o = Opening::new(wall_id, 3.0, 0.9, 2.1, OpeningKind::Door);
+    let placed = place_opening(&model, o, false).unwrap();
+    let rough_w = placed.rough_width;
+    model.push_opening(placed);
+
+    let gap = poché_gaps(&model, wall_id);
+    assert_eq!(gap.len(), 1, "expected one gap");
+    // The gap should be symmetric around the offset
+    let gap_centre = (gap[0].0 + gap[0].1) / 2.0;
+    assert!((gap_centre - 3.0).abs() < 1e-9, "gap centre {} != offset 3.0", gap_centre);
+    // The gap should be exactly rough_width wide
+    assert!((gap[0].1 - gap[0].0 - rough_w).abs() < 1e-9, "gap width {} != rough_width {}", gap[0].1 - gap[0].0, rough_w);
+}
+
+/// The symbol spans exactly the poché gap for all opening kinds.
+#[test]
+fn symbol_spans_gap_for_all_opening_kinds() {
+    let kinds = [
+        (OpeningKind::Door, "hinged", 0.9, 2.1),
+        (OpeningKind::Window, "slider", 1.2, 1.2),
+        (OpeningKind::GarageDoor, "garage", 2.4, 2.1),
+        (OpeningKind::CasedOpening, "cased", 0.5, 2.0),
+    ];
+    for (kind, style, width, height) in kinds {
+        let mut model = ArchModel::default();
+        let wall_id = model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+        let mut o = Opening::new(wall_id, 3.0, width, height, kind);
+        o.style = style.to_string();
+        let placed = place_opening(&model, o, false).unwrap();
+        model.push_opening(placed);
+
+        let gap = poché_gaps(&model, wall_id);
+        assert_eq!(gap.len(), 1, "expected one gap for {kind:?}");
+        let sym = opening_symbol(&model, &model.openings[0]).unwrap();
+
+        if kind == OpeningKind::Door {
+            // For doors, check that the jambs span the gap
+            let jamb_xs: Vec<f64> =
+                sym.polylines.iter().filter_map(|p| if p.len() == 2 && (p[0].x - p[1].x).abs() < 1e-9 { Some(p[0].x) } else { None }).collect();
+            assert_eq!(jamb_xs.len(), 2, "expected 2 jambs for {kind:?}, got {:?}", jamb_xs);
+            let min_jamb = jamb_xs.iter().copied().fold(f64::INFINITY, f64::min);
+            let max_jamb = jamb_xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            assert!((min_jamb - gap[0].0).abs() < 1e-9, "door jamb start {} != gap start {} for {kind:?}", min_jamb, gap[0].0);
+            assert!((max_jamb - gap[0].1).abs() < 1e-9, "door jamb end {} != gap end {} for {kind:?}", max_jamb, gap[0].1);
+        } else {
+            // For non-door openings, the symbol should span exactly the gap
+            let mut min_x = f64::INFINITY;
+            let mut max_x = f64::NEG_INFINITY;
+            for poly in &sym.polylines {
+                for p in poly {
+                    if p.x < min_x {
+                        min_x = p.x;
+                    }
+                    if p.x > max_x {
+                        max_x = p.x;
+                    }
+                }
+            }
+            assert!((min_x - gap[0].0).abs() < 1e-9, "symbol min_x {} != gap start {} for {kind:?}", min_x, gap[0].0);
+            assert!((max_x - gap[0].1).abs() < 1e-9, "symbol max_x {} != gap end {} for {kind:?}", max_x, gap[0].1);
+        }
+    }
+}
+
+/// Placement limits use the centred rough span: offsets exactly at the boundary are accepted.
+#[test]
+fn placement_limits_at_exact_centred_boundaries() {
+    let mut model = ArchModel::default();
+    let wall_id = model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    // For a 0.9m door (rough 1.02), min_seg = 0.15:
+    // min_off = 0.15 + 0.51 = 0.66
+    // max_off = 10.0 - 0.15 - 0.51 = 9.34
+    let res = validate_placement(&model, wall_id, 0.66, 0.9, 0.0, 2.1, OpeningKind::Door, "hinged", None);
+    assert!(res.is_ok(), "offset 0.66 should be accepted: {:?}", res);
+    let res = validate_placement(&model, wall_id, 9.34, 0.9, 0.0, 2.1, OpeningKind::Door, "hinged", None);
+    assert!(res.is_ok(), "offset 9.34 should be accepted: {:?}", res);
+    // Just outside the boundary should be rejected
+    let res = validate_placement(&model, wall_id, 0.6599, 0.9, 0.0, 2.1, OpeningKind::Door, "hinged", None);
+    assert!(res.is_err(), "offset 0.6599 should be rejected: {:?}", res);
+    let res = validate_placement(&model, wall_id, 9.3401, 0.9, 0.0, 2.1, OpeningKind::Door, "hinged", None);
+    assert!(res.is_err(), "offset 9.3401 should be rejected: {:?}", res);
+}
+
+/// Fit slides an opening to the exact centred boundary.
+#[test]
+fn fit_slides_to_exact_centred_boundary() {
+    let mut model = ArchModel::default();
+    let wall_id = model.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.2));
+    // Opening at offset 0.0 should be slid to 0.66
+    let o = Opening::new(wall_id, 0.0, 0.9, 2.1, OpeningKind::Door);
+    let placed = place_opening(&model, o, true).unwrap();
+    assert!((placed.offset - 0.66).abs() < 1e-9, "offset {} should be 0.66", placed.offset);
+    // Opening at offset 10.0 should be slid to 9.34
+    let o = Opening::new(wall_id, 10.0, 0.9, 2.1, OpeningKind::Door);
+    let placed = place_opening(&model, o, true).unwrap();
+    assert!((placed.offset - 9.34).abs() < 1e-9, "offset {} should be 9.34", placed.offset);
+}
