@@ -194,24 +194,17 @@ mod tests {
                 start: Vec2::new(tw.start[0], tw.start[1]),
                 end: Vec2::new(tw.end[0], tw.end[1]),
                 thickness: tw.thickness,
-                gaps: vec![],
-                confidence: 1.0,
-                evidence: Default::default(),
+                ..Default::default()
             });
         }
         for to in &truth.openings {
             let kind = if to.kind.eq_ignore_ascii_case("door") { CandKind::Door } else { CandKind::Window };
             det.openings.push(OpeningCand {
                 kind,
-                host: 0,
-                offset: 0.0,
                 center: Vec2::new(to.center[0], to.center[1]),
                 width: to.width,
-                style: String::new(),
-                hinge: None,
-                swing: None,
                 confidence: 1.0,
-                evidence: Default::default(),
+                ..Default::default()
             });
         }
 
@@ -229,22 +222,8 @@ mod tests {
         let truth = Truth { walls: vec![TruthWall { start: [0.0, 0.0], end: [1.0, 0.0], thickness: 0.2 }], openings: vec![] };
         let mut det = Detection::default();
         // Two candidates for one truth
-        det.walls.push(WallRun {
-            start: Vec2::new(0.0, 0.0),
-            end: Vec2::new(1.0, 0.0),
-            thickness: 0.2,
-            gaps: vec![],
-            confidence: 1.0,
-            evidence: Default::default(),
-        });
-        det.walls.push(WallRun {
-            start: Vec2::new(0.0, 0.0),
-            end: Vec2::new(1.0, 0.0),
-            thickness: 0.2,
-            gaps: vec![],
-            confidence: 1.0,
-            evidence: Default::default(),
-        });
+        det.walls.push(WallRun { start: Vec2::new(0.0, 0.0), end: Vec2::new(1.0, 0.0), thickness: 0.2, ..Default::default() });
+        det.walls.push(WallRun { start: Vec2::new(0.0, 0.0), end: Vec2::new(1.0, 0.0), thickness: 0.2, ..Default::default() });
 
         let s = score(&det, &truth, 0.5);
         assert_eq!(s.walls.matched, 1);
@@ -258,27 +237,13 @@ mod tests {
         let truth = Truth { walls: vec![TruthWall { start: [0.0, 0.0], end: [1.0, 0.0], thickness: 0.2 }], openings: vec![] };
         let mut det = Detection::default();
         // Offset 0.06 (within 0.1)
-        det.walls.push(WallRun {
-            start: Vec2::new(0.0, 0.06),
-            end: Vec2::new(1.0, 0.06),
-            thickness: 0.2,
-            gaps: vec![],
-            confidence: 1.0,
-            evidence: Default::default(),
-        });
+        det.walls.push(WallRun { start: Vec2::new(0.0, 0.06), end: Vec2::new(1.0, 0.06), thickness: 0.2, ..Default::default() });
         let s = score(&det, &truth, 0.5);
         assert_eq!(s.walls.matched, 1);
 
         // Offset 0.11 (outside 0.1)
         det.walls.clear();
-        det.walls.push(WallRun {
-            start: Vec2::new(0.0, 0.11),
-            end: Vec2::new(1.0, 0.11),
-            thickness: 0.2,
-            gaps: vec![],
-            confidence: 1.0,
-            evidence: Default::default(),
-        });
+        det.walls.push(WallRun { start: Vec2::new(0.0, 0.11), end: Vec2::new(1.0, 0.11), thickness: 0.2, ..Default::default() });
         let s = score(&det, &truth, 0.5);
         assert_eq!(s.walls.matched, 0);
     }
@@ -288,35 +253,13 @@ mod tests {
         let truth = Truth { walls: vec![], openings: vec![TruthOpening { kind: "door".into(), center: [0.0, 0.0], width: 0.9 }] };
         let mut det = Detection::default();
         // Wrong kind (window)
-        det.openings.push(OpeningCand {
-            kind: CandKind::Window,
-            host: 0,
-            offset: 0.0,
-            center: Vec2::new(0.0, 0.0),
-            width: 0.9,
-            style: String::new(),
-            hinge: None,
-            swing: None,
-            confidence: 1.0,
-            evidence: Default::default(),
-        });
+        det.openings.push(OpeningCand { kind: CandKind::Window, center: Vec2::new(0.0, 0.0), width: 0.9, confidence: 1.0, ..Default::default() });
         let s = score(&det, &truth, 0.5);
         assert_eq!(s.doors.matched, 0);
 
         // Right kind, wrong center
         det.openings.clear();
-        det.openings.push(OpeningCand {
-            kind: CandKind::Door,
-            host: 0,
-            offset: 0.0,
-            center: Vec2::new(0.2, 0.0),
-            width: 0.9,
-            style: String::new(),
-            hinge: None,
-            swing: None,
-            confidence: 1.0,
-            evidence: Default::default(),
-        });
+        det.openings.push(OpeningCand { kind: CandKind::Door, center: Vec2::new(0.2, 0.0), width: 0.9, confidence: 1.0, ..Default::default() });
         let s = score(&det, &truth, 0.5);
         assert_eq!(s.doors.matched, 0);
 
@@ -324,33 +267,17 @@ mod tests {
         det.openings.clear();
         det.openings.push(OpeningCand {
             kind: CandKind::Door,
-            host: 0,
-            offset: 0.0,
             center: Vec2::new(0.0, 0.0),
             width: 1.0, // 0.1 diff, tol 0.09
-            style: String::new(),
-            hinge: None,
-            swing: None,
             confidence: 1.0,
-            evidence: Default::default(),
+            ..Default::default()
         });
         let s = score(&det, &truth, 0.5);
         assert_eq!(s.doors.matched, 0);
 
         // Correct
         det.openings.clear();
-        det.openings.push(OpeningCand {
-            kind: CandKind::Door,
-            host: 0,
-            offset: 0.0,
-            center: Vec2::new(0.0, 0.0),
-            width: 0.9,
-            style: String::new(),
-            hinge: None,
-            swing: None,
-            confidence: 1.0,
-            evidence: Default::default(),
-        });
+        det.openings.push(OpeningCand { kind: CandKind::Door, center: Vec2::new(0.0, 0.0), width: 0.9, confidence: 1.0, ..Default::default() });
         let s = score(&det, &truth, 0.5);
         assert_eq!(s.doors.matched, 1);
     }
