@@ -266,7 +266,7 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
     }
     if kind == CameraKind::Orbit {
         if cam.azimuth_deg.is_none() {
-            cam.azimuth_deg = Some(0.0);
+            return Err(bad("camera", "an `orbit` camera needs `azimuth`"));
         }
         if cam.elevation_deg.is_none() {
             cam.elevation_deg = Some(0.35);
@@ -283,14 +283,6 @@ fn camera_save(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
         let t = cam.target.unwrap_or([0.0; 3]);
         if e == [t[0], t[1]] {
             return Err(bad("camera", "`eye` must differ from `target`"));
-        }
-    }
-    if kind == CameraKind::Orbit {
-        if cam.elevation_deg.is_none() {
-            return Err(bad("camera", "an `orbit` camera needs `elevation`"));
-        }
-        if cam.distance.is_none() {
-            return Err(bad("camera", "an `orbit` camera needs `distance`"));
         }
     }
     let name = cam.name.clone();
