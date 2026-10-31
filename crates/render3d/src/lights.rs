@@ -51,7 +51,7 @@ pub const FRAME_UNIFORM_SIZE: u64 = 96;
 pub const LIGHTS_UNIFORM_SIZE: u64 = 16 + 64 * MAX_GPU_LIGHTS as u64 + 64 * MAX_GPU_LIGHTS as u64;
 
 /// A light's shadow-map slot in the atlas.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ShadowSlot {
     /// First layer (a cube uses six from here, in [`cube_face`] order).
     pub first_layer: u32,
