@@ -48,9 +48,17 @@ fn run_query(s: &mut Session, params: &Value) -> Result<Value> {
             if arr.len() != 2 {
                 return None;
             }
-            // Null coordinates (NaN/Infinity serialize to null in JSON) become non-finite.
-            let x = arr[0].as_f64().unwrap_or(f64::NAN);
-            let y = arr[1].as_f64().unwrap_or(f64::NAN);
+            // Null coordinates (NaN/Infinity serialize to null in JSON) become non-finite;
+            // any other non-number is a bad point.
+            let num = |v: &Value| -> Option<f64> {
+                match v {
+                    Value::Null => Some(f64::NAN),
+                    Value::Number(n) => n.as_f64().or(Some(f64::NAN)),
+                    _ => None,
+                }
+            };
+            let x = num(&arr[0])?;
+            let y = num(&arr[1])?;
             Some(Vec2::new(x, y))
         })
         .collect::<Option<Vec<_>>>()
