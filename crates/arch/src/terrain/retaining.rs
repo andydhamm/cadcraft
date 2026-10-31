@@ -105,4 +105,110 @@ mod tests {
         w.retaining = false;
         assert!(retaining_span(&model(), &w).is_none());
     }
+
+    #[test]
+    fn retaining_span_horizontal_wall() {
+        // Terrain sloping in y: z = 0.1*y
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 1.0), Vec3::new(0.0, 10.0, 1.0)];
+        let terrain = Terrain { boundary, points, ..Terrain::default() };
+        let model = ArchModel { terrain: Some(terrain), ..ArchModel::default() };
+
+        // Wall from (0,5) to (10,5), 0.2 thick
+        let mut w = Wall::new(Vec2::new(0.0, 5.0), Vec2::new(10.0, 5.0), 0.2);
+        w.retaining = true;
+
+        // Left side (y=5.11) is higher: z = 0.511
+        // Right side (y=4.89) is lower: z = 0.489
+        // Top = 0.511 + 0.15 = 0.661
+        // Bottom = 0.489 - 0.3 = 0.189
+        let (bottom, top) = retaining_span(&model, &w).expect("span");
+        assert!(near(top, 0.661), "top: {top}");
+        assert!(near(bottom, 0.189), "bottom: {bottom}");
+    }
+
+    #[test]
+    fn retaining_span_flat_terrain() {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 1.0), Vec3::new(10.0, 0.0, 1.0), Vec3::new(10.0, 10.0, 1.0), Vec3::new(0.0, 10.0, 1.0)];
+        let terrain = Terrain { boundary, points, ..Terrain::default() };
+        let model = ArchModel { terrain: Some(terrain), ..ArchModel::default() };
+
+        let mut w = Wall::new(Vec2::new(0.0, 5.0), Vec2::new(10.0, 5.0), 0.2);
+        w.retaining = true;
+
+        // Both sides at 1.0
+        // Top = 1.0 + 0.15 = 1.15
+        // Bottom = 1.0 - 0.3 = 0.7
+        let (bottom, top) = retaining_span(&model, &w).expect("span");
+        assert!(near(top, 1.15), "top: {top}");
+        assert!(near(bottom, 0.7), "bottom: {bottom}");
+    }
+
+    #[test]
+    fn retaining_span_top_equals_bottom() {
+        // Flat terrain with zero freeboard and footing: top == bottom -> None
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 1.0), Vec3::new(10.0, 0.0, 1.0), Vec3::new(10.0, 10.0, 1.0), Vec3::new(0.0, 10.0, 1.0)];
+        let terrain = Terrain { boundary, points, ..Terrain::default() };
+        let model = ArchModel { terrain: Some(terrain), ..ArchModel::default() };
+
+        let mut w = Wall::new(Vec2::new(0.0, 5.0), Vec2::new(10.0, 5.0), 0.2);
+        w.retaining = true;
+        w.freeboard = Some(0.0);
+        w.footing = Some(0.0);
+
+        // Both sides at 1.0, freeboard = 0, footing = 0
+        // top = 1.0, bottom = 1.0, so top == bottom -> None
+        assert!(retaining_span(&model, &w).is_none());
+    }
+
+    #[test]
+    fn retaining_span_nan_freeboard() {
+        let mut w = wall();
+        w.freeboard = Some(f64::NAN);
+        assert!(retaining_span(&model(), &w).is_none());
+    }
+
+    #[test]
+    fn retaining_span_inf_footing() {
+        let mut w = wall();
+        w.footing = Some(f64::INFINITY);
+        assert!(retaining_span(&model(), &w).is_none());
+    }
+
+    #[test]
+    fn retaining_span_degenerate_wall() {
+        let mut w = Wall::new(Vec2::new(5.0, 5.0), Vec2::new(5.0, 5.0), 0.2);
+        w.retaining = true;
+        assert!(retaining_span(&model(), &w).is_none());
+    }
+
+    #[test]
+    fn retaining_span_zero_thickness() {
+        let mut w = Wall::new(Vec2::new(30.0, 0.0), Vec2::new(30.0, 30.0), 0.0);
+        w.retaining = true;
+        assert!(retaining_span(&model(), &w).is_none());
+    }
+
+    #[test]
+    fn retaining_span_negative_thickness() {
+        let mut w = Wall::new(Vec2::new(30.0, 0.0), Vec2::new(30.0, 30.0), -0.2);
+        w.retaining = true;
+        assert!(retaining_span(&model(), &w).is_none());
+    }
+
+    #[test]
+    fn retaining_span_nan_start() {
+        let mut w = Wall::new(Vec2::new(f64::NAN, 0.0), Vec2::new(30.0, 30.0), 0.2);
+        w.retaining = true;
+        assert!(retaining_span(&model(), &w).is_none());
+    }
+
+    #[test]
+    fn retaining_span_inf_end() {
+        let mut w = Wall::new(Vec2::new(30.0, 0.0), Vec2::new(f64::INFINITY, 30.0), 0.2);
+        w.retaining = true;
+        assert!(retaining_span(&model(), &w).is_none());
+    }
 }
