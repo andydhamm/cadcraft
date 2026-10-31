@@ -394,21 +394,26 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
     }
 
     // --- 9. Assign corner elevations ---
-    let mut xy: Vec<Vec2> = Vec::new();
-    let mut z: Vec<[f64; 3]> = Vec::new();
-    for tri in &tin.triangles {
-        let corners = [tin.points[tri[0]].xy(), tin.points[tri[1]].xy(), tin.points[tri[2]].xy()];
-        let centroid = Vec2::new((corners[0].x + corners[1].x + corners[2].x) / 3.0, (corners[0].y + corners[1].y + corners[2].y) / 3.0);
-        let zs = [
-            surf.modified_toward(corners[0], centroid).or(surf.modified_at(corners[0])).unwrap_or(0.0),
-            surf.modified_toward(corners[1], centroid).or(surf.modified_at(corners[1])).unwrap_or(0.0),
-            surf.modified_toward(corners[2], centroid).or(surf.modified_at(corners[2])).unwrap_or(0.0),
-        ];
-        for c in corners {
-            xy.push(c);
-        }
-        z.push(zs);
-    }
+    // `xy` is the triangulation's point set (shared vertices: a step point is one entry
+    // referenced by each incident triangle). `triangles` index into it; `z[ti]` holds the
+    // elevation of each of triangle `ti`'s corners, computed toward the triangle's centroid so a
+    // corner on a step carries its own triangle's side.
+    let xy: Vec<Vec2> = tin.points.iter().map(|p| p.xy()).collect();
+    let z: Vec<[f64; 3]> = tin
+        .triangles
+        .iter()
+        .map(|tri| {
+            let p0 = tin.points[tri[0]];
+            let p1 = tin.points[tri[1]];
+            let p2 = tin.points[tri[2]];
+            let centroid = Vec2::new((p0.x + p1.x + p2.x) / 3.0, (p0.y + p1.y + p2.y) / 3.0);
+            [
+                surf.modified_toward(p0, centroid).or(surf.modified_at(p0)).unwrap_or(0.0),
+                surf.modified_toward(p1, centroid).or(surf.modified_at(p1)).unwrap_or(0.0),
+                surf.modified_toward(p2, centroid).or(surf.modified_at(p2)).unwrap_or(0.0),
+            ]
+        })
+        .collect();
 
     Ok(SiteMesh { xy, triangles: tin.triangles, z })
 }
