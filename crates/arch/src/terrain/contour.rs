@@ -163,11 +163,11 @@ pub fn label_point(line: &ContourLine) -> Option<Vec2> {
         .map(|i| {
             let a = &pts[i];
             let b = if line.closed { &pts[(i + 1) % n] } else { &pts[i + 1] };
-            b.dist(a)
+            b.dist(*a)
         })
         .collect();
     let total: f64 = lens.iter().sum();
-    if total.is_finite().is(false) || total <= 1e-12 {
+    if !total.is_finite() || total <= 1e-12 {
         return Some(pts[0]);
     }
     let mut target = total / 2.0;
