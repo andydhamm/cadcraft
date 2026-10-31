@@ -212,7 +212,7 @@ fn triangle(mesh: &mut Mesh, a: usize, b: usize, c: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadcraft_doc::arch::{Plant, Terrain};
+    use cadcraft_doc::arch::{Plant, PlantSpecies, Terrain};
     use std::collections::HashMap;
 
     fn spruce_model() -> ArchModel {
@@ -313,5 +313,84 @@ mod tests {
     fn add_edge(edges: &mut HashMap<(u32, u32), usize>, a: u32, b: u32) {
         let key = if a < b { (a, b) } else { (b, a) };
         *edges.entry(key).or_insert(0) += 1;
+    }
+
+    #[test]
+    fn shrub_produces_no_trunk() {
+        let species = PlantSpecies {
+            name: "Test Shrub".into(),
+            form: PlantForm::Shrub,
+            crown: CrownShape::Sphere,
+            mature_height: 1.0,
+            mature_spread: 1.0,
+            planted_height: 0.3,
+            years_to_mature: 5.0,
+        };
+        let plant = Plant { species: "Test Shrub".into(), position: Vec2::new(5.0, 5.0), age: 10.0, ..Default::default() };
+        let model = ArchModel { plants: vec![plant], plant_species: vec![species], ..Default::default() };
+        let meshes = plant_meshes(&model);
+        assert!(meshes.iter().any(|m| m.material == "plant-crown"), "shrub must have a crown");
+        assert!(!meshes.iter().any(|m| m.material == "plant-trunk"), "shrub must not have a trunk");
+    }
+
+    #[test]
+    fn plant_outside_terrain_boundary_uses_zero_elevation() {
+        let mut model = spruce_model();
+        model.terrain = Some(Terrain {
+            boundary: vec![Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), Vec2::new(5.0, 5.0), Vec2::new(0.0, 5.0), Vec2::new(0.0, 0.0)],
+            default_elevation: 2.0,
+            points: vec![],
+            ..Default::default()
+        });
+        // Spruce is at (10, 10), outside the 5x5 boundary
+        let meshes = plant_meshes(&model);
+        let trunk = meshes.iter().find(|m| m.material == "plant-trunk");
+        assert!(trunk.is_some(), "spruce must have a trunk");
+        let Some(trunk) = trunk else { return };
+        let b = bounds(trunk);
+        assert!(b.is_some(), "trunk must have vertices");
+        let Some((min, _)) = b else { return };
+        close(min.z, 0.0);
+    }
+
+    #[test]
+    fn unknown_species_is_skipped() {
+        let plant = Plant { species: "Nonexistent Species".into(), position: Vec2::new(5.0, 5.0), age: 5.0, ..Default::default() };
+        let model = ArchModel { plants: vec![plant], ..Default::default() };
+        let meshes = plant_meshes(&model);
+        assert!(meshes.is_empty(), "unknown species must produce no meshes");
+    }
+
+    #[test]
+    fn plant_with_nan_position_is_skipped() {
+        let plant = Plant { species: "Colorado Blue Spruce".into(), position: Vec2::new(f64::NAN, 10.0), age: 30.0, ..Default::default() };
+        let model = ArchModel { plants: vec![plant], ..Default::default() };
+        let meshes = plant_meshes(&model);
+        assert!(meshes.is_empty(), "plant with NaN position must be skipped");
+    }
+
+    #[test]
+    fn plant_meshes_carry_the_plant_id() {
+        let model = spruce_model();
+        let plant_id = model.plants[0].id;
+        let meshes = plant_meshes(&model);
+        assert!(!meshes.is_empty(), "must produce meshes");
+        for mesh in &meshes {
+            assert_eq!(mesh.object, plant_id, "mesh must carry the plant's id");
+        }
+    }
+
+    #[test]
+    fn multiple_plants_produce_separate_meshes() {
+        let p1 = Plant { species: "Colorado Blue Spruce".into(), position: Vec2::new(5.0, 5.0), age: 30.0, ..Default::default() };
+        let p2 = Plant { species: "Colorado Blue Spruce".into(), position: Vec2::new(15.0, 15.0), age: 30.0, ..Default::default() };
+        let model = ArchModel { plants: vec![p1, p2], ..Default::default() };
+        let meshes = plant_meshes(&model);
+        // Each spruce (tree) produces a crown and a trunk
+        assert_eq!(meshes.len(), 4, "two spruces must produce four meshes");
+        let crown_count = meshes.iter().filter(|m| m.material == "plant-crown").count();
+        let trunk_count = meshes.iter().filter(|m| m.material == "plant-trunk").count();
+        assert_eq!(crown_count, 2);
+        assert_eq!(trunk_count, 2);
     }
 }
