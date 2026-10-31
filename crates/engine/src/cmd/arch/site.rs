@@ -199,4 +199,41 @@ mod tests {
         assert!((x + 0.5).abs() < 1e-6 && (y - 0.866_025).abs() < 1e-3, "{x},{y}");
         assert!(r["site"]["northArrow"]["at"].is_array());
     }
+
+    #[test]
+    fn site_clear_without_site_is_ok() {
+        let mut s = Session::new();
+        let r = s.execute("site", &json!({ "clear": true })).unwrap();
+        assert_eq!(r["site"], Value::Null);
+        assert!(s.doc().unwrap().arch.site.is_none());
+    }
+
+    #[test]
+    fn site_refuses_non_finite_latitude() {
+        let mut s = Session::new();
+        let r = s.execute("site", &json!({ "latitude": f64::INFINITY }));
+        assert!(r.is_err(), "infinite latitude should be refused");
+        let r = s.execute("site", &json!({ "latitude": f64::NAN }));
+        assert!(r.is_err(), "NaN latitude should be refused");
+        assert!(s.doc().unwrap().arch.site.is_none());
+    }
+
+    #[test]
+    fn site_reference_round_trip() {
+        let mut s = Session::new();
+        let r = s
+            .execute("site", &json!({ "reference": { "point": [10, 20], "easting": 500000.0, "northing": 5655000.0, "crs": "EPSG:32611" } }))
+            .unwrap();
+        assert_eq!(r["site"]["reference"]["point"], json!([10.0, 20.0]));
+        assert_eq!(r["site"]["reference"]["easting"], json!(500000.0));
+        assert_eq!(r["site"]["reference"]["northing"], json!(5655000.0));
+        assert_eq!(r["site"]["reference"]["crs"], json!("EPSG:32611"));
+    }
+
+    #[test]
+    fn site_north_arrow_at_custom_location() {
+        let mut s = Session::new();
+        let r = s.execute("site", &json!({ "latitude": 51.05, "northArrowAt": [5, 6] })).unwrap();
+        assert_eq!(r["site"]["northArrow"]["at"], json!([5.0, 6.0]));
+    }
 }
