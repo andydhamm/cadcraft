@@ -1,5 +1,5 @@
 # The terrain is a closed solid: the surface, a skirt, and a flat bottom 1 m below its lowest point.
-# needs: p9-cmd-terrain, p9-cmd-terrain-modify, p9-arch-terrain-mesh, p9-arch3d-terrain-solid
+# needs: p9-cmd-terrain, p9-cmd-terrain-modify, p9-arch-terrain-mesh, p9-arch3d-terrain-solid, p9-io-site-proxies
 import os
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p9lib.inc')).read())
 
