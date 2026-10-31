@@ -34,6 +34,10 @@ pub fn part_of(mesh: &Mesh) -> &'static str {
     if m.starts_with("plant-") {
         return "plant";
     }
+    // Phase 10: fixture housings (`light-trim`, `light-lens`, …).
+    if m.starts_with("light-") {
+        return "light";
+    }
     if m.contains("glass") {
         return "glass";
     }
@@ -167,7 +171,9 @@ pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
 pub fn mesh_label(mesh: &Mesh) -> String {
     let m = mesh.material.to_lowercase();
     // Site meshes first: a plant, the terrain solid, a path (its modifier) are named as the commands name them.
-    let label = if m.starts_with("plant-") {
+    let label = if m.starts_with("light-") {
+        cadcraft_doc::arch::light_label(mesh.object)
+    } else if m.starts_with("plant-") {
         cadcraft_doc::arch::plant_label(mesh.object)
     } else if m == "terrain" {
         cadcraft_doc::arch::terrain_label(None)
@@ -621,6 +627,8 @@ mod tests {
     fn mesh_label_names_site_objects() {
         // Site meshes are labelled as the commands name them, never as walls.
         assert_eq!(mesh_label(&Mesh::new("plant-crown", ArchId(4))), "pl4");
+        assert_eq!(mesh_label(&Mesh::new("light-trim", ArchId(2))), "lf2");
+        assert_eq!(part_of(&Mesh::new("light-lens", ArchId(2))), "light");
         assert_eq!(mesh_label(&Mesh::new("plant-trunk", ArchId(4))), "pl4");
         assert_eq!(mesh_label(&Mesh::new("terrain", ArchId(0))), "t0");
         assert_eq!(mesh_label(&Mesh::new("path-driveway-concrete", ArchId(2))), "tm2");

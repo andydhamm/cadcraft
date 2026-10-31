@@ -8,7 +8,9 @@ use crate::Handle;
 use cadcraft_geom::{Bounds2, Vec2};
 use serde::{Deserialize, Serialize};
 
+pub mod light;
 pub mod site;
+pub use light::*;
 pub use site::*;
 
 /// A stable identifier for an architectural object.
@@ -126,6 +128,8 @@ pub fn part_handle(id: ArchId, part: &str) -> Handle {
         "roof" => roof_handle(id),
         "stair" => stair_handle(id),
         "railing" => railing_handle(id),
+        "plant" => plant_handle(id),
+        "light" => light_handle(id),
         _ => arch_handle(id),
     }
 }
@@ -1473,6 +1477,11 @@ pub struct ArchModel {
     /// Species the user added (the built-in catalogue is in `arch::plant`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plant_species: Vec<PlantSpecies>,
+    // Phase 10: light fixtures, skipped when empty like the site.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lights: Vec<LightFixture>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub next_light_id: u32,
 }
 
 impl Default for ArchModel {
@@ -1498,6 +1507,8 @@ impl Default for ArchModel {
             terrain: None,
             plants: Vec::new(),
             next_plant_id: 0,
+            lights: Vec::new(),
+            next_light_id: 0,
             plant_species: Vec::new(),
             levels: vec![Level { index: 0, name: "Level 1".into(), elevation: 0.0, ceiling_height: 2.4, structure: 0.3 }],
             types: vec![
@@ -1579,6 +1590,7 @@ impl ArchModel {
             && self.terrain.is_none()
             && self.plants.is_empty()
             && self.plant_species.is_empty()
+            && self.lights.is_empty()
     }
 
     /// Look up a wall type by name (case-insensitive).

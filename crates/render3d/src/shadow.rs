@@ -76,6 +76,8 @@ pub struct ShadowMap {
     pub light_view_proj: [[f32; 4]; 4],
     /// Edge length in texels.
     pub size: u32,
+    /// Depth bias in normalised depth (the lit pipelines' `FrameU.sun.x`).
+    pub bias: f32,
     #[cfg(test)]
     pub(crate) texture: wgpu::Texture,
 }
@@ -369,6 +371,7 @@ pub fn build(device: &wgpu::Device, queue: &wgpu::Queue, meshes: &GpuMeshes, lig
         bind_group,
         light_view_proj,
         size: SHADOW_SIZE,
+        bias: uniform.params[0],
         #[cfg(test)]
         texture,
     })

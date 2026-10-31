@@ -2,6 +2,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+mod dxf_light;
 /// What a DXF file holds that CADCraft doesn't model, kept and written back (#528).
 mod dxf_raw;
 mod dxf_site;
@@ -15,6 +16,7 @@ mod dxf_table;
 mod dxf_write;
 mod dxf_xref;
 pub mod glb;
+mod glb_lights;
 pub mod pdf;
 pub mod plotter;
 pub mod svg;

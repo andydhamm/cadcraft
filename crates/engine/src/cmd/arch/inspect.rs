@@ -363,6 +363,7 @@ fn run_inspect(s: &mut Session, p: &Value) -> Result<Value, EngineError> {
 
     // Site, terrain and plants (phase 9).
     super::site_inspect::inspect_site(&d.arch, p, &mut out);
+    super::light_inspect::inspect_lights(&d.arch, p, &mut out);
 
     Ok(Value::Object(out))
 }

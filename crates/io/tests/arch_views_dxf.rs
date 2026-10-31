@@ -73,7 +73,7 @@ fn views_round_trip_through_the_v7_arch_record() {
     let d = view_drawing();
     let text = write_dxf(&d);
     assert!(text.contains("CADCRAFT_ARCH"), "missing arch record");
-    assert!(text.contains("\"version\":8") || text.contains("\"version\": 8"), "record should be v8");
+    assert!(text.contains("\"version\":9") || text.contains("\"version\": 9"), "record should be v9");
 
     let back = read_dxf(text.as_bytes()).unwrap();
     assert_eq!(back.arch.views.len(), 2, "views lost on read");
@@ -107,7 +107,7 @@ fn views_round_trip_through_the_v7_arch_record() {
 fn a_v6_record_reads_with_no_views() {
     let d = view_drawing();
     let text = write_dxf(&d);
-    let old = text.replace("\"version\": 8", "\"version\": 6").replace("\"version\":8", "\"version\": 6");
+    let old = text.replace("\"version\": 9", "\"version\": 6").replace("\"version\":9", "\"version\": 6");
     let back = read_dxf(old.as_bytes()).unwrap();
     assert!(back.arch.views.is_empty(), "v6 payload should clear views");
     assert_eq!(back.arch.next_view_id, 0, "v6 payload should reset next_view_id");

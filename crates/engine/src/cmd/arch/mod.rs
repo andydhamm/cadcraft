@@ -15,12 +15,16 @@ pub const DEFAULT_WALL_HEIGHT: f64 = 2.7;
 pub mod archdetect;
 pub mod build3d;
 pub mod deck;
+pub mod illuminance;
 pub mod inspect;
 pub mod level;
+pub(crate) mod light_inspect;
+pub mod lightfixture;
 pub mod opening;
 pub mod pick;
 pub mod plant;
 pub mod railing;
+pub mod render;
 pub mod roofauto;
 pub mod roofplane;
 pub mod room;
@@ -32,6 +36,7 @@ pub(crate) mod site_inspect;
 pub mod stair;
 pub mod stretch;
 pub mod sun;
+pub mod sunstudy;
 pub mod terrain;
 pub mod terrain_modify;
 pub mod terrain_query;
@@ -83,5 +88,9 @@ pub fn specs() -> Vec<CommandSpec> {
     v.extend(terrain_modify::specs());
     v.extend(terrain_query::specs());
     v.extend(plant::specs());
+    v.extend(lightfixture::specs());
+    v.extend(illuminance::specs());
+    v.extend(render::specs());
+    v.extend(sunstudy::specs());
     v
 }
