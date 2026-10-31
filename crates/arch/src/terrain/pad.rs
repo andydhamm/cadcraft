@@ -333,9 +333,9 @@ mod tests {
             margin: 0.3,
         };
         // Ground at 0.0 is higher than pad at -0.3. At d=0.5, s=0.2:
-        // z = max(0.0, -0.3 - 0.5*0.2) = max(0.0, -0.4) = 0.0
+        // z = min(0.0, -0.3 + 0.5*0.2) = min(0.0, -0.2) = -0.2
         let z = apply_pads(&[region], Vec2::new(14.4, 15.0), Vec2::new(14.4, 15.0), 0.0);
-        assert!((z - 0.0).abs() < 1e-9);
+        assert!((z - (-0.2)).abs() < 1e-9);
     }
 
     #[test]
