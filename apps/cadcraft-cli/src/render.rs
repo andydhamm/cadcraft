@@ -683,4 +683,72 @@ mod tests {
         // 4) No site and no explicit latitude -> the NoSiteLat refusal fires.
         assert!(matches!(sun_light_dir(None, date, time, None), Err(RenderError::NoSiteLat)));
     }
+
+    #[test]
+    fn sun_light_dir_equator_equinox_noon_is_overhead() {
+        // At the equator on the March equinox at solar noon, the sun is directly overhead:
+        // elevation 90°, so the direction vector should be (0, 0, 1).
+        let site = cadcraft_engine::doc::arch::SiteLocation { latitude: 0.0, true_north: 0.0, ..Default::default() };
+        let dir = sun_light_dir(None, "2026-03-20", "solar-noon", Some(&site)).unwrap();
+        assert!((dir[0]).abs() < 1e-6, "x should be ~0 at equator equinox noon, got {}", dir[0]);
+        assert!((dir[1]).abs() < 1e-6, "y should be ~0 at equator equinox noon, got {}", dir[1]);
+        assert!((dir[2] - 1.0).abs() < 1e-6, "z should be ~1 at equator equinox noon, got {}", dir[2]);
+    }
+
+    #[test]
+    fn sun_light_dir_true_north_360_equals_zero() {
+        // A full 360° rotation of true north must give the same direction as 0°.
+        let site0 = cadcraft_engine::doc::arch::SiteLocation { latitude: 40.0, true_north: 0.0, ..Default::default() };
+        let site360 = cadcraft_engine::doc::arch::SiteLocation { latitude: 40.0, true_north: 360.0, ..Default::default() };
+        let dir0 = sun_light_dir(None, "2026-06-21", "solar-noon", Some(&site0)).unwrap();
+        let dir360 = sun_light_dir(None, "2026-06-21", "solar-noon", Some(&site360)).unwrap();
+        assert!(dirs_close(dir0, dir360), "true_north=360 must equal true_north=0");
+    }
+
+    #[test]
+    fn parse_sun_boundary_latitudes() {
+        // Latitude boundaries: ±90° and 0° must all parse successfully.
+        assert!(parse_sun("lat=90,date=2026-06-21,time=solar-noon").is_some(), "lat=90 must parse");
+        assert!(parse_sun("lat=-90,date=2026-06-21,time=solar-noon").is_some(), "lat=-90 must parse");
+        assert!(parse_sun("lat=0,date=2026-06-21,time=solar-noon").is_some(), "lat=0 must parse");
+        // Just outside the boundaries must fail.
+        assert!(parse_sun("lat=90.1,date=2026-06-21,time=solar-noon").is_none(), "lat=90.1 must fail");
+        assert!(parse_sun("lat=-90.1,date=2026-06-21,time=solar-noon").is_none(), "lat=-90.1 must fail");
+    }
+
+    #[test]
+    fn sun_light_dir_site_reference_does_not_affect_direction() {
+        // The site's reference point (easting/northing/CRS) must not affect the sun direction.
+        let site_no_ref = cadcraft_engine::doc::arch::SiteLocation { latitude: 51.5, true_north: 15.0, ..Default::default() };
+        let site_with_ref = cadcraft_engine::doc::arch::SiteLocation {
+            latitude: 51.5,
+            true_north: 15.0,
+            reference: Some(cadcraft_engine::doc::arch::SiteReference {
+                point: cadcraft_geom::Vec2::new(100.0, 200.0),
+                easting: 500000.0,
+                northing: 5700000.0,
+                crs: "EPSG:27700".to_string(),
+            }),
+            ..Default::default()
+        };
+        let dir_no_ref = sun_light_dir(None, "2026-06-21", "solar-noon", Some(&site_no_ref)).unwrap();
+        let dir_with_ref = sun_light_dir(None, "2026-06-21", "solar-noon", Some(&site_with_ref)).unwrap();
+        assert!(dirs_close(dir_no_ref, dir_with_ref), "reference point must not affect sun direction");
+    }
+
+    #[test]
+    fn parse_sun_whitespace_and_trailing_comma() {
+        // Various whitespace patterns must parse correctly.
+        assert_eq!(
+            parse_sun("  lat = 51.05 , date = 2026-06-21 , time = solar-noon  "),
+            Some((Some(51.05), "2026-06-21".to_string(), "solar-noon".to_string()))
+        );
+        // Trailing comma should be tolerated (empty token after split is skipped by filter).
+        // Actually, parse_sun doesn't filter empty tokens, so a trailing comma produces an
+        // empty token that fails split_once('='). This is a real edge case.
+        // Let's verify the current behavior: trailing comma should fail.
+        assert!(parse_sun("lat=51.05,date=2026-06-21,time=solar-noon,").is_none(), "trailing comma should fail");
+        // But extra whitespace around the comma is fine.
+        assert_eq!(parse_sun("lat=51.05, date=2026-06-21, time=solar-noon"), Some((Some(51.05), "2026-06-21".to_string(), "solar-noon".to_string())));
+    }
 }
