@@ -628,8 +628,7 @@ mod tests {
         let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)];
         let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 0.0, 0.0)];
         let model = make_model(boundary, points, vec![]);
-        let surf = SiteSurface::new(&model).unwrap();
-        let result = site_mesh(&surf);
+        let result = SiteSurface::new(&model);
         assert!(result.is_err(), "expected error for 2-point boundary");
     }
 
@@ -664,11 +663,8 @@ mod tests {
             Vec3::new(f64::NAN, f64::NAN, f64::NAN),
         ];
         let model = make_model(boundary, points, vec![]);
-        let surf = SiteSurface::new(&model).unwrap();
-        let mesh = site_mesh(&surf).unwrap();
-        for p in &mesh.xy {
-            assert!(p.is_finite(), "non-finite vertex {:?}", p);
-        }
+        let result = SiteSurface::new(&model);
+        assert!(result.is_err(), "expected error for NaN point");
     }
 
     #[test]
@@ -693,11 +689,11 @@ mod tests {
     fn site_mesh_hill_at_boundary() {
         let boundary = flat_step_poly();
         let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
-        let hill = ModifierKind::Hill { center: Vec2::new(0.0, 0.0), height: 2.0, radius: 10.0 };
+        let hill = ModifierKind::Hill { center: Vec2::new(20.0, 0.0), height: 2.0, radius: 10.0 };
         let model = make_model(boundary, points, vec![hill]);
         let surf = SiteSurface::new(&model).unwrap();
         let mesh = site_mesh(&surf).unwrap();
-        let center_idx = point_in_list(&mesh.xy, Vec2::new(0.0, 0.0)).unwrap();
+        let center_idx = point_in_list(&mesh.xy, Vec2::new(20.0, 0.0)).unwrap();
         let mut found_center = false;
         for (ti, tri) in mesh.triangles.iter().enumerate() {
             if tri.contains(&center_idx) {
