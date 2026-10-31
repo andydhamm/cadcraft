@@ -924,6 +924,23 @@ fn class_records_have_instance_counts_from_2004_only() {
     assert_eq!(counts.get("ACME_OBJECT"), Some(&1));
 }
 
+/// A 2004+ save gives every CLASS record, generated and preserved, an instance count equal to
+/// the number of its objects in the file (the behaviour the original test pinned; R2000 has none).
+#[test]
+fn class_records_have_instance_counts_for_generated_and_preserved_records() {
+    let src = fixture().replacen("ACME_OBJECT\n2\nAcmeObject\n3\nAcmeApp\n90\n0\n", "ACME_OBJECT\n2\nAcmeObject\n3\nAcmeApp\n90\n0\n91\n1\n", 1);
+    let (d, _, _) = saves(&src);
+    let r2018 = write_with(&d, "x.dxf", &SaveOptions { version: Some(Version::R2018), binary: false }).expect("save 2018");
+    let out = Out::new(std::str::from_utf8(&r2018).expect("UTF-8"));
+    let counts = out.counts();
+    for class in out.in_section("CLASSES", "CLASS") {
+        let name = s(class, 1);
+        let instance_count = class.iter().find(|t| t.code == 91).map(Tag::i64);
+        assert_eq!(instance_count, Some(counts.get(&name).map_or(0, |n| *n as i64)), "CLASS {name}");
+    }
+    assert_eq!(counts.get("ACME_OBJECT"), Some(&1));
+}
+
 #[test]
 fn erased_entities_take_their_extension_data_with_them() {
     let mut d = read_dxf(fixture().as_bytes()).expect("read");
