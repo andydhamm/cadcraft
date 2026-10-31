@@ -48,8 +48,9 @@ fn run_query(s: &mut Session, params: &Value) -> Result<Value> {
             if arr.len() != 2 {
                 return None;
             }
-            let x = arr[0].as_f64()?;
-            let y = arr[1].as_f64()?;
+            // Null coordinates (NaN/Infinity serialize to null in JSON) become non-finite.
+            let x = arr[0].as_f64().unwrap_or(f64::NAN);
+            let y = arr[1].as_f64().unwrap_or(f64::NAN);
             Some(Vec2::new(x, y))
         })
         .collect::<Option<Vec<_>>>()
