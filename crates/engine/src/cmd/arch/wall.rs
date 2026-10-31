@@ -1490,6 +1490,163 @@ mod tests {
     }
 
     #[test]
+    fn wall_command_retaining_freeboard_and_footing_at_boundaries() {
+        let mut s = new_session_with_level();
+        // 0.0 is the minimum allowed
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "freeboard": 0.0,
+            "footing": 0.0,
+        });
+        s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 1);
+        assert_eq!(d.arch.walls[0].freeboard, Some(0.0));
+        assert_eq!(d.arch.walls[0].footing, Some(0.0));
+
+        // 5.0 is the maximum allowed
+        let p = json!({
+            "points": [[0.0, 1.0], [2.0, 1.0]],
+            "retaining": true,
+            "freeboard": 5.0,
+            "footing": 5.0,
+        });
+        s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 2);
+        assert_eq!(d.arch.walls[1].freeboard, Some(5.0));
+        assert_eq!(d.arch.walls[1].footing, Some(5.0));
+    }
+
+    #[test]
+    fn wall_command_retaining_freeboard_nan_and_infinity() {
+        let mut s = new_session_with_level();
+        // NaN freeboard
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "freeboard": f64::NAN,
+        });
+        assert!(s.execute("wall", &p).is_err());
+
+        // Infinity freeboard
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "freeboard": f64::INFINITY,
+        });
+        assert!(s.execute("wall", &p).is_err());
+
+        // NaN footing
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "footing": f64::NAN,
+        });
+        assert!(s.execute("wall", &p).is_err());
+
+        // Infinity footing
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "footing": f64::INFINITY,
+        });
+        assert!(s.execute("wall", &p).is_err());
+
+        // Nothing written
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
+    }
+
+    #[test]
+    fn wall_command_retaining_freeboard_non_numeric() {
+        let mut s = new_session_with_level();
+        // String freeboard
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "freeboard": "0.2",
+        });
+        assert!(s.execute("wall", &p).is_err());
+
+        // Array freeboard
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "freeboard": [0.2],
+        });
+        assert!(s.execute("wall", &p).is_err());
+
+        // Object freeboard
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "freeboard": {"m": 0.2},
+        });
+        assert!(s.execute("wall", &p).is_err());
+
+        // Bool freeboard
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "freeboard": true,
+        });
+        assert!(s.execute("wall", &p).is_err());
+
+        // Nothing written
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
+    }
+
+    #[test]
+    fn wall_command_retaining_with_divider() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "divider": true,
+            "freeboard": 0.1,
+            "footing": 0.2,
+        });
+        s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 1);
+        let w = &d.arch.walls[0];
+        assert!(w.retaining);
+        assert!(w.divider);
+        assert!(!w.exterior);
+        assert_eq!(w.freeboard, Some(0.1));
+        assert_eq!(w.footing, Some(0.2));
+    }
+
+    #[test]
+    fn wall_command_retaining_null_param_is_default() {
+        let mut s = new_session_with_level();
+        // null retaining should be treated as false (default)
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": null,
+        });
+        s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 1);
+        assert!(!d.arch.walls[0].retaining);
+        assert_eq!(d.arch.walls[0].freeboard, None);
+        assert_eq!(d.arch.walls[0].footing, None);
+    }
+
+    #[test]
+    fn wall_command_retaining_freeboard_without_retaining_explicit_false() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": false,
+            "freeboard": 0.2,
+        });
+        assert!(s.execute("wall", &p).is_err());
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
+    }
+
+    #[test]
     fn wall_machine_cancel_after_settings_discards() {
         let mut s = new_session_with_level();
         let before = s.doc().unwrap().arch.walls.len();
