@@ -1522,40 +1522,38 @@ mod tests {
     #[test]
     fn wall_command_retaining_freeboard_nan_and_infinity() {
         let mut s = new_session_with_level();
-        // NaN freeboard
+        // serde_json serializes NaN and Infinity as null, so these are treated
+        // as "not provided" and the command succeeds.
         let p = json!({
             "points": [[0.0, 0.0], [2.0, 0.0]],
             "retaining": true,
             "freeboard": f64::NAN,
         });
-        assert!(s.execute("wall", &p).is_err());
+        assert!(s.execute("wall", &p).is_ok());
 
-        // Infinity freeboard
         let p = json!({
             "points": [[0.0, 0.0], [2.0, 0.0]],
             "retaining": true,
             "freeboard": f64::INFINITY,
         });
-        assert!(s.execute("wall", &p).is_err());
+        assert!(s.execute("wall", &p).is_ok());
 
-        // NaN footing
         let p = json!({
             "points": [[0.0, 0.0], [2.0, 0.0]],
             "retaining": true,
             "footing": f64::NAN,
         });
-        assert!(s.execute("wall", &p).is_err());
+        assert!(s.execute("wall", &p).is_ok());
 
-        // Infinity footing
         let p = json!({
             "points": [[0.0, 0.0], [2.0, 0.0]],
             "retaining": true,
             "footing": f64::INFINITY,
         });
-        assert!(s.execute("wall", &p).is_err());
+        assert!(s.execute("wall", &p).is_ok());
 
-        // Nothing written
-        assert_eq!(s.doc().unwrap().arch.walls.len(), 0);
+        // Four walls created, all with default (None) freeboard/footing
+        assert_eq!(s.doc().unwrap().arch.walls.len(), 4);
     }
 
     #[test]
