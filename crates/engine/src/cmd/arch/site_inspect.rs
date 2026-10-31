@@ -51,7 +51,14 @@ fn site_json(model: &ArchModel) -> Value {
             })
         }
         // A terrain without a site location: only the north arrow is known.
-        None => Value::Null,
+        None => json!({
+            "latitude": Value::Null,
+            "longitude": Value::Null,
+            "elevation": Value::Null,
+            "trueNorth": Value::Null,
+            "reference": Value::Null,
+            "northArrow": arrow,
+        }),
     }
 }
 
@@ -221,5 +228,115 @@ mod tests {
         m.plants.push(Plant::default());
         let out = run(&m, json!({}));
         assert!(!out.contains_key("site") && !out.contains_key("terrain") && !out.contains_key("plants"));
+    }
+
+    #[test]
+    fn inspect_site_terrain_only_has_north_arrow() {
+        let mut m = ArchModel::default();
+        m.terrain = Some(Terrain::default());
+        let out = run(&m, json!({"site": true}));
+        let s = &out["site"];
+        // Terrain without a site location: site object must exist with a north arrow.
+        assert!(s.is_object(), "site should be an object when terrain exists: {s}");
+        assert!(s.get("northArrow").is_some(), "northArrow should be present: {s}");
+        // Site-specific fields are null when there is no site location.
+        assert!(s["latitude"].is_null());
+        assert!(s["longitude"].is_null());
+        assert!(s["elevation"].is_null());
+        assert!(s["trueNorth"].is_null());
+        assert!(s["reference"].is_null());
+    }
+
+    #[test]
+    fn inspect_terrain_degenerate_boundary_gives_null_tin() {
+        let mut m = ArchModel::default();
+        // Empty boundary: original_tin should fail, triangles and range become null.
+        m.terrain = Some(Terrain::default());
+        let out = run(&m, json!({"terrain": true}));
+        let t = &out["terrain"];
+        assert!(t["triangles"].is_null(), "triangles should be null for empty boundary: {t}");
+        assert!(t["range"].is_null(), "range should be null for empty boundary: {t}");
+    }
+
+    #[test]
+    fn inspect_handle_formats() {
+        let mut m = ArchModel::default();
+        m.terrain = Some(Terrain {
+            modifiers: vec![
+                TerrainModifier { id: 0, kind: ModifierKind::Hill { center: Vec2::new(1.0, 1.0), height: 1.0, radius: 1.0 } },
+                TerrainModifier { id: 5, kind: ModifierKind::Flat { polygon: square(1.0), elevation: 0.0, margin: 0.1 } },
+            ],
+            next_modifier_id: 6,
+            ..Terrain::default()
+        });
+        m.plants.push(Plant { id: ArchId(3), species: "boxwood".into(), position: Vec2::new(1.0, 1.0), age: 0.0, planted_height: None });
+        let out = run(&m, json!({"terrain": true, "plants": true}));
+        // Handles are lowercase hex strings starting with the arch handle base prefix.
+        let terrain_handle = out["terrain"]["handle"].as_str().unwrap_or("");
+        assert!(terrain_handle.starts_with("a0"), "terrain handle format: {terrain_handle}");
+        let mod0_handle = out["terrain"]["modifiers"][0]["handle"].as_str().unwrap_or("");
+        assert!(mod0_handle.starts_with("a0"), "modifier handle format: {mod0_handle}");
+        let mod1_handle = out["terrain"]["modifiers"][1]["handle"].as_str().unwrap_or("");
+        assert!(mod1_handle.starts_with("a0"), "modifier handle format: {mod1_handle}");
+        let plant_handle = out["plants"][0]["handle"].as_str().unwrap_or("");
+        assert!(plant_handle.starts_with("a0"), "plant handle format: {plant_handle}");
+        // Modifier id labels use the tm prefix with the numeric id.
+        assert_eq!(out["terrain"]["modifiers"][0]["id"], json!("tm0"));
+        assert_eq!(out["terrain"]["modifiers"][1]["id"], json!("tm5"));
+        // Plant id label.
+        assert_eq!(out["plants"][0]["id"], json!("pl3"));
+    }
+
+    #[test]
+    fn inspect_nan_fields_do_not_panic() {
+        let mut m = ArchModel::default();
+        m.site = Some(SiteLocation {
+            latitude: f64::NAN,
+            longitude: f64::NAN,
+            elevation: f64::NAN,
+            true_north: f64::NAN,
+            reference: None,
+            north_arrow_at: None,
+        });
+        // NaN values must not panic; they serialize to null in JSON.
+        let out = run(&m, json!({"site": true}));
+        assert!(out.contains_key("site"));
+        assert!(out["site"]["latitude"].is_null());
+    }
+
+    #[test]
+    fn inspect_all_terrain_modifier_types() {
+        let mut m = ArchModel::default();
+        m.terrain = Some(Terrain {
+            modifiers: vec![
+                TerrainModifier { id: 0, kind: ModifierKind::Flat { polygon: square(2.0), elevation: 1.5, margin: 0.3 } },
+                TerrainModifier { id: 1, kind: ModifierKind::Hill { center: Vec2::new(5.0, 5.0), height: 2.0, radius: 4.0 } },
+                TerrainModifier {
+                    id: 2,
+                    kind: ModifierKind::Path { kind: PathKind::Driveway, polygon: square(1.0), thickness: 0.15, material: "concrete".into() },
+                },
+            ],
+            next_modifier_id: 3,
+            ..Terrain::default()
+        });
+        let out = run(&m, json!({"terrain": true}));
+        let mods = &out["terrain"]["modifiers"];
+        assert_eq!(mods.len(), 3);
+        // Flat modifier fields.
+        assert_eq!(mods[0]["type"], json!("flat"));
+        assert_eq!(mods[0]["elevation"], json!(1.5));
+        assert_eq!(mods[0]["margin"], json!(0.3));
+        assert!(mods[0]["polygon"].is_array());
+        // Hill modifier fields.
+        assert_eq!(mods[1]["type"], json!("hill"));
+        assert_eq!(mods[1]["height"], json!(2.0));
+        assert_eq!(mods[1]["radius"], json!(4.0));
+        assert_eq!(mods[1]["center"], json!([5.0, 5.0]));
+        // Path modifier fields.
+        assert_eq!(mods[2]["type"], json!("path"));
+        assert_eq!(mods[2]["kind"], json!("driveway"));
+        assert_eq!(mods[2]["thickness"], json!(0.15));
+        assert_eq!(mods[2]["material"], json!("concrete"));
+        assert!(mods[2]["polygon"].is_array());
     }
 }
