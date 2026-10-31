@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-31 16:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 16:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 10 of 13: Lighting, light fixtures and final renders — 0 of 1 segments merged**
 
@@ -20,18 +20,18 @@ Updated 2026-10-31 16:15 UTC. This page and the card in the README are regenerat
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
 | 9 | Terrain and site | done | 12 / 12 | 19.4 h |
-| 10 | Lighting, light fixtures and final renders | pending | — | 1.2 h so far · expected done Oct 31 17:27–Nov 01 10:00 UTC |
+| 10 | Lighting, light fixtures and final renders | pending | — | 1.4 h so far · expected done Oct 31 17:42–Nov 01 10:15 UTC |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
 | 13 | Polish | planned | — | — |
 
 ## Phase 10 segments
 
-1 working
+1 gate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `upstream-sync-b6331c860` | merge upstream upstream/main up to b6331c860 (14 commits) | working | darwin-ws3 |
+| `upstream-sync-b6331c860` | merge upstream upstream/main up to b6331c860 (14 commits) | gate | darwin-ws3 |
 
 ## Recent merges
 
@@ -62,8 +62,8 @@ Updated 2026-10-31 16:15 UTC. This page and the card in the README are regenerat
 | claude-sonnet-b | sonnet | idle | 55 |
 | claude-sonnet-c | sonnet | idle | 7 |
 | claude-sonnet-d | sonnet | idle | 2 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 584 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 584 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 106 |
 | mai-flash | mai-code-1.1-flash | idle | 28 |
-| tturbo-mac | tturbo-ultraheretic | agent | 504 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 325 |
+| tturbo-mac | tturbo-ultraheretic | merging | 505 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 326 |
