@@ -14,7 +14,7 @@
 #   plant {species, at, age?, plantedHeight?} -> {"plant": "pl0", height, spread};  plant.species {add?|file?} -> {"species": [...]}
 #   wall {..., retaining?, freeboard?, footing?};  arch.inspect {"site"|"terrain"|"plants"|"walls": true}
 #   build3d {"probe": [[x,y,z],...]} -> {..., "terrain", "paths", "plants", "probe": [{id, part, level} | null]}
-import json, math, os, struct, subprocess, sys, tempfile, zlib
+import codecs, json, math, os, re, struct, subprocess, sys, tempfile, zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SITE = [[0, 0], [40, 0], [40, 30], [0, 30]]
@@ -193,6 +193,29 @@ def closed(j, binc, name):
 
 
 # ---- DXF ----
+
+def dxf_text(path):
+    """A DXF file's text as CADCraft reads it: UTF-8 when its bytes are valid UTF-8 (every 2007+ file, and an older one
+    that is), otherwise the code page its $DWGCODEPAGE names, in which upstream saves pre-2007 text (a '²' read from
+    apartment.dxf is saved as the one byte B2); then the \\U+XXXX escapes for characters outside the code page."""
+    b = open(path, 'rb').read()
+    try:
+        t = b.decode('utf-8')
+    except UnicodeDecodeError:
+        lines = b.decode('latin-1').replace('\r\n', '\n').split('\n')
+        cp = next((lines[i + 2].strip().upper().replace('-', '_') for i in range(len(lines) - 2)
+                   if lines[i].strip() == '$DWGCODEPAGE'), '')
+        name = ('mac_roman' if cp in ('MACINTOSH', 'MAC_ROMAN') else 'cp1252' if cp in ('ASCII', 'UTF8', 'UTF_8', 'UNICODE') else
+                re.sub(r'^(ANSI_|DOS)', 'cp', re.sub(r'^ISO_?8859_', 'iso8859_', cp)))
+        try:
+            codecs.lookup(name)
+        except LookupError:
+            name = 'cp1252'
+        t = b.decode(name, errors='replace')
+    t = t.replace('\r\n', '\n').replace('\r', '\n')
+    return re.sub(r'(?:\\U\+[0-9A-Fa-f]{4})+', lambda m: b''.join(
+        int(h, 16).to_bytes(2, 'big') for h in m.group().split('\\U+')[1:]).decode('utf-16-be', 'replace'), t)
+
 
 def pairs_of(text):
     lines = text.replace('\r\n', '\n').split('\n')

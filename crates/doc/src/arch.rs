@@ -62,6 +62,15 @@ pub fn is_arch_handle(h: Handle) -> bool {
     h.0 >= ARCH_HANDLE_BASE && h.0 <= ARCH_HANDLE_BASE.saturating_add(1u64 << 32)
 }
 
+/// Size of the range above [`ARCH_HANDLE_BASE`] that arch proxies actually use (every object
+/// kind sits well below it); a file handle above it is an ordinary handle.
+pub const ARCH_HANDLE_SPAN: u64 = 0x10_0000;
+
+/// Whether a handle read from a file collides with the arch proxies' working range.
+pub fn is_reserved_file_handle(h: Handle) -> bool {
+    h.0 >= ARCH_HANDLE_BASE && h.0 < ARCH_HANDLE_BASE.saturating_add(ARCH_HANDLE_SPAN)
+}
+
 /// The synthetic proxy handle for an architectural room.
 pub fn room_handle(id: ArchId) -> Handle {
     Handle(ARCH_HANDLE_BASE.saturating_add(ROOM_HANDLE_OFFSET).saturating_add(u64::from(id.0)))

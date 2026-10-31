@@ -1,7 +1,7 @@
 use super::common::T;
 use super::entities::{entity_extras, entity_plot_style, entity_with_table_budget, insert_attribs, polyline_entity};
 use super::objects::{MAX_OBJECTS, Objects, page_setup};
-use super::{ARCH_HANDLE_BASE, Block, BlockDef, Drawing, Entity, EntityKind, Handle, HashMap, Layout, LayoutDef, Rx, Tag, records};
+use super::{Block, BlockDef, Drawing, Entity, EntityKind, Handle, HashMap, Layout, LayoutDef, Rx, Tag, records};
 
 pub(super) fn parse_entities(
     recs: &[(String, Vec<Tag>)],
@@ -56,7 +56,7 @@ pub(super) fn parse_entities(
                 // old CADCraft proxy linework or from external software that happened to use a
                 // handle in that range.  Give the entity a fresh handle so it is treated as
                 // ordinary linework and never confused with a synthetic arch proxy.
-                Some(h) if h.0 < ARCH_HANDLE_BASE => {
+                Some(h) if !cadcraft_doc::arch::is_reserved_file_handle(h) => {
                     d.bump_handseed(h);
                     h
                 }

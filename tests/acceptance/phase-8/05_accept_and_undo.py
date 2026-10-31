@@ -29,7 +29,7 @@ if names != sorted(x['name'] for x in json.load(open(os.path.join(HERE, 'apartme
     fail(f"the accepted rooms must carry the label names: {names}")
 
 # The linework moved with the conversion: the outer wall face rectangle is now 0..12 x 0..8 (metres).
-p = pairs_of(open(out).read())
+p = pairs_of(dxf_text(out))
 rings = []
 for name, s, e in sections(p):
     if name == 'ENTITIES':
