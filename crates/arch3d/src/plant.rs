@@ -1,6 +1,6 @@
 //! Plants in 3D (phase 9): a trunk and a crown per plant.
 
-use crate::{Mesh, site::SiteSurface};
+use crate::Mesh;
 use cadcraft_arch::plant::{find_species, plant_size};
 use cadcraft_doc::arch::{ArchId, ArchModel, CrownShape, PlantForm};
 use cadcraft_geom::{Vec2, Vec3};
@@ -13,20 +13,22 @@ const TRUNK_SIDES: usize = 8;
 /// One crown mesh (`"plant-crown"`) and, for trees, one trunk mesh (`"plant-trunk"`) per plant,
 /// each with the plant's id as `object`.
 pub fn plant_meshes(model: &ArchModel) -> Vec<Mesh> {
-    let surface = SiteSurface::new(model);
     let mut meshes = Vec::new();
 
     for plant in &model.plants {
         let Some(species) = find_species(model, &plant.species) else {
             continue;
         };
-        let (h, s) = plant_size(plant, &species);
+        let (h, s) = plant_size(&species, plant);
         if !h.is_finite() || !s.is_finite() || h <= 0.0 || s <= 0.0 {
             continue;
         }
 
         let position = plant.position;
-        let z0 = surface.elevation(position).filter(|z| z.is_finite()).unwrap_or(0.0);
+        if !position.is_finite() {
+            continue;
+        }
+        let z0 = site_elevation(model, position).filter(|z| z.is_finite()).unwrap_or(0.0);
         let r = s / 2.0;
         let f = trunk_fraction(species.form);
         let x = position.x;
@@ -57,6 +59,34 @@ pub fn plant_meshes(model: &ArchModel) -> Vec<Mesh> {
         }
     }
     meshes
+}
+
+fn site_elevation(model: &ArchModel, position: Vec2) -> Option<f64> {
+    let terrain = model.terrain.as_ref()?;
+    if !inside_ring(position, &terrain.boundary) {
+        return None;
+    }
+    Some(terrain.default_elevation).filter(|z| z.is_finite())
+}
+
+fn inside_ring(point: Vec2, ring: &[Vec2]) -> bool {
+    if !point.is_finite() {
+        return false;
+    }
+    let Some(mut previous) = ring.last().copied() else {
+        return false;
+    };
+    let mut inside = false;
+    for &current in ring {
+        if previous.is_finite() && current.is_finite() && (current.y > point.y) != (previous.y > point.y) {
+            let crossing = current.x + (point.y - current.y) * (previous.x - current.x) / (previous.y - current.y);
+            if crossing.is_finite() && point.x < crossing {
+                inside = !inside;
+            }
+        }
+        previous = current;
+    }
+    inside
 }
 
 fn trunk_fraction(form: PlantForm) -> f64 {
@@ -162,9 +192,10 @@ fn trunk_mesh(id: ArchId, x: f64, y: f64, z0: f64, top: f64, r: f64) -> Mesh {
 }
 
 fn vertex(mesh: &mut Mesh, position: Vec3, normal: Vec3) {
-    mesh.positions.push(position);
-    mesh.normals.push(normalise(normal));
-    mesh.uvs.push(Vec2::ZERO);
+    let normal = normalise(normal);
+    mesh.positions.push([position.x as f32, position.y as f32, position.z as f32]);
+    mesh.normals.push([normal.x as f32, normal.y as f32, normal.z as f32]);
+    mesh.uvs.push([0.0, 0.0]);
 }
 
 fn normalise(v: Vec3) -> Vec3 {
@@ -190,7 +221,10 @@ mod tests {
     }
 
     fn bounds(mesh: &Mesh) -> Option<(Vec3, Vec3)> {
-        let mut points = mesh.positions.iter();
+        let mut points = mesh.positions.iter().map(|point| {
+            let [x, y, z] = *point;
+            Vec3::new(f64::from(x), f64::from(y), f64::from(z))
+        });
         let first = points.next()?;
         let mut min = *first;
         let mut max = *first;
