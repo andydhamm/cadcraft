@@ -962,15 +962,15 @@ mod tests {
 
     #[test]
     fn site_mesh_two_pads_share_slope_budget() {
-        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(80.0, 0.0), Vec2::new(80.0, 30.0), Vec2::new(0.0, 30.0)];
-        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(80.0, 0.0, 4.0), Vec3::new(80.0, 30.0, 4.0), Vec3::new(0.0, 30.0, 0.0)];
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
         let level = Level { index: 0, name: "Level 1".into(), elevation: 0.0, ..Level::default() };
-        // Two buildings using the same wall layout as make_house_site, shifted apart.
+        // Two small buildings, shifted apart, on the same terrain.
         let walls1 = vec![
             Wall {
                 id: ArchId(1),
-                start: Vec2::new(5.0, 5.0),
-                end: Vec2::new(15.0, 5.0),
+                start: Vec2::new(2.0, 2.0),
+                end: Vec2::new(8.0, 2.0),
                 base_level: 0,
                 thickness: 0.2,
                 exterior: true,
@@ -978,8 +978,8 @@ mod tests {
             },
             Wall {
                 id: ArchId(2),
-                start: Vec2::new(15.0, 5.0),
-                end: Vec2::new(15.0, 13.0),
+                start: Vec2::new(8.0, 2.0),
+                end: Vec2::new(8.0, 8.0),
                 base_level: 0,
                 thickness: 0.2,
                 exterior: true,
@@ -987,8 +987,8 @@ mod tests {
             },
             Wall {
                 id: ArchId(3),
-                start: Vec2::new(15.0, 13.0),
-                end: Vec2::new(5.0, 13.0),
+                start: Vec2::new(8.0, 8.0),
+                end: Vec2::new(2.0, 8.0),
                 base_level: 0,
                 thickness: 0.2,
                 exterior: true,
@@ -996,8 +996,8 @@ mod tests {
             },
             Wall {
                 id: ArchId(4),
-                start: Vec2::new(5.0, 13.0),
-                end: Vec2::new(5.0, 5.0),
+                start: Vec2::new(2.0, 8.0),
+                end: Vec2::new(2.0, 2.0),
                 base_level: 0,
                 thickness: 0.2,
                 exterior: true,
@@ -1007,8 +1007,8 @@ mod tests {
         let walls2 = vec![
             Wall {
                 id: ArchId(11),
-                start: Vec2::new(55.0, 5.0),
-                end: Vec2::new(65.0, 5.0),
+                start: Vec2::new(25.0, 2.0),
+                end: Vec2::new(31.0, 2.0),
                 base_level: 0,
                 thickness: 0.2,
                 exterior: true,
@@ -1016,8 +1016,8 @@ mod tests {
             },
             Wall {
                 id: ArchId(12),
-                start: Vec2::new(65.0, 5.0),
-                end: Vec2::new(65.0, 13.0),
+                start: Vec2::new(31.0, 2.0),
+                end: Vec2::new(31.0, 8.0),
                 base_level: 0,
                 thickness: 0.2,
                 exterior: true,
@@ -1025,8 +1025,8 @@ mod tests {
             },
             Wall {
                 id: ArchId(13),
-                start: Vec2::new(65.0, 13.0),
-                end: Vec2::new(55.0, 13.0),
+                start: Vec2::new(31.0, 8.0),
+                end: Vec2::new(25.0, 8.0),
                 base_level: 0,
                 thickness: 0.2,
                 exterior: true,
@@ -1034,8 +1034,8 @@ mod tests {
             },
             Wall {
                 id: ArchId(14),
-                start: Vec2::new(55.0, 13.0),
-                end: Vec2::new(55.0, 5.0),
+                start: Vec2::new(25.0, 8.0),
+                end: Vec2::new(25.0, 2.0),
                 base_level: 0,
                 thickness: 0.2,
                 exterior: true,
