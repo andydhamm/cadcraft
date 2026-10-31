@@ -34,7 +34,8 @@ pub fn is_site_material(material: &str) -> bool {
 /// plants (`crate::plant::plant_meshes`).
 pub fn site_meshes(model: &ArchModel) -> SiteMeshes {
     let plants = crate::plant::plant_meshes(model);
-    let n = plants.len();
+    // A tree is a crown and a trunk: count the plants, not their meshes.
+    let n = plants.iter().map(|m| m.object).collect::<std::collections::BTreeSet<_>>().len();
     let mut out = SiteMeshes { meshes: Vec::new(), terrain: 0, paths: 0, plants: n };
     if let Some((terrain, paths)) = terrain_and_paths(model) {
         out.terrain = 1;
@@ -452,5 +453,21 @@ mod tests {
         let out = site_meshes(&ArchModel::default());
         assert!(out.meshes.is_empty());
         assert_eq!((out.terrain, out.paths, out.plants), (0, 0, 0));
+    }
+
+    #[test]
+    fn plants_count_plants_not_their_meshes() {
+        // A tree is a crown and a trunk: three trees are three plants (check 07's build3d `plants`).
+        let plant = |id: u32, x: f64| cadcraft_doc::arch::Plant {
+            id: ArchId(id),
+            species: "Colorado Blue Spruce".into(),
+            position: Vec2::new(x, 10.0),
+            age: 15.0,
+            ..Default::default()
+        };
+        let model = ArchModel { plants: vec![plant(0, 10.0), plant(1, 20.0), plant(2, 30.0)], ..Default::default() };
+        let out = site_meshes(&model);
+        assert_eq!(out.meshes.len(), 6, "crown and trunk each");
+        assert_eq!(out.plants, 3);
     }
 }

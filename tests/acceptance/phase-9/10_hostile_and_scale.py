@@ -16,7 +16,12 @@ none = lambda r: r.get('terrain') is None and not r.get('plants')
 refused([cmd('terrain', {"boundary": [[0, 0], [10, 10], [10, 0], [0, 10]]})], 'self-crossing boundary', none)
 refused([cmd('terrain', {"boundary": [[0, 0], [1, 0]]})], 'two-point boundary', none)
 refused(['terrain {"boundary":[[0,0],[10,0],[10,10]],"points":[[1,1,"x"]]}'], 'non-numeric point', none)
-refused([cmd('terrain', {"boundary": SITE, "points": [[1, 1, 1]] * 20001})], '20,001 points', none)
+# 20,001 points written inline make one --cmd argument of ~180 KB, over Linux's 128 KiB limit for a single argument
+# (OSError E2BIG before the CLI runs): they go in a CSV file, distinct points on a 0.25 x 0.2 m grid inside SITE.
+cap = os.path.join(tempfile.mkdtemp(), 'cap.csv')
+with open(cap, 'w') as f:
+    f.write("x,y,z\n" + ''.join(f"{(i % 150) * 0.25:.2f},{(i // 150) * 0.2:.2f},1\n" for i in range(20001)))
+refused([cmd('terrain', {"boundary": SITE, "csv": cap})], '20,001 points', none)
 refused([cmd('terrain', {"boundary": SITE, "contours": [0, 1]})], 'zero contour interval', none)
 refused([cmd('terrain', {"boundary": SITE, "contours": [1, 0.5]})], 'major below minor', none)
 refused([cmd('terrain', {"boundary": SITE, "csvText": "1,2,nan\n"})], 'NaN in CSV', none)
@@ -60,6 +65,9 @@ with open(csvp, 'w') as f:
     for i in range(5000):
         x, y = rnd.uniform(0, 200), rnd.uniform(0, 200)
         f.write(f"{x:.3f},{y:.3f},{2 * math.sin(x / 23) + math.cos(y / 17):.3f}\n")
+# Build the release CLI outside the timed window: the phase checkpoint runs only phase 9's checks, so nothing
+# else has built it yet, and the bar is for the commands, not the compile.
+run([], release=True, timeout=1800)
 t0 = time.time()
 rc, rr, so, se = run([cmd('terrain', {"boundary": [[0, 0], [200, 0], [200, 200], [0, 200]], "csv": csvp}), 'terrain.contours {}',
                       cmd('terrain.query', {"points": [[100, 100]]})], release=True, timeout=1800)

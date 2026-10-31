@@ -166,7 +166,14 @@ pub fn probe_mesh(mesh: &Mesh, p: Vec3) -> bool {
 /// empty string.
 pub fn mesh_label(mesh: &Mesh) -> String {
     let m = mesh.material.to_lowercase();
-    let label = if m.contains("floor") || m.contains("ceiling") {
+    // Site meshes first: a plant, the terrain solid, a path (its modifier) are named as the commands name them.
+    let label = if m.starts_with("plant-") {
+        cadcraft_doc::arch::plant_label(mesh.object)
+    } else if m == "terrain" {
+        cadcraft_doc::arch::terrain_label(None)
+    } else if m.starts_with("path-") {
+        cadcraft_doc::arch::terrain_label(Some(mesh.object.0))
+    } else if m.contains("floor") || m.contains("ceiling") {
         cadcraft_doc::arch::room_label(mesh.object)
     } else if m.contains("door")
         || m.contains("window")
@@ -608,6 +615,15 @@ mod tests {
         // The probe must report level.elevation = 0.0, not bounds.min[2] = -0.3.
         let hit = probe(&scene, Vec3::new(2.0, 2.0, -0.15)).expect("floor slab hit");
         assert_eq!(hit.level, 0.0, "Level-0 slab must report 0.0, not -0.3");
+    }
+
+    #[test]
+    fn mesh_label_names_site_objects() {
+        // Site meshes are labelled as the commands name them, never as walls.
+        assert_eq!(mesh_label(&Mesh::new("plant-crown", ArchId(4))), "pl4");
+        assert_eq!(mesh_label(&Mesh::new("plant-trunk", ArchId(4))), "pl4");
+        assert_eq!(mesh_label(&Mesh::new("terrain", ArchId(0))), "t0");
+        assert_eq!(mesh_label(&Mesh::new("path-driveway-concrete", ArchId(2))), "tm2");
     }
 
     #[test]
