@@ -1701,7 +1701,8 @@ mod tests {
         assert_eq!(d.arch.walls.len(), 1);
         let w = &d.arch.walls[0];
         assert!(w.retaining);
-        assert_eq!(w.base_level, 0);
+        // "basement" is the second level (index 1) because Session::new() creates a default level
+        assert_eq!(w.base_level, 1);
         assert_eq!(w.footing, Some(0.4));
         // Height should be 2.2 + 0.3 = 2.5
         assert!((w.height - 2.5).abs() < 1e-9);
