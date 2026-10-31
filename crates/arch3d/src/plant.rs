@@ -226,8 +226,8 @@ mod tests {
             Vec3::new(f64::from(x), f64::from(y), f64::from(z))
         });
         let first = points.next()?;
-        let mut min = *first;
-        let mut max = *first;
+        let mut min = first;
+        let mut max = first;
         for point in points {
             min.x = min.x.min(point.x);
             min.y = min.y.min(point.y);
