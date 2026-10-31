@@ -299,4 +299,53 @@ mod tests {
         let err = run_species(&mut session, &json!({"add": [{"name": "Red Oak", "form": "shrub", "crown": "sphere", "matureHeight": 1.0, "matureSpread": 1.0, "plantedHeight": 0.5, "yearsToMature": 2.0}]})).unwrap_err();
         assert!(matches!(err, crate::EngineError::BadParams { .. }));
     }
+
+    #[test]
+    fn plant_refuses_planted_height_above_mature() {
+        let mut session = Session::new();
+        let err = run_plant(&mut session, &json!({"species": "Colorado Blue Spruce", "at": [0.0, 0.0], "plantedHeight": 20.0})).unwrap_err();
+        assert!(matches!(err, crate::EngineError::BadParams { .. }));
+    }
+
+    #[test]
+    fn plant_refuses_zero_planted_height() {
+        let mut session = Session::new();
+        let err = run_plant(&mut session, &json!({"species": "Colorado Blue Spruce", "at": [0.0, 0.0], "plantedHeight": 0.0})).unwrap_err();
+        assert!(matches!(err, crate::EngineError::BadParams { .. }));
+    }
+
+    #[test]
+    fn plant_delete_refuses_unknown_label() {
+        let mut session = Session::new();
+        let err = run_plant(&mut session, &json!({"delete": "pl99"})).unwrap_err();
+        assert!(matches!(err, crate::EngineError::BadParams { .. }));
+    }
+
+    #[test]
+    fn species_add_replaces_existing_user_species() {
+        let mut session = Session::new();
+        let added = run_species(&mut session, &json!({"add": [{"name": "Test Shrub", "form": "shrub", "crown": "sphere", "matureHeight": 2.0, "matureSpread": 1.5, "plantedHeight": 0.5, "yearsToMature": 5.0}]})).unwrap();
+        assert_eq!(added["added"].as_array().unwrap()[0], "Test Shrub");
+        let added2 = run_species(&mut session, &json!({"add": [{"name": "Test Shrub", "form": "shrub", "crown": "cone", "matureHeight": 3.0, "matureSpread": 2.0, "plantedHeight": 0.5, "yearsToMature": 8.0}]})).unwrap();
+        assert_eq!(added2["added"].as_array().unwrap()[0], "Test Shrub");
+        let list = run_species(&mut session, &json!({})).unwrap();
+        let species = list["species"].as_array().unwrap();
+        let test_shrub = species.iter().find(|s| s["name"].as_str() == Some("Test Shrub")).unwrap();
+        assert_eq!(test_shrub["crown"].as_str().unwrap(), "cone");
+        assert_eq!(test_shrub["matureHeight"].as_f64().unwrap(), 3.0);
+    }
+
+    #[test]
+    fn species_add_refuses_missing_fields() {
+        let mut session = Session::new();
+        let err = run_species(&mut session, &json!({"add": [{"name": "Test"}]})).unwrap_err();
+        assert!(matches!(err, crate::EngineError::BadParams { .. }));
+    }
+
+    #[test]
+    fn plant_refuses_missing_at() {
+        let mut session = Session::new();
+        let err = run_plant(&mut session, &json!({"species": "Colorado Blue Spruce"})).unwrap_err();
+        assert!(matches!(err, crate::EngineError::BadParams { .. }));
+    }
 }
