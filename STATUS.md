@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-31 05:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 06:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 9 of 13: Terrain and site — 19 of 27 segments merged · 2 of 12 acceptance checks**
+**Phase 9 of 13: Terrain and site — 20 of 27 segments merged · 2 of 12 acceptance checks**
 
-5,520 workspace tests passing at the last merge · 554 segments merged in all · 0 of 13 seats working
+5,524 workspace tests passing at the last merge · 555 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 05:45 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 2 / 12 | 10.1 h so far · expected done Oct 31 11:39–Oct 31 22:26 UTC |
+| 9 | Terrain and site | building | 2 / 12 | 10.4 h so far · expected done Oct 31 11:09–Oct 31 21:13 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,13 +27,12 @@ Updated 2026-10-31 05:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-19 merged, 3 merging, 3 queued, 1 working, 1 gate
+20 merged, 3 merging, 3 queued, 1 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p9-arch-terrain-contours` | Contours of the site mesh, minor and major, with labels | working | bonsai-ws2-b |
-| `p9-arch-terrain-volumes` | Cut and fill, exact on piecewise-linear surfaces | gate | claude-sonnet-b |
-| `p9-arch-retaining` | Retaining walls follow the ground on each side | merging | claude-sonnet-a |
+| `p9-arch-terrain-contours` | Contours of the site mesh, minor and major, with labels | working | kimi-k31 |
+| `p9-arch-terrain-volumes` | Cut and fill, exact on piecewise-linear surfaces | merging | claude-sonnet-b |
 | `p9-arch3d-terrain-solid` | The terrain solid with its skirt, and draped paths | merging | claude-sonnet-d |
 | `upstream-sync-b22a06826` | merge upstream upstream/main up to b22a06826 (35 commits) | merging | claude-sonnet-c |
 
@@ -41,6 +40,7 @@ Updated 2026-10-31 05:45 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 31 05:52 | `p9-arch-retaining` | merged | 5,524 pass | claude-sonnet-a |
 | Oct 31 05:22 | `p9-arch-terrain-mesh` | merged | 5,520 pass | bonsai-ws2-b |
 | Oct 31 05:09 | `upstream-sync-b22a06826` | refused | 5,795 pass | claude-sonnet-c |
 | Oct 31 04:49 | `harden-p9-arch-terrain-tin` | merged | 5,514 pass | tturbo-mac2 |
@@ -52,22 +52,21 @@ Updated 2026-10-31 05:45 UTC. This page and the card in the README are regenerat
 | Oct 31 03:11 | `p9-cmd-site-inspect` | merged | 5,470 pass | claude-sonnet-c |
 | Oct 31 02:53 | `harden-p8-housekeeping-guide-readme-uk` | merged | 5,466 pass | tturbo-mac |
 | Oct 31 02:29 | `p9-arch-terrain-surface` | merged | 5,453 pass | claude-sonnet-b |
-| Oct 31 01:59 | `harden-p9-geom-tin-ops` | merged | 5,446 pass | tturbo-mac2 |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | gate | 707 |
-| bonsai-b | bonsai2-27b | gate | 666 |
-| bonsai-ws2-a | bonsai2-27b | gate | 707 |
-| bonsai-ws2-b | bonsai2-27b | agent | 675 |
+| bonsai-a | bonsai2-27b | idle | 709 |
+| bonsai-b | bonsai2-27b | agent | 667 |
+| bonsai-ws2-a | bonsai2-27b | merging | 709 |
+| bonsai-ws2-b | bonsai2-27b | agent | 678 |
 | claude-sonnet-a | sonnet | idle | 56 |
-| claude-sonnet-b | sonnet | gate | 53 |
+| claude-sonnet-b | sonnet | merging | 54 |
 | claude-sonnet-c | sonnet | merging | 5 |
 | claude-sonnet-d | sonnet | merging | 2 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 565 |
-| kimi-k31 | k3.1-pro-highspeed | idle | 101 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 568 |
+| kimi-k31 | k3.1-pro-highspeed | agent | 101 |
 | mai-flash | mai-code-1.1-flash | idle | 28 |
 | tturbo-mac | tturbo-ultraheretic | merging | 489 |
 | tturbo-mac2 | tturbo-ultraheretic | merging | 311 |
