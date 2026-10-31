@@ -210,7 +210,7 @@ fn run_render(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
     let style = params
         .get("style")
         .and_then(Value::as_str)
-        .and_then(|s| matches!(s, "shaded" | "shaded-edges" | "hidden-line" | "glass-house").then(|_| s.to_string()))
+        .and_then(|s| matches!(s, "shaded" | "shaded-edges" | "hidden-line" | "glass-house").then(|| s.to_string()))
         .ok_or_else(|| bad("render", "`style` must be one of: shaded, shaded-edges, hidden-line, glass-house"))?;
     let ground = params.get("ground").and_then(Value::as_bool).unwrap_or(false);
     let budget = params
@@ -251,32 +251,40 @@ mod tests {
 
     #[test]
     fn render_parses_sun_off_and_site_sun() {
-        let mut s = Session::new();
-        let doc = s.doc().unwrap();
-        let mut arch = doc.arch.clone();
-        arch.site = Some(cadcraft_doc::arch::site::SiteLocation { latitude: 51.5, ..cadcraft_doc::arch::site::SiteLocation::default() });
-        doc.arch = arch;
-        // sun false
-        let r = s.execute("render", &json!({"sun": false}));
-        assert!(r.is_err(), "{r:?}");
-        // sun without site is refused
-        let r2 = s.execute("render", &json!({"sun": {"date": "2026-06-21", "time": "12:00"}}));
-        let e2 = r2.unwrap_err().to_string();
-        assert!(e2.contains("sun needs a site location"), "{e2}");
+        // No hook is installed, so parse the helpers directly.
+        let doc = cadcraft_doc::Drawing::new_metric();
+        // sun false -> Off
+        let off: serde_json::Value = json!(false);
+        assert!(matches!(parse_sun(Some(&off), &doc), Ok(SunChoice::Off)), "sun false should parse to Off");
+        // sun {date, time} without a site is refused
+        let sun: serde_json::Value = json!({"date": "2026-06-21", "time": "12:00"});
+        let r = parse_sun(Some(&sun), &doc);
+        let e = r.unwrap_err().to_string();
+        assert!(e.contains("sun needs a site location"), "{e}");
+        // with a site the site sun is accepted
+        let mut doc_with_site = doc.clone();
+        doc_with_site.arch.site =
+            Some(cadcraft_doc::arch::site::SiteLocation { latitude: 51.5, ..cadcraft_doc::arch::site::SiteLocation::default() });
+        let r = parse_sun(Some(&sun), &doc_with_site);
+        assert!(matches!(r, Ok(SunChoice::Dir(_))), "site sun should parse to a direction");
     }
 
     #[test]
     fn render_refuses_bad_size_and_too_many_samples() {
-        let mut s = Session::new();
         // bad size: 0
-        let r = s.execute("render", &json!({"size": [0, 800]}));
-        assert!(r.is_err(), "{r:?}");
+        let s0: serde_json::Value = json!([0, 800]);
+        assert!(matches!(parse_size(Some(&s0)), Err(_)), "size 0 should be refused");
         // bad size: > 8192
-        let r2 = s.execute("render", &json!({"size": [9000, 800]}));
-        assert!(r2.is_err(), "{r2:?}");
+        let s1: serde_json::Value = json!([9000, 800]);
+        assert!(matches!(parse_size(Some(&s1)), Err(_)), "size > 8192 should be refused");
+        // default size
+        assert!(matches!(parse_size(None), Ok((1200, 800))), "default size should be [1200, 800]");
         // too many samples
-        let samples: Vec<Value> = (0..65).map(|_| json!([0.0, 0.0, 0.0])).collect();
-        let r3 = s.execute("render", &json!({"samples": samples}));
-        assert!(r3.is_err(), "{r3:?}");
+        let samples: Vec<serde_json::Value> = (0..65).map(|_| json!([0.0, 0.0, 0.0])).collect();
+        let samples_json: serde_json::Value = json!(samples);
+        assert!(matches!(parse_samples(Some(&samples_json)), Err(_)), "too many samples should be refused");
+        // ok samples
+        let ok: serde_json::Value = json!([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]]);
+        assert!(matches!(parse_samples(Some(&ok)), Ok(_)), "valid samples should be accepted");
     }
 }
