@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-31 18:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 19:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 10 of 13: Lighting, light fixtures and final renders — 1 of 21 segments merged · 0 of 11 acceptance checks**
 
@@ -20,29 +20,30 @@ Updated 2026-10-31 18:45 UTC. This page and the card in the README are regenerat
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
 | 9 | Terrain and site | done | 12 / 12 | 19.4 h |
-| 10 | Lighting, light fixtures and final renders | building | 0 / 11 | 2.2 h so far · expected done Nov 01 01:51–Nov 02 15:35 UTC |
+| 10 | Lighting, light fixtures and final renders | building | 0 / 11 | 2.4 h so far · expected done Nov 01 02:06–Nov 02 15:50 UTC |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
 | 13 | Polish | planned | — | — |
 
 ## Phase 10 segments
 
-13 queued, 3 gate, 3 merging, 1 merged, 1 working
+13 queued, 4 merging, 3 gate, 1 merged
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p10-arch-light-placement` | Fixture validation, colour temperature, light point, aim and room grid | gate | darwin-ws3 |
-| `p10-arch-light-symbol` | Plan symbols of the fixture shapes | gate | bonsai-ws2-a |
+| `p10-arch-light-placement` | Fixture validation, colour temperature, light point, aim and room grid | merging | darwin-ws3 |
+| `p10-arch-light-symbol` | Plan symbols of the fixture shapes | merging | bonsai-ws2-a |
 | `p10-r3d-light-pack` | Which lights are drawn and shadowed, and their uniform bytes | merging | bonsai-ws2-b |
-| `p10-r3d-shadow-atlas` | Fixture shadow maps: spot maps and point-light cubes in one depth array, cached per light | merging | claude-sonnet-c |
+| `p10-r3d-shadow-atlas` | Fixture shadow maps: spot maps and point-light cubes in one depth array, cached per light | gate | claude-sonnet-c |
 | `p10-cmd-render` | RENDER 3D command over the app's render hook | gate | bonsai-a |
-| `p10-cmd-sunstudy` | SUNSTUDY: stills through the day from the current camera | working | bonsai-b |
+| `p10-cmd-sunstudy` | SUNSTUDY: stills through the day from the current camera | gate | bonsai-b |
 | `p10-io-glb-lights` | GLB: KHR_lights_punctual lights and their nodes | merging | mai-flash |
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 31 18:49 | `p10-r3d-shadow-atlas` | refused | 6,033 pass, 3 fail | claude-sonnet-c |
 | Oct 31 18:25 | `harden-p9-cmd-wall-retaining` | refused | 6,033 pass, 3 fail | tturbo-mac |
 | Oct 31 17:29 | `harden-p9-arch-terrain-pad` | merged | 6,023 pass | tturbo-mac2 |
 | Oct 31 17:10 | `harden-p9-cli-render-sun-from-site` | merged | 6,019 pass | tturbo-mac |
@@ -54,22 +55,21 @@ Updated 2026-10-31 18:45 UTC. This page and the card in the README are regenerat
 | Oct 31 14:48 | `p9f-mesh-pad-slope` | refused | 5,943 pass | kimi-k31 |
 | Oct 31 14:33 | `harden-p9-cmd-site` | merged | 5,940 pass | tturbo-mac2 |
 | Oct 31 14:20 | `harden-p9-small-convert-and-glb-names` | merged | 5,933 pass | tturbo-mac |
-| Oct 31 14:06 | `p9f-mesh-pad-slope` | refused | 5,932 pass | kimi-k31 |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
 | bonsai-a | bonsai2-27b | gate | 733 |
-| bonsai-b | bonsai2-27b | agent | 682 |
-| bonsai-ws2-a | bonsai2-27b | gate | 739 |
+| bonsai-b | bonsai2-27b | gate | 682 |
+| bonsai-ws2-a | bonsai2-27b | merging | 740 |
 | bonsai-ws2-b | bonsai2-27b | merging | 700 |
 | claude-sonnet-a | sonnet | idle | 58 |
 | claude-sonnet-b | sonnet | idle | 55 |
-| claude-sonnet-c | sonnet | merging | 9 |
+| claude-sonnet-c | sonnet | gate | 9 |
 | claude-sonnet-d | sonnet | idle | 2 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 588 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | merging | 589 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 106 |
 | mai-flash | mai-code-1.1-flash | merging | 30 |
-| tturbo-mac | tturbo-ultraheretic | agent | 509 |
+| tturbo-mac | tturbo-ultraheretic | gate | 509 |
 | tturbo-mac2 | tturbo-ultraheretic | merging | 330 |
