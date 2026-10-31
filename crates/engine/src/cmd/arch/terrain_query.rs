@@ -6,6 +6,7 @@ use cadcraft_arch::terrain::contour::{label_point, label_text, site_contours};
 use cadcraft_arch::terrain::mesh::site_mesh;
 use cadcraft_arch::terrain::surface::SiteSurface;
 use cadcraft_arch::terrain::volume::cut_fill;
+use cadcraft_geom::Vec2;
 use cadcraft_geom::tin_ops::ContourLine;
 
 use crate::cmd::{CommandSpec, bad, point_value};
@@ -40,12 +41,26 @@ fn run_query(s: &mut Session, params: &Value) -> Result<Value> {
     if list.is_empty() || list.len() > MAX_QUERY_POINTS {
         return Err(bad(cmd, format!("`points` must hold 1 to {MAX_QUERY_POINTS} points")));
     }
-    let points =
-        list.iter().map(point_value).collect::<Option<Vec<_>>>().ok_or_else(|| bad(cmd, "every point must be [x, y] with finite numbers"))?;
+    let points: Vec<Vec2> = list
+        .iter()
+        .map(|v| {
+            let arr = v.as_array()?;
+            if arr.len() != 2 {
+                return None;
+            }
+            let x = arr[0].as_f64()?;
+            let y = arr[1].as_f64()?;
+            Some(Vec2::new(x, y))
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| bad(cmd, "every point must be [x, y] with numbers"))?;
     let surf = SiteSurface::new(&s.doc()?.arch).map_err(|e| bad(cmd, e.0))?;
     let elevations: Vec<Value> = points
         .iter()
         .map(|p| {
+            if !p.is_finite() {
+                return Value::Null;
+            }
             let z = if modified { surf.modified_at(*p) } else { surf.original_at(*p) };
             z.filter(|z| z.is_finite()).map_or(Value::Null, |z| json!(z))
         })
