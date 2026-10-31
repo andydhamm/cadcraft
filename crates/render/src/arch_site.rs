@@ -84,7 +84,7 @@ fn draw_terrain(d: &Drawing, list: &mut DisplayList, plotting: bool, terrain: &c
             let text_ink = crate::ink(Color::ByLayer, d.layer("C-TOPO-TEXT").map(|l| l.color).unwrap_or(Color::Index(7)), Color::Index(7));
             if let Some((label_pt, angle)) = label_point_and_angle(&pts, line.closed) {
                 let text = format!("{:.2}", line.elevation);
-                let shaped = place(&TextFont::Stroke, &text, &TextParams::centered(label_pt, 0.35, angle));
+                let (shaped, _) = place(&TextFont::Stroke, &text, &TextParams::centered(label_pt, 0.35, angle));
                 for stroke in shaped.strokes {
                     if stroke.len() >= 2 {
                         push_polyline(list, handle, &text_ink, &stroke);
@@ -188,7 +188,7 @@ fn draw_north_arrow(d: &Drawing, list: &mut DisplayList, plotting: bool, at: Vec
     let n_pos = at + dir * 2.4;
 
     let text = "N";
-    let shaped = place(&TextFont::Stroke, text, &TextParams::centered(n_pos, 0.5, true_north + std::f64::consts::FRAC_PI_2));
+    let (shaped, _) = place(&TextFont::Stroke, text, &TextParams::centered(n_pos, 0.5, true_north + std::f64::consts::FRAC_PI_2));
     for stroke in shaped.strokes {
         if stroke.len() >= 2 {
             push_polyline(list, handle, &ink, &stroke);
@@ -225,7 +225,7 @@ fn label_point_and_angle(pts: &[Vec2], closed: bool) -> Option<(Vec2, f64)> {
     Some((p, angle))
 }
 
-fn draw_polygon(list: &mut DisplayList, handle: u64, ink: &crate::Ink, poly: &[Vec2]) {
+fn draw_polygon(list: &mut DisplayList, handle: cadcraft_doc::Handle, ink: &crate::Ink, poly: &[Vec2]) {
     if poly.len() < 3 {
         return;
     }
@@ -265,10 +265,10 @@ fn offset_polygon(poly: &[Vec2], dist: f64) -> Option<Vec<Vec2>> {
             continue;
         }
 
-        let n1 = Vec2::new(-d1.y, d1.x).normalize();
-        let n2 = Vec2::new(-d2.y, d2.x).normalize();
+        let n1 = Vec2::new(-d1.y, d1.x).normalized();
+        let n2 = Vec2::new(-d2.y, d2.x).normalized();
 
-        let n = (n1 + n2).normalize();
+        let n = (n1 + n2).normalized();
         if n.len() < 1e-6 {
             continue;
         }
