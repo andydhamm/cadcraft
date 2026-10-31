@@ -187,7 +187,7 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
                     }
                 }
                 if margin.is_finite() && *margin > 0.0 {
-                    if let Some(ring) = offset_polygon(polygon, &vec![margin; polygon.len()], true) {
+                    if let Some(ring) = offset_polygon(polygon, &vec![*margin; polygon.len()], true) {
                         for &p in &ring {
                             if p.is_finite() {
                                 raw_pts.push(p);
