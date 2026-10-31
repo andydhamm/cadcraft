@@ -23,7 +23,7 @@ print("ok: site, terrain, modifiers, retaining wall and plants survive save + op
 
 def layer_counts(path):
     c = {}
-    for kind, layer, pairs in entities(open(path).read()):
+    for kind, layer, pairs in entities(dxf_text(path)):
         c[(kind, layer)] = c.get((kind, layer), 0) + 1
     return c
 
@@ -35,7 +35,7 @@ need = {('LWPOLYLINE', 'C-TOPO-BNDY'): 1, ('LWPOLYLINE', 'C-TOPO-MAJR'): 1, ('LW
 for k, n in need.items():
     if ca.get(k, 0) < n:
         fail(f"the saved plan needs a {k[0]} on {k[1]}; layers present: {sorted(ca)}")
-texts = [values(p, '1') for kind, layer, p in entities(open(a).read()) if kind == 'TEXT']
+texts = [values(p, '1') for kind, layer, p in entities(dxf_text(a)) if kind == 'TEXT']
 flat = [t for v in texts for t in v]
 if '1.00' not in flat or 'N' not in flat:
     fail(f"the plan labels the major contour '1.00' (C-TOPO-TEXT) and the north arrow 'N': texts {flat[:20]}")

@@ -43,11 +43,9 @@ pub struct SaveOptions {
 }
 
 /// The version a drawing is saved in when none is asked for: the version of the file it was
-/// read from (`$ACADVER`, the nearest one CADCraft writes), and 2018 for a new drawing. A drawing
-/// with architectural objects is saved as at least 2007, so that its text is UTF-8.
+/// read from (`$ACADVER`, the nearest one CADCraft writes), and 2018 for a new drawing.
 pub fn save_version(d: &Drawing) -> Version {
-    let v = d.header.get("ACADVER").and_then(cadcraft_doc::HVal::as_str).and_then(Version::for_acadver).unwrap_or_default();
-    if !d.arch.is_empty() && v < Version::R2007 { Version::R2007 } else { v }
+    d.header.get("ACADVER").and_then(cadcraft_doc::HVal::as_str).and_then(Version::for_acadver).unwrap_or_default()
 }
 
 #[derive(Debug, thiserror::Error)]

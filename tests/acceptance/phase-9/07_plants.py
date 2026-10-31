@@ -32,7 +32,7 @@ lo, hi = node_box(j, 'plant-pl0')
 if abs(hi[2] - 15) > 1e-3 or abs((hi[0] - lo[0]) - 5) > 1e-3 or abs((hi[1] - lo[1]) - 5) > 1e-3:
     fail(f"the mature spruce's crown is 15 m to the top and 5 m across: box {lo}..{hi}")
 node_box(j, 'plant-pl0-trunk')
-text = open(dxf).read()
+text = dxf_text(dxf)
 circ = [e for e in entities(text) if e[0] == 'CIRCLE' and e[1] == 'L-PLNT']
 radii = sorted(round(float(values(e[2], '40')[0]), 6) for e in circ)
 if radii != [0.25, 1.375, 2.5]:

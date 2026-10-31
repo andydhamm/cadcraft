@@ -10,7 +10,7 @@
 #      "stats":    {"entities","primitives","ms"}}
 #   archdetect {"accept":"all"|[ids], "minConfidence"?} replies {"accepted":{"c0":"w0",...},"walls","openings","rooms",
 #     "converted": {"from":"mm","scale":0.001} | null}
-import json, math, os, random, struct, subprocess, sys, tempfile, zlib
+import codecs, json, math, os, random, re, struct, subprocess, sys, tempfile, zlib
 
 MIN_CONF = 0.5
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -83,6 +83,29 @@ def pt(p, what):
 
 
 # ---- DXF text, as group-code / value pairs ----
+
+def dxf_text(path):
+    """A DXF file's text as CADCraft reads it: UTF-8 when its bytes are valid UTF-8 (every 2007+ file, and an older one
+    that is), otherwise the code page its $DWGCODEPAGE names, in which upstream saves pre-2007 text (a '²' read from
+    apartment.dxf is saved as the one byte B2); then the \\U+XXXX escapes for characters outside the code page."""
+    b = open(path, 'rb').read()
+    try:
+        t = b.decode('utf-8')
+    except UnicodeDecodeError:
+        lines = b.decode('latin-1').replace('\r\n', '\n').split('\n')
+        cp = next((lines[i + 2].strip().upper().replace('-', '_') for i in range(len(lines) - 2)
+                   if lines[i].strip() == '$DWGCODEPAGE'), '')
+        name = ('mac_roman' if cp in ('MACINTOSH', 'MAC_ROMAN') else 'cp1252' if cp in ('ASCII', 'UTF8', 'UTF_8', 'UNICODE') else
+                re.sub(r'^(ANSI_|DOS)', 'cp', re.sub(r'^ISO_?8859_', 'iso8859_', cp)))
+        try:
+            codecs.lookup(name)
+        except LookupError:
+            name = 'cp1252'
+        t = b.decode(name, errors='replace')
+    t = t.replace('\r\n', '\n').replace('\r', '\n')
+    return re.sub(r'(?:\\U\+[0-9A-Fa-f]{4})+', lambda m: b''.join(
+        int(h, 16).to_bytes(2, 'big') for h in m.group().split('\\U+')[1:]).decode('utf-16-be', 'replace'), t)
+
 
 def pairs_of(text):
     lines = text.replace('\r\n', '\n').split('\n')
@@ -447,12 +470,12 @@ def plain(name, text, tmp):
 
 def wrapped(name, plain_path, tmp, at, rotation, scale=1.0, insunits=None):
     """The plain plan inside two nested blocks (PLAN inside SITE); the SITE insert moved, turned and scaled."""
-    _, rows, _, _ = run([f'block {json.dumps({"name": "PLAN", "base": [0, 0], "handles": entity_handles(open(plain_path).read()), "keep": "convert"})}'],
+    _, rows, _, _ = run([f'block {json.dumps({"name": "PLAN", "base": [0, 0], "handles": entity_handles(dxf_text(plain_path)), "keep": "convert"})}'],
                         file=plain_path, save=os.path.join(tmp, name + '.b1.dxf'))
     ins = reply_with(rows, 'insert', what='block PLAN')['insert']
     out = os.path.join(tmp, name + '.b2.dxf')
     run([f'block {json.dumps({"name": "SITE", "base": [0, 0], "handles": [ins], "keep": "convert"})}'], file=os.path.join(tmp, name + '.b1.dxf'), save=out)
-    t = edit_insert(open(out).read(), 'SITE', at=at, rotation=rotation, scale=scale)
+    t = edit_insert(dxf_text(out), 'SITE', at=at, rotation=rotation, scale=scale)
     if insunits is not None:
         t = set_header_int(t, '$INSUNITS', insunits)
     open(out, 'w').write(t)

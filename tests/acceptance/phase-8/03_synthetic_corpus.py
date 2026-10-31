@@ -25,7 +25,7 @@ if r.get('units') != 'mm' or abs(num(r.get('scale'), 'scale') - 0.001) > 1e-12:
 T.add('cabin-mm', r, truths['cabin'])
 
 p = os.path.join(tmp, 'ell-no-layers.dxf')
-open(p, 'w').write(relayer(open(plains['ell']).read(), '0'))
+open(p, 'w').write(relayer(dxf_text(plains['ell']), '0'))
 T.add('ell-no-layers', detect(p), truths['ell'])
 
 a, b = detect(plains['house']), detect(plains['house'])
