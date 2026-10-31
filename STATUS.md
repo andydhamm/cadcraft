@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-31 03:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 03:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 9 of 13: Terrain and site — 14 of 26 segments merged · 0 of 12 acceptance checks**
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 03:15 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 0 / 12 | 7.6 h so far · expected done Oct 31 12:21–Nov 01 01:53 UTC |
+| 9 | Terrain and site | building | 0 / 12 | 7.9 h so far · expected done Oct 31 12:54–Nov 01 02:53 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,7 +27,7 @@ Updated 2026-10-31 03:15 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-14 merged, 6 queued, 4 merging, 1 working, 1 gate
+14 merged, 6 queued, 5 merging, 1 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
@@ -35,8 +35,8 @@ Updated 2026-10-31 03:15 UTC. This page and the card in the README are regenerat
 | `p9-arch-retaining` | Retaining walls follow the ground on each side | merging | claude-sonnet-a |
 | `p9-cmd-terrain` | `terrain` and `terrain.delete` commands | merging | mai-flash |
 | `p9-cmd-terrain-modify` | `terrain.modify`: flat regions, hills, valleys, roads, driveways and sidewalks | merging | claude-sonnet-d |
-| `p9-arch3d-plants` | Plants in 3D: trunk and crown | working | bonsai-a |
-| `upstream-sync-ba3196e3f` | merge upstream upstream/main up to ba3196e3f (14 commits) | gate | claude-sonnet-b |
+| `p9-arch3d-plants` | Plants in 3D: trunk and crown | working | kimi-k31 |
+| `upstream-sync-ba3196e3f` | merge upstream upstream/main up to ba3196e3f (14 commits) | merging | claude-sonnet-b |
 
 ## Recent merges
 
@@ -59,16 +59,16 @@ Updated 2026-10-31 03:15 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 706 |
+| bonsai-a | bonsai2-27b | idle | 707 |
 | bonsai-b | bonsai2-27b | idle | 666 |
 | bonsai-ws2-a | bonsai2-27b | idle | 706 |
-| bonsai-ws2-b | bonsai2-27b | agent | 666 |
+| bonsai-ws2-b | bonsai2-27b | agent | 667 |
 | claude-sonnet-a | sonnet | idle | 56 |
-| claude-sonnet-b | sonnet | gate | 51 |
+| claude-sonnet-b | sonnet | merging | 52 |
 | claude-sonnet-c | sonnet | idle | 1 |
 | claude-sonnet-d | sonnet | idle | 1 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 563 |
-| kimi-k31 | k3.1-pro-highspeed | idle | 98 |
+| kimi-k31 | k3.1-pro-highspeed | agent | 98 |
 | mai-flash | mai-code-1.1-flash | idle | 28 |
-| tturbo-mac | tturbo-ultraheretic | agent | 484 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 306 |
+| tturbo-mac | tturbo-ultraheretic | agent | 485 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 307 |
