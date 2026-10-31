@@ -937,4 +937,194 @@ mod tests {
         assert_eq!(two.pads().len(), 2, "a pad and a basement");
         assert_closed(&site_mesh(&two).unwrap(), &boundary, "pad and basement");
     }
+
+    #[test]
+    fn site_mesh_pad_with_large_elevation_range_caps_rings() {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
+        let mut model = make_house_site(boundary.clone(), points);
+        model.levels[0].elevation = 10.0;
+        let surf = SiteSurface::new(&model).unwrap();
+        let mesh = site_mesh(&surf).unwrap();
+        assert_closed(&mesh, &boundary, "large elevation pad");
+    }
+
+    #[test]
+    fn site_mesh_pad_with_zero_elevation_difference_skips_slope() {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        let z = -0.3;
+        let points = vec![Vec3::new(0.0, 0.0, z), Vec3::new(40.0, 0.0, z), Vec3::new(40.0, 30.0, z), Vec3::new(0.0, 30.0, z)];
+        let model = make_house_site(boundary.clone(), points);
+        let surf = SiteSurface::new(&model).unwrap();
+        let mesh = site_mesh(&surf).unwrap();
+        assert!(mesh.triangles.len() < 100, "expected few triangles, got {}", mesh.triangles.len());
+    }
+
+    #[test]
+    fn site_mesh_two_pads_share_slope_budget() {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(80.0, 0.0), Vec2::new(80.0, 30.0), Vec2::new(0.0, 30.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(80.0, 0.0, 4.0), Vec3::new(80.0, 30.0, 4.0), Vec3::new(0.0, 30.0, 0.0)];
+        let level = Level { index: 0, name: "Level 1".into(), elevation: 0.0, ..Level::default() };
+        let walls1 = vec![
+            Wall {
+                id: ArchId(1),
+                start: Vec2::new(10.0, 10.0),
+                end: Vec2::new(20.0, 10.0),
+                base_level: 0,
+                thickness: 0.2,
+                exterior: true,
+                ..Wall::default()
+            },
+            Wall {
+                id: ArchId(2),
+                start: Vec2::new(20.0, 10.0),
+                end: Vec2::new(20.0, 20.0),
+                base_level: 0,
+                thickness: 0.2,
+                exterior: true,
+                ..Wall::default()
+            },
+            Wall {
+                id: ArchId(3),
+                start: Vec2::new(20.0, 20.0),
+                end: Vec2::new(10.0, 20.0),
+                base_level: 0,
+                thickness: 0.2,
+                exterior: true,
+                ..Wall::default()
+            },
+            Wall {
+                id: ArchId(4),
+                start: Vec2::new(10.0, 20.0),
+                end: Vec2::new(10.0, 10.0),
+                base_level: 0,
+                thickness: 0.2,
+                exterior: true,
+                ..Wall::default()
+            },
+        ];
+        let walls2 = vec![
+            Wall {
+                id: ArchId(11),
+                start: Vec2::new(50.0, 10.0),
+                end: Vec2::new(60.0, 10.0),
+                base_level: 0,
+                thickness: 0.2,
+                exterior: true,
+                ..Wall::default()
+            },
+            Wall {
+                id: ArchId(12),
+                start: Vec2::new(60.0, 10.0),
+                end: Vec2::new(60.0, 20.0),
+                base_level: 0,
+                thickness: 0.2,
+                exterior: true,
+                ..Wall::default()
+            },
+            Wall {
+                id: ArchId(13),
+                start: Vec2::new(60.0, 20.0),
+                end: Vec2::new(50.0, 20.0),
+                base_level: 0,
+                thickness: 0.2,
+                exterior: true,
+                ..Wall::default()
+            },
+            Wall {
+                id: ArchId(14),
+                start: Vec2::new(50.0, 20.0),
+                end: Vec2::new(50.0, 10.0),
+                base_level: 0,
+                thickness: 0.2,
+                exterior: true,
+                ..Wall::default()
+            },
+        ];
+        let terrain = Terrain { boundary: boundary.clone(), points, modifiers: Vec::new(), pad: true, ..Terrain::default() };
+        let model =
+            ArchModel { levels: vec![level], walls: walls1.into_iter().chain(walls2).collect(), terrain: Some(terrain), ..ArchModel::default() };
+        let surf = SiteSurface::new(&model).unwrap();
+        assert_eq!(surf.pads().len(), 2, "expected two pads");
+        let mesh = site_mesh(&surf).unwrap();
+        assert_closed(&mesh, &boundary, "two pads");
+    }
+
+    #[test]
+    fn site_mesh_basement_does_not_get_slope_rings() {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        let model = make_house_site_with_basement();
+        let surf = SiteSurface::new(&model).unwrap();
+        let pads = surf.pads();
+        assert_eq!(pads.len(), 2, "a pad and a basement");
+        let pad_count = pads.iter().filter(|p| matches!(p.kind, PadKind::Pad)).count();
+        let basement_count = pads.iter().filter(|p| matches!(p.kind, PadKind::Basement)).count();
+        assert_eq!(pad_count, 1);
+        assert_eq!(basement_count, 1);
+        let mesh = site_mesh(&surf).unwrap();
+        assert_closed(&mesh, &boundary, "basement");
+    }
+
+    #[test]
+    fn site_mesh_pad_with_zero_margin() {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
+        let mut model = make_house_site(boundary.clone(), points);
+        if let Some(terrain) = model.terrain.as_mut() {
+            terrain.pad_margin = 0.0;
+        }
+        let surf = SiteSurface::new(&model).unwrap();
+        let mesh = site_mesh(&surf).unwrap();
+        assert_closed(&mesh, &boundary, "zero margin pad");
+    }
+
+    #[test]
+    fn site_mesh_small_pad_ring() {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
+        let level = Level { index: 0, name: "Level 1".into(), elevation: 0.0, ..Level::default() };
+        let walls = vec![
+            Wall {
+                id: ArchId(1),
+                start: Vec2::new(19.5, 14.5),
+                end: Vec2::new(20.5, 14.5),
+                base_level: 0,
+                thickness: 0.1,
+                exterior: true,
+                ..Wall::default()
+            },
+            Wall {
+                id: ArchId(2),
+                start: Vec2::new(20.5, 14.5),
+                end: Vec2::new(20.5, 15.5),
+                base_level: 0,
+                thickness: 0.1,
+                exterior: true,
+                ..Wall::default()
+            },
+            Wall {
+                id: ArchId(3),
+                start: Vec2::new(20.5, 15.5),
+                end: Vec2::new(19.5, 15.5),
+                base_level: 0,
+                thickness: 0.1,
+                exterior: true,
+                ..Wall::default()
+            },
+            Wall {
+                id: ArchId(4),
+                start: Vec2::new(19.5, 15.5),
+                end: Vec2::new(19.5, 14.5),
+                base_level: 0,
+                thickness: 0.1,
+                exterior: true,
+                ..Wall::default()
+            },
+        ];
+        let terrain = Terrain { boundary: boundary.clone(), points, modifiers: Vec::new(), pad: true, ..Terrain::default() };
+        let model = ArchModel { levels: vec![level], walls, terrain: Some(terrain), ..ArchModel::default() };
+        let surf = SiteSurface::new(&model).unwrap();
+        let mesh = site_mesh(&surf).unwrap();
+        assert_closed(&mesh, &boundary, "small pad");
+    }
 }
