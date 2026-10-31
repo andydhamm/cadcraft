@@ -59,7 +59,7 @@ fn parse_boundary(cmd: &str, v: &Value) -> Result<Vec<Vec2>> {
     // Deduplicate consecutive coincident points.
     let mut deduped = Vec::with_capacity(pts.len());
     for p in pts {
-        if deduped.last().is_some_and(|last| (last.x - p.x).hypot(last.y - p.y) <= 1e-12) {
+        if deduped.last().is_some_and(|last: &Vec2| (last.x - p.x).hypot(last.y - p.y) <= 1e-12) {
             continue;
         }
         deduped.push(p);
