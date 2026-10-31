@@ -5,12 +5,12 @@
 use std::cmp::Ordering;
 use std::f64::consts::PI;
 
-use cadcraft_geom::{point_in_polygon, Vec2, Vec3};
 use crate::poly::offset_polygon;
+use cadcraft_geom::{Vec2, Vec3, point_in_polygon};
 
+use super::TerrainError;
 use super::pad::PadKind;
 use super::surface::SiteSurface;
-use super::TerrainError;
 
 /// Most triangles a `SiteMesh` may hold. More than this returns
 /// `Err(TerrainError("terrain mesh too large".into()))`.
@@ -50,7 +50,7 @@ impl SiteMesh {
 
 /// Even-odd containment; a point within `DEDUP_EPS` of the ring counts as inside.
 fn inside_or_on(ring: &[Vec2], p: Vec2) -> bool {
-    ring.len() >= 3 && p.is_finite() && (point_in_polygon(ring, p) || ring_dist(ring, p) <= DEDUP_EPS)
+    ring.len() >= 3 && p.is_finite() && (point_in_polygon(ring, p) || ring_dist(p, ring) <= DEDUP_EPS)
 }
 
 fn seg_dist(p: Vec2, a: Vec2, b: Vec2) -> f64 {
@@ -101,7 +101,7 @@ fn clip_to_poly(a: Vec2, b: Vec2, ring: &[Vec2]) -> Vec<[Vec2; 2]> {
     ts.sort_by(|x, y| x.partial_cmp(y).unwrap_or(Ordering::Equal));
     let mut deduped: Vec<f64> = Vec::new();
     for t in ts {
-        if deduped.is_empty() || (t - *deduped.last()).abs() > DEDUP_EPS {
+        if deduped.is_empty() || (t - deduped.last().copied().unwrap_or(0.0)).abs() > DEDUP_EPS {
             deduped.push(t);
         }
     }
@@ -136,9 +136,7 @@ fn dedup_pts(raw: Vec<Vec2>, eps: f64) -> Vec<Vec2> {
     });
     let mut out: Vec<Vec2> = Vec::with_capacity(pts.len());
     for &p in &pts {
-        if out.is_empty() {
-            out.push(p);
-        } else if p.dist(*out.last()) > eps {
+        if out.is_empty() || out.last().map_or(false, |q| p.dist(*q) > eps) {
             out.push(p);
         }
     }
@@ -180,9 +178,9 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
     }
 
     // Modifier points.
-    for mod in surf.modifiers() {
-        match &mod.kind {
-            cadcraft_doc::ModifierKind::Flat { polygon, margin, .. } => {
+    for m in surf.modifiers() {
+        match &m.kind {
+            cadcraft_doc::arch::ModifierKind::Flat { polygon, margin, .. } => {
                 for &p in polygon {
                     if p.is_finite() {
                         raw_pts.push(p);
@@ -190,7 +188,7 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
                 }
                 if margin.is_finite() && *margin > 0.0 {
                     if let Some(ring) = offset_polygon(polygon, &vec![margin; polygon.len()], true) {
-                        for &p in ring {
+                        for &p in &ring {
                             if p.is_finite() {
                                 raw_pts.push(p);
                             }
@@ -198,14 +196,14 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
                     }
                 }
             }
-            cadcraft_doc::ModifierKind::Path { polygon, .. } => {
+            cadcraft_doc::arch::ModifierKind::Path { polygon, .. } => {
                 for &p in polygon {
                     if p.is_finite() {
                         raw_pts.push(p);
                     }
                 }
             }
-            cadcraft_doc::ModifierKind::Hill { center, radius, .. } => {
+            cadcraft_doc::arch::ModifierKind::Hill { center, radius, .. } => {
                 if center.is_finite() && radius.is_finite() && *radius > 0.0 {
                     raw_pts.push(*center);
                     for k in 1..=6 {
@@ -230,7 +228,7 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
         }
         if region.kind == PadKind::Pad && region.margin.is_finite() && region.margin > 0.0 {
             if let Some(ring) = offset_polygon(&region.ring, &vec![region.margin; region.ring.len()], true) {
-                for &p in ring {
+                for &p in &ring {
                     if p.is_finite() {
                         raw_pts.push(p);
                     }
@@ -276,9 +274,9 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
     }
 
     // Modifier edges.
-    for mod in surf.modifiers() {
-        match &mod.kind {
-            cadcraft_doc::ModifierKind::Flat { polygon, margin, .. } => {
+    for m in surf.modifiers() {
+        match &m.kind {
+            cadcraft_doc::arch::ModifierKind::Flat { polygon, margin, .. } => {
                 for i in 0..polygon.len() {
                     let a = polygon[i];
                     let b = polygon[(i + 1) % polygon.len()];
@@ -298,7 +296,7 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
                     }
                 }
             }
-            cadcraft_doc::ModifierKind::Path { polygon, .. } => {
+            cadcraft_doc::arch::ModifierKind::Path { polygon, .. } => {
                 for i in 0..polygon.len() {
                     let a = polygon[i];
                     let b = polygon[(i + 1) % polygon.len()];
@@ -307,7 +305,7 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
                     }
                 }
             }
-            cadcraft_doc::ModifierKind::Hill { center, radius, .. } => {
+            cadcraft_doc::arch::ModifierKind::Hill { center, radius, .. } => {
                 if center.is_finite() && radius.is_finite() && *radius > 0.0 {
                     for k in 1..=6 {
                         let r = radius * (k as f64) / 6.0;
@@ -374,12 +372,11 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
 
     // --- 6. Build CDT ---
     let pts3: Vec<Vec3> = pts.iter().map(|p| Vec3::new(p.x, p.y, 0.0)).collect();
-    let cdt = crate::geom::cdt::triangulate_constrained(&pts3, &constraints)
-        .map_err(|e: crate::geom::TinError| TerrainError(e.to_string()))?;
+    let cdt = cadcraft_geom::cdt::triangulate_constrained(&pts3, &constraints).map_err(|e: cadcraft_geom::TinError| TerrainError(e.to_string()))?;
     let mut tin = cdt.tin;
 
     // --- 7. Retain inside boundary ---
-    crate::geom::tin_ops::retain_inside(&mut tin, &boundary);
+    cadcraft_geom::tin_ops::retain_inside(&mut tin, &boundary);
 
     // --- 8. Drop degenerate triangles ---
     tin.triangles.retain(|tri| {
@@ -400,25 +397,12 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
     let mut xy: Vec<Vec2> = Vec::new();
     let mut z: Vec<[f64; 3]> = Vec::new();
     for tri in &tin.triangles {
-        let corners = [
-            tin.points[tri[0]].xy(),
-            tin.points[tri[1]].xy(),
-            tin.points[tri[2]].xy(),
-        ];
-        let centroid = Vec2::new(
-            (corners[0].x + corners[1].x + corners[2].x) / 3.0,
-            (corners[0].y + corners[1].y + corners[2].y) / 3.0,
-        );
+        let corners = [tin.points[tri[0]].xy(), tin.points[tri[1]].xy(), tin.points[tri[2]].xy()];
+        let centroid = Vec2::new((corners[0].x + corners[1].x + corners[2].x) / 3.0, (corners[0].y + corners[1].y + corners[2].y) / 3.0);
         let zs = [
-            surf.modified_toward(corners[0], centroid)
-                .or(surf.modified_at(corners[0]))
-                .unwrap_or(0.0),
-            surf.modified_toward(corners[1], centroid)
-                .or(surf.modified_at(corners[1]))
-                .unwrap_or(0.0),
-            surf.modified_toward(corners[2], centroid)
-                .or(surf.modified_at(corners[2]))
-                .unwrap_or(0.0),
+            surf.modified_toward(corners[0], centroid).or(surf.modified_at(corners[0])).unwrap_or(0.0),
+            surf.modified_toward(corners[1], centroid).or(surf.modified_at(corners[1])).unwrap_or(0.0),
+            surf.modified_toward(corners[2], centroid).or(surf.modified_at(corners[2])).unwrap_or(0.0),
         ];
         for c in corners {
             xy.push(c);
@@ -433,17 +417,13 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
 mod tests {
     use super::*;
     use cadcraft_doc::arch::{ArchModel, ModifierKind, Terrain};
-    use cadraft_geom::Vec3;
+    use cadcraft_geom::Vec3;
 
     fn make_model(boundary: Vec<Vec2>, points: Vec<Vec3>, modifiers: Vec<ModifierKind>) -> ArchModel {
         let terrain = Terrain {
             boundary,
             points,
-            modifiers: modifiers
-                .into_iter()
-                .enumerate()
-                .map(|(i, kind)| cadcraft_doc::TerrainModifier { id: i as u32 + 1, kind })
-                .collect(),
+            modifiers: modifiers.into_iter().enumerate().map(|(i, kind)| cadcraft_doc::arch::TerrainModifier { id: i as u32 + 1, kind }).collect(),
             pad: false,
             ..Terrain::default()
         };
@@ -451,37 +431,17 @@ mod tests {
     }
 
     fn flat_poly() -> Vec<Vec2> {
-        vec![
-            Vec2::new(15.0, 10.0),
-            Vec2::new(25.0, 10.0),
-            Vec2::new(25.0, 20.0),
-            Vec2::new(15.0, 20.0),
-        ]
+        vec![Vec2::new(15.0, 10.0), Vec2::new(25.0, 10.0), Vec2::new(25.0, 20.0), Vec2::new(15.0, 20.0)]
     }
 
     fn flat_step_poly() -> Vec<Vec2> {
-        vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(40.0, 0.0),
-            Vec2::new(40.0, 30.0),
-            Vec2::new(0.0, 30.0),
-        ]
+        vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)]
     }
 
     #[test]
     fn site_mesh_of_a_plane_matches_the_plane() {
-        let boundary = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(40.0, 0.0),
-            Vec2::new(40.0, 30.0),
-            Vec2::new(0.0, 30.0),
-        ];
-        let points = vec![
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(40.0, 0.0, 2.0),
-            Vec3::new(40.0, 30.0, 2.0),
-            Vec3::new(0.0, 30.0, 0.0),
-        ];
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
         let model = make_model(boundary, points, vec![]);
         let surf = SiteSurface::new(&model).unwrap();
         let mesh = site_mesh(&surf).unwrap();
@@ -489,7 +449,7 @@ mod tests {
             for (ki, &ci) in tri.iter().enumerate() {
                 let p = mesh.xy[ci];
                 let z = mesh.z[ti][ki];
-                assert!((z - 0.05 * p.x).abs() < 1e-4, "corner {p:?} z={z} expected {0.05*x}");
+                assert!((z - 0.05 * p.x).abs() < 1e-4, "corner {p:?} z={z} expected 0.05*x");
             }
         }
     }
@@ -497,12 +457,7 @@ mod tests {
     #[test]
     fn site_mesh_keeps_flat_region_edges_as_steps() {
         let boundary = flat_step_poly();
-        let points = vec![
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(40.0, 0.0, 2.0),
-            Vec3::new(40.0, 30.0, 2.0),
-            Vec3::new(0.0, 30.0, 0.0),
-        ];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
         let modifiers = vec![ModifierKind::Flat { polygon: flat_poly(), elevation: 1.0, margin: 0.0 }];
         let model = make_model(boundary, points, modifiers);
         let surf = SiteSurface::new(&model).unwrap();
@@ -528,12 +483,7 @@ mod tests {
     #[test]
     fn site_mesh_corner_z_comes_from_its_own_side() {
         let boundary = flat_step_poly();
-        let points = vec![
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(40.0, 0.0, 2.0),
-            Vec3::new(40.0, 30.0, 2.0),
-            Vec3::new(0.0, 30.0, 0.0),
-        ];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
         let modifiers = vec![ModifierKind::Flat { polygon: flat_poly(), elevation: 1.0, margin: 0.0 }];
         let model = make_model(boundary, points, modifiers);
         let surf = SiteSurface::new(&model).unwrap();
@@ -562,19 +512,16 @@ mod tests {
     #[test]
     fn site_mesh_refines_the_original_tin() {
         let boundary = flat_step_poly();
-        let points = vec![
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(40.0, 0.0, 2.0),
-            Vec3::new(40.0, 30.0, 2.0),
-            Vec3::new(0.0, 30.0, 0.0),
-        ];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
         let modifiers = vec![ModifierKind::Flat { polygon: flat_poly(), elevation: 1.0, margin: 0.0 }];
         let model = make_model(boundary, points, modifiers);
         let surf = SiteSurface::new(&model).unwrap();
         let original = surf.original();
         let mesh = site_mesh(&surf).unwrap();
         assert!(mesh.triangles.len() >= original.triangles.len());
-        let mesh_area: f64 = mesh.triangles.iter()
+        let mesh_area: f64 = mesh
+            .triangles
+            .iter()
             .map(|tri| {
                 let a = mesh.xy[tri[0]];
                 let b = mesh.xy[tri[1]];
@@ -583,7 +530,9 @@ mod tests {
             })
             .sum();
         assert!((mesh_area - 1200.0).abs() < 0.1, "area {mesh_area}");
-        let max_orig: f64 = original.triangles.iter()
+        let max_orig: f64 = original
+            .triangles
+            .iter()
             .map(|tri| {
                 let a = original.points[tri[0]];
                 let b = original.points[tri[1]];
@@ -603,12 +552,7 @@ mod tests {
     #[test]
     fn site_mesh_samples_hills_on_rings() {
         let boundary = flat_step_poly();
-        let points = vec![
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(40.0, 0.0, 2.0),
-            Vec3::new(40.0, 30.0, 2.0),
-            Vec3::new(0.0, 30.0, 0.0),
-        ];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
         let hill = ModifierKind::Hill { center: Vec2::new(10.0, 20.0), height: 2.0, radius: 5.0 };
         let model = make_model(boundary, points, vec![hill]);
         let surf = SiteSurface::new(&model).unwrap();
@@ -617,14 +561,14 @@ mod tests {
         for (ti, tri) in mesh.triangles.iter().enumerate() {
             if tri.contains(&center_idx) {
                 let ki = tri.iter().position(|&c| c == center_idx).unwrap();
-                assert!((mesh.z[ti][ki] - 2.5).abs() < 1e-3, "hill center z={0}");
+                assert!((mesh.z[ti][ki] - 2.5).abs() < 1e-3, "hill center z={z}");
             }
         }
         let ring_pt_idx = point_in_list(&mesh.xy, Vec2::new(12.5, 20.0)).unwrap();
         for (ti, tri) in mesh.triangles.iter().enumerate() {
             if tri.contains(&ring_pt_idx) {
                 let ki = tri.iter().position(|&c| c == ring_pt_idx).unwrap();
-                assert!((mesh.z[ti][ki] - 1.75).abs() < 0.01, "hill ring z={0}");
+                assert!((mesh.z[ti][ki] - 1.75).abs() < 0.01, "hill ring z={z}");
             }
         }
     }
@@ -632,19 +576,16 @@ mod tests {
     #[test]
     fn site_mesh_stays_inside_the_boundary() {
         let boundary = flat_step_poly();
-        let points = vec![
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(40.0, 0.0, 2.0),
-            Vec3::new(40.0, 30.0, 2.0),
-            Vec3::new(0.0, 30.0, 0.0),
-        ];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
         let model = make_model(boundary, points, vec![]);
         let surf = SiteSurface::new(&model).unwrap();
         let mesh = site_mesh(&surf).unwrap();
         for &p in &mesh.xy {
             assert!(inside_or_on(&boundary, p), "vertex {p:?} outside");
         }
-        let area: f64 = mesh.triangles.iter()
+        let area: f64 = mesh
+            .triangles
+            .iter()
             .map(|tri| {
                 let a = mesh.xy[tri[0]];
                 let b = mesh.xy[tri[1]];
