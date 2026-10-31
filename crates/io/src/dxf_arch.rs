@@ -131,6 +131,13 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
         model.views.clear();
         model.next_view_id = 0;
     }
+    if p.version <= 7 {
+        model.site = None;
+        model.terrain = None;
+        model.plants.clear();
+        model.plant_species.clear();
+        model.next_plant_id = 0;
+    }
     if model.openings.len() > cadcraft_doc::arch::MAX_OPENINGS {
         return None;
     }
