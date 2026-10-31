@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-31 07:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 07:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 9 of 13: Terrain and site — 24 of 28 segments merged · 2 of 12 acceptance checks**
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 07:30 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 2 / 12 | 11.9 h so far · expected done Oct 31 10:48–Oct 31 19:13 UTC |
+| 9 | Terrain and site | building | 2 / 12 | 12.1 h so far · expected done Oct 31 11:05–Oct 31 19:36 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,12 +27,12 @@ Updated 2026-10-31 07:30 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-24 merged, 3 gate, 1 merging
+24 merged, 2 gate, 1 working, 1 merging
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p9-cmd-terrain-query` | `terrain.query`, `terrain.contours` and `terrain.volumes` | gate | claude-sonnet-b |
-| `p9-render-site-plan` | The site in the plan: contours, labels, boundary, paths, plants, north arrow | gate | bonsai-ws2-a |
+| `p9-render-site-plan` | The site in the plan: contours, labels, boundary, paths, plants, north arrow | working | bonsai-ws2-a |
 | `p9-io-site-proxies` | Site proxies on save, the arch record v8 | gate | claude-sonnet-a |
 | `upstream-sync-a1335895f` | merge upstream upstream/main up to a1335895f (19 commits) | merging | claude-sonnet-c |
 
@@ -57,16 +57,16 @@ Updated 2026-10-31 07:30 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 709 |
-| bonsai-b | bonsai2-27b | agent | 668 |
-| bonsai-ws2-a | bonsai2-27b | gate | 709 |
+| bonsai-a | bonsai2-27b | gate | 709 |
+| bonsai-b | bonsai2-27b | agent | 670 |
+| bonsai-ws2-a | bonsai2-27b | agent | 710 |
 | bonsai-ws2-b | bonsai2-27b | merging | 682 |
-| claude-sonnet-a | sonnet | gate | 56 |
+| claude-sonnet-a | sonnet | gate | 57 |
 | claude-sonnet-b | sonnet | gate | 54 |
 | claude-sonnet-c | sonnet | merging | 6 |
 | claude-sonnet-d | sonnet | idle | 2 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 574 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 576 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 103 |
 | mai-flash | mai-code-1.1-flash | idle | 28 |
 | tturbo-mac | tturbo-ultraheretic | merging | 490 |
-| tturbo-mac2 | tturbo-ultraheretic | gate | 313 |
+| tturbo-mac2 | tturbo-ultraheretic | merging | 314 |
