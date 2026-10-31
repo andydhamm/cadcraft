@@ -8,7 +8,7 @@ def refused(cmds, what, check):
     if rc != 0 and not rr and "invalid value" in se and "--cmd" in se:
         print(f"ok: {what}: refused by the command line"); return
     last = reply_with(rr, 'terrain', -1)
-    if rc == 0 or not check(last):
+    if not was_refused(rc, se) or not check(last):
         fail(f"{what} must be refused and change nothing: rc {rc}, {json.dumps(last)[:300]} {(so + se)[-200:]}")
     print(f"ok: {what}: refused, nothing written")
 

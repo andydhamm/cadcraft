@@ -1,5 +1,5 @@
 # Site location: true north turns the north arrow and the sun; a pole's solar-noon shadow points along the arrow.
-# needs: p9-cmd-site, p9-arch-site, p9-cmd-site-inspect, p9-cli-render-sun-from-site, p9-io-site-proxies
+# needs: p9-cmd-site, p9-arch-site, p9-cmd-site-inspect, p9-cli-render-sun-from-site
 import os
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p9lib.inc')).read())
 
@@ -30,7 +30,7 @@ if rc == 0:
 for bad in ({"latitude": 91}, {"longitude": -181}, {"trueNorth": "x"}, {"elevation": None, "bogus": 1}):
     rc, rr, so, se = run([cmd('site', {"latitude": 10}), cmd('site', bad), 'arch.inspect {"site":true}'], expect_ok=False)
     s = reply_with(rr, 'site', -1)['site']
-    if rc == 0 or not s or num(s.get('latitude'), 'latitude') != 10:
+    if not was_refused(rc, se) or not s or num(s.get('latitude'), 'latitude') != 10:
         fail(f"site {bad} must be refused and change nothing: {s}")
 print("ok: no-site sun unchanged; bad site values refused")
 
