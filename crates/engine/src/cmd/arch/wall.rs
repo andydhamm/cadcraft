@@ -1645,6 +1645,109 @@ mod tests {
     }
 
     #[test]
+    fn wall_command_retaining_closed() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [0.0, 3.0]],
+            "closed": true,
+            "retaining": true,
+            "freeboard": 0.2,
+            "footing": 0.3,
+        });
+        s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 4);
+        for w in &d.arch.walls {
+            assert!(w.retaining);
+            assert_eq!(w.freeboard, Some(0.2));
+            assert_eq!(w.footing, Some(0.3));
+        }
+    }
+
+    #[test]
+    fn wall_command_retaining_with_type() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "type": "retaining",
+            "freeboard": 0.15,
+        });
+        s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 1);
+        let w = &d.arch.walls[0];
+        assert!(w.retaining);
+        assert_eq!(w.wall_type, "retaining".to_string());
+        assert!(!w.exterior);
+        assert_eq!(w.freeboard, Some(0.15));
+        assert_eq!(w.footing, None);
+    }
+
+    #[test]
+    fn wall_command_retaining_with_level() {
+        let mut s = Session::new();
+        let d = s.doc_mut().unwrap();
+        d.arch.levels.push(Level { name: "basement".to_string(), ceiling_height: 2.2, structure: 0.3, ..Default::default() });
+        d.touch_arch();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "level": "basement",
+            "footing": 0.4,
+        });
+        s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 1);
+        let w = &d.arch.walls[0];
+        assert!(w.retaining);
+        assert_eq!(w.base_level, 0);
+        assert_eq!(w.footing, Some(0.4));
+        // Height should be 2.2 + 0.3 = 2.5
+        assert!((w.height - 2.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn wall_command_retaining_with_height() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "height": 3.0,
+            "freeboard": 0.2,
+            "footing": 0.3,
+        });
+        s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 1);
+        let w = &d.arch.walls[0];
+        assert!(w.retaining);
+        assert!((w.height - 3.0).abs() < 1e-9);
+        assert_eq!(w.freeboard, Some(0.2));
+        assert_eq!(w.footing, Some(0.3));
+    }
+
+    #[test]
+    fn wall_command_retaining_with_thickness() {
+        let mut s = new_session_with_level();
+        let p = json!({
+            "points": [[0.0, 0.0], [2.0, 0.0]],
+            "retaining": true,
+            "thickness": 0.3,
+            "freeboard": 0.15,
+            "footing": 0.3,
+        });
+        s.execute("wall", &p).unwrap();
+        let d = s.doc().unwrap();
+        assert_eq!(d.arch.walls.len(), 1);
+        let w = &d.arch.walls[0];
+        assert!(w.retaining);
+        assert_eq!(w.thickness, 0.3);
+        assert_eq!(w.freeboard, Some(0.15));
+        assert_eq!(w.footing, Some(0.3));
+    }
+
+    #[test]
     fn wall_machine_cancel_after_settings_discards() {
         let mut s = new_session_with_level();
         let before = s.doc().unwrap().arch.walls.len();
