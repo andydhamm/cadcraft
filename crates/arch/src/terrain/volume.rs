@@ -112,7 +112,7 @@ mod tests {
         let surf = SiteSurface::new(&m).expect("surface");
         let (a, b, c) = (Vec2::new(10.0, 10.0), Vec2::new(20.0, 10.0), Vec2::new(10.0, 20.0));
         let o = |p: Vec2| surf.original_at(p).unwrap_or(0.0);
-        let mesh = SiteMesh { xy: vec![a, b, c], triangles: vec![[0, 1, 2]], z: vec![[o(a) + 1.0, o(b), o(c) - 1.0]] };
+        let mesh = SiteMesh { xy: vec![a, b, c], triangles: vec![[0, 1, 2]], z: vec![[o(a) + 1.0, o(b), o(c) - 1.0]], ..Default::default() };
         // Area 50, d = (1, 0, -1): the total is zero and each side holds A/18... = 50/6 / 1.
         let (cut, fill) = cut_fill(&mesh, &surf);
         assert!((cut - 50.0 / 6.0).abs() < 1e-9, "cut {cut}");
