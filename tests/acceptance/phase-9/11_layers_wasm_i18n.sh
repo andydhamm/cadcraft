@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Carried forward: layering, exhaustive literals, the web build, assets, translations; terrain lives in crates/arch.
+# needs: p9-arch-terrain-surface, p9-arch-terrain-mesh, p9-arch-terrain-contours, p9-arch-terrain-volumes, p9-arch-retaining, p9-arch-plant, p9-arch-site, p9-geom-cdt
 set -uo pipefail
 cargo xtask layers   || { echo "FAIL: layers"; exit 1; }
 cargo xtask literals || { echo "FAIL: exhaustive struct literals"; exit 1; }

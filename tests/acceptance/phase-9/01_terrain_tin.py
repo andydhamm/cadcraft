@@ -1,4 +1,5 @@
 # Terrain from points, elevation lines (breaklines) and CSV with the site's reference point; queries inside and outside.
+# needs: p9-cmd-terrain, p9-cmd-terrain-query, p9-cmd-site-inspect
 import os
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p9lib.inc')).read())
 

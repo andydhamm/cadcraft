@@ -1,4 +1,5 @@
 # Contours: minor every 0.25 m, major every 1.0 m, chained into polylines, the major labelled.
+# needs: p9-cmd-terrain, p9-cmd-terrain-modify, p9-cmd-terrain-query, p9-arch-terrain-contours
 import os
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p9lib.inc')).read())
 

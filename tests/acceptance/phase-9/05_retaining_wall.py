@@ -1,4 +1,5 @@
 # A retaining wall holds a flat region at 2.5 m against ground at 0.05 x.
+# needs: p9-cmd-terrain, p9-cmd-terrain-modify, p9-cmd-terrain-query, p9-cmd-wall-retaining, p9-arch-retaining, p9-cmd-site-inspect
 import os
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p9lib.inc')).read())
 

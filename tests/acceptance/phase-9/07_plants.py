@@ -1,4 +1,5 @@
 # Plants: a catalogue of at least 12 species, growth with age, user species from JSON, plan symbol and 3D form.
+# needs: p9-cmd-plant, p9-arch-plant, p9-arch3d-plants, p9-render-site-plan, p9-io-site-proxies, p9-cmd-site-inspect
 import os
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p9lib.inc')).read())
 

@@ -1,4 +1,5 @@
 # Site location: true north turns the north arrow and the sun; a pole's solar-noon shadow points along the arrow.
+# needs: p9-cmd-site, p9-arch-site, p9-cmd-site-inspect, p9-cli-render-sun-from-site, p9-io-site-proxies
 import os
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p9lib.inc')).read())
 

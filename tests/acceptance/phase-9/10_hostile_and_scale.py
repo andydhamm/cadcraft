@@ -1,4 +1,5 @@
 # Hostile input never panics and never half-applies; a 5,000-point survey answers quickly.
+# needs: p9-cmd-terrain, p9-cmd-terrain-modify, p9-cmd-terrain-query, p9-arch-terrain-csv, p9-cmd-plant, p9-cmd-site-inspect, p9-arch3d-terrain-solid
 import os, random, time
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p9lib.inc')).read())
 
