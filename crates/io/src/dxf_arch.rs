@@ -476,7 +476,7 @@ mod tests {
     use crate::{read_dxf, write_dxf};
     use cadcraft_doc::arch::{Opening, OpeningKind, Railing, Roof, RoofEdge, RoofEdgeKind, RoofPlane, Room, RoomType, Stair};
     use cadcraft_doc::{ArchModel, Drawing, EntityKind, Wall};
-    use cadcraft_geom::Vec2;
+    use cadcraft_geom::{Vec2, Vec3};
 
     /// A drawing with one wall and one roof (ridge + eave edges).
     fn drawing_with_roof() -> Drawing {
