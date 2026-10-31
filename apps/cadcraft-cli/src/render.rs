@@ -204,7 +204,12 @@ fn format_projected(pb: [f32; 4]) -> String {
 /// location nor an explicit latitude the `NoSiteLat` refusal fires. The resulting direction
 /// is rotated by the site's true north so shadows fall along the site's true north (a no-op
 /// when there is no site, which leaves the raw direction).
-fn sun_light_dir(explicit_lat: Option<f64>, date: &str, time: &str, site: Option<&cadcraft_io::arch::SiteLocation>) -> Result<[f64; 3], RenderError> {
+fn sun_light_dir(
+    explicit_lat: Option<f64>,
+    date: &str,
+    time: &str,
+    site: Option<&cadcraft_engine::doc::arch::SiteLocation>,
+) -> Result<[f64; 3], RenderError> {
     let lat = explicit_lat.or_else(|| site.map(|s| s.latitude)).ok_or(RenderError::NoSiteLat)?;
     let sun = cadcraft_arch::sun::sun_position(lat, date, time).ok_or(RenderError::Sun(format!("lat={lat},date={date},time={time}")))?;
     let dir = cadcraft_arch::sun::sun_dir(&sun);
@@ -325,7 +330,7 @@ mod tests {
 
     #[test]
     fn parse_sun_requires_lat_date_and_time() {
-        assert_eq!(parse_sun("lat=51.05,date=2026-06-21,time=solar-noon"), Some((51.05, "2026-06-21".to_string(), "solar-noon".to_string())));
+        assert_eq!(parse_sun("lat=51.05,date=2026-06-21,time=solar-noon"), Some((Some(51.05), "2026-06-21".to_string(), "solar-noon".to_string())));
         assert_eq!(parse_sun(" lat = -33.9 , date=2026-12-21 , time=15:30 ").map(|s| s.2), Some("15:30".to_string()));
         for bad in [
             "",
@@ -658,8 +663,8 @@ mod tests {
     fn render_sun_uses_site_latitude_and_true_north() {
         let date = "2026-06-21";
         let time = "solar-noon";
-        let site = cadcraft_io::arch::SiteLocation { latitude: 51.05, true_north: 0.0, ..Default::default() };
-        let site_north90 = cadcraft_io::arch::SiteLocation { latitude: 51.05, true_north: 90.0, ..Default::default() };
+        let site = cadcraft_engine::doc::arch::SiteLocation { latitude: 51.05, true_north: 0.0, ..Default::default() };
+        let site_north90 = cadcraft_engine::doc::arch::SiteLocation { latitude: 51.05, true_north: 90.0, ..Default::default() };
 
         // 1) No explicit latitude: the site latitude must stand in, and the result must equal
         //    the direction computed by explicitly asking for that same latitude.
