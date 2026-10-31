@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-31 09:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 10:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 9 of 13: Terrain and site — 26 of 29 segments merged · 6 of 12 acceptance checks**
 
-5,864 workspace tests passing at the last merge · 565 segments merged in all · 0 of 13 seats working
+5,872 workspace tests passing at the last merge · 566 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 09:45 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 6 / 12 | 14.1 h so far · expected done Oct 31 12:36–Oct 31 20:51 UTC |
+| 9 | Terrain and site | building | 6 / 12 | 14.4 h so far · expected done Oct 31 12:51–Oct 31 21:06 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,11 +27,11 @@ Updated 2026-10-31 09:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-26 merged, 2 merging, 1 working
+26 merged, 2 merging, 1 escalate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p9-render-site-plan` | The site in the plan: contours, labels, boundary, paths, plants, north arrow | working | kimi-k31 |
+| `p9-render-site-plan` | The site in the plan: contours, labels, boundary, paths, plants, north arrow | escalate |  |
 | `p9-io-site-proxies` | Site proxies on save, the arch record v8 | merging | claude-sonnet-a |
 | `upstream-sync-7cee28580` | merge upstream upstream/main up to 7cee28580 (5 commits) | merging | claude-sonnet-c |
 
@@ -39,6 +39,7 @@ Updated 2026-10-31 09:45 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 31 09:58 | `harden-p9-arch-terrain-contours` | merged | 5,872 pass | tturbo-mac |
 | Oct 31 09:44 | `p9-cmd-terrain-query` | merged | 5,864 pass | claude-sonnet-b |
 | Oct 31 09:36 | `harden-p9-arch-terrain-mesh` | merged | 5,859 pass | tturbo-mac2 |
 | Oct 31 08:26 | `upstream-sync-a1335895f` | merged | 5,852 pass | claude-sonnet-c |
@@ -50,7 +51,6 @@ Updated 2026-10-31 09:45 UTC. This page and the card in the README are regenerat
 | Oct 31 06:25 | `harden-p9-cmd-terrain` | merged | 5,538 pass | tturbo-mac2 |
 | Oct 31 06:05 | `harden-p9-cmd-terrain-modify` | merged | 5,531 pass | tturbo-mac |
 | Oct 31 05:52 | `p9-arch-retaining` | merged | 5,524 pass | claude-sonnet-a |
-| Oct 31 05:22 | `p9-arch-terrain-mesh` | merged | 5,520 pass | bonsai-ws2-b |
 
 ## Seats active in the last hour
 
@@ -65,7 +65,7 @@ Updated 2026-10-31 09:45 UTC. This page and the card in the README are regenerat
 | claude-sonnet-c | sonnet | merging | 7 |
 | claude-sonnet-d | sonnet | idle | 2 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | merging | 578 |
-| kimi-k31 | k3.1-pro-highspeed | agent | 103 |
+| kimi-k31 | k3.1-pro-highspeed | idle | 104 |
 | mai-flash | mai-code-1.1-flash | idle | 28 |
-| tturbo-mac | tturbo-ultraheretic | merging | 491 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 314 |
+| tturbo-mac | tturbo-ultraheretic | agent | 491 |
+| tturbo-mac2 | tturbo-ultraheretic | merging | 315 |
