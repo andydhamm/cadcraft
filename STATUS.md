@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-31 18:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 18:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 10 of 13: Lighting, light fixtures and final renders — 1 of 21 segments merged · 0 of 11 acceptance checks**
 
@@ -20,23 +20,23 @@ Updated 2026-10-31 18:00 UTC. This page and the card in the README are regenerat
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
 | 9 | Terrain and site | done | 12 / 12 | 19.4 h |
-| 10 | Lighting, light fixtures and final renders | building | 0 / 11 | 1.4 h so far · expected done Nov 01 01:05–Nov 02 14:50 UTC |
+| 10 | Lighting, light fixtures and final renders | building | 0 / 11 | 1.7 h so far · expected done Nov 01 01:21–Nov 02 15:05 UTC |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
 | 13 | Polish | planned | — | — |
 
 ## Phase 10 segments
 
-13 queued, 4 gate, 2 working, 1 merged, 1 merging
+13 queued, 5 gate, 1 merged, 1 working, 1 merging
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p10-arch-light-placement` | Fixture validation, colour temperature, light point, aim and room grid | gate | darwin-ws3 |
+| `p10-arch-light-placement` | Fixture validation, colour temperature, light point, aim and room grid | working | darwin-ws3 |
 | `p10-arch-light-symbol` | Plan symbols of the fixture shapes | gate | bonsai-ws2-a |
 | `p10-r3d-light-pack` | Which lights are drawn and shadowed, and their uniform bytes | gate | bonsai-ws2-b |
 | `p10-r3d-shadow-atlas` | Fixture shadow maps: spot maps and point-light cubes in one depth array, cached per light | merging | claude-sonnet-c |
-| `p10-cmd-render` | RENDER 3D command over the app's render hook | working | bonsai-a |
-| `p10-cmd-sunstudy` | SUNSTUDY: stills through the day from the current camera | working | bonsai-b |
+| `p10-cmd-render` | RENDER 3D command over the app's render hook | gate | bonsai-a |
+| `p10-cmd-sunstudy` | SUNSTUDY: stills through the day from the current camera | gate | bonsai-b |
 | `p10-io-glb-lights` | GLB: KHR_lights_punctual lights and their nodes | gate | mai-flash |
 
 ## Recent merges
@@ -60,16 +60,16 @@ Updated 2026-10-31 18:00 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 731 |
-| bonsai-b | bonsai2-27b | agent | 680 |
-| bonsai-ws2-a | bonsai2-27b | gate | 736 |
-| bonsai-ws2-b | bonsai2-27b | gate | 697 |
+| bonsai-a | bonsai2-27b | gate | 731 |
+| bonsai-b | bonsai2-27b | gate | 680 |
+| bonsai-ws2-a | bonsai2-27b | gate | 737 |
+| bonsai-ws2-b | bonsai2-27b | gate | 698 |
 | claude-sonnet-a | sonnet | idle | 58 |
 | claude-sonnet-b | sonnet | idle | 55 |
 | claude-sonnet-c | sonnet | merging | 9 |
 | claude-sonnet-d | sonnet | idle | 2 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 585 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 586 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 106 |
-| mai-flash | mai-code-1.1-flash | gate | 28 |
+| mai-flash | mai-code-1.1-flash | gate | 29 |
 | tturbo-mac | tturbo-ultraheretic | merging | 509 |
-| tturbo-mac2 | tturbo-ultraheretic | gate | 329 |
+| tturbo-mac2 | tturbo-ultraheretic | merging | 330 |
