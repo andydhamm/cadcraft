@@ -9,11 +9,17 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use cadcraft_arch3d::camera::Camera;
+use cadcraft_arch::site::true_to_drawing;
+use cadcraft_arch::sun::{sun_dir, sun_position};
+use cadcraft_arch3d::camera::{Camera, FullCamera, Orbit};
 use cadcraft_doc::Drawing;
-use serde_json::Value;
+use cadcraft_doc::arch::{Camera3d, CameraKind};
+use cadcraft_geom::Vec3;
+use serde_json::{Value, json};
 
-use crate::cmd::CommandSpec;
+use crate::cmd::arch::pick::parse_camera;
+use crate::cmd::{CommandSpec, bad};
+use crate::{EngineError, Session};
 
 /// What lights the still besides the fixtures.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -80,7 +86,193 @@ pub fn stats() -> RenderStats {
     HOOKS.get().map(|h| (h.stats)()).unwrap_or_default()
 }
 
-/// Command specs (filled in by `p10-cmd-render`).
+fn parse_size(v: Option<&Value>) -> Result<(u32, u32), EngineError> {
+    const MAX: u64 = 8192;
+    match v {
+        None => Ok((1200, 800)),
+        Some(Value::Array(arr)) => {
+            if arr.len() != 2 {
+                return Err(bad("render", "`size` must be [w,h]"));
+            }
+            let dim = |idx: usize| {
+                arr.get(idx)
+                    .and_then(Value::as_u64)
+                    .and_then(|n| (1..=MAX).contains(&n).then_some(n as u32))
+                    .ok_or_else(|| bad("render", format!("`size[{}]` must be a whole number in 1..={MAX}", idx)))?
+            };
+            Ok((dim(0)?, dim(1)?))
+        }
+        _ => Err(bad("render", "`size` must be [w,h]")),
+    }
+}
+
+fn parse_samples(v: Option<&Value>) -> Result<Vec<[f64; 3]>, EngineError> {
+    match v {
+        None => Ok(Vec::new()),
+        Some(Value::Array(arr)) => {
+            if arr.len() > 64 {
+                return Err(bad("render", "`samples` must have at most 64 points"));
+            }
+            let mut out = Vec::with_capacity(arr.len());
+            for (i, p) in arr.iter().enumerate() {
+                let inner = p.as_array().ok_or_else(|| bad("render", format!("`samples[{}]` must be [x,y,z]", i)))?;
+                if inner.len() != 3 {
+                    return Err(bad("render", format!("`samples[{}]` must be [x,y,z]", i)));
+                }
+                let f = |idx: usize| {
+                    inner
+                        .get(idx)
+                        .and_then(Value::as_f64)
+                        .filter(|x| x.is_finite())
+                        .ok_or_else(|| bad("render", format!("`samples[{}][{}]` must be a finite number", i, idx)))?
+                };
+                out.push([f(0)?, f(1)?, f(2)?]);
+            }
+            Ok(out)
+        }
+        _ => Err(bad("render", "`samples` must be an array of [x,y,z] points")),
+    }
+}
+
+fn parse_sun(v: Option<&Value>, doc: &Drawing) -> Result<SunChoice, EngineError> {
+    match v {
+        None => Ok(SunChoice::Default),
+        Some(Value::Bool(false)) => Ok(SunChoice::Off),
+        Some(Value::String(s)) => {
+            if s == "default" {
+                Ok(SunChoice::Default)
+            } else {
+                Err(bad("render", format!("unknown sun value `{s}`")))
+            }
+        }
+        Some(Value::Object(obj)) => {
+            let date = obj.get("date").and_then(Value::as_str).ok_or_else(|| bad("render", "sun needs a `date` field"))?;
+            let time = obj.get("time").and_then(Value::as_str).ok_or_else(|| bad("render", "sun needs a `time` field"))?;
+            let site = doc.arch.site.as_deref().ok_or_else(|| bad("render", "sun needs a site location: run site first"))?;
+            let sun = sun_position(site.latitude, date, time).ok_or_else(|| bad("render", "invalid sun date or time"))?;
+            if sun.elevation_deg <= 0.0 {
+                return Err(bad("render", "sun is below the horizon at the given date and time"));
+            }
+            let dir = sun_dir(&sun);
+            let drawing_dir = true_to_drawing(Some(site), dir);
+            Ok(SunChoice::Dir(drawing_dir))
+        }
+        _ => Err(bad("render", "sun must be false, \"default\" or {date, time}")),
+    }
+}
+
+fn camera_from_saved(c: &Camera3d) -> Result<Camera, EngineError> {
+    match c.kind {
+        CameraKind::Orbit => {
+            let target = c.target.unwrap_or([0.0; 3]);
+            let azimuth = c.azimuth_deg.unwrap_or(0.0);
+            let elevation = c.elevation_deg.unwrap_or(30.0);
+            let distance = c.distance.unwrap_or(10.0);
+            let fov = c.fov_deg.unwrap_or(45.0);
+            Ok(Camera::Orbit(Orbit::new(target, azimuth, elevation, distance, fov)))
+        }
+        CameraKind::Full => {
+            let eye = Vec3::new(c.eye.as_deref().map_or(0.0, |e| e[0]), c.eye.as_deref().map_or(0.0, |e| e[1]), c.eye_height.unwrap_or(1.6));
+            let target = c.target.unwrap_or([0.0; 3]);
+            let fov = c.fov_deg.unwrap_or(45.0);
+            Ok(Camera::Full(FullCamera::new(eye, target, fov)))
+        }
+    }
+}
+
+fn camera_from_params(v: Option<&Value>, doc: &Drawing) -> Result<Option<Camera>, EngineError> {
+    match v {
+        None | Some(Value::Null) => match &doc.arch.active_camera {
+            Some(name) => match doc.arch.camera_by_name(name) {
+                Some(c) => Ok(Some(camera_from_saved(c)?)),
+                None => Ok(None),
+            },
+            None => Ok(None),
+        },
+        Some(cv) => Ok(Some(parse_camera(cv)?)),
+    }
+}
+
+/// `render`: render a 3D still through the installed render hook.
+fn run_render(s: &mut Session, params: &Value) -> Result<Value, EngineError> {
+    let hooks = render_hooks().ok_or_else(|| bad("render", "render needs the 3D renderer: run it from cadcraft-cli run or the app"))?;
+
+    let doc = s.doc()?;
+
+    let size = parse_size(params.get("size"))?;
+    let camera = camera_from_params(params.get("camera"), doc)?;
+    let final_render = params.get("final").and_then(Value::as_bool).unwrap_or(false);
+    let sun = parse_sun(params.get("sun"), doc)?;
+    let style = params
+        .get("style")
+        .and_then(Value::as_str)
+        .and_then(|s| matches!(s, "shaded" | "shaded-edges" | "hidden-line" | "glass-house").then(|_| s.to_string()))
+        .ok_or_else(|| bad("render", "`style` must be one of: shaded, shaded-edges, hidden-line, glass-house"))?;
+    let ground = params.get("ground").and_then(Value::as_bool).unwrap_or(false);
+    let budget = params
+        .get("budget")
+        .and_then(Value::as_u64)
+        .and_then(|n| (0..=64).contains(&n).then_some(n as usize))
+        .ok_or_else(|| bad("render", "`budget` must be a whole number in 0..=64"))?;
+    let samples = parse_samples(params.get("samples"))?;
+    let out = params.get("out").and_then(Value::as_str).map(PathBuf::from);
+
+    let request = RenderRequest { drawing: &doc, camera, size, out, final_render, sun, style, ground, budget, samples };
+
+    (hooks.render)(&request).map_err(|e| bad("render", e))
+}
+
+/// Command specs.
 pub fn specs() -> Vec<CommandSpec> {
-    Vec::new()
+    vec![
+        CommandSpec::new("render", "Render 3D", run_render)
+            .menu(&["Architecture", "Render 3D"])
+            .params("{out?: path, size?: [w,h], camera?, final?: bool, sun?: false | {date, time} | \"default\", style?, ground?: bool, budget?, samples?: [[x,y,z], ...]}")
+            .noundo(),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn render_without_a_renderer_is_refused() {
+        let mut s = Session::new();
+        let r = s.execute("render", &json!({}));
+        let e = r.unwrap_err().to_string();
+        assert!(e.contains("render needs the 3D renderer"), "{e}");
+    }
+
+    #[test]
+    fn render_parses_sun_off_and_site_sun() {
+        let mut s = Session::new();
+        let doc = s.doc().unwrap();
+        let mut arch = doc.arch.clone();
+        arch.site = Some(cadcraft_doc::arch::site::SiteLocation { latitude: 51.5, ..cadcraft_doc::arch::site::SiteLocation::default() });
+        doc.arch = arch;
+        // sun false
+        let r = s.execute("render", &json!({"sun": false}));
+        assert!(r.is_err(), "{r:?}");
+        // sun without site is refused
+        let r2 = s.execute("render", &json!({"sun": {"date": "2026-06-21", "time": "12:00"}}));
+        let e2 = r2.unwrap_err().to_string();
+        assert!(e2.contains("sun needs a site location"), "{e2}");
+    }
+
+    #[test]
+    fn render_refuses_bad_size_and_too_many_samples() {
+        let mut s = Session::new();
+        // bad size: 0
+        let r = s.execute("render", &json!({"size": [0, 800]}));
+        assert!(r.is_err(), "{r:?}");
+        // bad size: > 8192
+        let r2 = s.execute("render", &json!({"size": [9000, 800]}));
+        assert!(r2.is_err(), "{r2:?}");
+        // too many samples
+        let samples: Vec<Value> = (0..65).map(|_| json!([0.0, 0.0, 0.0])).collect();
+        let r3 = s.execute("render", &json!({"samples": samples}));
+        assert!(r3.is_err(), "{r3:?}");
+    }
 }
