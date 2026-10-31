@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-31 01:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 01:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 9 of 13: Terrain and site — 11 of 25 segments merged · 0 of 12 acceptance checks**
 
-5,419 workspace tests passing at the last merge · 542 segments merged in all · 0 of 13 seats working · PAUSED
+5,419 workspace tests passing at the last merge · 542 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 01:00 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 0 / 12 | 5.4 h so far · expected done Oct 31 11:23–Nov 01 01:42 UTC |
+| 9 | Terrain and site | building | 0 / 12 | 5.6 h so far · expected done Oct 31 12:07–Nov 01 03:07 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,11 +27,11 @@ Updated 2026-10-31 01:00 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-13 queued, 11 merged, 1 gate
+13 queued, 11 merged, 1 merging
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p9-arch-terrain-tin` | Terrain validation and the original surface (constrained TIN clipped to the boundary) | gate | mai-flash |
+| `p9-arch-terrain-tin` | Terrain validation and the original surface (constrained TIN clipped to the boundary) | merging | mai-flash |
 
 ## Recent merges
 
@@ -55,8 +55,8 @@ Updated 2026-10-31 01:00 UTC. This page and the card in the README are regenerat
 | Seat | Model | State | Rounds |
 |---|---|---|---|
 | bonsai-a | bonsai2-27b | agent | 703 |
-| bonsai-b | bonsai2-27b | agent | 661 |
-| bonsai-ws2-a | bonsai2-27b | gate | 702 |
+| bonsai-b | bonsai2-27b | agent | 662 |
+| bonsai-ws2-a | bonsai2-27b | idle | 704 |
 | bonsai-ws2-b | bonsai2-27b | idle | 661 |
 | claude-sonnet-a | sonnet | idle | 55 |
 | claude-sonnet-b | sonnet | idle | 49 |
@@ -64,6 +64,6 @@ Updated 2026-10-31 01:00 UTC. This page and the card in the README are regenerat
 | claude-sonnet-d | sonnet | idle | 0 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 558 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 98 |
-| mai-flash | mai-code-1.1-flash | gate | 26 |
+| mai-flash | mai-code-1.1-flash | idle | 27 |
 | tturbo-mac | tturbo-ultraheretic | agent | 482 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 304 |
+| tturbo-mac2 | tturbo-ultraheretic | merging | 305 |
