@@ -1,4 +1,5 @@
 # The house's footprint flattens a building pad; a basement cuts the ground down inside its footprint.
+# needs: p9-cmd-terrain, p9-cmd-terrain-query, p9-arch-terrain-pad, p9-arch-terrain-surface, p9-arch3d-terrain-solid
 import os
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p9lib.inc')).read())
 

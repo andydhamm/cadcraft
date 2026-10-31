@@ -1,4 +1,5 @@
 # Flat regions, hills, valleys and draped paths; cut and fill between the original and the modified surface.
+# needs: p9-cmd-terrain, p9-cmd-terrain-modify, p9-cmd-terrain-query, p9-arch-terrain-volumes, p9-arch3d-terrain-solid, p9-cmd-site-inspect
 import os
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p9lib.inc')).read())
 
