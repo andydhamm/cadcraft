@@ -1,17 +1,11 @@
 //! Contours of the site mesh at minor and major intervals. Filled in by `p9-arch-terrain-contours`.
 
-use cadcraft_geom::Vec2;
-use cadcraft_geom::tin_ops::ContourLine;
+use cadcraft_doc::arch::MAX_CONTOUR_LEVELS;
+use cadraft_geom::tin::ContourSegment;
+use cadraft_geom::tin_ops::ContourLine;
+use cadraft_geom::tin_ops::chain_contours;
 
 use super::mesh::SiteMesh;
-
-/// Chained contour lines: `minor` at every multiple of the minor interval (majors included),
-/// `major` at every multiple of the major interval.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct SiteContours {
-    pub minor: Vec<ContourLine>,
-    pub major: Vec<ContourLine>,
-}
 
 /// The contours of `mesh`.
 pub fn site_contours(mesh: &SiteMesh, minor: f64, major: f64) -> SiteContours {
