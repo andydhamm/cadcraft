@@ -103,9 +103,10 @@ pub(crate) struct RenderArgs {
     /// Face style: shaded, shaded-edges, hidden-line or glass-house
     #[arg(long, value_name = "STYLE", default_value = "shaded", value_parser = parse_style_arg)]
     pub(crate) style: cadcraft_render3d::Style,
-    /// Sun for shadows: `lat=DEG,date=YYYY-MM-DD,time=solar-noon|HH:MM`
+    /// Sun for shadows: `date=YYYY-MM-DD,time=solar-noon|HH:MM[,lat=DEG]`; an omitted
+    /// latitude is taken from the drawing's site location
     #[arg(long, value_name = "SPEC", value_parser = parse_sun_arg)]
-    pub(crate) sun: Option<(f64, String, String)>,
+    pub(crate) sun: Option<(Option<f64>, String, String)>,
     /// Draw a ground plane under the scene (and cast shadows on it)
     #[arg(long)]
     pub(crate) ground: bool,
@@ -118,8 +119,8 @@ fn parse_style_arg(s: &str) -> Result<cadcraft_render3d::Style, String> {
     crate::render::parse_style(s).ok_or_else(|| format!("`{s}` is not one of shaded, shaded-edges, hidden-line, glass-house"))
 }
 
-fn parse_sun_arg(s: &str) -> Result<(f64, String, String), String> {
-    crate::render::parse_sun(s).ok_or_else(|| format!("`{s}` is not lat=DEG,date=YYYY-MM-DD,time=solar-noon|HH:MM"))
+fn parse_sun_arg(s: &str) -> Result<(Option<f64>, String, String), String> {
+    crate::render::parse_sun(s).ok_or_else(|| format!("`{s}` is not date=YYYY-MM-DD,time=solar-noon|HH:MM[,lat=DEG]"))
 }
 
 fn parse_adapter_arg(s: &str) -> Result<cadcraft_render3d::adapter::AdapterChoice, String> {
