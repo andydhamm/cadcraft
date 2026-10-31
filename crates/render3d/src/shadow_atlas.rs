@@ -172,7 +172,7 @@ impl ShadowAtlas {
             if fresh {
                 self.built += 1;
             }
-            slots.push((i, ShadowSlot { first_layer: first, cube, view_proj, near: SHADOW_NEAR, far, bias: SLOT_BIAS }));
+            slots.push((i, ShadowSlot { first_layer: first, cube, view_proj, near: SHADOW_NEAR, far, bias: SLOT_BIAS, ..Default::default() }));
         }
         self.cache = next;
         if !jobs.is_empty() {
