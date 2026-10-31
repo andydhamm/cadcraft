@@ -170,4 +170,31 @@ mod tests {
         assert_eq!(r["date"], json!("2024-07-15"));
         assert_eq!(r["time"], json!("14:30"));
     }
+
+    #[test]
+    fn sun_with_site_true_north_zero_no_rotation() {
+        let mut s = Session::new();
+        s.execute("site", &json!({ "latitude": 51.05, "trueNorth": 0.0 })).unwrap();
+        let r = s.execute("sun", &json!({ "date": "2026-06-21", "time": "solar-noon" })).unwrap();
+        let d: Vec<f64> = r["dir"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+        assert!(d[1] < 0.0 && d[2] > 0.0, "direction should be south at solar noon with trueNorth=0");
+        assert_eq!(r["trueNorth"], json!(0.0));
+    }
+
+    #[test]
+    fn sun_with_site_true_north_180_flips_direction() {
+        let mut s = Session::new();
+        s.execute("site", &json!({ "latitude": 51.05, "trueNorth": 180.0 })).unwrap();
+        let r = s.execute("sun", &json!({ "date": "2026-06-21", "time": "solar-noon" })).unwrap();
+        let d: Vec<f64> = r["dir"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+        assert!(d[1] > 0.0 && d[2] > 0.0, "direction should be north at solar noon with trueNorth=180");
+    }
+
+    #[test]
+    fn sun_with_site_no_true_north_defaults_to_zero() {
+        let mut s = Session::new();
+        s.execute("site", &json!({ "latitude": 51.05 })).unwrap();
+        let r = s.execute("sun", &json!({ "date": "2026-06-21", "time": "solar-noon" })).unwrap();
+        assert_eq!(r["trueNorth"], json!(0.0));
+    }
 }
