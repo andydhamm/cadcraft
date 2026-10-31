@@ -518,6 +518,43 @@ mod tests {
     }
 
     #[test]
+    fn cdt_empty_constraints_gives_plain_tin() {
+        let points = square();
+        let plain = triangulate(&points).unwrap();
+        let cdt = triangulate_constrained(&points, &[]).unwrap();
+        assert_eq!(cdt.tin.triangles.len(), plain.triangles.len());
+        assert!(cdt.constrained.is_empty());
+        assert_sound(&cdt);
+    }
+
+    #[test]
+    fn cdt_constraint_already_an_edge_is_recorded() {
+        let points = square();
+        let plain = triangulate(&points).unwrap();
+        let (a, b) = (plain.triangles[0][0], plain.triangles[0][1]);
+        let cdt = triangulate_constrained(&points, &[[a, b]]).unwrap();
+        assert_eq!(cdt.constrained, vec![[a.min(b), a.max(b)]]);
+        assert_eq!(cdt.tin.triangles.len(), plain.triangles.len());
+        assert_sound(&cdt);
+    }
+
+    #[test]
+    fn cdt_refuses_nan_point() {
+        let mut points = square();
+        points[0] = Vec3::new(f64::NAN, 0.0, 0.0);
+        assert_eq!(triangulate_constrained(&points, &[]), Err(TinError::NonFinitePoint { index: 0 }));
+    }
+
+    #[test]
+    fn cdt_multiple_constraints_from_one_vertex() {
+        let mut points = square();
+        points.push(Vec3::new(5.0, 5.0, 0.0));
+        let cdt = triangulate_constrained(&points, &[[4, 0], [4, 1], [4, 2], [4, 3]]).unwrap();
+        assert_eq!(cdt.constrained.len(), 4);
+        assert_sound(&cdt);
+    }
+
+    #[test]
     fn cdt_random_constraints_never_panic() {
         struct Lcg(u64);
         impl Lcg {
