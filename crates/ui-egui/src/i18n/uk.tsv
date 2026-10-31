@@ -141,6 +141,7 @@
 	Center, Start, End	Центр, початок, кінець
 	Center, Start, Length	Центр, початок, довжина
 	Chamfer	Фаска
+	Change	Зміна
 	Change Space	Змінити простір
 	Change to Current Layer	Перенести на поточний шар
 	Change Properties	Змінити властивості
@@ -1168,6 +1169,7 @@
 	Ungroup	Розгрупувати
 	Union	Об'єднання
 	Unisolate Layer	Скасувати ізоляцію шарів
+	Units	Одиниці
 	Units Conversion	Перетворення одиниць
 	Units...	Одиниці...
 	Unlock Layer	Розблокувати шар
