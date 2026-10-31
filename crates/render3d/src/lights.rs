@@ -85,7 +85,7 @@ pub fn shadow_priority(lights: &[SceneLight], eye: [f64; 3]) -> Vec<usize> {
         let af = a.1.is_finite();
         let bf = b.1.is_finite();
         if af != bf {
-            af.then(Ordering::Less).unwrap_or(Ordering::Greater)
+            af.then(|| Ordering::Less).unwrap_or(Ordering::Greater)
         } else if af {
             b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal).then_with(|| a.0.cmp(&b.0))
         } else {
@@ -124,7 +124,7 @@ pub fn pack_lights(lights: &[SceneLight], drawn: &[usize], slots: &[(usize, Shad
     for (k, &i) in drawn.iter().take(MAX_GPU_LIGHTS).enumerate() {
         let Some(l) = lights.get(i) else { continue };
         let base = 16 + 64 * k;
-        let far = slots.get(i).map_or(0.0, |s| s.far);
+        let far = slots.get(i).map_or(0.0, |s| s.1.far);
         write_f32(&mut buf, base + 0, l.position.x as f32);
         write_f32(&mut buf, base + 4, l.position.y as f32);
         write_f32(&mut buf, base + 8, l.position.z as f32);
@@ -143,10 +143,10 @@ pub fn pack_lights(lights: &[SceneLight], drawn: &[usize], slots: &[(usize, Shad
         write_f32(&mut buf, base + 44, l.cos_inner as f32);
         match slots.get(i) {
             Some(s) => {
-                write_f32(&mut buf, base + 48, s.first_layer as f32);
-                write_f32(&mut buf, base + 52, if s.cube { 1.0 } else { 0.0 });
-                write_f32(&mut buf, base + 56, s.near);
-                write_f32(&mut buf, base + 60, s.bias);
+                write_f32(&mut buf, base + 48, s.1.first_layer as f32);
+                write_f32(&mut buf, base + 52, if s.1.cube { 1.0 } else { 0.0 });
+                write_f32(&mut buf, base + 56, s.1.near);
+                write_f32(&mut buf, base + 60, s.1.bias);
             }
             None => {
                 write_f32(&mut buf, base + 48, -1.0);
@@ -156,9 +156,9 @@ pub fn pack_lights(lights: &[SceneLight], drawn: &[usize], slots: &[(usize, Shad
             }
         }
         if let Some(s) = slots.get(i) {
-            if !s.cube {
+            if !s.1.cube {
                 let vp_base = 16 + 64 * 64 + 64 * k;
-                for (col, col_arr) in s.view_proj.iter().enumerate() {
+                for (col, col_arr) in s.1.view_proj.iter().enumerate() {
                     for (row, v) in col_arr.iter().enumerate() {
                         write_f32(&mut buf, vp_base + col * 4 + row * 4, *v);
                     }
@@ -263,12 +263,12 @@ pub fn linear_depth(d: f32, near: f32, far: f32) -> f32 {
 pub const LIGHT_MATH_WGSL: &str = include_str!("shaders/light_math.wgsl");
 
 fn write_u32(buf: &mut Vec<u8>, off: usize, v: u32) {
-    buf[off..off + 4].copy_from_slice(&v.to_bytes());
+    buf[off..off + 4].copy_from_slice(&v.to_le_bytes());
 }
 
 /// Store `v` (non-finite becomes 0.0) little-endian at `off`.
 fn write_f32(buf: &mut Vec<u8>, off: usize, v: f32) {
-    buf[off..off + 4].copy_from_slice(&if v.is_finite() { v } else { 0.0 }.to_bytes());
+    buf[off..off + 4].copy_from_slice(&if v.is_finite() { v } else { 0.0 }.to_le_bytes());
 }
 
 #[cfg(test)]
