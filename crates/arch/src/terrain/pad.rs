@@ -295,7 +295,7 @@ mod tests {
     #[test]
     fn multiple_basements_each_get_a_region() {
         let mut model = make_house_model();
-        model.levels.insert(0, Level { index: -1, name: "Lower Basement".into(), elevation: -5.4, ..Default::default() });
+        model.levels.insert(0, Level { index: u32::MAX, name: "Lower Basement".into(), elevation: -5.4, ..Default::default() });
         for (i, (start, end)) in [
             (Vec2::new(15.0, 11.0), Vec2::new(25.0, 11.0)),
             (Vec2::new(25.0, 11.0), Vec2::new(25.0, 19.0)),
@@ -309,7 +309,7 @@ mod tests {
                 id: cadcraft_doc::ArchId(8 + i as u32),
                 start: *start,
                 end: *end,
-                base_level: -1,
+                base_level: u32::MAX,
                 thickness: 0.2,
                 exterior: true,
                 ..Wall::default()
