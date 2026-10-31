@@ -605,4 +605,105 @@ mod tests {
             .sum();
         assert!((area - 1200.0).abs() < 0.1, "coverage area {area}");
     }
+
+    #[test]
+    fn site_mesh_lowest_returns_minimum_z() {
+        let boundary = flat_step_poly();
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
+        let model = make_model(boundary, points, vec![]);
+        let surf = SiteSurface::new(&model).unwrap();
+        let mesh = site_mesh(&surf).unwrap();
+        let lowest = mesh.lowest().unwrap();
+        assert!((lowest - 0.0).abs() < 1e-4, "lowest z={lowest} expected 0.0");
+    }
+
+    #[test]
+    fn site_mesh_lowest_empty_returns_none() {
+        let mesh = SiteMesh::default();
+        assert!(mesh.lowest().is_none(), "empty mesh should have no lowest");
+    }
+
+    #[test]
+    fn site_mesh_requires_three_boundary_points() {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 0.0, 0.0)];
+        let model = make_model(boundary, points, vec![]);
+        let result = SiteSurface::new(&model);
+        assert!(result.is_err(), "expected error for 2-point boundary");
+    }
+
+    #[test]
+    fn site_mesh_deduplicates_coincident_points() {
+        let boundary = flat_step_poly();
+        let points = vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(40.0, 0.0, 2.0),
+            Vec3::new(40.0, 30.0, 2.0),
+            Vec3::new(0.0, 30.0, 0.0),
+        ];
+        let model = make_model(boundary, points, vec![]);
+        let surf = SiteSurface::new(&model).unwrap();
+        let mesh = site_mesh(&surf).unwrap();
+        for i in 0..mesh.xy.len() {
+            for j in (i + 1)..mesh.xy.len() {
+                assert!(mesh.xy[i].dist(mesh.xy[j]) > DEDUP_EPS, "duplicate vertices at {} and {}", i, j);
+            }
+        }
+    }
+
+    #[test]
+    fn site_mesh_handles_nan_points() {
+        let boundary = flat_step_poly();
+        let points = vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(40.0, 0.0, 2.0),
+            Vec3::new(40.0, 30.0, 2.0),
+            Vec3::new(0.0, 30.0, 0.0),
+            Vec3::new(f64::NAN, f64::NAN, f64::NAN),
+        ];
+        let model = make_model(boundary, points, vec![]);
+        let result = SiteSurface::new(&model);
+        assert!(result.is_err(), "expected error for NaN point");
+    }
+
+    #[test]
+    fn site_mesh_flat_region_with_margin() {
+        let boundary = flat_step_poly();
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
+        let modifiers = vec![ModifierKind::Flat { polygon: flat_poly(), elevation: 1.0, margin: 0.5 }];
+        let model = make_model(boundary, points, modifiers);
+        let surf = SiteSurface::new(&model).unwrap();
+        let mesh = site_mesh(&surf).unwrap();
+        let mut found_offset = false;
+        for p in &mesh.xy {
+            if (p.x - 14.5).abs() < 0.1 && (p.y - 9.5).abs() < 0.1 {
+                found_offset = true;
+                break;
+            }
+        }
+        assert!(found_offset, "no vertex near offset ring corner (14.5, 9.5)");
+    }
+
+    #[test]
+    fn site_mesh_hill_at_boundary() {
+        let boundary = flat_step_poly();
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
+        let hill = ModifierKind::Hill { center: Vec2::new(20.0, 0.0), height: 2.0, radius: 10.0 };
+        let model = make_model(boundary, points, vec![hill]);
+        let surf = SiteSurface::new(&model).unwrap();
+        let mesh = site_mesh(&surf).unwrap();
+        let center_idx = point_in_list(&mesh.xy, Vec2::new(20.0, 0.0)).unwrap();
+        let mut found_center = false;
+        for (ti, tri) in mesh.triangles.iter().enumerate() {
+            if tri.contains(&center_idx) {
+                let ki = tri.iter().position(|&c| c == center_idx).unwrap();
+                let z = mesh.z[ti][ki];
+                assert!((z - 3.0).abs() < 0.1, "hill center z={z} expected ~3.0");
+                found_center = true;
+                break;
+            }
+        }
+        assert!(found_center, "hill center not in any triangle");
+    }
 }
