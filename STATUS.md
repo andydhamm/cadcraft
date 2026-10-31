@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-31 19:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 19:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 10 of 13: Lighting, light fixtures and final renders — 1 of 21 segments merged · 0 of 11 acceptance checks**
 
@@ -20,7 +20,7 @@ Updated 2026-10-31 19:00 UTC. This page and the card in the README are regenerat
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
 | 9 | Terrain and site | done | 12 / 12 | 19.4 h |
-| 10 | Lighting, light fixtures and final renders | building | 0 / 11 | 2.4 h so far · expected done Nov 01 02:06–Nov 02 15:50 UTC |
+| 10 | Lighting, light fixtures and final renders | building | 0 / 11 | 2.7 h so far · expected done Nov 01 02:21–Nov 02 16:05 UTC |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
 | 13 | Polish | planned | — | — |
@@ -61,7 +61,7 @@ Updated 2026-10-31 19:00 UTC. This page and the card in the README are regenerat
 | Seat | Model | State | Rounds |
 |---|---|---|---|
 | bonsai-a | bonsai2-27b | gate | 733 |
-| bonsai-b | bonsai2-27b | gate | 682 |
+| bonsai-b | bonsai2-27b | gate | 683 |
 | bonsai-ws2-a | bonsai2-27b | merging | 740 |
 | bonsai-ws2-b | bonsai2-27b | merging | 700 |
 | claude-sonnet-a | sonnet | idle | 58 |
@@ -71,5 +71,5 @@ Updated 2026-10-31 19:00 UTC. This page and the card in the README are regenerat
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | merging | 589 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 106 |
 | mai-flash | mai-code-1.1-flash | merging | 30 |
-| tturbo-mac | tturbo-ultraheretic | gate | 509 |
+| tturbo-mac | tturbo-ultraheretic | agent | 510 |
 | tturbo-mac2 | tturbo-ultraheretic | merging | 330 |
