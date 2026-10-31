@@ -419,14 +419,15 @@ mod tests {
         ];
         let buf = pack_lights(&l, &[0, 1], &slots);
         assert_eq!(read_u32(&buf, 0), 2);
-        // Light 0 at offset 16.
-        assert_eq!(read_f32(&buf, 16 + 0), 10.0);
-        assert_eq!(read_f32(&buf, 16 + 12), 30.0);
+        // Light 0 at offset 16: pos_range = (x, y, z, far) at offsets 0, 4, 8, 12.
+        assert_eq!(read_f32(&buf, 16 + 0), 10.0, "light 0 position.x at 16");
+        assert_eq!(read_f32(&buf, 16 + 8), 30.0, "light 0 position.z at 16 + 8");
+        assert_eq!(read_f32(&buf, 16 + 12), 10.0, "light 0 far at 16 + 12");
         // Light 1: position at offset 16 + 64, first_layer at offset 16 + 64 + 48.
         let base1 = 16 + 64;
         assert_eq!(read_f32(&buf, base1 + 0), 40.0, "light 1 position.x at 16 + 64");
-        assert_eq!(read_f32(&buf, base1 + 12), 60.0);
-        assert_eq!(read_f32(&buf, base1 + 16), 40.0, "light 1 far at 16 + 64 + 12");
+        assert_eq!(read_f32(&buf, base1 + 8), 60.0, "light 1 position.z at 16 + 64 + 8");
+        assert_eq!(read_f32(&buf, base1 + 12), 10.0, "light 1 far at 16 + 64 + 12");
         assert_eq!(read_f32(&buf, base1 + 48), 8.0, "light 1 first_layer at 16 + 64 + 48");
     }
 
