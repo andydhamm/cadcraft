@@ -80,7 +80,7 @@ pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
     if m.is_empty() {
         return None;
     }
-    let version = if m.views.is_empty() && m.lights.is_empty() { 8 } else { 9 };
+    let version = 9;
     let json = serde_json::to_string(&Payload { version, model: m.clone() }).ok()?;
     Some(crate::dxf_ext::json_chunks(&json))
 }
@@ -1202,7 +1202,7 @@ mod tests {
     fn arch_record_version_is_six() {
         let chunks = arch_chunks(&one_wall_model()).unwrap();
         let obj: serde_json::Value = serde_json::from_str(&chunks.join("")).unwrap();
-        assert_eq!(obj["version"].as_u64(), Some(8), "written payload version");
+        assert_eq!(obj["version"].as_u64(), Some(9), "written payload version");
     }
 
     /// A v7 payload (no site fields) still reads, with the site empty.
@@ -1244,7 +1244,7 @@ mod tests {
         let again = write_dxf(&back);
         assert_eq!(again.matches("CADCRAFT-SITE").count(), text.matches("CADCRAFT-SITE").count());
         let obj: serde_json::Value = serde_json::from_str(&arch_chunks(&back.arch).unwrap_or_default().join("")).unwrap_or_default();
-        assert_eq!(obj["version"].as_u64(), Some(8));
+        assert_eq!(obj["version"].as_u64(), Some(9));
     }
 
     #[test]
@@ -1904,7 +1904,7 @@ mod tests {
         let chunks = arch_chunks(&d.arch);
         assert!(chunks.is_some(), "arch_chunks should produce a v9 record with stairs/railings");
         let obj: serde_json::Value = serde_json::from_str(&chunks.unwrap().join("")).unwrap();
-        assert_eq!(obj["version"].as_u64(), Some(8), "written payload version should be 8");
+        assert_eq!(obj["version"].as_u64(), Some(9), "written payload version should be 9");
     }
 
     /// A v4 payload that carries stairs/railings clears them on parse.
