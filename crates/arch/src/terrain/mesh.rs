@@ -285,7 +285,7 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
                     }
                 }
                 if margin.is_finite() && *margin > 0.0 {
-                    if let Some(ring) = offset_polygon(polygon, &vec![margin; polygon.len()], true) {
+                    if let Some(ring) = offset_polygon(polygon, &vec![*margin; polygon.len()], true) {
                         for i in 0..ring.len() {
                             let a = ring[i];
                             let b = ring[(i + 1) % ring.len()];
@@ -345,7 +345,7 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
     // --- 3. Clip raw constraints to the boundary ---
     let mut clipped_constraints: Vec<[Vec2; 2]> = Vec::new();
     for [a, b] in &raw_constraints {
-        for sub in clip_to_poly(a, b, &boundary) {
+        for sub in clip_to_poly(*a, *b, &boundary) {
             clipped_constraints.push(sub);
             raw_pts.push(sub[0]);
             raw_pts.push(sub[1]);
@@ -372,7 +372,7 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
 
     // --- 6. Build CDT ---
     let pts3: Vec<Vec3> = pts.iter().map(|p| Vec3::new(p.x, p.y, 0.0)).collect();
-    let cdt = cadcraft_geom::cdt::triangulate_constrained(&pts3, &constraints).map_err(|e: cadcraft_geom::TinError| TerrainError(e.to_string()))?;
+    let cdt = cadcraft_geom::cdt::triangulate_constrained(&pts3, &constraints).map_err(|e| TerrainError(e.to_string()))?;
     let mut tin = cdt.tin;
 
     // --- 7. Retain inside boundary ---
@@ -561,14 +561,16 @@ mod tests {
         for (ti, tri) in mesh.triangles.iter().enumerate() {
             if tri.contains(&center_idx) {
                 let ki = tri.iter().position(|&c| c == center_idx).unwrap();
-                assert!((mesh.z[ti][ki] - 2.5).abs() < 1e-3, "hill center z={z}");
+                let z = mesh.z[ti][ki];
+                assert!((z - 2.5).abs() < 1e-3, "hill center z={z}");
             }
         }
         let ring_pt_idx = point_in_list(&mesh.xy, Vec2::new(12.5, 20.0)).unwrap();
         for (ti, tri) in mesh.triangles.iter().enumerate() {
             if tri.contains(&ring_pt_idx) {
                 let ki = tri.iter().position(|&c| c == ring_pt_idx).unwrap();
-                assert!((mesh.z[ti][ki] - 1.75).abs() < 0.01, "hill ring z={z}");
+                let z = mesh.z[ti][ki];
+                assert!((z - 1.75).abs() < 0.01, "hill ring z={z}");
             }
         }
     }
@@ -577,7 +579,7 @@ mod tests {
     fn site_mesh_stays_inside_the_boundary() {
         let boundary = flat_step_poly();
         let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
-        let model = make_model(boundary, points, vec![]);
+        let model = make_model(boundary.clone(), points, vec![]);
         let surf = SiteSurface::new(&model).unwrap();
         let mesh = site_mesh(&surf).unwrap();
         for &p in &mesh.xy {
