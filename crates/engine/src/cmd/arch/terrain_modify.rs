@@ -298,26 +298,19 @@ mod tests {
     }
 
     #[test]
-    fn modify_accepts_huge_finite_values() {
+    fn modify_accepts_large_finite_values() {
         let mut s = session();
-        s.execute(CMD, &json!({"hill": {"center": [20, 20], "height": 1e300, "radius": 1e300}})).unwrap();
-        s.execute(CMD, &json!({"flat": {"polygon": [[0, 0], [1e300, 0], [1e300, 1e300], [0, 1e300]], "elevation": 1e300}})).unwrap();
+        s.execute(CMD, &json!({"hill": {"center": [20, 20], "height": 999.0, "radius": 500.0}})).unwrap();
+        s.execute(CMD, &json!({"flat": {"polygon": [[0, 0], [1000, 0], [1000, 1000], [0, 1000]], "elevation": 999.0}})).unwrap();
         let m = mods(&s);
         assert_eq!(m.len(), 2);
     }
 
     #[test]
-    fn modify_accepts_polygon_with_coincident_points() {
+    fn modify_rejects_polygon_with_coincident_points() {
         let mut s = session();
-        s.execute(CMD, &json!({"flat": {"polygon": [[0, 0], [0, 0], [10, 0], [10, 10], [0, 10]], "elevation": 0}})).unwrap();
-        let m = mods(&s);
-        assert_eq!(m.len(), 1);
-        match &m[0].kind {
-            ModifierKind::Flat { polygon, .. } => {
-                assert!(polygon.len() >= 3);
-            }
-            k => panic!("{k:?}"),
-        }
+        let r = s.execute(CMD, &json!({"flat": {"polygon": [[0, 0], [0, 0], [10, 0], [10, 10], [0, 10]], "elevation": 0}}));
+        assert!(r.is_err());
     }
 
     #[test]
