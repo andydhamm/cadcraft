@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-31 16:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 16:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 10 of 13: Lighting, light fixtures and final renders — 0 of 1 segments merged**
 
-5,948 workspace tests passing at the last merge · 578 segments merged in all · 0 of 13 seats working
+5,954 workspace tests passing at the last merge · 579 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -20,23 +20,25 @@ Updated 2026-10-31 16:00 UTC. This page and the card in the README are regenerat
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
 | 9 | Terrain and site | done | 12 / 12 | 19.4 h |
-| 10 | Lighting, light fixtures and final renders | pending | — | 0.9 h so far · expected done Oct 31 17:12–Nov 01 09:45 UTC |
+| 10 | Lighting, light fixtures and final renders | pending | — | 1.2 h so far · expected done Oct 31 17:27–Nov 01 10:00 UTC |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
 | 13 | Polish | planned | — | — |
 
 ## Phase 10 segments
 
-1 merging
+1 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `upstream-sync-b6331c860` | merge upstream upstream/main up to b6331c860 (14 commits) | merging | darwin-ws3 |
+| `upstream-sync-b6331c860` | merge upstream upstream/main up to b6331c860 (14 commits) | working | darwin-ws3 |
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 31 16:15 | `upstream-sync-b6331c860` | refused | 6,008 pass | darwin-ws3 |
+| Oct 31 16:01 | `harden-p9-cmd-plant` | merged | 5,954 pass | tturbo-mac2 |
 | Oct 31 15:49 | `harden-p9-geom-cdt` | merged | 5,948 pass | tturbo-mac |
 | Oct 31 14:48 | `p9f-mesh-pad-slope` | refused | 5,943 pass | kimi-k31 |
 | Oct 31 14:33 | `harden-p9-cmd-site` | merged | 5,940 pass | tturbo-mac2 |
@@ -47,23 +49,21 @@ Updated 2026-10-31 16:00 UTC. This page and the card in the README are regenerat
 | Oct 31 12:11 | `harden-p9-render-site-plan` | merged | 5,911 pass | tturbo-mac |
 | Oct 31 11:35 | `harden-p9-cmd-terrain-query` | merged | 5,904 pass | tturbo-mac |
 | Oct 31 11:24 | `p9-render-site-plan` | merged | 5,899 pass | darwin-ws3 |
-| Oct 31 10:59 | `harden-p9-arch-terrain-volumes` | merged | 5,894 pass | tturbo-mac2 |
-| Oct 31 10:38 | `upstream-sync-7cee28580` | merged | 5,888 pass | claude-sonnet-c |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
 | bonsai-a | bonsai2-27b | merging | 730 |
-| bonsai-b | bonsai2-27b | gate | 678 |
+| bonsai-b | bonsai2-27b | merging | 679 |
 | bonsai-ws2-a | bonsai2-27b | idle | 733 |
 | bonsai-ws2-b | bonsai2-27b | idle | 694 |
 | claude-sonnet-a | sonnet | idle | 58 |
 | claude-sonnet-b | sonnet | idle | 55 |
 | claude-sonnet-c | sonnet | idle | 7 |
 | claude-sonnet-d | sonnet | idle | 2 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | merging | 584 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 584 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 106 |
 | mai-flash | mai-code-1.1-flash | idle | 28 |
 | tturbo-mac | tturbo-ultraheretic | agent | 504 |
-| tturbo-mac2 | tturbo-ultraheretic | merging | 325 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 325 |
