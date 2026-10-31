@@ -1,5 +1,5 @@
 # The demo: the phase-1 house on a sloping site with a pad, a driveway, a retaining wall and trees, rendered headless.
-# needs: p9-cmd-terrain, p9-cmd-terrain-modify, p9-arch-terrain-pad, p9-cmd-wall-retaining, p9-arch-retaining, p9-cmd-plant, p9-arch3d-plants, p9-arch3d-terrain-solid, p9-render-site-plan, p9-cli-render-sun-from-site, p9-io-site-proxies
+# needs: p9-cmd-terrain, p9-cmd-terrain-modify, p9-arch-terrain-pad, p9-cmd-wall-retaining, p9-arch-retaining, p9-cmd-plant, p9-arch3d-plants, p9-arch3d-terrain-solid, p9-render-site-plan, p9-cli-render-sun-from-site, p9-io-site-proxies, p9f-mesh-pad-slope
 import os, re, shutil
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p9lib.inc')).read())
 
