@@ -136,7 +136,6 @@ pub fn site_contours(mesh: &SiteMesh, minor: f64, major: f64) -> SiteContours {
         if is_major_level(level, major) {
             major_lines.extend(lines.clone());
         }
-        major_lines.extend(lines);
         minor_lines.extend(lines);
     }
 
