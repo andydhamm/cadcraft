@@ -301,4 +301,111 @@ mod tests {
         let short = ContourLine { elevation: 1.0, points: vec![Vec2::new(0.0, 0.0)], closed: false };
         assert_eq!(label_point(&short), None);
     }
+
+    #[test]
+    fn contours_empty_mesh_returns_empty() {
+        let mesh = SiteMesh::default();
+        let contours = site_contours(&mesh, 0.25, 1.0);
+        assert!(contours.minor.is_empty());
+        assert!(contours.major.is_empty());
+    }
+
+    #[test]
+    fn contours_flat_mesh_returns_empty() {
+        let mut mesh = SiteMesh::default();
+        mesh.xy = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0)];
+        mesh.triangles = vec![[0, 1, 2]];
+        mesh.z = vec![[1.0, 1.0, 1.0]];
+        let contours = site_contours(&mesh, 0.25, 1.0);
+        assert!(contours.minor.is_empty());
+        assert!(contours.major.is_empty());
+    }
+
+    #[test]
+    fn contours_negative_elevations() {
+        let mut mesh = SiteMesh::default();
+        mesh.xy = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        mesh.triangles = vec![[0, 1, 2], [0, 2, 3]];
+        mesh.z = vec![[0.0, 2.0, 2.0], [0.0, 2.0, 0.0]];
+        // Shift everything down by 3: z range is -3 to -1
+        for tri in mesh.z.iter_mut() {
+            for z in tri.iter_mut() {
+                *z -= 3.0;
+            }
+        }
+        let contours = site_contours(&mesh, 0.25, 1.0);
+        // Levels strictly between -3 and -1: -2.75, -2.5, -2.25, -2.0, -1.75, -1.5, -1.25
+        assert_eq!(contours.minor.len(), 7);
+        assert_eq!(contours.major.len(), 1);
+        assert!((contours.major[0].elevation - (-2.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn contours_major_equal_to_minor() {
+        let contours = site_contours(&sloped_mesh(), 0.25, 0.25);
+        // Every level is both minor and major
+        assert_eq!(contours.minor.len(), 7);
+        assert_eq!(contours.major.len(), 7);
+        for (m, M) in contours.minor.iter().zip(contours.major.iter()) {
+            assert!((m.elevation - M.elevation).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn contours_hostile_intervals() {
+        let mesh = sloped_mesh();
+        // NaN minor
+        let c = site_contours(&mesh, f64::NAN, 1.0);
+        assert!(c.minor.is_empty() && c.major.is_empty());
+        // NaN major
+        let c = site_contours(&mesh, 0.25, f64::NAN);
+        assert!(c.minor.is_empty() && c.major.is_empty());
+        // Negative minor
+        let c = site_contours(&mesh, -0.25, 1.0);
+        assert!(c.minor.is_empty() && c.major.is_empty());
+        // Minor below minimum interval
+        let c = site_contours(&mesh, 0.005, 1.0);
+        assert!(c.minor.is_empty() && c.major.is_empty());
+        // Major below minimum interval
+        let c = site_contours(&mesh, 0.25, 0.005);
+        assert!(c.minor.is_empty() && c.major.is_empty());
+        // Major finer than minor
+        let c = site_contours(&mesh, 1.0, 0.5);
+        assert!(c.minor.is_empty() && c.major.is_empty());
+        // Infinity
+        let c = site_contours(&mesh, f64::INFINITY, 1.0);
+        assert!(c.minor.is_empty() && c.major.is_empty());
+    }
+
+    #[test]
+    fn label_text_extreme_values() {
+        assert_eq!(label_text(1000000.0), "1000000.00");
+        assert_eq!(label_text(-1000000.0), "-1000000.00");
+        assert_eq!(label_text(0.001), "0.00");
+        assert_eq!(label_text(-0.001), "0.00");
+        assert_eq!(label_text(0.005), "0.01");
+        assert_eq!(label_text(-0.005), "-0.01");
+        assert_eq!(label_text(99.999), "100.00");
+    }
+
+    #[test]
+    fn label_point_zero_length_line() {
+        // All points at the same location
+        let line = ContourLine { elevation: 1.0, points: vec![Vec2::new(3.0, 4.0), Vec2::new(3.0, 4.0), Vec2::new(3.0, 4.0)], closed: false };
+        let p = label_point(&line);
+        assert_eq!(p, Some(Vec2::new(3.0, 4.0)));
+    }
+
+    #[test]
+    fn contours_single_triangle() {
+        let mut mesh = SiteMesh::default();
+        mesh.xy = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(0.0, 10.0)];
+        mesh.triangles = vec![[0, 1, 2]];
+        mesh.z = vec![[0.0, 2.0, 1.0]];
+        let contours = site_contours(&mesh, 0.5, 1.0);
+        // Levels strictly between 0 and 2: 0.5, 1.0, 1.5
+        assert_eq!(contours.minor.len(), 3);
+        assert_eq!(contours.major.len(), 1);
+        assert!((contours.major[0].elevation - 1.0).abs() < 1e-9);
+    }
 }
