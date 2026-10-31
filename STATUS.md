@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-31 06:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 06:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 9 of 13: Terrain and site — 20 of 27 segments merged · 2 of 12 acceptance checks**
 
-5,531 workspace tests passing at the last merge · 556 segments merged in all · 0 of 13 seats working
+5,538 workspace tests passing at the last merge · 557 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 06:15 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 2 / 12 | 10.6 h so far · expected done Oct 31 11:31–Oct 31 21:50 UTC |
+| 9 | Terrain and site | building | 2 / 12 | 10.9 h so far · expected done Oct 31 11:54–Oct 31 22:28 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -40,6 +40,7 @@ Updated 2026-10-31 06:15 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 31 06:25 | `harden-p9-cmd-terrain` | merged | 5,538 pass | tturbo-mac2 |
 | Oct 31 06:05 | `harden-p9-cmd-terrain-modify` | merged | 5,531 pass | tturbo-mac |
 | Oct 31 05:52 | `p9-arch-retaining` | merged | 5,524 pass | claude-sonnet-a |
 | Oct 31 05:22 | `p9-arch-terrain-mesh` | merged | 5,520 pass | bonsai-ws2-b |
@@ -51,7 +52,6 @@ Updated 2026-10-31 06:15 UTC. This page and the card in the README are regenerat
 | Oct 31 03:47 | `upstream-sync-ba3196e3f` | merged | 5,496 pass | claude-sonnet-b |
 | Oct 31 03:31 | `p9-cmd-terrain-modify` | merged | 5,475 pass | claude-sonnet-d |
 | Oct 31 03:11 | `p9-cmd-site-inspect` | merged | 5,470 pass | claude-sonnet-c |
-| Oct 31 02:53 | `harden-p8-housekeeping-guide-readme-uk` | merged | 5,466 pass | tturbo-mac |
 
 ## Seats active in the last hour
 
@@ -60,13 +60,13 @@ Updated 2026-10-31 06:15 UTC. This page and the card in the README are regenerat
 | bonsai-a | bonsai2-27b | idle | 709 |
 | bonsai-b | bonsai2-27b | idle | 668 |
 | bonsai-ws2-a | bonsai2-27b | merging | 709 |
-| bonsai-ws2-b | bonsai2-27b | gate | 679 |
+| bonsai-ws2-b | bonsai2-27b | gate | 681 |
 | claude-sonnet-a | sonnet | idle | 56 |
 | claude-sonnet-b | sonnet | merging | 54 |
 | claude-sonnet-c | sonnet | merging | 5 |
 | claude-sonnet-d | sonnet | merging | 2 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 569 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 571 |
 | kimi-k31 | k3.1-pro-highspeed | merging | 103 |
 | mai-flash | mai-code-1.1-flash | idle | 28 |
-| tturbo-mac | tturbo-ultraheretic | agent | 489 |
-| tturbo-mac2 | tturbo-ultraheretic | merging | 311 |
+| tturbo-mac | tturbo-ultraheretic | merging | 490 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 311 |
