@@ -56,6 +56,18 @@ fn parse_boundary(cmd: &str, v: &Value) -> Result<Vec<Vec2>> {
     if pts.len() >= 2 && (pts[0].x - pts[pts.len() - 1].x).hypot(pts[0].y - pts[pts.len() - 1].y) <= 1e-12 {
         pts.pop();
     }
+    // Deduplicate consecutive coincident points.
+    let mut deduped = Vec::with_capacity(pts.len());
+    for p in pts {
+        if deduped.last().is_some_and(|last: &Vec2| (last.x - p.x).hypot(last.y - p.y) <= 1e-12) {
+            continue;
+        }
+        deduped.push(p);
+    }
+    if deduped.len() >= 2 && (deduped[0].x - deduped[deduped.len() - 1].x).hypot(deduped[0].y - deduped[deduped.len() - 1].y) <= 1e-12 {
+        deduped.pop();
+    }
+    pts = deduped;
     if pts.len() < 3 {
         return Err(bad(cmd, "`boundary` must contain at least 3 points after dropping a closing point"));
     }
@@ -337,5 +349,124 @@ mod tests {
         let r = s.execute("terrain.delete", &json!({})).unwrap();
         assert_eq!(r["deleted"], "t0");
         assert!(s.doc().unwrap().arch.terrain.is_none());
+    }
+
+    #[test]
+    fn terrain_delete_refuses_when_none_exists() {
+        let mut s = Session::new();
+        let err = s.execute("terrain.delete", &json!({})).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::EngineError::BadParams { cmd, msg }
+                if cmd == "terrain.delete" && msg.contains("no terrain")
+        ));
+        assert!(s.doc().unwrap().arch.terrain.is_none());
+    }
+
+    #[test]
+    fn terrain_command_three_point_boundary() {
+        let mut s = Session::new();
+        let r = s
+            .execute(
+                "terrain",
+                &json!({
+                    "boundary": [[0.0, 0.0], [10.0, 0.0], [5.0, 10.0]],
+                    "points": [[0.0, 0.0, 0.0], [10.0, 0.0, 1.0], [5.0, 10.0, 0.5]]
+                }),
+            )
+            .unwrap();
+        assert_eq!(r["terrain"], "t0");
+        assert_eq!(r["points"], 3);
+        let triangles = r["triangles"].as_u64().unwrap();
+        assert!(triangles >= 1, "a three-point boundary must produce at least one triangle");
+    }
+
+    #[test]
+    fn terrain_command_drops_repeated_closing_point() {
+        let mut s = Session::new();
+        let r = s
+            .execute(
+                "terrain",
+                &json!({
+                    "boundary": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]],
+                    "points": [[0.0, 0.0, 0.0], [10.0, 10.0, 0.0]]
+                }),
+            )
+            .unwrap();
+        assert_eq!(r["terrain"], "t0");
+        let terrain = s.doc().unwrap().arch.terrain.as_ref().unwrap();
+        assert_eq!(terrain.boundary.len(), 4, "closing point should be dropped");
+        assert!((terrain.boundary[0].x - 0.0).abs() < 1e-12 && (terrain.boundary[0].y - 0.0).abs() < 1e-12, "first point unchanged");
+    }
+
+    #[test]
+    fn terrain_command_no_points_uses_default_elevation() {
+        let mut s = Session::new();
+        let r = s
+            .execute(
+                "terrain",
+                &json!({
+                    "boundary": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+                    "elevation": 5.0
+                }),
+            )
+            .unwrap();
+        assert_eq!(r["terrain"], "t0");
+        assert_eq!(r["points"], 0);
+        let range = r["range"].as_array().unwrap();
+        assert!((range[0].as_f64().unwrap() - 5.0).abs() < 1e-9, "min elevation should be 5.0");
+        assert!((range[1].as_f64().unwrap() - 5.0).abs() < 1e-9, "max elevation should be 5.0");
+    }
+
+    #[test]
+    fn terrain_command_contours_parameter() {
+        let mut s = Session::new();
+        s.execute(
+            "terrain",
+            &json!({
+                "boundary": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+                "points": [[0.0, 0.0, 0.0], [10.0, 10.0, 2.0]],
+                "contours": [0.5, 2.0]
+            }),
+        )
+        .unwrap();
+        let terrain = s.doc().unwrap().arch.terrain.as_ref().unwrap();
+        assert!((terrain.contour_minor - 0.5).abs() < 1e-12, "minor contour interval should be 0.5");
+        assert!((terrain.contour_major - 2.0).abs() < 1e-12, "major contour interval should be 2.0");
+    }
+
+    #[test]
+    fn terrain_command_huge_coordinate_values() {
+        let mut s = Session::new();
+        let r = s
+            .execute(
+                "terrain",
+                &json!({
+                    "boundary": [[0.0, 0.0], [100000.0, 0.0], [100000.0, 100000.0], [0.0, 100000.0]],
+                    "points": [[0.0, 0.0, 0.0], [100000.0, 100000.0, 1000.0]]
+                }),
+            )
+            .unwrap();
+        assert_eq!(r["terrain"], "t0");
+        let range = r["range"].as_array().unwrap();
+        assert!((range[0].as_f64().unwrap() - 0.0).abs() < 1e-6);
+        assert!((range[1].as_f64().unwrap() - 1000.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn terrain_command_coincident_adjacent_boundary_points() {
+        let mut s = Session::new();
+        let r = s
+            .execute(
+                "terrain",
+                &json!({
+                    "boundary": [[0.0, 0.0], [5.0, 5.0], [5.0, 5.0], [10.0, 0.0]],
+                    "points": [[0.0, 0.0, 0.0], [5.0, 5.0, 1.0], [10.0, 0.0, 0.0]]
+                }),
+            )
+            .unwrap();
+        assert_eq!(r["terrain"], "t0");
+        let terrain = s.doc().unwrap().arch.terrain.as_ref().unwrap();
+        assert_eq!(terrain.boundary.len(), 3, "coincident interior points are deduplicated");
     }
 }
