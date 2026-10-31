@@ -131,4 +131,82 @@ mod tests {
         assert!(cut.abs() < 1e-9, "cut {cut}");
         assert!(fill > 0.0, "fill {fill}");
     }
+
+    #[test]
+    fn cut_fill_of_an_empty_mesh_is_zero() {
+        let m = model(vec![]);
+        let surf = SiteSurface::new(&m).expect("surface");
+        let mesh = SiteMesh::default();
+        let (cut, fill) = cut_fill(&mesh, &surf);
+        assert_eq!(cut, 0.0);
+        assert_eq!(fill, 0.0);
+    }
+
+    #[test]
+    fn cut_fill_of_a_low_flat_region_is_all_cut() {
+        let poly = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        let (cut, fill) = volumes(vec![ModifierKind::Flat { polygon: poly, elevation: 0.0, margin: 0.0 }]);
+        assert!(fill.abs() < 1e-9, "fill {fill}");
+        assert!(cut > 0.0, "cut {cut}");
+    }
+
+    #[test]
+    fn cut_fill_skips_triangles_with_non_finite_z() {
+        let m = model(vec![]);
+        let surf = SiteSurface::new(&m).expect("surface");
+        let (a, b, c) = (Vec2::new(10.0, 10.0), Vec2::new(20.0, 10.0), Vec2::new(10.0, 20.0));
+        let o = |p: Vec2| surf.original_at(p).unwrap_or(0.0);
+        let mesh = SiteMesh {
+            xy: vec![a, b, c, a, b, c],
+            triangles: vec![[0, 1, 2], [3, 4, 5]],
+            z: vec![[f64::NAN, o(b), o(c)], [o(a) + 1.0, o(b) + 1.0, o(c) + 1.0]],
+            ..Default::default()
+        };
+        let (cut, fill) = cut_fill(&mesh, &surf);
+        assert!(cut.abs() < 1e-9, "cut {cut}");
+        assert!((fill - 50.0).abs() < 1e-9, "fill {fill}");
+    }
+
+    #[test]
+    fn cut_fill_degenerate_triangle_contributes_nothing() {
+        let m = model(vec![]);
+        let surf = SiteSurface::new(&m).expect("surface");
+        let (a, b, c) = (Vec2::new(10.0, 10.0), Vec2::new(20.0, 10.0), Vec2::new(30.0, 10.0));
+        let o = |p: Vec2| surf.original_at(p).unwrap_or(0.0);
+        let mesh = SiteMesh { xy: vec![a, b, c], triangles: vec![[0, 1, 2]], z: vec![[o(a) + 1.0, o(b) + 2.0, o(c) + 3.0]], ..Default::default() };
+        let (cut, fill) = cut_fill(&mesh, &surf);
+        assert!(cut.abs() < 1e-9, "cut {cut}");
+        assert!(fill.abs() < 1e-9, "fill {fill}");
+    }
+
+    #[test]
+    fn cut_fill_over_multiple_triangles() {
+        let m = model(vec![]);
+        let surf = SiteSurface::new(&m).expect("surface");
+        let (a, b, c, d) = (Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0));
+        let o = |p: Vec2| surf.original_at(p).unwrap_or(0.0);
+        let mesh = SiteMesh {
+            xy: vec![a, b, c, d],
+            triangles: vec![[0, 1, 2], [0, 2, 3]],
+            z: vec![[o(a) + 1.0, o(b) + 1.0, o(c) + 1.0], [o(a) + 1.0, o(c) + 1.0, o(d) + 1.0]],
+            ..Default::default()
+        };
+        let (cut, fill) = cut_fill(&mesh, &surf);
+        assert!(cut.abs() < 1e-9, "cut {cut}");
+        assert!((fill - 100.0).abs() < 1e-9, "fill {fill}");
+    }
+
+    #[test]
+    fn cut_fill_results_are_non_negative() {
+        let (cut, fill) = volumes(vec![
+            ModifierKind::Flat {
+                polygon: vec![Vec2::new(15.0, 10.0), Vec2::new(25.0, 10.0), Vec2::new(25.0, 20.0), Vec2::new(15.0, 20.0)],
+                elevation: 1.0,
+                margin: 0.0,
+            },
+            ModifierKind::Hill { center: Vec2::new(10.0, 5.0), height: 1.0, radius: 3.0 },
+        ]);
+        assert!(cut >= 0.0, "cut {cut}");
+        assert!(fill >= 0.0, "fill {fill}");
+    }
 }
