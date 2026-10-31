@@ -164,4 +164,48 @@ mod tests {
         assert_eq!(s.doc().unwrap().arch, before);
         assert_eq!(s.doc().unwrap().arch_revision, rev);
     }
+
+    #[test]
+    fn terrain_contours_refuses_without_terrain() {
+        let mut s = Session::new();
+        assert!(s.execute("terrain.contours", &json!({})).is_err());
+    }
+
+    #[test]
+    fn terrain_volumes_refuses_without_terrain() {
+        let mut s = Session::new();
+        assert!(s.execute("terrain.volumes", &json!({})).is_err());
+    }
+
+    #[test]
+    fn terrain_query_with_nan_and_infinite_points() {
+        let mut s = session([0.0; 4]);
+        let r = s.execute("terrain.query", &json!({"points": [[f64::NAN, 1.0], [f64::INFINITY, 1.0], [1.0, f64::NAN]]})).unwrap();
+        let e = r["elevations"].as_array().unwrap();
+        assert_eq!(e.len(), 3);
+        assert!(e[0].is_null());
+        assert!(e[1].is_null());
+        assert!(e[2].is_null());
+    }
+
+    #[test]
+    fn terrain_query_coincident_and_boundary_points() {
+        let mut s = session([0.0, 2.0, 2.0, 0.0]);
+        let r = s.execute("terrain.query", &json!({"points": [[0.0, 0.0], [10.0, 0.0], [5.0, 5.0], [5.0, 5.0]]})).unwrap();
+        let e = r["elevations"].as_array().unwrap();
+        assert_eq!(e.len(), 4);
+        assert!(e[0].as_f64().is_some());
+        assert!(e[1].as_f64().is_some());
+        assert_eq!(e[2], e[3]);
+    }
+
+    #[test]
+    fn terrain_query_huge_coordinate_values() {
+        let mut s = session([0.0; 4]);
+        let r = s.execute("terrain.query", &json!({"points": [[1e15, 1e15], [-1e15, -1e15]]})).unwrap();
+        let e = r["elevations"].as_array().unwrap();
+        assert_eq!(e.len(), 2);
+        assert!(e[0].is_null());
+        assert!(e[1].is_null());
+    }
 }
