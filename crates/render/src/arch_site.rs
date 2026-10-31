@@ -211,7 +211,13 @@ fn label_point_and_angle(pts: &[Vec2], closed: bool) -> Option<(Vec2, f64)> {
     let mid_idx = pts.len() / 2;
     let p = pts[mid_idx];
     let prev = pts[mid_idx.saturating_sub(1)];
-    let next = pts.get(mid_idx + 1).copied().unwrap_or(p);
+    let next = if mid_idx + 1 < pts.len() {
+        pts[mid_idx + 1]
+    } else if closed {
+        pts[0]
+    } else {
+        p
+    };
 
     let dir = next - prev;
     if dir.len() < 1e-6 {
@@ -320,7 +326,9 @@ fn plan_symbol(species: Option<&PlantSpecies>, pos: Vec2, spread: f64) -> Vec<Ve
 mod tests {
     use super::*;
     use cadcraft_doc::Drawing;
-    use cadcraft_doc::arch::{ArchId, ArchModel, CrownShape, ModifierKind, PathKind, Plant, PlantForm, PlantSpecies, SiteLocation, Terrain};
+    use cadcraft_doc::arch::{
+        ArchId, ArchModel, CrownShape, ModifierKind, PathKind, Plant, PlantForm, PlantSpecies, SiteLocation, Terrain, TerrainModifier,
+    };
     use cadcraft_geom::Vec2;
 
     fn setup_drawing() -> Drawing {
@@ -422,6 +430,96 @@ mod tests {
         let d = setup_drawing();
         let mut list = DisplayList::default();
         push_site(&d, &mut list, false);
+        assert!(list.prims.is_empty());
+    }
+
+    #[test]
+    fn site_plan_skips_non_finite_points() {
+        let mut d = setup_drawing();
+        let mut terrain = Terrain::default();
+        // Boundary with a NaN point in the middle
+        terrain.boundary =
+            vec![Vec2::new(0.0, 0.0), Vec2::new(f64::NAN, f64::NAN), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        // Line with an inf point
+        terrain.lines.push(cadcraft_doc::arch::ElevationLine {
+            points: vec![Vec2::new(1.0, 1.0), Vec2::new(f64::INFINITY, 1.0), Vec2::new(9.0, 1.0)],
+            elevation: 0.25,
+            closed: false,
+        });
+        d.arch.terrain = Some(terrain);
+
+        let mut list = DisplayList::default();
+        push_site(&d, &mut list, false);
+
+        // Should not panic and should draw something (the finite parts)
+        assert!(!list.prims.is_empty());
+    }
+
+    #[test]
+    fn site_plan_major_contour_edge_cases() {
+        let mut d = setup_drawing();
+        let mut terrain = Terrain::default();
+        terrain.contour_major = 1.0;
+        // Elevation 0.0 should be major (0 % 1.0 == 0)
+        terrain.lines.push(cadcraft_doc::arch::ElevationLine {
+            points: vec![Vec2::new(1.0, 1.0), Vec2::new(9.0, 1.0)],
+            elevation: 0.0,
+            closed: false,
+        });
+        // Elevation 0.5 should be minor
+        terrain.lines.push(cadcraft_doc::arch::ElevationLine {
+            points: vec![Vec2::new(1.0, 2.0), Vec2::new(9.0, 2.0)],
+            elevation: 0.5,
+            closed: false,
+        });
+        // Elevation -1.0 should be major
+        terrain.lines.push(cadcraft_doc::arch::ElevationLine {
+            points: vec![Vec2::new(1.0, 3.0), Vec2::new(9.0, 3.0)],
+            elevation: -1.0,
+            closed: false,
+        });
+        d.arch.terrain = Some(terrain);
+
+        let mut list = DisplayList::default();
+        push_site(&d, &mut list, false);
+
+        // Should draw all three lines (2 major with labels, 1 minor)
+        assert!(!list.prims.is_empty());
+    }
+
+    #[test]
+    fn site_plan_draws_path_modifier() {
+        let mut d = setup_drawing();
+        let mut terrain = Terrain::default();
+        terrain.modifiers.push(TerrainModifier {
+            id: ArchId(0),
+            kind: ModifierKind::Path {
+                kind: PathKind::Road,
+                polygon: vec![Vec2::new(1.0, 1.0), Vec2::new(9.0, 1.0), Vec2::new(9.0, 2.0), Vec2::new(1.0, 2.0)],
+                thickness: 0.1,
+                material: "asphalt".to_string(),
+            },
+        });
+        d.arch.terrain = Some(terrain);
+
+        let mut list = DisplayList::default();
+        push_site(&d, &mut list, false);
+
+        // Should draw the path polygon on C-ROAD
+        assert!(!list.prims.is_empty());
+    }
+
+    #[test]
+    fn site_plan_hill_with_zero_radius_draws_nothing() {
+        let mut d = setup_drawing();
+        let mut terrain = Terrain::default();
+        terrain.modifiers.push(TerrainModifier { id: ArchId(0), kind: ModifierKind::Hill { center: Vec2::new(5.0, 5.0), height: 1.0, radius: 0.0 } });
+        d.arch.terrain = Some(terrain);
+
+        let mut list = DisplayList::default();
+        push_site(&d, &mut list, false);
+
+        // Zero radius hill should not draw a circle
         assert!(list.prims.is_empty());
     }
 }
