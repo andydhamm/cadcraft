@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-31 00:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 01:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 9 of 13: Terrain and site — 8 of 25 segments merged · 0 of 12 acceptance checks**
+**Phase 9 of 13: Terrain and site — 11 of 25 segments merged · 0 of 12 acceptance checks**
 
-5,408 workspace tests passing at the last merge · 538 segments merged in all · 0 of 11 seats working · PAUSED
+5,419 workspace tests passing at the last merge · 542 segments merged in all · 0 of 13 seats working · PAUSED
 
 ## Phases
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 00:45 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 0 / 12 | 5.1 h so far · expected done Oct 31 12:24–Nov 01 03:02 UTC |
+| 9 | Terrain and site | building | 0 / 12 | 5.4 h so far · expected done Oct 31 11:23–Nov 01 01:42 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,18 +27,17 @@ Updated 2026-10-31 00:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-14 queued, 8 merged, 2 gate, 1 merging
+13 queued, 11 merged, 1 gate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p9-geom-cdt` | Constrained Delaunay triangulation (breaklines are edges) | gate | kimi-k31 |
-| `p9-cli-render-sun-from-site` | `render --sun` takes the latitude and true north from the site | gate | bonsai-ws2-b |
-| `p9-small-convert-and-glb-names` | `convert` detection message counts; GLB floor and ceiling node names | merging | claude-sonnet-b |
+| `p9-arch-terrain-tin` | Terrain validation and the original surface (constrained TIN clipped to the boundary) | gate | mai-flash |
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 31 00:45 | `harden-p9-arch-plant` | merged | 5,419 pass | tturbo-mac2 |
 | Oct 31 00:23 | `p9-cmd-site` | merged | 5,408 pass | bonsai-b |
 | Oct 30 23:48 | `p9-cmd-plant` | merged | 5,403 pass | mai-flash |
 | Oct 30 23:05 | `p9-cmd-wall-retaining` | merged | 5,398 pass | claude-sonnet-a |
@@ -50,20 +49,21 @@ Updated 2026-10-31 00:45 UTC. This page and the card in the README are regenerat
 | Oct 30 17:32 | `harden-p8f-rooms-arrangement-once` | merged | 5,359 pass | tturbo-mac |
 | Oct 30 17:07 | `harden-p8f-orbit-fit-bounding-sphere` | merged | 5,351 pass | tturbo-mac |
 | Oct 30 16:59 | `harden-p8-detect-junctions` | merged | 5,345 pass | tturbo-mac2 |
-| Oct 30 16:43 | `p8f-walls-stop-at-crossing-faces` | merged | 5,339 pass | mai-flash |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | idle | 703 |
-| bonsai-b | bonsai2-27b | gate | 661 |
-| bonsai-ws2-a | bonsai2-27b | idle | 702 |
-| bonsai-ws2-b | bonsai2-27b | gate | 660 |
+| bonsai-a | bonsai2-27b | agent | 703 |
+| bonsai-b | bonsai2-27b | agent | 661 |
+| bonsai-ws2-a | bonsai2-27b | gate | 702 |
+| bonsai-ws2-b | bonsai2-27b | idle | 661 |
 | claude-sonnet-a | sonnet | idle | 55 |
-| claude-sonnet-b | sonnet | merging | 49 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 558 |
-| kimi-k31 | k3.1-pro-highspeed | gate | 97 |
-| mai-flash | mai-code-1.1-flash | idle | 26 |
-| tturbo-mac | tturbo-ultraheretic | merging | 482 |
-| tturbo-mac2 | tturbo-ultraheretic | merging | 304 |
+| claude-sonnet-b | sonnet | idle | 49 |
+| claude-sonnet-c | sonnet | idle | 0 |
+| claude-sonnet-d | sonnet | idle | 0 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 558 |
+| kimi-k31 | k3.1-pro-highspeed | idle | 98 |
+| mai-flash | mai-code-1.1-flash | gate | 26 |
+| tturbo-mac | tturbo-ultraheretic | agent | 482 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 304 |
