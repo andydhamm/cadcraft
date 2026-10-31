@@ -291,4 +291,76 @@ mod tests {
         let model = ArchModel::default();
         assert!(pad_regions(&model).is_empty());
     }
+
+    #[test]
+    fn multiple_basements_each_get_a_region() {
+        let mut model = make_house_model();
+        model.levels.insert(0, Level { index: u32::MAX, name: "Lower Basement".into(), elevation: -5.4, ..Default::default() });
+        for (i, (start, end)) in [
+            (Vec2::new(15.0, 11.0), Vec2::new(25.0, 11.0)),
+            (Vec2::new(25.0, 11.0), Vec2::new(25.0, 19.0)),
+            (Vec2::new(25.0, 19.0), Vec2::new(15.0, 19.0)),
+            (Vec2::new(15.0, 19.0), Vec2::new(15.0, 11.0)),
+        ]
+        .iter()
+        .enumerate()
+        {
+            model.walls.push(Wall {
+                id: cadcraft_doc::ArchId(8 + i as u32),
+                start: *start,
+                end: *end,
+                base_level: u32::MAX,
+                thickness: 0.2,
+                exterior: true,
+                ..Wall::default()
+            });
+        }
+        let regions = pad_regions(&model);
+        assert_eq!(regions.len(), 3);
+        assert_eq!(regions[0].kind, PadKind::Pad);
+        assert_eq!(regions[1].kind, PadKind::Basement);
+        assert_eq!(regions[1].elevation, -3.0);
+        assert_eq!(regions[2].kind, PadKind::Basement);
+        assert_eq!(regions[2].elevation, -5.7);
+    }
+
+    #[test]
+    fn pad_grades_up_when_ground_is_higher() {
+        let region = PadRegion {
+            kind: PadKind::Pad,
+            ring: vec![Vec2::new(14.9, 11.0), Vec2::new(25.1, 11.0), Vec2::new(25.1, 19.0), Vec2::new(14.9, 19.0)],
+            elevation: -0.3,
+            margin: 0.3,
+        };
+        // Ground at 0.0 is higher than pad at -0.3. At d=0.5, s=0.2:
+        // z = min(0.0, -0.3 + 0.5*0.2) = min(0.0, -0.2) = -0.2
+        let z = apply_pads(&[region], Vec2::new(14.4, 15.0), Vec2::new(14.4, 15.0), 0.0);
+        assert!((z - (-0.2)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn apply_pads_handles_nan_inputs() {
+        let region = PadRegion {
+            kind: PadKind::Pad,
+            ring: vec![Vec2::new(14.9, 11.0), Vec2::new(25.1, 11.0), Vec2::new(25.1, 19.0), Vec2::new(14.9, 19.0)],
+            elevation: -0.3,
+            margin: 0.3,
+        };
+        // NaN point returns z unchanged
+        let z = apply_pads(&[region.clone()], Vec2::new(f64::NAN, 15.0), Vec2::new(20.0, 15.0), 0.5);
+        assert!((z - 0.5).abs() < 1e-9);
+        // NaN elevation falls back to z
+        let region_nan = PadRegion { kind: PadKind::Pad, ring: region.ring.clone(), elevation: f64::NAN, margin: 0.3 };
+        let z = apply_pads(&[region_nan], Vec2::new(20.0, 15.0), Vec2::new(20.0, 15.0), 0.5);
+        assert!((z - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn degenerate_ring_distance_is_computed() {
+        let region = PadRegion { kind: PadKind::Pad, ring: vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)], elevation: -0.3, margin: 0.0 };
+        // Point (0.5, 2.0) is 2.0 away from the segment; d=2.0, s=2.0
+        // z = max(0.5, -0.3 - 0.5*2.0) = max(0.5, -1.3) = 0.5
+        let z = apply_pads(&[region], Vec2::new(0.5, 2.0), Vec2::new(0.5, 2.0), 0.5);
+        assert!((z - 0.5).abs() < 1e-9);
+    }
 }
