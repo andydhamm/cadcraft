@@ -686,13 +686,14 @@ mod tests {
 
     #[test]
     fn sun_light_dir_equator_equinox_noon_is_overhead() {
-        // At the equator on the March equinox at solar noon, the sun is directly overhead:
-        // elevation 90°, so the direction vector should be (0, 0, 1).
+        // At the equator on the March equinox at solar noon, the sun is nearly directly overhead:
+        // elevation ~90°, so the direction vector should be close to (0, 0, 1). The NOAA
+        // fractional-year formula is an approximation, so a small azimuth is expected.
         let site = cadcraft_engine::doc::arch::SiteLocation { latitude: 0.0, true_north: 0.0, ..Default::default() };
         let dir = sun_light_dir(None, "2026-03-20", "solar-noon", Some(&site)).unwrap();
-        assert!((dir[0]).abs() < 1e-6, "x should be ~0 at equator equinox noon, got {}", dir[0]);
-        assert!((dir[1]).abs() < 1e-6, "y should be ~0 at equator equinox noon, got {}", dir[1]);
-        assert!((dir[2] - 1.0).abs() < 1e-6, "z should be ~1 at equator equinox noon, got {}", dir[2]);
+        assert!((dir[0]).abs() < 0.01, "x should be ~0 at equator equinox noon, got {}", dir[0]);
+        assert!((dir[1]).abs() < 0.01, "y should be ~0 at equator equinox noon, got {}", dir[1]);
+        assert!((dir[2] - 1.0).abs() < 0.01, "z should be ~1 at equator equinox noon, got {}", dir[2]);
     }
 
     #[test]
