@@ -197,4 +197,64 @@ mod tests {
         let again = crate::write_dxf(&back);
         assert_eq!(again.matches("CADCRAFT-SITE").count(), text.matches("CADCRAFT-SITE").count());
     }
+
+    #[test]
+    fn site_proxies_empty_model() {
+        let m = ArchModel::default();
+        let p = proxy_site_entities(&m);
+        assert_eq!(p.len(), 0, "empty model should produce no site proxies");
+    }
+
+    #[test]
+    fn site_proxies_skip_unknown_species() {
+        let mut m = sloped();
+        m.plants.push(Plant { species: "Nonexistent Species".into(), position: Vec2::new(3.0, 3.0), age: 50.0, ..Plant::default() });
+        let p = proxy_site_entities(&m);
+        let plant_circles = p.iter().filter(|(k, l, _)| k == "CIRCLE" && l == "L-PLNT").count();
+        assert_eq!(plant_circles, 1, "unknown species should be skipped, only Red Oak proxy written");
+    }
+
+    #[test]
+    fn site_proxies_skip_nan_plant_position() {
+        let mut m = sloped();
+        m.plants.push(Plant { species: "Red Oak".into(), position: Vec2::new(f64::NAN, 3.0), age: 50.0, ..Plant::default() });
+        let p = proxy_site_entities(&m);
+        let plant_circles = p.iter().filter(|(k, l, _)| k == "CIRCLE" && l == "L-PLNT").count();
+        assert_eq!(plant_circles, 1, "NaN plant position should be skipped");
+    }
+
+    #[test]
+    fn site_proxies_hill_modifier_produces_no_proxy() {
+        use cadcraft_doc::arch::{ModifierKind, TerrainModifier};
+        let mut m = sloped();
+        if let Some(t) = m.terrain.as_mut() {
+            t.modifiers.push(TerrainModifier { id: 0, kind: ModifierKind::Hill { center: Vec2::new(5.0, 5.0), height: 1.0, radius: 2.0 } });
+        }
+        let p = proxy_site_entities(&m);
+        let grade_polys = p.iter().filter(|(k, l, _)| k == "LWPOLYLINE" && l == "C-TOPO-GRAD").count();
+        assert_eq!(grade_polys, 0, "Hill modifier should produce no grade polyline");
+    }
+
+    #[test]
+    fn site_proxies_boundary_too_short() {
+        let mut m = ArchModel::default();
+        m.terrain = Some(Terrain {
+            boundary: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)],
+            points: vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 0.0, 0.0)],
+            ..Terrain::default()
+        });
+        let p = proxy_site_entities(&m);
+        let boundary_polys = p.iter().filter(|(k, l, _)| k == "LWPOLYLINE" && l == "C-TOPO-BNDY").count();
+        assert_eq!(boundary_polys, 0, "boundary with fewer than 3 points should produce no proxy");
+    }
+
+    #[test]
+    fn site_proxies_multiple_plants() {
+        let mut m = sloped();
+        m.plants.push(Plant { species: "Red Oak".into(), position: Vec2::new(3.0, 3.0), age: 50.0, ..Plant::default() });
+        m.plants.push(Plant { species: "Red Oak".into(), position: Vec2::new(7.0, 7.0), age: 50.0, ..Plant::default() });
+        let p = proxy_site_entities(&m);
+        let plant_circles = p.iter().filter(|(k, l, _)| k == "CIRCLE" && l == "L-PLNT").count();
+        assert_eq!(plant_circles, 3, "all three plants should produce circle proxies");
+    }
 }

@@ -2272,4 +2272,88 @@ mod tests {
             assert_eq!(got.room_type, w.room_type, "room {} type changed on round trip", i);
         }
     }
+
+    #[test]
+    fn arch_chunks_writes_record_for_terrain_only() {
+        use cadcraft_doc::arch::Terrain;
+        let mut m = ArchModel::default();
+        m.terrain = Some(Terrain {
+            boundary: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)],
+            points: vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 2.0)],
+            ..Terrain::default()
+        });
+        let chunks = arch_chunks(&m);
+        assert!(chunks.is_some(), "a model with only terrain must write an XRECORD");
+    }
+
+    #[test]
+    fn arch_chunks_writes_record_for_plants_only() {
+        use cadcraft_doc::arch::Plant;
+        let mut m = ArchModel::default();
+        m.plants.push(Plant { species: "Red Oak".into(), position: Vec2::new(5.0, 5.0), ..Plant::default() });
+        let chunks = arch_chunks(&m);
+        assert!(chunks.is_some(), "a model with only plants must write an XRECORD");
+    }
+
+    #[test]
+    fn arch_chunks_writes_record_for_site_only() {
+        use cadcraft_doc::arch::SiteLocation;
+        let mut m = ArchModel::default();
+        m.site = Some(SiteLocation { latitude: 45.0, true_north: 20.0, ..SiteLocation::default() });
+        let chunks = arch_chunks(&m);
+        assert!(chunks.is_some(), "a model with only a site location must write an XRECORD");
+    }
+
+    #[test]
+    fn v7_payload_clears_site_fields() {
+        use cadcraft_doc::arch::{Plant, SiteLocation, Terrain};
+        let mut m = one_wall_model();
+        m.site = Some(SiteLocation { latitude: 45.0, true_north: 20.0, ..SiteLocation::default() });
+        m.terrain = Some(Terrain {
+            boundary: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)],
+            points: vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 2.0)],
+            ..Terrain::default()
+        });
+        m.plants.push(Plant { species: "Red Oak".into(), position: Vec2::new(5.0, 5.0), ..Plant::default() });
+        let json = serde_json::json!({ "version": 7, "model": m }).to_string();
+        let text = crate::dxf_ext::json_chunks(&json).join("");
+        let parsed = parse_arch(&text).expect("a version-7 payload must still parse");
+        assert!(parsed.site.is_none(), "a v7 payload must clear site");
+        assert!(parsed.terrain.is_none(), "a v7 payload must clear terrain");
+        assert!(parsed.plants.is_empty(), "a v7 payload must clear plants");
+    }
+
+    #[test]
+    fn terrain_with_nan_points_round_trips() {
+        use cadcraft_doc::arch::Terrain;
+        let mut d = Drawing::new_metric();
+        d.arch.terrain = Some(Terrain {
+            boundary: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)],
+            points: vec![Vec3::new(f64::NAN, 0.0, 0.0), Vec3::new(10.0, 10.0, 2.0)],
+            ..Terrain::default()
+        });
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes());
+        assert!(back.is_ok(), "terrain with NaN point must not break DXF round trip");
+    }
+
+    #[test]
+    fn retaining_wall_fields_round_trip() {
+        let mut d = Drawing::new_metric();
+        let wid = d.arch.push_wall(Wall::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.3));
+        if let Some(w) = d.arch.wall(wid) {
+            let w = w.clone();
+            let mut w2 = w;
+            w2.retaining = true;
+            w2.freeboard = Some(0.2);
+            w2.footing = Some(0.3);
+            d.arch.walls[0] = w2;
+        }
+        let want = d.arch.walls[0].clone();
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).unwrap();
+        assert_eq!(back.arch.walls[0].retaining, want.retaining, "retaining flag lost on round trip");
+        assert_eq!(back.arch.walls[0].freeboard, want.freeboard, "freeboard lost on round trip");
+        assert_eq!(back.arch.walls[0].footing, want.footing, "footing lost on round trip");
+    }
 }
