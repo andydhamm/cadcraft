@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-31 09:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 09:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 9 of 13: Terrain and site — 25 of 29 segments merged · 2 of 12 acceptance checks**
+**Phase 9 of 13: Terrain and site — 26 of 29 segments merged · 6 of 12 acceptance checks**
 
-5,852 workspace tests passing at the last merge · 563 segments merged in all · 0 of 13 seats working
+5,864 workspace tests passing at the last merge · 565 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 09:30 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 2 / 12 | 13.9 h so far · expected done Oct 31 12:50–Oct 31 21:21 UTC |
+| 9 | Terrain and site | building | 6 / 12 | 14.1 h so far · expected done Oct 31 12:36–Oct 31 20:51 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,11 +27,10 @@ Updated 2026-10-31 09:30 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-25 merged, 3 merging, 1 working
+26 merged, 2 merging, 1 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p9-cmd-terrain-query` | `terrain.query`, `terrain.contours` and `terrain.volumes` | merging | claude-sonnet-b |
 | `p9-render-site-plan` | The site in the plan: contours, labels, boundary, paths, plants, north arrow | working | kimi-k31 |
 | `p9-io-site-proxies` | Site proxies on save, the arch record v8 | merging | claude-sonnet-a |
 | `upstream-sync-7cee28580` | merge upstream upstream/main up to 7cee28580 (5 commits) | merging | claude-sonnet-c |
@@ -40,6 +39,8 @@ Updated 2026-10-31 09:30 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 31 09:44 | `p9-cmd-terrain-query` | merged | 5,864 pass | claude-sonnet-b |
+| Oct 31 09:36 | `harden-p9-arch-terrain-mesh` | merged | 5,859 pass | tturbo-mac2 |
 | Oct 31 08:26 | `upstream-sync-a1335895f` | merged | 5,852 pass | claude-sonnet-c |
 | Oct 31 07:48 | `harden-p9-arch-retaining` | merged | 5,844 pass | tturbo-mac |
 | Oct 31 07:20 | `p9-arch-terrain-contours` | merged | 5,834 pass | kimi-k31 |
@@ -50,23 +51,21 @@ Updated 2026-10-31 09:30 UTC. This page and the card in the README are regenerat
 | Oct 31 06:05 | `harden-p9-cmd-terrain-modify` | merged | 5,531 pass | tturbo-mac |
 | Oct 31 05:52 | `p9-arch-retaining` | merged | 5,524 pass | claude-sonnet-a |
 | Oct 31 05:22 | `p9-arch-terrain-mesh` | merged | 5,520 pass | bonsai-ws2-b |
-| Oct 31 05:09 | `upstream-sync-b22a06826` | refused | 5,795 pass | claude-sonnet-c |
-| Oct 31 04:49 | `harden-p9-arch-terrain-tin` | merged | 5,514 pass | tturbo-mac2 |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | gate | 714 |
+| bonsai-a | bonsai2-27b | merging | 715 |
 | bonsai-b | bonsai2-27b | merging | 673 |
-| bonsai-ws2-a | bonsai2-27b | gate | 714 |
+| bonsai-ws2-a | bonsai2-27b | merging | 715 |
 | bonsai-ws2-b | bonsai2-27b | idle | 685 |
 | claude-sonnet-a | sonnet | merging | 58 |
-| claude-sonnet-b | sonnet | merging | 55 |
+| claude-sonnet-b | sonnet | idle | 55 |
 | claude-sonnet-c | sonnet | merging | 7 |
 | claude-sonnet-d | sonnet | idle | 2 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | merging | 578 |
 | kimi-k31 | k3.1-pro-highspeed | agent | 103 |
 | mai-flash | mai-code-1.1-flash | idle | 28 |
 | tturbo-mac | tturbo-ultraheretic | merging | 491 |
-| tturbo-mac2 | tturbo-ultraheretic | merging | 314 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 314 |
