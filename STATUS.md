@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-31 05:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 05:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 9 of 13: Terrain and site — 19 of 27 segments merged · 2 of 12 acceptance checks**
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 05:30 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 2 / 12 | 9.9 h so far · expected done Oct 31 11:15–Oct 31 21:46 UTC |
+| 9 | Terrain and site | building | 2 / 12 | 10.1 h so far · expected done Oct 31 11:39–Oct 31 22:26 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,14 +27,14 @@ Updated 2026-10-31 05:30 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-19 merged, 3 gate, 3 queued, 2 merging
+19 merged, 3 merging, 3 queued, 1 working, 1 gate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p9-arch-terrain-contours` | Contours of the site mesh, minor and major, with labels | gate | bonsai-ws2-b |
+| `p9-arch-terrain-contours` | Contours of the site mesh, minor and major, with labels | working | bonsai-ws2-b |
 | `p9-arch-terrain-volumes` | Cut and fill, exact on piecewise-linear surfaces | gate | claude-sonnet-b |
 | `p9-arch-retaining` | Retaining walls follow the ground on each side | merging | claude-sonnet-a |
-| `p9-arch3d-terrain-solid` | The terrain solid with its skirt, and draped paths | gate | claude-sonnet-d |
+| `p9-arch3d-terrain-solid` | The terrain solid with its skirt, and draped paths | merging | claude-sonnet-d |
 | `upstream-sync-b22a06826` | merge upstream upstream/main up to b22a06826 (35 commits) | merging | claude-sonnet-c |
 
 ## Recent merges
@@ -58,15 +58,15 @@ Updated 2026-10-31 05:30 UTC. This page and the card in the README are regenerat
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | agent | 707 |
-| bonsai-b | bonsai2-27b | agent | 666 |
-| bonsai-ws2-a | bonsai2-27b | agent | 706 |
-| bonsai-ws2-b | bonsai2-27b | gate | 674 |
+| bonsai-a | bonsai2-27b | gate | 707 |
+| bonsai-b | bonsai2-27b | gate | 666 |
+| bonsai-ws2-a | bonsai2-27b | gate | 707 |
+| bonsai-ws2-b | bonsai2-27b | agent | 675 |
 | claude-sonnet-a | sonnet | idle | 56 |
-| claude-sonnet-b | sonnet | gate | 52 |
+| claude-sonnet-b | sonnet | gate | 53 |
 | claude-sonnet-c | sonnet | merging | 5 |
-| claude-sonnet-d | sonnet | gate | 1 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 563 |
+| claude-sonnet-d | sonnet | merging | 2 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 565 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 101 |
 | mai-flash | mai-code-1.1-flash | idle | 28 |
 | tturbo-mac | tturbo-ultraheretic | merging | 489 |
