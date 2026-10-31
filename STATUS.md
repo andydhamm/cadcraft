@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-31 04:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 04:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 9 of 13: Terrain and site — 17 of 27 segments merged · 1 of 12 acceptance checks**
 
-5,501 workspace tests passing at the last merge · 550 segments merged in all · 0 of 13 seats working
+5,506 workspace tests passing at the last merge · 551 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 04:15 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 1 / 12 | 8.6 h so far · expected done Oct 31 11:07–Oct 31 22:18 UTC |
+| 9 | Terrain and site | building | 1 / 12 | 8.9 h so far · expected done Oct 31 11:34–Oct 31 23:05 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,19 +27,20 @@ Updated 2026-10-31 04:15 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-17 merged, 6 queued, 3 merging, 1 gate
+17 merged, 6 queued, 4 merging
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p9-arch-terrain-mesh` | The site mesh: breaklines as edges, an elevation per triangle corner | merging | claude-sonnet-b |
 | `p9-arch-retaining` | Retaining walls follow the ground on each side | merging | claude-sonnet-a |
 | `p9-arch3d-plants` | Plants in 3D: trunk and crown | merging | kimi-k31 |
-| `upstream-sync-b22a06826` | merge upstream upstream/main up to b22a06826 (35 commits) | gate | claude-sonnet-c |
+| `upstream-sync-b22a06826` | merge upstream upstream/main up to b22a06826 (35 commits) | merging | claude-sonnet-c |
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 31 04:22 | `harden-p9-cmd-site-inspect` | merged | 5,506 pass | tturbo-mac2 |
 | Oct 31 04:07 | `p9-cmd-terrain` | merged | 5,501 pass | mai-flash |
 | Oct 31 03:47 | `upstream-sync-ba3196e3f` | merged | 5,496 pass | claude-sonnet-b |
 | Oct 31 03:31 | `p9-cmd-terrain-modify` | merged | 5,475 pass | claude-sonnet-d |
@@ -51,7 +52,6 @@ Updated 2026-10-31 04:15 UTC. This page and the card in the README are regenerat
 | Oct 31 00:45 | `harden-p9-arch-plant` | merged | 5,419 pass | tturbo-mac2 |
 | Oct 31 00:23 | `p9-cmd-site` | merged | 5,408 pass | bonsai-b |
 | Oct 30 23:48 | `p9-cmd-plant` | merged | 5,403 pass | mai-flash |
-| Oct 30 23:05 | `p9-cmd-wall-retaining` | merged | 5,398 pass | claude-sonnet-a |
 
 ## Seats active in the last hour
 
@@ -60,13 +60,13 @@ Updated 2026-10-31 04:15 UTC. This page and the card in the README are regenerat
 | bonsai-a | bonsai2-27b | idle | 707 |
 | bonsai-b | bonsai2-27b | idle | 666 |
 | bonsai-ws2-a | bonsai2-27b | idle | 706 |
-| bonsai-ws2-b | bonsai2-27b | gate | 671 |
+| bonsai-ws2-b | bonsai2-27b | merging | 674 |
 | claude-sonnet-a | sonnet | idle | 56 |
 | claude-sonnet-b | sonnet | idle | 52 |
-| claude-sonnet-c | sonnet | gate | 2 |
+| claude-sonnet-c | sonnet | merging | 4 |
 | claude-sonnet-d | sonnet | idle | 1 |
 | darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 563 |
 | kimi-k31 | k3.1-pro-highspeed | merging | 101 |
 | mai-flash | mai-code-1.1-flash | idle | 28 |
-| tturbo-mac | tturbo-ultraheretic | agent | 486 |
-| tturbo-mac2 | tturbo-ultraheretic | merging | 308 |
+| tturbo-mac | tturbo-ultraheretic | gate | 486 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 308 |
