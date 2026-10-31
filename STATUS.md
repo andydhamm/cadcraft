@@ -1,6 +1,6 @@
 # arch3d build status
 
-Updated 2026-10-31 02:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 02:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 9 of 13: Terrain and site — 12 of 26 segments merged · 0 of 12 acceptance checks**
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 02:00 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 0 / 12 | 6.4 h so far · expected done Oct 31 12:46–Nov 01 03:38 UTC |
+| 9 | Terrain and site | building | 0 / 12 | 6.6 h so far · expected done Oct 31 13:26–Nov 01 04:52 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,13 +27,13 @@ Updated 2026-10-31 02:00 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-12 merged, 9 queued, 3 gate, 2 merging
+12 merged, 9 queued, 4 merging, 1 gate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
 | `p9-arch-terrain-surface` | The modified surface as an exact elevation function | merging | claude-sonnet-b |
-| `p9-cmd-terrain` | `terrain` and `terrain.delete` commands | gate | mai-flash |
-| `p9-cmd-terrain-modify` | `terrain.modify`: flat regions, hills, valleys, roads, driveways and sidewalks | gate | claude-sonnet-d |
+| `p9-cmd-terrain` | `terrain` and `terrain.delete` commands | merging | mai-flash |
+| `p9-cmd-terrain-modify` | `terrain.modify`: flat regions, hills, valleys, roads, driveways and sidewalks | merging | claude-sonnet-d |
 | `p9-cmd-site-inspect` | `arch.inspect` site, terrain and plants | merging | claude-sonnet-c |
 | `upstream-sync-ba3196e3f` | merge upstream upstream/main up to ba3196e3f (14 commits) | gate | bonsai-b |
 
@@ -65,9 +65,9 @@ Updated 2026-10-31 02:00 UTC. This page and the card in the README are regenerat
 | claude-sonnet-a | sonnet | idle | 55 |
 | claude-sonnet-b | sonnet | merging | 50 |
 | claude-sonnet-c | sonnet | merging | 1 |
-| claude-sonnet-d | sonnet | gate | 0 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 561 |
+| claude-sonnet-d | sonnet | merging | 1 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 561 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 98 |
-| mai-flash | mai-code-1.1-flash | gate | 27 |
+| mai-flash | mai-code-1.1-flash | merging | 28 |
 | tturbo-mac | tturbo-ultraheretic | merging | 483 |
 | tturbo-mac2 | tturbo-ultraheretic | agent | 305 |
