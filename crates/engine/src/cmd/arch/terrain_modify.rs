@@ -296,4 +296,74 @@ mod tests {
         let ids: Vec<u32> = mods(&s).iter().map(|m| m.id).collect();
         assert_eq!(ids, vec![0, 2]);
     }
+
+    #[test]
+    fn modify_accepts_huge_finite_values() {
+        let mut s = session();
+        s.execute(CMD, &json!({"hill": {"center": [20, 20], "height": 1e300, "radius": 1e300}})).unwrap();
+        s.execute(CMD, &json!({"flat": {"polygon": [[0, 0], [1e300, 0], [1e300, 1e300], [0, 1e300]], "elevation": 1e300}})).unwrap();
+        let m = mods(&s);
+        assert_eq!(m.len(), 2);
+    }
+
+    #[test]
+    fn modify_accepts_polygon_with_coincident_points() {
+        let mut s = session();
+        s.execute(CMD, &json!({"flat": {"polygon": [[0, 0], [0, 0], [10, 0], [10, 10], [0, 10]], "elevation": 0}})).unwrap();
+        let m = mods(&s);
+        assert_eq!(m.len(), 1);
+        match &m[0].kind {
+            ModifierKind::Flat { polygon, .. } => {
+                assert!(polygon.len() >= 3);
+            }
+            k => panic!("{k:?}"),
+        }
+    }
+
+    #[test]
+    fn modify_accepts_polygon_with_collinear_points() {
+        let mut s = session();
+        s.execute(CMD, &json!({"flat": {"polygon": [[0, 0], [5, 0], [10, 0], [10, 10], [0, 10]], "elevation": 0}})).unwrap();
+        let m = mods(&s);
+        assert_eq!(m.len(), 1);
+    }
+
+    #[test]
+    fn modify_widen_with_three_collinear_points() {
+        let ring = widen(&[Vec2::new(0.0, 0.0), Vec2::new(5.0, 0.0), Vec2::new(10.0, 0.0)], 2.0).unwrap();
+        assert_eq!(ring.len(), 6);
+        for p in &ring {
+            assert!((p.y - (-1.0)).abs() < 1e-9 || (p.y - 1.0).abs() < 1e-9, "y = {}", p.y);
+        }
+    }
+
+    #[test]
+    fn modify_path_polygon_takes_precedence_over_polyline() {
+        let mut s = session();
+        s.execute(CMD, &json!({"path": {"kind": "road", "polygon": [[0, 0], [10, 0], [10, 1], [0, 1]], "polyline": [[0, 0], [10, 0]], "width": 2}}))
+            .unwrap();
+        let m = mods(&s);
+        let ModifierKind::Path { polygon, .. } = &m[0].kind else { panic!("not a path") };
+        assert_eq!(polygon.len(), 4);
+    }
+
+    #[test]
+    fn modify_path_ignores_width_when_polygon_given() {
+        let mut s = session();
+        s.execute(CMD, &json!({"path": {"kind": "road", "polygon": [[0, 0], [10, 0], [10, 1], [0, 1]], "width": 5}})).unwrap();
+        let m = mods(&s);
+        let ModifierKind::Path { polygon, .. } = &m[0].kind else { panic!("not a path") };
+        assert_eq!(polygon.len(), 4);
+    }
+
+    #[test]
+    fn modify_adds_to_terrain_with_existing_modifiers() {
+        let mut s = session();
+        s.execute(CMD, &json!({"hill": {"center": [10, 10], "height": 1, "radius": 3}})).unwrap();
+        s.execute(CMD, &json!({"hill": {"center": [30, 30], "height": 2, "radius": 4}})).unwrap();
+        let m = mods(&s);
+        assert_eq!(m.len(), 2);
+        assert_eq!(m[0].id, 0);
+        assert_eq!(m[1].id, 1);
+    }
 }
