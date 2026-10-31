@@ -47,7 +47,7 @@ print("ok: CSV with the reference easting/northing subtracted")
 
 # (d) A bad CSV row is refused with its line number, and nothing is written.
 rc, rr, so, se = run([cmd('terrain', {"boundary": SITE, "csvText": "x,y,z\n1,2,3\n4,5\n6,7,8\n"}), 'arch.inspect {"terrain":true}'], expect_ok=False)
-if rc == 0 or 'line 3' not in (so + se):
+if not was_refused(rc, se) or 'line 3' not in (so + se):
     fail(f"a CSV row with two values must be refused naming line 3: rc {rc}, {(so + se)[-300:]}")
 if reply_with(rr, 'terrain', -1).get('terrain') is not None:
     fail("a refused terrain must not be written")

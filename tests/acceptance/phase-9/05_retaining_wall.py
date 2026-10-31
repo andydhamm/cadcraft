@@ -29,7 +29,7 @@ rc, rr, so, se = run([terrain_cmd(), cmd('terrain.modify', {"flat": {"polygon": 
 w = reply_with(rr, 'walls', -1)['walls'][0]
 near(w.get('top'), 2.8, 1e-6, 'top with freeboard 0.3'); near(w.get('base'), 1.4945 - 0.5, 1e-6, 'bottom with footing 0.5')
 rc, rr, so, se = run([cmd('wall', {"points": [[0, 0], [5, 0]], "thickness": 0.2, "freeboard": 0.3}), 'arch.inspect {"walls":true}'], expect_ok=False)
-if rc == 0 or reply_with(rr, 'walls', -1)['walls']:
+if not was_refused(rc, se) or reply_with(rr, 'walls', -1)['walls']:
     fail("freeboard on a wall that is not retaining must be refused, nothing written")
 print("ok: freeboard and footing settable; refused on an ordinary wall")
 print("PASS 05")

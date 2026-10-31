@@ -48,7 +48,7 @@ near(p['height'], 2.5, 1e-9, 'user species height at half its years')
 rc, rr, so, se = run([cmd('plant.species', {"add": [{"name": "Red Oak", "form": "shrub", "crown": "sphere", "matureHeight": 1,
                                                        "matureSpread": 1, "plantedHeight": 0.5, "yearsToMature": 2}]}),
                       cmd('plant', {"species": "Nonesuch", "at": [0, 0]}), 'arch.inspect {"plants":true}'], expect_ok=False)
-if rc == 0 or reply_with(rr, 'plants', -1)['plants']:
+if not was_refused(rc, se) or reply_with(rr, 'plants', -1)['plants']:
     fail("a user species named like a built-in one, and an unknown species, must be refused with nothing written")
 print("ok: user species from a JSON file; duplicates of built-ins and unknown species refused")
 print("PASS 07")

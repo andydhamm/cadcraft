@@ -60,6 +60,12 @@ def run(cmds, file=None, save=None, expect_ok=True, release=False, timeout=900):
     return p.returncode, parse_rows(p.stdout), p.stdout, p.stderr
 
 
+def was_refused(rc, se):
+    """A refused step: `cadcraft-cli run` reports a failing --cmd and goes on, and only the last step's failure sets the
+    exit status, so a refusal followed by arch.inspect shows as an `error:` line on stderr with rc 0 (operator 10-30)."""
+    return rc != 0 or any(l.startswith('error: ') for l in se.splitlines())
+
+
 def cli(sub, args, expect_ok=True, timeout=900):
     p = subprocess.run(cli_args(sub) + args, capture_output=True, text=True, timeout=timeout)
     if 'panicked' in p.stderr or 'panicked' in p.stdout:
