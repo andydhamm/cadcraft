@@ -279,6 +279,25 @@ fn convert_detects_walls_in_a_plain_plan() {
     assert!(!opening_names.is_empty(), "expected opening meshes in detected plan");
 }
 
+/// On `examples/apartment.dxf` (linework only, no arch objects), `convert` runs
+/// `archdetect` (dry run for counts, then accept) and prints the detected
+/// counts on stderr.
+#[test]
+fn convert_prints_detected_door_and_window_counts() {
+    let dir = temp_dir("convert_prints_detected_door_and_window_counts");
+    let in_dxf = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/apartment.dxf");
+    if !in_dxf.exists() {
+        return;
+    }
+    let out_glb = dir.join("apartment_counts.glb");
+
+    let out = run_cli(&["convert".into(), in_dxf.to_string_lossy().into(), out_glb.to_string_lossy().into()]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "convert failed: {stderr}");
+    assert!(stderr.contains("archdetect: 6 walls, 2 doors, 5 windows, 3 rooms (58 entities)"), "unexpected archdetect summary: {stderr}",);
+    assert!(is_glb(&out_glb), "convert did not write a valid GLB");
+}
+
 #[test]
 fn no_detect_keeps_linework_only() {
     let dir = temp_dir("no_detect_keeps_linework_only");
