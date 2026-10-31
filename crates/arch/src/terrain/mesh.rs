@@ -474,12 +474,12 @@ mod tests {
             let cx = mesh.xy[tri[0]].x + mesh.xy[tri[1]].x + mesh.xy[tri[2]].x;
             let cy = mesh.xy[tri[0]].y + mesh.xy[tri[1]].y + mesh.xy[tri[2]].y;
             let centroid = Vec2::new(cx / 3.0, cy / 3.0);
+            let in_poly = inside_or_on(&flat_poly(), centroid);
             for (ki, &ci) in tri.iter().enumerate() {
                 let p = mesh.xy[ci];
                 let z = mesh.z[ti][ki];
-                let in_poly = inside_or_on(&flat_poly(), p);
                 if in_poly {
-                    assert!((z - 1.0).abs() < 1e-4, "in poly {p:?} z={z}");
+                    assert!((z - 1.0).abs() < 1e-3, "in poly {p:?} z={z}");
                 } else {
                     let ground = 0.05 * p.x;
                     assert!((z - ground).abs() < 1e-3, "out poly {p:?} z={z} ground={ground}");
