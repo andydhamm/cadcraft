@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-31 14:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 15:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 9 of 13: Terrain and site — 29 of 30 segments merged · 11 of 12 acceptance checks**
+**Phase 9 of 13: Terrain and site — 30 of 30 segments merged · 12 of 12 acceptance checks**
 
-5,940 workspace tests passing at the last merge · 576 segments merged in all · 0 of 13 seats working · PAUSED
+5,940 workspace tests passing at the last merge · 577 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 14:45 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 11 / 12 | 19.1 h so far · expected done Oct 31 15:21–Oct 31 23:44 UTC |
+| 9 | Terrain and site | building | 12 / 12 | 19.4 h so far · expected done Oct 31 15:00–Oct 31 23:03 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,16 +27,14 @@ Updated 2026-10-31 14:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-29 merged, 1 merging
+30 merged
 
-| Segment | What | State | Seat |
-|---|---|---|---|
-| `p9f-mesh-pad-slope` | The site mesh follows the pad's slope back to the ground | merging | kimi-k31 |
 
 ## Recent merges
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 31 14:48 | `p9f-mesh-pad-slope` | refused | 5,943 pass | kimi-k31 |
 | Oct 31 14:33 | `harden-p9-cmd-site` | merged | 5,940 pass | tturbo-mac2 |
 | Oct 31 14:20 | `harden-p9-small-convert-and-glb-names` | merged | 5,933 pass | tturbo-mac |
 | Oct 31 14:06 | `p9f-mesh-pad-slope` | refused | 5,932 pass | kimi-k31 |
@@ -48,7 +46,6 @@ Updated 2026-10-31 14:45 UTC. This page and the card in the README are regenerat
 | Oct 31 10:59 | `harden-p9-arch-terrain-volumes` | merged | 5,894 pass | tturbo-mac2 |
 | Oct 31 10:38 | `upstream-sync-7cee28580` | merged | 5,888 pass | claude-sonnet-c |
 | Oct 31 10:09 | `p9-io-site-proxies` | merged | 5,876 pass | claude-sonnet-a |
-| Oct 31 09:58 | `harden-p9-arch-terrain-contours` | merged | 5,872 pass | tturbo-mac |
 
 ## Seats active in the last hour
 
@@ -62,8 +59,8 @@ Updated 2026-10-31 14:45 UTC. This page and the card in the README are regenerat
 | claude-sonnet-b | sonnet | idle | 55 |
 | claude-sonnet-c | sonnet | idle | 7 |
 | claude-sonnet-d | sonnet | idle | 2 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | idle | 581 |
-| kimi-k31 | k3.1-pro-highspeed | merging | 106 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | yielding | 581 |
+| kimi-k31 | k3.1-pro-highspeed | idle | 106 |
 | mai-flash | mai-code-1.1-flash | idle | 28 |
 | tturbo-mac | tturbo-ultraheretic | merging | 502 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 323 |
+| tturbo-mac2 | tturbo-ultraheretic | agent | 324 |
