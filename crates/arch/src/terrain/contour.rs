@@ -145,7 +145,13 @@ pub fn site_contours(mesh: &SiteMesh, minor: f64, major: f64) -> SiteContours {
 /// A contour's label: its elevation with two decimals ("1.00", "-0.50"), where a rounding to
 /// "-0.00" is printed as "0.00".
 pub fn label_text(elevation: f64) -> String {
-    let s = format!("{elevation:.2}");
+    // Compensate for decimal halfway values whose binary representation lies just below the
+    // halfway point (for example, 1.005 × 100 can be 100.49999999999999).
+    let scaled = elevation * 100.0;
+    let nudge = f64::EPSILON * scaled.abs().max(1.0) * 2.0;
+    let adjusted = if scaled.is_sign_negative() { scaled - nudge } else { scaled + nudge };
+    let rounded = adjusted.round() / 100.0;
+    let s = format!("{rounded:.2}");
     if s == "-0.00" { "0.00".to_string() } else { s }
 }
 
@@ -196,22 +202,22 @@ mod tests {
     /// `z` runs from 0 (west) to 2 (east), so the minor 0.25 / major 1.0 contour set has seven
     /// minor lines and one major line.
     fn sloped_mesh() -> SiteMesh {
-        SiteMesh {
-            xy: vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)],
-            triangles: vec![[0, 1, 2], [0, 2, 3]],
-            z: vec![[0.0, 2.0, 2.0], [0.0, 2.0, 0.0]],
-        }
+        let mut mesh = SiteMesh::default();
+        mesh.xy = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        mesh.triangles = vec![[0, 1, 2], [0, 2, 3]];
+        mesh.z = vec![[0.0, 2.0, 2.0], [0.0, 2.0, 0.0]];
+        mesh
     }
 
     /// A 10 m × 10 m site with a vertical step along the diagonal: the lower triangle is sloped
     /// (z 0 → 2 on the east edge) and the upper is flat at z = 2. A contour never crosses the
     /// flat top, so every line terminates on the step edge.
     fn step_mesh() -> SiteMesh {
-        SiteMesh {
-            xy: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)],
-            triangles: vec![[0, 1, 2], [0, 2, 3]],
-            z: vec![[0.0, 2.0, 2.0], [2.0, 2.0, 2.0]],
-        }
+        let mut mesh = SiteMesh::default();
+        mesh.xy = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        mesh.triangles = vec![[0, 1, 2], [0, 2, 3]];
+        mesh.z = vec![[0.0, 2.0, 2.0], [2.0, 2.0, 2.0]];
+        mesh
     }
 
     #[test]
