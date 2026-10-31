@@ -97,7 +97,7 @@ pub fn original_tin(t: &Terrain) -> Result<Tin, TerrainError> {
     let mut boundary_heights = vec![t.default_elevation; t.boundary.len()];
     let data_points: Vec<Vec3> =
         t.points.iter().copied().chain(t.lines.iter().flat_map(|line| line.points.iter().map(|p| Vec3::new(p.x, p.y, line.elevation)))).collect();
-    if data_points.len() >= 3 {
+    if data_points.len() >= 3 && !are_collinear_xy(&data_points) {
         let data_tin = cadcraft_geom::tin::triangulate(&data_points).map_err(|e| TerrainError(format!("terrain data: {e}")))?;
         for (i, p) in t.boundary.iter().enumerate() {
             if let Some(z) = data_tin.elevation_at(p.x, p.y) {
@@ -328,6 +328,22 @@ fn index_for_point(points: &[Vec3], x: f64, y: f64, z: f64) -> Option<usize> {
     points.iter().position(|p| (p.x - x).abs() <= 1e-9 && (p.y - y).abs() <= 1e-9 && (p.z - z).abs() <= 1e-9)
 }
 
+/// Whether all points lie on a single line in the xy-plane.
+fn are_collinear_xy(points: &[Vec3]) -> bool {
+    if points.len() < 3 {
+        return true;
+    }
+    let a = points[0];
+    let b = points[1];
+    for p in points.iter().skip(2) {
+        let cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+        if cross.abs() > 1e-9 {
+            return false;
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -428,6 +444,85 @@ mod tests {
     fn validate_terrain_refuses_a_self_crossing_boundary() {
         let terrain = Terrain {
             boundary: vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(0.0, 30.0), Vec2::new(40.0, 30.0)],
+            default_elevation: 0.0,
+            points: Vec::new(),
+            lines: Vec::new(),
+            modifiers: Vec::new(),
+            next_modifier_id: 0,
+            contour_minor: 0.25,
+            contour_major: 1.0,
+            pad: false,
+            pad_margin: 0.3,
+        };
+        assert!(validate_terrain(&terrain).is_err());
+    }
+
+    #[test]
+    fn original_tin_with_collinear_data_uses_default_elevation() {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        // Three collinear points along the x-axis
+        let points = vec![Vec3::new(10.0, 0.0, 1.0), Vec3::new(20.0, 0.0, 2.0), Vec3::new(30.0, 0.0, 3.0)];
+        let terrain = Terrain {
+            boundary: boundary.clone(),
+            default_elevation: 5.0,
+            points,
+            lines: Vec::new(),
+            modifiers: Vec::new(),
+            next_modifier_id: 0,
+            contour_minor: 0.25,
+            contour_major: 1.0,
+            pad: false,
+            pad_margin: 0.3,
+        };
+        let tin = original_tin(&terrain).unwrap();
+        // Boundary vertices should use default_elevation because the data points are collinear
+        let z = tin.elevation_at(0.0, 0.0).unwrap();
+        assert!((z - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn original_tin_with_single_point_uses_default_elevation() {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        let points = vec![Vec3::new(20.0, 15.0, 3.0)];
+        let terrain = Terrain {
+            boundary: boundary.clone(),
+            default_elevation: 2.0,
+            points,
+            lines: Vec::new(),
+            modifiers: Vec::new(),
+            next_modifier_id: 0,
+            contour_minor: 0.25,
+            contour_major: 1.0,
+            pad: false,
+            pad_margin: 0.3,
+        };
+        let tin = original_tin(&terrain).unwrap();
+        // With only one data point, no TIN can be built; boundary uses default_elevation
+        let z = tin.elevation_at(0.0, 0.0).unwrap();
+        assert!((z - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn validate_terrain_refuses_nan_coordinates() {
+        let terrain = Terrain {
+            boundary: vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, f64::NAN), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)],
+            default_elevation: 0.0,
+            points: Vec::new(),
+            lines: Vec::new(),
+            modifiers: Vec::new(),
+            next_modifier_id: 0,
+            contour_minor: 0.25,
+            contour_major: 1.0,
+            pad: false,
+            pad_margin: 0.3,
+        };
+        assert!(validate_terrain(&terrain).is_err());
+    }
+
+    #[test]
+    fn validate_terrain_refuses_too_few_boundary_points() {
+        let terrain = Terrain {
+            boundary: vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0)],
             default_elevation: 0.0,
             points: Vec::new(),
             lines: Vec::new(),
