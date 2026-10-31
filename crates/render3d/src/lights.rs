@@ -393,24 +393,21 @@ mod tests {
         assert_eq!(select_drawn(&row(3), [0.0, 0.0, 0.0]), vec![0, 1, 2]);
     }
 
-    fn read_f32(buf: &[u8], off: usize) -> f32 {
-        let b = [
+    fn read_u8s(buf: &[u8], off: usize) -> [u8; 4] {
+        [
             buf.get(off).copied().unwrap_or(0),
             buf.get(off + 1).copied().unwrap_or(0),
             buf.get(off + 2).copied().unwrap_or(0),
             buf.get(off + 3).copied().unwrap_or(0),
-        ];
-        f32::from_bytes_little(b)
+        ]
+    }
+
+    fn read_f32(buf: &[u8], off: usize) -> f32 {
+        f32::from_bits(u32::from_le_bytes(read_u8s(buf, off)))
     }
 
     fn read_u32(buf: &[u8], off: usize) -> u32 {
-        let b = [
-            buf.get(off).copied().unwrap_or(0),
-            buf.get(off + 1).copied().unwrap_or(0),
-            buf.get(off + 2).copied().unwrap_or(0),
-            buf.get(off + 3).copied().unwrap_or(0),
-        ];
-        u32::from_bytes_little(b)
+        u32::from_le_bytes(read_u8s(buf, off))
     }
 
     #[test]
