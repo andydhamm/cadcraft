@@ -25,7 +25,7 @@ pub struct TinIndex {
 impl TinIndex {
     /// Build a uniform grid over the bounding box of `tin`'s triangles, about
     /// `sqrt(triangles)` cells per side (clamped to 1..=1024). Each cell lists
-    /// every triangle whose bounding box overlaps the cell.
+    /// every triangle whose bounding box overlaps the cell, in index order.
     pub fn new(tin: &Tin) -> TinIndex {
         const MAX_SIDE: usize = 1024;
         let n = tin.triangles.len();
@@ -33,76 +33,43 @@ impl TinIndex {
         // Bounding box per triangle plus the global bounding box of all usable
         // vertices. A triangle with a bad or non-finite vertex can never
         // contain a point, so it carries no box and is never indexed.
-        let mut tri_bbs: Vec<Option<([f64; 2], [f64; 2])>> = Vec::with_capacity(n);
-        let mut x_min = f64::MAX;
-        let mut x_max = f64::MIN;
-        let mut y_min = f64::MAX;
-        let mut y_max = f64::MIN;
-        for t in tin.triangles.iter() {
-            let (mut tx_min, mut tx_max) = (f64::MAX, f64::MIN);
-            let (mut ty_min, mut ty_max) = (f64::MAX, f64::MIN);
-            let ok = [t[0], t[1], t[2]].iter().all(|k| match tin.points.get(*k) {
-                Some(p) => {
-                    if p.x.is_finite() && p.y.is_finite() {
-                        tx_min = tx_min.min(p.x);
-                        tx_max = tx_max.max(p.x);
-                        ty_min = ty_min.min(p.y);
-                        ty_max = ty_max.max(p.y);
-                        true
-                    } else {
-                        false
-                    }
+        let mut tri_bbs: Vec<Option<[f64; 4]>> = Vec::with_capacity(n);
+        let (mut x_min, mut x_max, mut y_min, mut y_max) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+        for t in &tin.triangles {
+            let mut bb = [f64::MAX, f64::MIN, f64::MAX, f64::MIN];
+            let ok = t.iter().all(|k| match tin.points.get(*k) {
+                Some(p) if p.x.is_finite() && p.y.is_finite() => {
+                    bb = [bb[0].min(p.x), bb[1].max(p.x), bb[2].min(p.y), bb[3].max(p.y)];
+                    true
                 }
-                None => false,
+                _ => false,
             });
             if ok {
-                x_min = x_min.min(tx_min);
-                x_max = x_max.max(tx_max);
-                y_min = y_min.min(ty_min);
-                y_max = y_max.max(ty_max);
-                tri_bbs.push(Some(([tx_min, ty_min], [tx_max, ty_max])));
-            } else {
-                tri_bbs.push(None);
+                x_min = x_min.min(bb[0]);
+                x_max = x_max.max(bb[1]);
+                y_min = y_min.min(bb[2]);
+                y_max = y_max.max(bb[3]);
             }
+            tri_bbs.push(ok.then_some(bb));
         }
 
-        let span = |min: f64, max: f64| -> bool { max.is_finite() && max > min };
-        let width = (n as f64).sqrt().ceil().clamp(1.0, 1024.0) as usize;
-        let height = (n as f64).sqrt().ceil().clamp(1.0, 1024.0) as usize;
-
-        // Fill cells.
-        let mut cells: Vec<Vec<Vec<usize>>> = (0..height).map(|_| vec![Vec::new(); width]).collect();
-        if span(x_min, x_max) && span(y_min, y_max) {
-            let dx = (x_max - x_min) / width as f64;
-            let dy = (y_max - y_min) / height as f64;
-            let cell = |v: f64, min: f64, span: f64, side: usize| -> usize {
-                if !(v >= min && v <= min + span) {
-                    return 0;
-                }
-                let t = (v - min) / span;
-                if t >= (side - 1) as f64 { side - 1 } else { t.floor() as i64 as usize }
-            };
-            for (i, tbb) in tri_bbs.iter().enumerate() {
-                let Some(tbb) = tbb else {
-                    continue;
-                };
-                let tx_min = tbb.0[0];
-                let tx_max = tbb.0[1];
-                let ty_min = tbb.1[0];
-                let ty_max = tbb.1[1];
-                let col0 = cell(tx_min, x_min, x_max - x_min, width);
-                let col1 = cell(tx_max, x_min, x_max - x_min, width);
-                let row0 = cell(ty_min, y_min, y_max - y_min, height);
-                let row1 = cell(ty_max, y_min, y_max - y_min, height);
-                for row in row0..=row1 {
-                    for col in col0..=col1 {
-                        cells[row][col].push(i);
-                    }
+        let side = ((n as f64).sqrt().ceil() as usize).clamp(1, MAX_SIDE);
+        let mut index = TinIndex { cells: vec![vec![Vec::new(); side]; side], x_min, x_max, y_min, y_max, width: side, height: side };
+        for (i, bb) in tri_bbs.iter().enumerate() {
+            let Some([bx0, bx1, by0, by1]) = *bb else { continue };
+            // `barycentric` accepts points a hair outside the triangle; pad the box by as much so
+            // such a point still finds the triangle in its own cell, as a full scan would.
+            let pad = 1e-8 * (bx1 - bx0).max(by1 - by0);
+            let cols = (index.cell_index((bx0 - pad).max(x_min), x_min, x_max, side), index.cell_index((bx1 + pad).min(x_max), x_min, x_max, side));
+            let rows = (index.cell_index((by0 - pad).max(y_min), y_min, y_max, side), index.cell_index((by1 + pad).min(y_max), y_min, y_max, side));
+            let ((Some(c0), Some(c1)), (Some(r0), Some(r1))) = (cols, rows) else { continue };
+            for row in index.cells.iter_mut().take(r1 + 1).skip(r0) {
+                for cell in row.iter_mut().take(c1 + 1).skip(c0) {
+                    cell.push(i);
                 }
             }
         }
-
-        TinIndex { cells, x_min, x_max, y_min, y_max, width, height }
+        index
     }
 
     /// The triangle containing `p` and `p`'s barycentric weights for its three corners, or
@@ -113,11 +80,11 @@ impl TinIndex {
         }
         let col = self.cell_index(p.x, self.x_min, self.x_max, self.width)?;
         let row = self.cell_index(p.y, self.y_min, self.y_max, self.height)?;
-        for &i in &self.cells[row][col] {
+        for &i in self.cells.get(row).and_then(|r| r.get(col)).into_iter().flatten() {
             let Some(t) = tin.triangles.get(i) else { continue };
-            let Some(a) = tin.points.get(t[0]) else { return None };
-            let Some(b) = tin.points.get(t[1]) else { return None };
-            let Some(c) = tin.points.get(t[2]) else { return None };
+            let (Some(a), Some(b), Some(c)) = (tin.points.get(t[0]), tin.points.get(t[1]), tin.points.get(t[2])) else {
+                continue;
+            };
             let a = Vec2::new(a.x, a.y);
             let b = Vec2::new(b.x, b.y);
             let c = Vec2::new(c.x, c.y);
@@ -205,7 +172,7 @@ const EPS: f64 = 1e-9;
 /// Quantise `c` to the nearest multiple of `EPS` and return a hashable key.
 fn quant(c: f64) -> i64 {
     let q = (c / EPS).round();
-    if q.is_finite() && q > -(i64::MIN as f64) && q < (i64::MAX as f64) { q as i64 } else { 0 }
+    if q.is_finite() && q >= (i64::MIN as f64) && q < (i64::MAX as f64) { q as i64 } else { 0 }
 }
 
 /// Chain segments that share endpoints (same elevation) into polylines.
@@ -232,24 +199,28 @@ pub fn chain_contours(segs: &[ContourSegment]) -> Vec<ContourLine> {
             endpoints.entry((quant(s.start.x), quant(s.start.y))).or_default().push(*i);
             endpoints.entry((quant(s.end.x), quant(s.end.y))).or_default().push(*i);
         }
+        // Endpoints in key order, so an open line always starts from the same end.
+        let mut keys: Vec<(i64, i64)> = endpoints.keys().copied().collect();
+        keys.sort_unstable();
         // Open lines: walk from each endpoint touched by exactly one segment.
-        for (key, segs_at) in &endpoints {
+        for key in &keys {
+            let Some(segs_at) = endpoints.get(key) else { continue };
             if segs_at.len() != 1 {
                 continue;
             }
-            let first = *segs_at.first().unwrap();
+            let Some(&first) = segs_at.first() else { continue };
             if used[first] {
                 continue;
             }
             lines.push(walk_line(segs, &endpoints, &mut used, first, *key));
         }
         // Closed loops from the remaining degree-two segments.
-        for (key, segs_at) in &endpoints {
+        for key in &keys {
+            let Some(segs_at) = endpoints.get(key) else { continue };
             if segs_at.len() != 2 {
                 continue;
             }
-            let a = segs_at[0];
-            let b = segs_at[1];
+            let [a, b] = segs_at[..] else { continue };
             if used[a] || used[b] {
                 continue;
             }
@@ -374,6 +345,39 @@ mod tests {
         tin.triangles.push([0, 1, 2]);
         let idx = TinIndex::new(&tin);
         assert_eq!(idx.locate(&tin, Vec2::new(3.0, 2.0)).unwrap().0, 0);
+
+        // A 12 x 12 grid of squares, two triangles each, on a non-square extent: probes at
+        // vertices, on edges and inside must find what a scan of every triangle finds first.
+        let mut tin = Tin::default();
+        let n = 12usize;
+        for j in 0..=n {
+            for i in 0..=n {
+                tin.points.push(Vec3::new(i as f64 * 1.5, j as f64 * 0.75, (i * j) as f64 * 0.1));
+            }
+        }
+        let at = |i: usize, j: usize| j * (n + 1) + i;
+        for j in 0..n {
+            for i in 0..n {
+                tin.triangles.push([at(i, j), at(i + 1, j), at(i + 1, j + 1)]);
+                tin.triangles.push([at(i, j), at(i + 1, j + 1), at(i, j + 1)]);
+            }
+        }
+        let idx = TinIndex::new(&tin);
+        let scan = |p: Vec2| {
+            tin.triangles.iter().enumerate().find_map(|(k, t)| {
+                let q = |m: usize| Vec2::new(tin.points[t[m]].x, tin.points[t[m]].y);
+                barycentric(q(0), q(1), q(2), p).map(|_| k)
+            })
+        };
+        let mut probes = 0;
+        for j in 0..=4 * n {
+            for i in 0..=4 * n {
+                let p = Vec2::new(i as f64 * 0.375 + 0.01 * (j % 3) as f64, j as f64 * 0.1875);
+                assert_eq!(idx.locate(&tin, p).map(|(k, _)| k), scan(p), "probe {p:?}");
+                probes += 1;
+            }
+        }
+        assert!(probes > 2000);
     }
 
     #[test]
