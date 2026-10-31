@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-31 20:15 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 20:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 10 of 13: Lighting, light fixtures and final renders — 3 of 21 segments merged · 0 of 11 acceptance checks**
 
-6,038 workspace tests passing at the last merge · 585 segments merged in all · 0 of 13 seats working
+6,038 workspace tests passing at the last merge · 585 segments merged in all · 0 of 13 seats working · PAUSED
 
 ## Phases
 
@@ -20,7 +20,7 @@ Updated 2026-10-31 20:15 UTC. This page and the card in the README are regenerat
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
 | 9 | Terrain and site | done | 12 / 12 | 19.4 h |
-| 10 | Lighting, light fixtures and final renders | building | 0 / 11 | 3.7 h so far · expected done Nov 01 18:12–Nov 04 19:10 UTC |
+| 10 | Lighting, light fixtures and final renders | building | 0 / 11 | 3.9 h so far · expected done Nov 01 19:57–Nov 05 01:55 UTC |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
 | 13 | Polish | planned | — | — |
@@ -62,7 +62,7 @@ Updated 2026-10-31 20:15 UTC. This page and the card in the README are regenerat
 | bonsai-a | bonsai2-27b | merging | 734 |
 | bonsai-b | bonsai2-27b | merging | 685 |
 | bonsai-ws2-a | bonsai2-27b | gate | 740 |
-| bonsai-ws2-b | bonsai2-27b | gate | 700 |
+| bonsai-ws2-b | bonsai2-27b | gate | 701 |
 | claude-sonnet-a | sonnet | idle | 58 |
 | claude-sonnet-b | sonnet | idle | 55 |
 | claude-sonnet-c | sonnet | merging | 10 |
@@ -71,4 +71,4 @@ Updated 2026-10-31 20:15 UTC. This page and the card in the README are regenerat
 | kimi-k31 | k3.1-pro-highspeed | idle | 106 |
 | mai-flash | mai-code-1.1-flash | idle | 30 |
 | tturbo-mac | tturbo-ultraheretic | merging | 511 |
-| tturbo-mac2 | tturbo-ultraheretic | agent | 332 |
+| tturbo-mac2 | tturbo-ultraheretic | gate | 332 |
