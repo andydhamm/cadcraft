@@ -77,24 +77,16 @@ struct Payload {
 /// (nothing to write); otherwise the escaped, chunked payload, exactly like
 /// [`dxf_ext::constraint_chunks`](crate::dxf_ext).
 pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
-    if m.walls.is_empty()
-        && m.openings.is_empty()
-        && m.rooms.is_empty()
-        && m.roofs.is_empty()
-        && m.stairs.is_empty()
-        && m.railings.is_empty()
-        && m.cameras.is_empty()
-        && m.views.is_empty()
-    {
+    if m.is_empty() {
         return None;
     }
-    let json = serde_json::to_string(&Payload { version: 7, model: m.clone() }).ok()?;
+    let json = serde_json::to_string(&Payload { version: 8, model: m.clone() }).ok()?;
     Some(crate::dxf_ext::json_chunks(&json))
 }
 
 /// Parse an architectural XRECORD payload; `None` when it is not a payload we understand.
 ///
-/// Accepts schema versions 1 through 7:
+/// Accepts schema versions 1 through 8:
 /// - v1: no openings (cleared).
 /// - v2: openings present.
 /// - v3: rooms/levels present, no roofs (cleared).
@@ -102,6 +94,7 @@ pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
 /// - v5: stairs and railings present.
 /// - v6: cameras present; generated views were not yet saved.
 /// - v7: saved generated views present in the model.
+/// - v8: the site, terrain, plants, user plant species and retaining walls (empty when read from v7).
 ///
 /// All versions are bounded — the wall count against [`MAX_WALLS`], the opening count
 /// against [`MAX_OPENINGS`], the roof count against [`MAX_ROOFS`], the stair count against
@@ -113,7 +106,7 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
         return None;
     }
     let p: Payload = serde_json::from_str(text).ok()?;
-    if !(1..=7).contains(&p.version) {
+    if !(1..=8).contains(&p.version) {
         return None;
     }
     if p.model.walls.len() > cadcraft_doc::MAX_WALLS {
@@ -528,10 +521,10 @@ mod tests {
 
     #[test]
     fn parse_arch_rejects_unknown_versions() {
-        // Versions 1..=7 are understood; 0 and 8+ are unknown.
-        assert!(parse_arch(r#"{"version": 8, "model": { "walls": [] }}"#).is_none());
+        // Versions 1..=8 are understood; 0 and 9+ are unknown.
+        assert!(parse_arch(r#"{"version": 9, "model": { "walls": [] }}"#).is_none());
         assert!(parse_arch(r#"{"version": 0, "model": { "walls": [] }}"#).is_none());
-        assert!(parse_arch(r#"{"version": 7, "model": { "walls": [] }}"#).is_some());
+        assert!(parse_arch(r#"{"version": 8, "model": { "walls": [] }}"#).is_some());
     }
 
     #[test]
@@ -1192,7 +1185,49 @@ mod tests {
     fn arch_record_version_is_six() {
         let chunks = arch_chunks(&one_wall_model()).unwrap();
         let obj: serde_json::Value = serde_json::from_str(&chunks.join("")).unwrap();
-        assert_eq!(obj["version"].as_u64(), Some(7), "written payload version");
+        assert_eq!(obj["version"].as_u64(), Some(8), "written payload version");
+    }
+
+    /// A v7 payload (no site fields) still reads, with the site empty.
+    #[test]
+    fn arch_record_reads_v7() {
+        let m = one_wall_model();
+        let json = serde_json::json!({ "version": 7, "model": m }).to_string();
+        let text = crate::dxf_ext::json_chunks(&json).join("");
+        let parsed = parse_arch(&text).expect("a version-7 payload must still parse");
+        assert_eq!(parsed.walls.len(), 1);
+        assert!(parsed.site.is_none() && parsed.terrain.is_none() && parsed.plants.is_empty());
+    }
+
+    /// Site, terrain, plants and retaining walls survive save and reopen, and a second save
+    /// writes the same proxies.
+    #[test]
+    fn arch_record_v8_round_trips_the_site() {
+        use cadcraft_doc::arch::{Plant, SiteLocation, Terrain};
+        use cadcraft_geom::Vec3;
+        let mut d = Drawing::new_metric();
+        d.arch = one_wall_model();
+        if let Some(w) = d.arch.walls.first_mut() {
+            w.retaining = true;
+            w.freeboard = Some(0.2);
+        }
+        d.arch.site = Some(SiteLocation { latitude: 45.0, true_north: 20.0, ..SiteLocation::default() });
+        d.arch.terrain = Some(Terrain {
+            boundary: vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)],
+            points: vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 2.0)],
+            ..Terrain::default()
+        });
+        d.arch.plants.push(Plant { species: "Red Oak".into(), position: Vec2::new(5.0, 5.0), ..Plant::default() });
+        let text = write_dxf(&d);
+        let back = read_dxf(text.as_bytes()).expect("reopen");
+        assert_eq!(back.arch.site, d.arch.site);
+        assert_eq!(back.arch.terrain, d.arch.terrain);
+        assert_eq!(back.arch.plants, d.arch.plants);
+        assert_eq!(back.arch.walls, d.arch.walls);
+        let again = write_dxf(&back);
+        assert_eq!(again.matches("CADCRAFT-SITE").count(), text.matches("CADCRAFT-SITE").count());
+        let obj: serde_json::Value = serde_json::from_str(&arch_chunks(&back.arch).unwrap_or_default().join("")).unwrap_or_default();
+        assert_eq!(obj["version"].as_u64(), Some(8));
     }
 
     #[test]
@@ -1848,11 +1883,11 @@ mod tests {
         assert_eq!(back.arch.stairs.len(), 1, "stair lost on DXF round trip");
         assert_eq!(back.arch.railings.len(), 1, "railing lost on DXF round trip");
 
-        // The record should carry version 7.
+        // The record should carry version 8.
         let chunks = arch_chunks(&d.arch);
-        assert!(chunks.is_some(), "arch_chunks should produce a v7 record with stairs/railings");
+        assert!(chunks.is_some(), "arch_chunks should produce a v8 record with stairs/railings");
         let obj: serde_json::Value = serde_json::from_str(&chunks.unwrap().join("")).unwrap();
-        assert_eq!(obj["version"].as_u64(), Some(7), "written payload version should be 7");
+        assert_eq!(obj["version"].as_u64(), Some(8), "written payload version should be 8");
     }
 
     /// A v4 payload that carries stairs/railings clears them on parse.
