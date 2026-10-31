@@ -1,5 +1,5 @@
 # The site in the saved plan (proxies for other programs) and a lossless round trip.
-# needs: p9-io-site-proxies, p9-render-site-plan, p9-cmd-terrain, p9-cmd-terrain-modify, p9-cmd-plant, p9-cmd-site, p9-cmd-wall-retaining, p9-cmd-site-inspect
+# needs: p9-io-site-proxies, p9-cmd-terrain, p9-cmd-terrain-modify, p9-cmd-plant, p9-cmd-site, p9-cmd-wall-retaining, p9-cmd-site-inspect
 import os
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p9lib.inc')).read())
 
