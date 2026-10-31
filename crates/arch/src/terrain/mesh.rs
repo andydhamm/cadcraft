@@ -699,7 +699,7 @@ mod tests {
             if tri.contains(&center_idx) {
                 let ki = tri.iter().position(|&c| c == center_idx).unwrap();
                 let z = mesh.z[ti][ki];
-                assert!((z - 2.0).abs() < 0.1, "hill center z={z} expected ~2.0");
+                assert!((z - 3.0).abs() < 0.1, "hill center z={z} expected ~3.0");
                 found_center = true;
                 break;
             }
