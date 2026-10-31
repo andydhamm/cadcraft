@@ -406,11 +406,14 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
             let p0 = tin.points[tri[0]];
             let p1 = tin.points[tri[1]];
             let p2 = tin.points[tri[2]];
-            let centroid = Vec2::new((p0.x + p1.x + p2.x) / 3.0, (p0.y + p1.y + p2.y) / 3.0);
+            let c0 = p0.xy();
+            let c1 = p1.xy();
+            let c2 = p2.xy();
+            let centroid = Vec2::new((c0.x + c1.x + c2.x) / 3.0, (c0.y + c1.y + c2.y) / 3.0);
             [
-                surf.modified_toward(p0, centroid).or(surf.modified_at(p0)).unwrap_or(0.0),
-                surf.modified_toward(p1, centroid).or(surf.modified_at(p1)).unwrap_or(0.0),
-                surf.modified_toward(p2, centroid).or(surf.modified_at(p2)).unwrap_or(0.0),
+                surf.modified_toward(c0, centroid).or(surf.modified_at(c0)).unwrap_or(0.0),
+                surf.modified_toward(c1, centroid).or(surf.modified_at(c1)).unwrap_or(0.0),
+                surf.modified_toward(c2, centroid).or(surf.modified_at(c2)).unwrap_or(0.0),
             ]
         })
         .collect();
