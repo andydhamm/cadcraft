@@ -320,7 +320,7 @@ mod tests {
             ..Terrain::default()
         });
         let out = run(&m, json!({"terrain": true}));
-        let mods = &out["terrain"]["modifiers"];
+        let mods = out["terrain"]["modifiers"].as_array().cloned().unwrap_or_default();
         assert_eq!(mods.len(), 3);
         // Flat modifier fields.
         assert_eq!(mods[0]["type"], json!("flat"));
