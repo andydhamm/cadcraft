@@ -94,11 +94,11 @@ fn parse_size(v: Option<&Value>) -> Result<(u32, u32), EngineError> {
             if arr.len() != 2 {
                 return Err(bad("render", "`size` must be [w,h]"));
             }
-            let dim = |idx: usize| {
+            let dim = |idx: usize| -> Result<u32, EngineError> {
                 arr.get(idx)
                     .and_then(Value::as_u64)
                     .and_then(|n| (1..=MAX).contains(&n).then_some(n as u32))
-                    .ok_or_else(|| bad("render", format!("`size[{}]` must be a whole number in 1..={MAX}", idx)))?
+                    .ok_or_else(|| bad("render", format!("`size[{}]` must be a whole number in 1..={MAX}", idx)))
             };
             Ok((dim(0)?, dim(1)?))
         }
@@ -119,12 +119,12 @@ fn parse_samples(v: Option<&Value>) -> Result<Vec<[f64; 3]>, EngineError> {
                 if inner.len() != 3 {
                     return Err(bad("render", format!("`samples[{}]` must be [x,y,z]", i)));
                 }
-                let f = |idx: usize| {
+                let f = |idx: usize| -> Result<f64, EngineError> {
                     inner
                         .get(idx)
                         .and_then(Value::as_f64)
                         .filter(|x| x.is_finite())
-                        .ok_or_else(|| bad("render", format!("`samples[{}][{}]` must be a finite number", i, idx)))?
+                        .ok_or_else(|| bad("render", format!("`samples[{}][{}]` must be a finite number", i, idx)))
                 };
                 out.push([f(0)?, f(1)?, f(2)?]);
             }
@@ -148,7 +148,7 @@ fn parse_sun(v: Option<&Value>, doc: &Drawing) -> Result<SunChoice, EngineError>
         Some(Value::Object(obj)) => {
             let date = obj.get("date").and_then(Value::as_str).ok_or_else(|| bad("render", "sun needs a `date` field"))?;
             let time = obj.get("time").and_then(Value::as_str).ok_or_else(|| bad("render", "sun needs a `time` field"))?;
-            let site = doc.arch.site.as_deref().ok_or_else(|| bad("render", "sun needs a site location: run site first"))?;
+            let site = doc.arch.site.as_ref().ok_or_else(|| bad("render", "sun needs a site location: run site first"))?;
             let sun = sun_position(site.latitude, date, time).ok_or_else(|| bad("render", "invalid sun date or time"))?;
             if sun.elevation_deg <= 0.0 {
                 return Err(bad("render", "sun is below the horizon at the given date and time"));
@@ -169,13 +169,17 @@ fn camera_from_saved(c: &Camera3d) -> Result<Camera, EngineError> {
             let elevation = c.elevation_deg.unwrap_or(30.0);
             let distance = c.distance.unwrap_or(10.0);
             let fov = c.fov_deg.unwrap_or(45.0);
-            Ok(Camera::Orbit(Orbit::new(target, azimuth, elevation, distance, fov)))
+            let target_vec = Vec3::new(target[0], target[1], target[2]);
+            Ok(Camera::Orbit(Orbit::new(target_vec, azimuth, elevation, distance, fov)))
         }
         CameraKind::Full => {
-            let eye = Vec3::new(c.eye.as_deref().map_or(0.0, |e| e[0]), c.eye.as_deref().map_or(0.0, |e| e[1]), c.eye_height.unwrap_or(1.6));
+            let eye_x = c.eye.as_ref().map_or(0.0, |e| e[0]);
+            let eye_y = c.eye.as_ref().map_or(0.0, |e| e[1]);
+            let eye = Vec3::new(eye_x, eye_y, c.eye_height.unwrap_or(1.6));
             let target = c.target.unwrap_or([0.0; 3]);
             let fov = c.fov_deg.unwrap_or(45.0);
-            Ok(Camera::Full(FullCamera::new(eye, target, fov)))
+            let target_vec = Vec3::new(target[0], target[1], target[2]);
+            Ok(Camera::Full(FullCamera::new(eye, target_vec, fov)))
         }
     }
 }
