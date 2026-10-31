@@ -9,7 +9,7 @@ use crate::poly::offset_polygon;
 use cadcraft_geom::{Vec2, Vec3, point_in_polygon};
 
 use super::TerrainError;
-use super::pad::PadKind;
+use super::pad::{PadKind, PadRegion};
 use super::surface::SiteSurface;
 
 /// Most triangles a `SiteMesh` may hold. More than this returns
@@ -19,6 +19,12 @@ const MAX_MESH_TRIANGLES: usize = 200_000;
 const DEDUP_EPS: f64 = 1e-9;
 /// Triangles with area below this are dropped (degenerate).
 const MIN_TRIANGLE_AREA: f64 = 1e-12;
+/// Spacing of the rings, and of the points along each ring, where a pad's slope runs back to the ground.
+const PAD_SLOPE_STEP: f64 = 0.25;
+/// At most this many slope rings per pad (the step widens on a tall site).
+const MAX_PAD_SLOPE_RINGS: usize = 32;
+/// At most this many slope points over all pads.
+const MAX_PAD_SLOPE_POINTS: usize = 20_000;
 
 /// Triangles in plan with an elevation per corner.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -148,6 +154,57 @@ fn point_in_list(pts: &[Vec2], target: Vec2) -> Option<usize> {
     pts.iter().position(|p| p.dist(target) <= DEDUP_EPS)
 }
 
+/// Points on the rings where a pad's 1:2 slope runs from its margin back to the ground, `step`
+/// apart along each ring, so the mesh follows the slope instead of one triangle spanning from the
+/// margin ring to the boundary. Points only: as constraints the rings cross the original TIN's
+/// edges at hundreds of points the triangulation cannot keep apart, and the mesh tears.
+fn pad_slope_points(surf: &SiteSurface, region: &PadRegion, budget: &mut usize) -> Vec<Vec2> {
+    let mut out = Vec::new();
+    let e = region.elevation;
+    if region.kind != PadKind::Pad || !e.is_finite() || region.ring.len() < 3 || region.ring.iter().any(|p| !p.is_finite()) {
+        return out;
+    }
+    let Some((mut lo, mut hi)) = surf.original().elevation_range() else { return out };
+    for m in surf.modifiers() {
+        match &m.kind {
+            cadcraft_doc::arch::ModifierKind::Flat { elevation, .. } if elevation.is_finite() => {
+                lo = lo.min(*elevation);
+                hi = hi.max(*elevation);
+            }
+            cadcraft_doc::arch::ModifierKind::Hill { height, .. } if height.is_finite() => {
+                hi += height.max(0.0);
+                lo += height.min(0.0);
+            }
+            _ => {}
+        }
+    }
+    let s_max = (hi - e).max(e - lo).max(0.0) / cadcraft_doc::arch::PAD_SLOPE;
+    if !s_max.is_finite() || s_max <= 1e-9 {
+        return out;
+    }
+    let n = ((s_max / PAD_SLOPE_STEP).ceil() as usize).clamp(1, MAX_PAD_SLOPE_RINGS);
+    let step = s_max / n as f64;
+    let m = if region.margin.is_finite() && region.margin > 0.0 { region.margin } else { 0.0 };
+    for k in 1..=n {
+        let Some(ring) = offset_polygon(&region.ring, &vec![m + step * k as f64; region.ring.len()], true) else { continue };
+        for i in 0..ring.len() {
+            let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
+            if !a.is_finite() || !b.is_finite() {
+                continue;
+            }
+            let pieces = ((a.dist(b) / step.min(1.0).max(PAD_SLOPE_STEP)).ceil() as usize).clamp(1, 256);
+            for j in 0..pieces {
+                if *budget == 0 {
+                    return out;
+                }
+                *budget -= 1;
+                out.push(a + (b - a) * (j as f64 / pieces as f64));
+            }
+        }
+    }
+    out
+}
+
 /// Build the site mesh of `surf`.
 pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
     let boundary = surf.boundary().to_vec();
@@ -220,6 +277,7 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
     }
 
     // Pad points.
+    let mut slope_budget = MAX_PAD_SLOPE_POINTS;
     for region in surf.pads() {
         for &p in &region.ring {
             if p.is_finite() {
@@ -235,6 +293,7 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
                 }
             }
         }
+        raw_pts.extend(pad_slope_points(surf, region, &mut slope_budget));
     }
 
     // Breakline endpoints.
@@ -324,13 +383,18 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
         }
     }
 
-    // Pad ring edges.
+    // Pad ring edges, and a pad's margin ring (where the flat apron meets the slope).
     for region in surf.pads() {
-        for i in 0..region.ring.len() {
-            let a = region.ring[i];
-            let b = region.ring[(i + 1) % region.ring.len()];
-            if a.is_finite() && b.is_finite() && a.dist(b) > 1e-12 {
-                raw_constraints.push([a, b]);
+        let margin_ring = (region.kind == PadKind::Pad && region.margin.is_finite() && region.margin > 0.0)
+            .then(|| offset_polygon(&region.ring, &vec![region.margin; region.ring.len()], true))
+            .flatten();
+        for ring in std::iter::once(&region.ring).chain(margin_ring.as_ref()) {
+            for i in 0..ring.len() {
+                let a = ring[i];
+                let b = ring[(i + 1) % ring.len()];
+                if a.is_finite() && b.is_finite() && a.dist(b) > 1e-12 {
+                    raw_constraints.push([a, b]);
+                }
             }
         }
     }
@@ -424,7 +488,7 @@ pub fn site_mesh(surf: &SiteSurface) -> Result<SiteMesh, TerrainError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadcraft_doc::arch::{ArchModel, ModifierKind, Terrain};
+    use cadcraft_doc::arch::{ArchId, ArchModel, Level, ModifierKind, Terrain, Wall};
     use cadcraft_geom::Vec3;
 
     fn make_model(boundary: Vec<Vec2>, points: Vec<Vec3>, modifiers: Vec<ModifierKind>) -> ArchModel {
@@ -705,5 +769,172 @@ mod tests {
             }
         }
         assert!(found_center, "hill center not in any triangle");
+    }
+    /// One-level house: 40x30 boundary, z=0.05*x corners, four exterior walls
+    /// around (15,11)-(25,19), pad enabled (pad_margin defaults to 0.3).
+    fn make_house_site(boundary: Vec<Vec2>, points: Vec<Vec3>) -> ArchModel {
+        let level = Level { index: 0, name: "Level 1".into(), elevation: 0.0, ..Level::default() };
+        let walls = vec![
+            Wall {
+                id: ArchId(1),
+                start: Vec2::new(15.0, 11.0),
+                end: Vec2::new(25.0, 11.0),
+                base_level: 0,
+                thickness: 0.2,
+                exterior: true,
+                ..Wall::default()
+            },
+            Wall {
+                id: ArchId(2),
+                start: Vec2::new(25.0, 11.0),
+                end: Vec2::new(25.0, 19.0),
+                base_level: 0,
+                thickness: 0.2,
+                exterior: true,
+                ..Wall::default()
+            },
+            Wall {
+                id: ArchId(3),
+                start: Vec2::new(25.0, 19.0),
+                end: Vec2::new(15.0, 19.0),
+                base_level: 0,
+                thickness: 0.2,
+                exterior: true,
+                ..Wall::default()
+            },
+            Wall {
+                id: ArchId(4),
+                start: Vec2::new(15.0, 19.0),
+                end: Vec2::new(15.0, 11.0),
+                base_level: 0,
+                thickness: 0.2,
+                exterior: true,
+                ..Wall::default()
+            },
+        ];
+        let terrain = Terrain { boundary, points, modifiers: Vec::new(), pad: true, ..Terrain::default() };
+        ArchModel { levels: vec![level], walls, terrain: Some(terrain), ..ArchModel::default() }
+    }
+
+    /// Barycentric corner-elevation interpolation at `p` over `mesh`.
+    fn mesh_z_at(mesh: &SiteMesh, p: Vec2) -> Option<f64> {
+        for (ti, tri) in mesh.triangles.iter().enumerate() {
+            let a = mesh.xy[tri[0]];
+            let b = mesh.xy[tri[1]];
+            let c = mesh.xy[tri[2]];
+            let v0 = b - a;
+            let v1 = c - a;
+            let v2 = p - a;
+            let den = v0.cross(v1);
+            if den.abs() < 1e-14 {
+                continue;
+            }
+            let u = v2.cross(v1) / den;
+            let v = v0.cross(v2) / den;
+            if u >= -1e-9 && v >= -1e-9 && u + v <= 1.0 + 1e-9 {
+                let z = (1.0 - u - v) * mesh.z[ti][0] + u * mesh.z[ti][1] + v * mesh.z[ti][2];
+                return Some(z);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn site_mesh_follows_the_pad_slope() {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
+        let model = make_house_site(boundary, points);
+        let surf = SiteSurface::new(&model).unwrap();
+        let pads = surf.pads();
+        assert_eq!(pads.len(), 1, "expected exactly one pad");
+        let ring = pads[0].ring.clone();
+        let pad_dist = pads[0].margin + 0.05;
+        let mesh = site_mesh(&surf).unwrap();
+        for x in 0..40 {
+            for y in 0..30 {
+                let p = Vec2::new(x as f64 + 0.5, y as f64 + 0.5);
+                if inside_or_on(&ring, p) {
+                    continue;
+                }
+                if ring_dist(p, &ring) <= pad_dist {
+                    continue;
+                }
+                if let (Some(z), Some(expected)) = (mesh_z_at(&mesh, p), surf.modified_at(p)) {
+                    assert!((z - expected).abs() < 0.07, "at {p:?} mesh z={z} expected {expected}");
+                }
+            }
+        }
+        assert!(mesh_z_at(&mesh, Vec2::new(18.0, 5.0)).is_some(), "no triangle at (18, 5)");
+        let z_18_5 = mesh_z_at(&mesh, Vec2::new(18.0, 5.0)).unwrap();
+        assert!((z_18_5 - 0.9).abs() < 0.01, "at (18, 5) z={z_18_5} expected ~0.9",);
+    }
+
+    #[test]
+    fn site_mesh_pad_slope_rings_stay_inside_the_boundary() {
+        let boundary = vec![Vec2::new(12.0, 8.0), Vec2::new(28.0, 8.0), Vec2::new(28.0, 22.0), Vec2::new(12.0, 22.0)];
+        let points = vec![Vec3::new(12.0, 8.0, 0.6), Vec3::new(28.0, 8.0, 1.4), Vec3::new(28.0, 22.0, 1.4), Vec3::new(12.0, 22.0, 0.6)];
+        let model = make_house_site(boundary.clone(), points);
+        let surf = SiteSurface::new(&model).unwrap();
+        let mesh = site_mesh(&surf).unwrap();
+        for &p in &mesh.xy {
+            assert!(inside_or_on(&boundary, p), "vertex {p:?} outside boundary");
+        }
+    }
+
+    #[test]
+    fn site_mesh_without_a_pad_keeps_its_vertices() {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
+        let terrain = Terrain { boundary, points, modifiers: Vec::new(), pad: false, ..Terrain::default() };
+        let model = ArchModel { terrain: Some(terrain), ..ArchModel::default() };
+        let surf = SiteSurface::new(&model).unwrap();
+        let mesh = site_mesh(&surf).unwrap();
+        assert_eq!(mesh.xy.len(), 4, "expected 4 vertices, got {}", mesh.xy.len());
+        assert_eq!(mesh.triangles.len(), 2, "expected 2 triangles, got {}", mesh.triangles.len(),);
+    }
+
+    /// The same house with a basement level under it (the pad sits on level 1, the basement cuts
+    /// the ground down inside the footprint).
+    fn make_house_site_with_basement() -> ArchModel {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
+        let mut model = make_house_site(boundary, points);
+        model.levels = vec![
+            Level { index: 0, name: "Basement".into(), elevation: -2.7, ..Level::default() },
+            Level { index: 1, name: "Level 1".into(), elevation: 0.0, ..Level::default() },
+        ];
+        let upper: Vec<Wall> = model.walls.iter().map(|w| Wall { id: ArchId(w.id.0 + 10), base_level: 1, ..w.clone() }).collect();
+        model.walls.extend(upper);
+        model
+    }
+
+    /// Every edge of `mesh` is shared by two triangles running opposite ways, except edges on the
+    /// site boundary, which have exactly one: the closed top the 3D terrain solid is built from.
+    fn assert_closed(mesh: &SiteMesh, boundary: &[Vec2], what: &str) {
+        let mut directed = std::collections::HashMap::new();
+        for (t, tri) in mesh.triangles.iter().enumerate() {
+            for k in 0..3 {
+                let e = (tri[k], tri[(k + 1) % 3]);
+                assert!(directed.insert(e, t).is_none(), "{what}: edge {:?} -> {:?} used twice the same way", mesh.xy[e.0], mesh.xy[e.1]);
+            }
+        }
+        for &(a, b) in directed.keys() {
+            if !directed.contains_key(&(b, a)) {
+                let (pa, pb) = (mesh.xy[a], mesh.xy[b]);
+                let mid = Vec2::new((pa.x + pb.x) / 2.0, (pa.y + pb.y) / 2.0);
+                assert!(ring_dist(mid, boundary) <= 1e-9, "{what}: open edge {pa:?} -> {pb:?} inside the site");
+            }
+        }
+    }
+
+    #[test]
+    fn site_mesh_with_a_pad_is_closed() {
+        let boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(40.0, 0.0), Vec2::new(40.0, 30.0), Vec2::new(0.0, 30.0)];
+        let points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(40.0, 0.0, 2.0), Vec3::new(40.0, 30.0, 2.0), Vec3::new(0.0, 30.0, 0.0)];
+        let one = SiteSurface::new(&make_house_site(boundary.clone(), points)).unwrap();
+        assert_closed(&site_mesh(&one).unwrap(), &boundary, "pad");
+        let two = SiteSurface::new(&make_house_site_with_basement()).unwrap();
+        assert_eq!(two.pads().len(), 2, "a pad and a basement");
+        assert_closed(&site_mesh(&two).unwrap(), &boundary, "pad and basement");
     }
 }
