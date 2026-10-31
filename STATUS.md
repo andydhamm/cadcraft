@@ -1,10 +1,10 @@
 # arch3d build status
 
-Updated 2026-10-31 07:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 08:00 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
 **Phase 9 of 13: Terrain and site — 24 of 28 segments merged · 2 of 12 acceptance checks**
 
-5,834 workspace tests passing at the last merge · 561 segments merged in all · 0 of 13 seats working
+5,844 workspace tests passing at the last merge · 562 segments merged in all · 0 of 13 seats working
 
 ## Phases
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 07:45 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 2 / 12 | 12.1 h so far · expected done Oct 31 11:05–Oct 31 19:36 UTC |
+| 9 | Terrain and site | building | 2 / 12 | 12.4 h so far · expected done Oct 31 11:20–Oct 31 19:51 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,12 +27,12 @@ Updated 2026-10-31 07:45 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-24 merged, 2 gate, 1 working, 1 merging
+24 merged, 2 merging, 2 gate
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p9-cmd-terrain-query` | `terrain.query`, `terrain.contours` and `terrain.volumes` | gate | claude-sonnet-b |
-| `p9-render-site-plan` | The site in the plan: contours, labels, boundary, paths, plants, north arrow | working | bonsai-ws2-a |
+| `p9-cmd-terrain-query` | `terrain.query`, `terrain.contours` and `terrain.volumes` | merging | claude-sonnet-b |
+| `p9-render-site-plan` | The site in the plan: contours, labels, boundary, paths, plants, north arrow | gate | bonsai-ws2-a |
 | `p9-io-site-proxies` | Site proxies on save, the arch record v8 | gate | claude-sonnet-a |
 | `upstream-sync-a1335895f` | merge upstream upstream/main up to a1335895f (19 commits) | merging | claude-sonnet-c |
 
@@ -40,6 +40,7 @@ Updated 2026-10-31 07:45 UTC. This page and the card in the README are regenerat
 
 | When (UTC) | Segment | Result | Workspace tests | Seat |
 |---|---|---|---|---|
+| Oct 31 07:48 | `harden-p9-arch-retaining` | merged | 5,844 pass | tturbo-mac |
 | Oct 31 07:20 | `p9-arch-terrain-contours` | merged | 5,834 pass | kimi-k31 |
 | Oct 31 07:08 | `p9-arch-terrain-volumes` | merged | 5,828 pass | claude-sonnet-b |
 | Oct 31 06:57 | `p9-arch3d-terrain-solid` | merged | 5,824 pass | claude-sonnet-d |
@@ -51,22 +52,21 @@ Updated 2026-10-31 07:45 UTC. This page and the card in the README are regenerat
 | Oct 31 05:09 | `upstream-sync-b22a06826` | refused | 5,795 pass | claude-sonnet-c |
 | Oct 31 04:49 | `harden-p9-arch-terrain-tin` | merged | 5,514 pass | tturbo-mac2 |
 | Oct 31 04:36 | `p9-arch3d-plants` | merged | 5,510 pass | kimi-k31 |
-| Oct 31 04:22 | `harden-p9-cmd-site-inspect` | merged | 5,506 pass | tturbo-mac2 |
 
 ## Seats active in the last hour
 
 | Seat | Model | State | Rounds |
 |---|---|---|---|
-| bonsai-a | bonsai2-27b | gate | 709 |
-| bonsai-b | bonsai2-27b | agent | 670 |
-| bonsai-ws2-a | bonsai2-27b | agent | 710 |
-| bonsai-ws2-b | bonsai2-27b | merging | 682 |
+| bonsai-a | bonsai2-27b | gate | 710 |
+| bonsai-b | bonsai2-27b | gate | 670 |
+| bonsai-ws2-a | bonsai2-27b | gate | 710 |
+| bonsai-ws2-b | bonsai2-27b | gate | 682 |
 | claude-sonnet-a | sonnet | gate | 57 |
-| claude-sonnet-b | sonnet | gate | 54 |
+| claude-sonnet-b | sonnet | merging | 55 |
 | claude-sonnet-c | sonnet | merging | 6 |
 | claude-sonnet-d | sonnet | idle | 2 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 576 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | agent | 577 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 103 |
 | mai-flash | mai-code-1.1-flash | idle | 28 |
-| tturbo-mac | tturbo-ultraheretic | merging | 490 |
+| tturbo-mac | tturbo-ultraheretic | gate | 490 |
 | tturbo-mac2 | tturbo-ultraheretic | merging | 314 |
