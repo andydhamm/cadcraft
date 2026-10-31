@@ -27,7 +27,7 @@
 //! [`linear_depth`]. Stubs filled by `p10-r3d-light-pack`: [`shadow_priority`],
 //! [`select_shadowed`], [`select_drawn`], [`pack_lights`].
 
-use cadcraft_arch3d::light::SceneLight;
+use cadcraft_arch3d::light::{LightKind, SceneLight};
 
 /// Most lights one frame draws (the uniform's array length).
 pub const MAX_GPU_LIGHTS: usize = 64;
