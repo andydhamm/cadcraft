@@ -56,6 +56,18 @@ fn parse_boundary(cmd: &str, v: &Value) -> Result<Vec<Vec2>> {
     if pts.len() >= 2 && (pts[0].x - pts[pts.len() - 1].x).hypot(pts[0].y - pts[pts.len() - 1].y) <= 1e-12 {
         pts.pop();
     }
+    // Deduplicate consecutive coincident points.
+    let mut deduped = Vec::with_capacity(pts.len());
+    for p in pts {
+        if deduped.last().is_some_and(|last| (last.x - p.x).hypot(last.y - p.y) <= 1e-12) {
+            continue;
+        }
+        deduped.push(p);
+    }
+    if deduped.len() >= 2 && (deduped[0].x - deduped[deduped.len() - 1].x).hypot(deduped[0].y - deduped[deduped.len() - 1].y) <= 1e-12 {
+        deduped.pop();
+    }
+    pts = deduped;
     if pts.len() < 3 {
         return Err(bad(cmd, "`boundary` must contain at least 3 points after dropping a closing point"));
     }
@@ -455,6 +467,6 @@ mod tests {
             .unwrap();
         assert_eq!(r["terrain"], "t0");
         let terrain = s.doc().unwrap().arch.terrain.as_ref().unwrap();
-        assert_eq!(terrain.boundary.len(), 4, "coincident interior points are kept");
+        assert_eq!(terrain.boundary.len(), 3, "coincident interior points are deduplicated");
     }
 }
