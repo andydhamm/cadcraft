@@ -484,4 +484,99 @@ mod tests {
         assert!(on(&list, "C-TOPO-GRAD").is_empty());
         assert!(list.verts.iter().all(|p| p.is_finite()));
     }
+
+    #[test]
+    fn site_plan_skips_non_finite_points() {
+        let mut d = drawing(None);
+        let mut terrain = Terrain::default();
+        // Boundary with a NaN point in the middle
+        terrain.boundary =
+            vec![Vec2::new(0.0, 0.0), Vec2::new(f64::NAN, f64::NAN), Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)];
+        d.arch.terrain = Some(terrain);
+        d.touch_arch();
+
+        let list = build(&d, false);
+
+        // Should not panic and should draw nothing (the boundary has a NaN point)
+        assert!(on(&list, "C-TOPO-BNDY").is_empty());
+    }
+
+    #[test]
+    fn site_plan_major_contour_edge_cases() {
+        // Elevation 0.0 should be major (0 % 1.0 == 0)
+        assert!(is_major_level(0.0, 1.0));
+        // Elevation 0.5 should be minor
+        assert!(!is_major_level(0.5, 1.0));
+        // Elevation -1.0 should be major
+        assert!(is_major_level(-1.0, 1.0));
+        // Elevation 2.0 should be major
+        assert!(is_major_level(2.0, 1.0));
+        // Non-finite values
+        assert!(!is_major_level(f64::NAN, 1.0));
+        assert!(!is_major_level(1.0, f64::NAN));
+        assert!(!is_major_level(1.0, 0.0));
+        assert!(!is_major_level(1.0, -1.0));
+    }
+
+    #[test]
+    fn site_plan_draws_path_modifier() {
+        let mut d = drawing(None);
+        let mut terrain = Terrain::default();
+        terrain.modifiers.push(TerrainModifier {
+            id: 0,
+            kind: ModifierKind::Path {
+                kind: PathKind::Road,
+                polygon: vec![Vec2::new(1.0, 1.0), Vec2::new(9.0, 1.0), Vec2::new(9.0, 2.0), Vec2::new(1.0, 2.0)],
+                thickness: 0.1,
+                material: "asphalt".to_string(),
+            },
+        });
+        d.arch.terrain = Some(terrain);
+        d.touch_arch();
+
+        let list = build(&d, false);
+
+        // Should draw the path polygon on C-ROAD
+        let road = on(&list, "C-ROAD");
+        assert_eq!(road.len(), 1);
+        assert_eq!(road[0].handle, terrain_handle(Some(0)));
+        assert_eq!(list.points(road[0]).len(), 5, "the path polygon is closed");
+    }
+
+    #[test]
+    fn site_plan_hill_with_zero_radius_draws_nothing() {
+        let mut d = drawing(None);
+        let mut terrain = Terrain::default();
+        terrain.modifiers.push(TerrainModifier { id: 0, kind: ModifierKind::Hill { center: Vec2::new(5.0, 5.0), height: 1.0, radius: 0.0 } });
+        d.arch.terrain = Some(terrain);
+        d.touch_arch();
+
+        let list = build(&d, false);
+
+        // Zero radius hill should not draw a circle
+        assert!(on(&list, "C-TOPO-GRAD").is_empty());
+    }
+
+    #[test]
+    fn site_plan_flat_with_zero_margin_draws_no_ring() {
+        let mut d = drawing(None);
+        let mut terrain = Terrain::default();
+        terrain.modifiers.push(TerrainModifier {
+            id: 0,
+            kind: ModifierKind::Flat {
+                polygon: vec![Vec2::new(1.0, 1.0), Vec2::new(9.0, 1.0), Vec2::new(9.0, 9.0), Vec2::new(1.0, 9.0)],
+                elevation: 1.0,
+                margin: 0.0,
+            },
+        });
+        d.arch.terrain = Some(terrain);
+        d.touch_arch();
+
+        let list = build(&d, false);
+
+        // Should draw only the flat polygon, no margin ring
+        let grad = on(&list, "C-TOPO-GRAD");
+        assert_eq!(grad.len(), 1);
+        assert_eq!(grad[0].handle, terrain_handle(Some(0)));
+    }
 }
