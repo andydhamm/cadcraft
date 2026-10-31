@@ -27,7 +27,9 @@
 //! [`linear_depth`]. Stubs filled by `p10-r3d-light-pack`: [`shadow_priority`],
 //! [`select_shadowed`], [`select_drawn`], [`pack_lights`].
 
-use cadcraft_arch3d::light::SceneLight;
+use std::cmp::Ordering;
+
+use cadcraft_arch3d::light::{LightKind, SceneLight};
 
 /// Most lights one frame draws (the uniform's array length).
 pub const MAX_GPU_LIGHTS: usize = 64;
@@ -67,21 +69,49 @@ pub struct ShadowSlot {
 /// max(squared distance from `eye` to the light, 1 m²), largest first; ties by lower index.
 /// Non-finite scores sort last.
 pub fn shadow_priority(lights: &[SceneLight], eye: [f64; 3]) -> Vec<usize> {
-    let _ = eye;
-    (0..lights.len()).collect()
+    let mut scored: Vec<(usize, f64)> = (0..lights.len())
+        .map(|i| {
+            let l = &lights[i];
+            let dx = l.position.x - eye[0];
+            let dy = l.position.y - eye[1];
+            let dz = l.position.z - eye[2];
+            let dsq = dx * dx + dy * dy + dz * dz;
+            let finite = dx.is_finite() && dy.is_finite() && dz.is_finite() && dsq.is_finite() && l.intensity.is_finite();
+            let score = if finite { l.intensity / dsq.max(1.0) } else { f64::NAN };
+            (i, score)
+        })
+        .collect();
+    scored.sort_by(|a, b| {
+        let af = a.1.is_finite();
+        let bf = b.1.is_finite();
+        if af != bf {
+            af.then(|| Ordering::Less).unwrap_or(Ordering::Greater)
+        } else if af {
+            b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal).then_with(|| a.0.cmp(&b.0))
+        } else {
+            a.0.cmp(&b.0)
+        }
+    });
+    scored.into_iter().map(|(i, _)| i).collect()
 }
 
 /// The first `budget` of [`shadow_priority`], returned in ascending index order.
 pub fn select_shadowed(lights: &[SceneLight], eye: [f64; 3], budget: usize) -> Vec<usize> {
-    let _ = (lights, eye, budget);
-    Vec::new()
+    let mut sel: Vec<usize> = shadow_priority(lights, eye).iter().take(budget).copied().collect();
+    sel.sort();
+    sel
 }
 
 /// The lights a frame draws: all of them when there are at most [`MAX_GPU_LIGHTS`], else the
 /// first [`MAX_GPU_LIGHTS`] of [`shadow_priority`]; ascending index order.
 pub fn select_drawn(lights: &[SceneLight], eye: [f64; 3]) -> Vec<usize> {
-    let _ = (lights, eye);
-    Vec::new()
+    if lights.len() <= MAX_GPU_LIGHTS {
+        (0..lights.len()).collect()
+    } else {
+        let mut sel: Vec<usize> = shadow_priority(lights, eye).iter().take(MAX_GPU_LIGHTS).copied().collect();
+        sel.sort();
+        sel
+    }
 }
 
 /// The `LightsU` bytes ([`LIGHTS_UNIFORM_SIZE`] long, std140, little-endian) for the `drawn`
@@ -89,8 +119,54 @@ pub fn select_drawn(lights: &[SceneLight], eye: [f64; 3]) -> Vec<usize> {
 /// light index with its slot; a drawn light without one is unshadowed). Colour = `color` ×
 /// `intensity`.
 pub fn pack_lights(lights: &[SceneLight], drawn: &[usize], slots: &[(usize, ShadowSlot)]) -> Vec<u8> {
-    let _ = (lights, drawn, slots);
-    vec![0; LIGHTS_UNIFORM_SIZE as usize]
+    let mut buf = vec![0u8; LIGHTS_UNIFORM_SIZE as usize];
+    write_u32(&mut buf, 0, drawn.len().min(MAX_GPU_LIGHTS) as u32);
+    for (k, &i) in drawn.iter().take(MAX_GPU_LIGHTS).enumerate() {
+        let Some(l) = lights.get(i) else { continue };
+        let base = 16 + 64 * k;
+        let far = slots.get(i).map_or(0.0, |s| s.1.far);
+        write_f32(&mut buf, base + 0, l.position.x as f32);
+        write_f32(&mut buf, base + 4, l.position.y as f32);
+        write_f32(&mut buf, base + 8, l.position.z as f32);
+        write_f32(&mut buf, base + 12, far as f32);
+        let cos_outer = match l.kind {
+            LightKind::Spot => l.cos_outer,
+            LightKind::Point => -2.0,
+        };
+        write_f32(&mut buf, base + 16, l.direction.x as f32);
+        write_f32(&mut buf, base + 20, l.direction.y as f32);
+        write_f32(&mut buf, base + 24, l.direction.z as f32);
+        write_f32(&mut buf, base + 28, cos_outer as f32);
+        write_f32(&mut buf, base + 32, (l.color[0] * l.intensity) as f32);
+        write_f32(&mut buf, base + 36, (l.color[1] * l.intensity) as f32);
+        write_f32(&mut buf, base + 40, (l.color[2] * l.intensity) as f32);
+        write_f32(&mut buf, base + 44, l.cos_inner as f32);
+        match slots.get(i) {
+            Some(s) => {
+                write_f32(&mut buf, base + 48, s.1.first_layer as f32);
+                write_f32(&mut buf, base + 52, if s.1.cube { 1.0 } else { 0.0 });
+                write_f32(&mut buf, base + 56, s.1.near);
+                write_f32(&mut buf, base + 60, s.1.bias);
+            }
+            None => {
+                write_f32(&mut buf, base + 48, -1.0);
+                write_f32(&mut buf, base + 52, 0.0);
+                write_f32(&mut buf, base + 56, 0.0);
+                write_f32(&mut buf, base + 60, 0.0);
+            }
+        }
+        if let Some(s) = slots.get(i) {
+            if !s.1.cube {
+                let vp_base = 16 + 64 * 64 + 64 * k;
+                for (col, col_arr) in s.1.view_proj.iter().enumerate() {
+                    for (row, v) in col_arr.iter().enumerate() {
+                        write_f32(&mut buf, vp_base + col * 4 + row * 4, *v);
+                    }
+                }
+            }
+        }
+    }
+    buf
 }
 
 /// Forward and up axes of cube face `face`: 0 +X, 1 −X, 2 +Y, 3 −Y (up +Z), 4 +Z, 5 −Z (up +Y).
@@ -186,6 +262,15 @@ pub fn linear_depth(d: f32, near: f32, far: f32) -> f32 {
 /// WGSL helpers every lit shader includes: `linear_depth`, `cube_face_of`, `cube_uv_depth`.
 pub const LIGHT_MATH_WGSL: &str = include_str!("shaders/light_math.wgsl");
 
+fn write_u32(buf: &mut Vec<u8>, off: usize, v: u32) {
+    buf[off..off + 4].copy_from_slice(&v.to_le_bytes());
+}
+
+/// Store `v` (non-finite becomes 0.0) little-endian at `off`.
+fn write_f32(buf: &mut Vec<u8>, off: usize, v: f32) {
+    buf[off..off + 4].copy_from_slice(&if v.is_finite() { v } else { 0.0 }.to_le_bytes());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,5 +341,112 @@ mod tests {
         assert!((edge[0] / edge[3]).abs() < 1.0 && (edge[1] / edge[3]).abs() < 1.0);
         let wide = SceneLight { cos_outer: -0.5, ..l };
         assert!(spot_view_proj(&wide, 0.05, 10.0).is_none());
+    }
+
+    use cadcraft_arch3d::light::{LightKind, SceneLight};
+    use cadcraft_geom::Vec3;
+
+    /// A scene light at `pos`, `intensity` cd, of the given `kind`, `cos` inner/outer.
+    fn light(pos: [f64; 3], intensity: f64, kind: LightKind, cos: f64) -> SceneLight {
+        SceneLight {
+            kind,
+            position: Vec3::new(pos[0], pos[1], pos[2]),
+            direction: Vec3::new(0.0, 0.0, 1.0),
+            intensity,
+            color: [1.0; 3],
+            cos_inner: cos,
+            cos_outer: cos,
+            ..Default::default()
+        }
+    }
+
+    fn row(n: usize) -> Vec<SceneLight> {
+        (0..n).map(|i| light([i as f64, 0.0, 0.0], 1.0, LightKind::Point, 1.0)).collect()
+    }
+
+    #[test]
+    fn shadow_priority_prefers_near_and_bright() {
+        // Uniform 12-light row along +x from the eye: nearest first.
+        let p = shadow_priority(&row(12), [0.0, 0.0, 0.0]);
+        assert_eq!(p, (0..12).collect::<Vec<usize>>());
+        // A light 10x brighter at twice the distance outranks its dimmer nearer neighbour
+        // (score 10/4 = 2.5 > 1/1 = 1.0).
+        let bright_far = light([2.0, 0.0, 0.0], 10.0, LightKind::Point, 1.0);
+        let dim_near = light([1.0, 0.0, 0.0], 1.0, LightKind::Point, 1.0);
+        assert_eq!(shadow_priority(&vec![bright_far, dim_near], [0.0, 0.0, 0.0]), vec![0, 1]);
+    }
+
+    #[test]
+    fn select_shadowed_keeps_the_budget_in_index_order() {
+        // 12-light row along +x: the 8 nearest are shadowed, reported in ascending order.
+        let s = select_shadowed(&row(12), [0.0, 0.0, 0.0], 8);
+        assert_eq!(s, (0..8).collect::<Vec<usize>>());
+    }
+
+    #[test]
+    fn select_drawn_caps_at_64() {
+        // 70 lights draw 64.
+        let d = select_drawn(&row(70), [0.0, 0.0, 0.0]);
+        assert_eq!(d.len(), MAX_GPU_LIGHTS);
+        assert_eq!(d, (0..64).collect::<Vec<usize>>());
+        // A short list draws everything.
+        assert_eq!(select_drawn(&row(3), [0.0, 0.0, 0.0]), vec![0, 1, 2]);
+    }
+
+    fn read_u8s(buf: &[u8], off: usize) -> [u8; 4] {
+        [
+            buf.get(off).copied().unwrap_or(0),
+            buf.get(off + 1).copied().unwrap_or(0),
+            buf.get(off + 2).copied().unwrap_or(0),
+            buf.get(off + 3).copied().unwrap_or(0),
+        ]
+    }
+
+    fn read_f32(buf: &[u8], off: usize) -> f32 {
+        f32::from_bits(u32::from_le_bytes(read_u8s(buf, off)))
+    }
+
+    fn read_u32(buf: &[u8], off: usize) -> u32 {
+        u32::from_le_bytes(read_u8s(buf, off))
+    }
+
+    #[test]
+    fn pack_lights_layout_matches_the_wgsl_struct() {
+        let l = vec![light([10.0, 20.0, 30.0], 5.0, LightKind::Spot, 0.5), light([40.0, 50.0, 60.0], 3.0, LightKind::Spot, 0.6)];
+        let slots = vec![
+            (0, ShadowSlot { first_layer: 7, cube: false, view_proj: [[0.0; 4]; 4], near: 0.05, far: 10.0, bias: 0.001 }),
+            (1, ShadowSlot { first_layer: 8, cube: false, view_proj: [[0.0; 4]; 4], near: 0.05, far: 10.0, bias: 0.001 }),
+        ];
+        let buf = pack_lights(&l, &[0, 1], &slots);
+        assert_eq!(read_u32(&buf, 0), 2);
+        // Light 0 at offset 16: pos_range = (x, y, z, far) at offsets 0, 4, 8, 12.
+        assert_eq!(read_f32(&buf, 16 + 0), 10.0, "light 0 position.x at 16");
+        assert_eq!(read_f32(&buf, 16 + 8), 30.0, "light 0 position.z at 16 + 8");
+        assert_eq!(read_f32(&buf, 16 + 12), 10.0, "light 0 far at 16 + 12");
+        // Light 1: position at offset 16 + 64, first_layer at offset 16 + 64 + 48.
+        let base1 = 16 + 64;
+        assert_eq!(read_f32(&buf, base1 + 0), 40.0, "light 1 position.x at 16 + 64");
+        assert_eq!(read_f32(&buf, base1 + 8), 60.0, "light 1 position.z at 16 + 64 + 8");
+        assert_eq!(read_f32(&buf, base1 + 12), 10.0, "light 1 far at 16 + 64 + 12");
+        assert_eq!(read_f32(&buf, base1 + 48), 8.0, "light 1 first_layer at 16 + 64 + 48");
+    }
+
+    #[test]
+    fn pack_lights_marks_unshadowed_lights() {
+        let l = vec![light([1.0, 2.0, 3.0], 5.0, LightKind::Spot, 0.5), light([4.0, 5.0, 6.0], 3.0, LightKind::Point, -2.0)];
+        let slots = vec![(0, ShadowSlot { first_layer: 3, cube: false, view_proj: [[0.0; 4]; 4], near: 0.05, far: 10.0, bias: 0.001 })];
+        let buf = pack_lights(&l, &[0, 1], &slots);
+        // Light 0 shadowed: (first_layer, cube, near, bias) at offset 16 + 48.
+        assert_eq!(read_f32(&buf, 16 + 48), 3.0);
+        assert_eq!(read_f32(&buf, 16 + 52), 0.0);
+        assert_eq!(read_f32(&buf, 16 + 56), 0.05);
+        assert_eq!(read_f32(&buf, 16 + 60), 0.001);
+        // Light 1 unshadowed (point, no slot): shadow = (-1, 0, 0, 0); cos_outer w = -2.
+        let base1 = 16 + 64;
+        assert_eq!(read_f32(&buf, base1 + 28), -2.0, "point cos_outer w");
+        assert_eq!(read_f32(&buf, base1 + 48), -1.0, "unshadowed first_layer -1");
+        assert_eq!(read_f32(&buf, base1 + 52), 0.0);
+        assert_eq!(read_f32(&buf, base1 + 56), 0.0);
+        assert_eq!(read_f32(&buf, base1 + 60), 0.0);
     }
 }
