@@ -445,4 +445,96 @@ mod tests {
         let lines = chain_contours(&segs);
         assert_eq!(lines.len(), 2);
     }
+
+    #[test]
+    fn tin_index_empty_tin() {
+        let tin = Tin::default();
+        let idx = TinIndex::new(&tin);
+        assert_eq!(idx.locate(&tin, Vec2::new(0.0, 0.0)), None);
+    }
+
+    #[test]
+    fn retain_inside_empty_ring_removes_all() {
+        let mut tin = Tin::default();
+        tin.points.push(Vec3::new(0.0, 0.0, 0.0));
+        tin.points.push(Vec3::new(1.0, 0.0, 0.0));
+        tin.points.push(Vec3::new(0.5, 1.0, 0.0));
+        tin.triangles.push([0, 1, 2]);
+        retain_inside(&mut tin, &[]);
+        assert_eq!(tin.triangles.len(), 0);
+    }
+
+    #[test]
+    fn retain_inside_ring_with_nan_removes_all() {
+        let mut tin = Tin::default();
+        tin.points.push(Vec3::new(0.0, 0.0, 0.0));
+        tin.points.push(Vec3::new(1.0, 0.0, 0.0));
+        tin.points.push(Vec3::new(0.5, 1.0, 0.0));
+        tin.triangles.push([0, 1, 2]);
+        let ring = [Vec2::new(0.0, 0.0), Vec2::new(2.0, 0.0), Vec2::new(f64::NAN, 2.0)];
+        retain_inside(&mut tin, &ring);
+        assert_eq!(tin.triangles.len(), 0);
+    }
+
+    #[test]
+    fn chain_contours_single_segment() {
+        let segs = vec![ContourSegment { elevation: 1.0, start: Vec2::new(0.0, 0.0), end: Vec2::new(1.0, 0.0) }];
+        let lines = chain_contours(&segs);
+        assert_eq!(lines.len(), 1);
+        assert!(!lines[0].closed);
+        assert_eq!(lines[0].points.len(), 2);
+    }
+
+    #[test]
+    fn chain_contours_zero_length_segment() {
+        let segs = vec![ContourSegment { elevation: 1.0, start: Vec2::new(1.0, 1.0), end: Vec2::new(1.0, 1.0) }];
+        let lines = chain_contours(&segs);
+        // A zero-length segment has both endpoints at the same quantised key,
+        // so it appears as a degree-2 endpoint and is walked as a closed loop.
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].closed);
+        assert_eq!(lines[0].points.len(), 1);
+    }
+
+    #[test]
+    fn tin_index_locate_at_vertex() {
+        let mut tin = Tin::default();
+        tin.points.push(Vec3::new(0.0, 0.0, 0.0));
+        tin.points.push(Vec3::new(10.0, 0.0, 0.0));
+        tin.points.push(Vec3::new(5.0, 5.0, 0.0));
+        tin.triangles.push([0, 1, 2]);
+        let idx = TinIndex::new(&tin);
+        // Vertex (0,0) is shared by the triangle; barycentric should accept it.
+        assert_eq!(idx.locate(&tin, Vec2::new(0.0, 0.0)).unwrap().0, 0);
+    }
+
+    #[test]
+    fn chain_contours_two_separate_open_lines() {
+        let segs = vec![
+            ContourSegment { elevation: 1.0, start: Vec2::new(0.0, 0.0), end: Vec2::new(1.0, 0.0) },
+            ContourSegment { elevation: 1.0, start: Vec2::new(5.0, 0.0), end: Vec2::new(6.0, 0.0) },
+        ];
+        let lines = chain_contours(&segs);
+        assert_eq!(lines.len(), 2);
+        assert!(!lines[0].closed);
+        assert!(!lines[1].closed);
+    }
+
+    #[test]
+    fn chain_contours_two_loops() {
+        let segs = vec![
+            ContourSegment { elevation: 1.0, start: Vec2::new(0.0, 0.0), end: Vec2::new(1.0, 0.0) },
+            ContourSegment { elevation: 1.0, start: Vec2::new(1.0, 0.0), end: Vec2::new(1.0, 1.0) },
+            ContourSegment { elevation: 1.0, start: Vec2::new(1.0, 1.0), end: Vec2::new(0.0, 1.0) },
+            ContourSegment { elevation: 1.0, start: Vec2::new(0.0, 1.0), end: Vec2::new(0.0, 0.0) },
+            ContourSegment { elevation: 1.0, start: Vec2::new(5.0, 0.0), end: Vec2::new(6.0, 0.0) },
+            ContourSegment { elevation: 1.0, start: Vec2::new(6.0, 0.0), end: Vec2::new(6.0, 1.0) },
+            ContourSegment { elevation: 1.0, start: Vec2::new(6.0, 1.0), end: Vec2::new(5.0, 1.0) },
+            ContourSegment { elevation: 1.0, start: Vec2::new(5.0, 1.0), end: Vec2::new(5.0, 0.0) },
+        ];
+        let lines = chain_contours(&segs);
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].closed);
+        assert!(lines[1].closed);
+    }
 }
