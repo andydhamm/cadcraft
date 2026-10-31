@@ -1546,4 +1546,101 @@ mod tests {
         assert!(mesh_names.contains(&"floor-r3".to_string()), "missing floor-r3: {:?}", mesh_names);
         assert!(mesh_names.contains(&"ceiling-r3".to_string()), "missing ceiling-r3: {:?}", mesh_names,);
     }
+
+    /// Floor and ceiling with id 0 use the `r0` suffix, not `o0`.
+    #[test]
+    fn glb_floor_ceiling_zero_id() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "floor".into();
+            m.object = ArchId(0);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "ceiling".into();
+            m.object = ArchId(0);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert!(mesh_names.contains(&"floor-r0".to_string()), "missing floor-r0: {:?}", mesh_names);
+        assert!(mesh_names.contains(&"ceiling-r0".to_string()), "missing ceiling-r0: {:?}", mesh_names);
+    }
+
+    /// Floor and ceiling with different ids get distinct names.
+    #[test]
+    fn glb_floor_ceiling_different_ids() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "floor".into();
+            m.object = ArchId(1);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "ceiling".into();
+            m.object = ArchId(2);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert!(mesh_names.contains(&"floor-r1".to_string()), "missing floor-r1: {:?}", mesh_names);
+        assert!(mesh_names.contains(&"ceiling-r2".to_string()), "missing ceiling-r2: {:?}", mesh_names);
+    }
+
+    /// Floor, ceiling and deck with the same id all use the `r{id}` suffix.
+    #[test]
+    fn glb_floor_ceiling_deck_same_id() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "floor".into();
+            m.object = ArchId(5);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "ceiling".into();
+            m.object = ArchId(5);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "deck".into();
+            m.object = ArchId(5);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert_eq!(mesh_names, vec!["floor-r5", "ceiling-r5", "deck-r5"]);
+    }
+
+    /// Floor and ceiling with large ids preserve the full id in the name.
+    #[test]
+    fn glb_floor_ceiling_large_id() {
+        let mut scene = scene_with(0);
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "floor".into();
+            m.object = ArchId(65535);
+            m
+        });
+        scene.meshes.push({
+            let mut m = wall_mesh();
+            m.material = "ceiling".into();
+            m.object = ArchId(1048576);
+            m
+        });
+        let bytes = write(&scene);
+        let json = glb_json_chunk(&bytes);
+        let mesh_names: Vec<String> = json["meshes"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).map(String::from).collect();
+        assert!(mesh_names.contains(&"floor-r65535".to_string()), "missing floor-r65535: {:?}", mesh_names);
+        assert!(mesh_names.contains(&"ceiling-r1048576".to_string()), "missing ceiling-r1048576: {:?}", mesh_names);
+    }
 }
