@@ -69,6 +69,7 @@ pub struct PbrUniform {
     /// Shadow-map depth range end.
     pub shadow_max: f32,
     pub _p1: [f32; 3],
+    /// `[emissive, 0, 0, 0]` (WGSL `_p6`; phase 10, read by the lit pipelines only).
     pub _p2: [f32; 4],
 }
 /// Byte size of [`PbrUniform`].
@@ -100,7 +101,7 @@ impl PbrUniform {
             shadow_min: 0.0,
             shadow_max: 0.0,
             _p1: [0.0; 3],
-            _p2: [0.0; 4],
+            _p2: [fin(draw.emissive, 0.0).clamp(0.0, 100.0), 0.0, 0.0, 0.0],
         }
     }
 }
@@ -125,8 +126,14 @@ pub fn material_pbr(material: &str) -> ([f32; 3], f32, f32, f32) {
         0.9
     } else if starts(&["floor", "door", "leaf", "stair", "railing", "deck"]) {
         0.7
-    } else if starts(&["roof", "ground"]) {
+    } else if starts(&["roof", "ground", "terrain"]) {
         0.95
+    } else if starts(&["path-"]) {
+        0.9
+    } else if starts(&["plant-"]) {
+        0.8
+    } else if starts(&["light-"]) {
+        0.4
     } else {
         return (albedo, 0.0, 0.5, 1.0);
     };
@@ -151,7 +158,42 @@ pub fn material_albedo(material: &str) -> [f32; 3] {
         ("soffit", [0.80, 0.80, 0.76]),
     ];
     let m = material.to_ascii_lowercase();
+    if let Some(c) = site_or_light_albedo(&m) {
+        return c;
+    }
     TABLE.iter().find(|(name, _)| m.starts_with(name)).map_or([0.75, 0.75, 0.75], |(_, c)| *c)
+}
+
+/// Phase 9/10 materials (lower case): the terrain, paths by their surface (`path-{kind}-{surface}`,
+/// the last word), plants and fixture housings, so the site no longer renders grey.
+fn site_or_light_albedo(m: &str) -> Option<[f32; 3]> {
+    if m == "terrain" {
+        return Some([0.33, 0.45, 0.22]);
+    }
+    if let Some(rest) = m.strip_prefix("path-") {
+        let surface = rest.rsplit('-').next().unwrap_or(rest);
+        return Some(match surface {
+            "asphalt" => [0.18, 0.18, 0.19],
+            "concrete" => [0.62, 0.61, 0.58],
+            "gravel" => [0.52, 0.48, 0.42],
+            "pavers" => [0.55, 0.40, 0.32],
+            "brick" => [0.55, 0.27, 0.20],
+            _ => [0.50, 0.50, 0.50],
+        });
+    }
+    if m.starts_with("plant-trunk") {
+        return Some([0.35, 0.24, 0.15]);
+    }
+    if m.starts_with("plant-") {
+        return Some([0.20, 0.40, 0.16]);
+    }
+    if m.starts_with("light-lens") {
+        return Some([0.98, 0.96, 0.90]);
+    }
+    if m.starts_with("light-") {
+        return Some([0.92, 0.92, 0.90]);
+    }
+    None
 }
 
 impl GpuUniform {
@@ -205,11 +247,17 @@ pub struct Draw {
     pub roughness: f32,
     /// Opacity; below 1.0 the draw blends (glass).
     pub alpha: f32,
+    /// Whether the draw is rendered into shadow maps (phase 10: fixture housings, `light-…`
+    /// materials, cast none, so moving a fixture changes no other light's shadows).
+    pub casts_shadow: bool,
+    /// Self-lit strength (phase 10: 1 for the lens of a fixture that is on, `light-lens-lit`);
+    /// carried to the shader in `PbrUniform::_p2[0]` and used by the lit pipelines only.
+    pub emissive: f32,
 }
 
 impl Default for Draw {
     fn default() -> Self {
-        Draw { first_index: 0, index_count: 0, albedo: [0.75; 3], metallic: 0.0, roughness: 0.5, alpha: 1.0 }
+        Draw { first_index: 0, index_count: 0, albedo: [0.75; 3], metallic: 0.0, roughness: 0.5, alpha: 1.0, casts_shadow: true, emissive: 0.0 }
     }
 }
 
@@ -264,7 +312,9 @@ pub fn upload(device: &wgpu::Device, scene: &Scene3d) -> GpuMeshes {
         let index_count = indices.len() as u32 - first_index;
         if index_count > 0 {
             let (albedo, metallic, roughness, alpha) = material_pbr(&mesh.material);
-            draws.push(Draw { first_index, index_count, albedo, metallic, roughness, alpha });
+            let casts_shadow = !cadcraft_arch3d::light::is_light_material(&mesh.material);
+            let emissive = if mesh.material.eq_ignore_ascii_case("light-lens-lit") { 1.0 } else { 0.0 };
+            draws.push(Draw { first_index, index_count, albedo, metallic, roughness, alpha, casts_shadow, emissive });
         }
         vertex_offset += n;
     }
@@ -493,6 +543,20 @@ pub fn pbr_bind_group(device: &wgpu::Device, pbr_bgl: &wgpu::BindGroupLayout, bu
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn site_and_fixture_materials_have_their_own_colours() {
+        let grass = material_albedo("terrain");
+        assert!(grass[1] > grass[0] && grass[1] > grass[2], "terrain is green");
+        assert_eq!(material_albedo("path-road-asphalt"), [0.18, 0.18, 0.19]);
+        assert_eq!(material_albedo("path-driveway-concrete"), [0.62, 0.61, 0.58]);
+        let crown = material_albedo("plant-crown");
+        assert!(crown[1] > crown[0] && crown[1] > crown[2], "a crown is green");
+        assert_ne!(material_albedo("plant-trunk"), crown);
+        assert_eq!(material_albedo("light-trim"), [0.92, 0.92, 0.90]);
+        assert_eq!(material_albedo("wall"), [0.80, 0.78, 0.74], "older rows unchanged");
+        assert_eq!(material_albedo("something-new"), [0.75, 0.75, 0.75]);
+    }
     use super::*;
     use crate::types::{ArchId, Mesh};
 
@@ -881,6 +945,7 @@ mod tests {
             metallic: f32::INFINITY,
             roughness: f32::NAN,
             alpha: f32::NEG_INFINITY,
+            ..Default::default()
         };
         let cam = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY];
         let p = PbrUniform::new(&light, f32::NAN, &draw, u32::MAX, cam);
@@ -965,7 +1030,7 @@ mod tests {
     #[test]
     fn pbr_uniform_finite_values_pass_through_unchanged() {
         let light = crate::light::Light::new([1.0, 0.0, 0.0], 0.3);
-        let draw = Draw { first_index: 0, index_count: 3, albedo: [1.0, 0.5, 0.25], metallic: 0.8, roughness: 0.4, alpha: 0.9 };
+        let draw = Draw { first_index: 0, index_count: 3, albedo: [1.0, 0.5, 0.25], metallic: 0.8, roughness: 0.4, alpha: 0.9, ..Default::default() };
         let p = PbrUniform::new(&light, 2.5, &draw, STYLE_SHADED_EDGES, [10.0, 20.0, 30.0]);
         // Normalised light dir: [1,0,0] is already unit length.
         assert_eq!(p.light_dir, [1.0, 0.0, 0.0]);
@@ -996,6 +1061,7 @@ mod tests {
             metallic: f32::INFINITY,
             roughness: f32::INFINITY,
             alpha: f32::NEG_INFINITY,
+            ..Default::default()
         };
         let p = PbrUniform::new(&light, f32::INFINITY, &draw, STYLE_SHADED, [0.0; 3]);
         // Infinity is clamped, not replaced with the NaN default.

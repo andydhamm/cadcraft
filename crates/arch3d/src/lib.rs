@@ -10,8 +10,10 @@
 
 pub mod camera;
 pub mod edges;
+pub mod fixture;
 pub mod floors;
 pub mod hlr;
+pub mod light;
 pub mod mesh;
 pub mod openings;
 pub mod pick;
@@ -179,6 +181,10 @@ pub struct Scene3d {
     pub paths: usize,
     /// Plants built.
     pub plants: usize,
+    /// Phase 10: the lights of the fixtures that are on (`light::scene_lights`).
+    pub lights: Vec<light::SceneLight>,
+    /// Fixture housings built (one per fixture, on or off).
+    pub fixtures: usize,
 }
 
 impl Scene3d {
@@ -356,6 +362,10 @@ impl Scene3d {
         let site = site::site_meshes(model);
         let (terrain, paths, plants) = (site.terrain, site.paths, site.plants);
         meshes.extend(site.meshes);
+        let fixture_meshes = light::fixture_meshes(model);
+        let fixtures = fixture_meshes.iter().map(|m| m.object).collect::<BTreeSet<ArchId>>().len();
+        meshes.extend(fixture_meshes);
+        let lights = light::scene_lights(model);
 
         meshes.retain(|m| !m.positions.is_empty() && mesh_is_finite(m));
 
@@ -381,6 +391,8 @@ impl Scene3d {
             terrain,
             paths,
             plants,
+            lights,
+            fixtures,
         }
     }
 
@@ -475,10 +487,13 @@ impl Scene3d {
 
         let mut openings_built = 0;
         let wall_map: BTreeMap<ArchId, &Wall> = model.walls.iter().map(|w| (w.id, w)).collect();
-        // Site meshes (terrain, paths, plants) are rebuilt every time, never reused: their ids
-        // number apart from the building's, so grouping them by id would mix them in.
-        let prev_by_object: BTreeMap<ArchId, Vec<Mesh>> =
-            prev.meshes.iter().filter(|m| !site::is_site_material(&m.material)).fold(BTreeMap::new(), |mut m, mesh| {
+        // Site meshes (terrain, paths, plants) and fixture housings are rebuilt every time, never
+        // reused: their ids number apart from the building's, so grouping them by id would mix them in.
+        let prev_by_object: BTreeMap<ArchId, Vec<Mesh>> = prev
+            .meshes
+            .iter()
+            .filter(|m| !site::is_site_material(&m.material) && !light::is_light_material(&m.material))
+            .fold(BTreeMap::new(), |mut m, mesh| {
                 m.entry(mesh.object).or_default().push(mesh.clone());
                 m
             });
@@ -664,6 +679,10 @@ impl Scene3d {
         let site = site::site_meshes(model);
         let (terrain, paths, plants) = (site.terrain, site.paths, site.plants);
         meshes.extend(site.meshes);
+        let fixture_meshes = light::fixture_meshes(model);
+        let fixtures = fixture_meshes.iter().map(|m| m.object).collect::<BTreeSet<ArchId>>().len();
+        meshes.extend(fixture_meshes);
+        let lights = light::scene_lights(model);
 
         meshes.retain(|m| !m.positions.is_empty() && mesh_is_finite(m));
 
@@ -689,6 +708,8 @@ impl Scene3d {
             terrain,
             paths,
             plants,
+            lights,
+            fixtures,
         }
     }
 }

@@ -60,7 +60,8 @@ fn vec3_field(obj: &Value, key: &str, default: Vec3) -> Result<Vec3, EngineError
     }
 }
 
-fn parse_camera(cam: &Value) -> Result<Camera, EngineError> {
+/// The `camera` JSON of `pick3d` (and `render`): `{kind: orbit|full, …}`.
+pub(crate) fn parse_camera(cam: &Value) -> Result<Camera, EngineError> {
     if !cam.is_object() {
         return Err(bad("pick3d", "`camera` must be an object"));
     }
@@ -132,6 +133,8 @@ fn label_and_handle(id: ArchId, part: &str) -> (String, String) {
         "roof" => roof_label(id),
         "stair" => stair_label(id),
         "railing" => railing_label(id),
+        "plant" => cadcraft_doc::arch::plant_label(id),
+        "light" => cadcraft_doc::arch::light_label(id),
         _ => wall_label(id),
     };
     (label, handle_json(part_handle(id, part)))

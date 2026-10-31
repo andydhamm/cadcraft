@@ -135,6 +135,10 @@ pub struct RenderOptions<'a> {
     pub style: Style,
     /// Draw a [`crate::shadow::ground_mesh`] under the scene.
     pub ground: bool,
+    /// Phase 10: draw through the lit pipelines with this frame's group 2 (the sun, its shadow
+    /// and the fixture lights; see [`Offscreen::lit_frame`]). `shadow` is then ignored: the sun
+    /// map, if any, is in the frame. `None` draws exactly as before.
+    pub lit: Option<&'a crate::lit::LitFrame>,
 }
 
 /// Per-draw uniform slots: one buffer, one bind group, addressed by dynamic offset.
@@ -148,19 +152,24 @@ struct Slots {
 
 /// Offscreen renderer that draws a [`Scene3d`] into its own colour + depth targets.
 pub struct Offscreen {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
     targets: Targets,
-    gpu: GpuPipeline,
+    pub(crate) gpu: GpuPipeline,
     stride: u64,
     slots: Option<Slots>,
-    meshes: Option<((u64, bool), GpuMeshes)>,
+    pub(crate) meshes: Option<((u64, bool), GpuMeshes)>,
     edges: Option<EdgePass>,
     shadowed: Option<ShadowPipelines>,
-    shadows_built: u64,
+    pub(crate) shadows_built: u64,
     uploads: u64,
     generation: u64,
     info: DeviceInfo,
+    /// Phase 10: the lit pipelines (built on first use), the interactive lights' state and the
+    /// number of Finalize Renders completed.
+    pub(crate) lit_pipelines: Option<crate::lit::LitPipelines>,
+    pub(crate) lit_state: crate::lit_frame::LitState,
+    pub(crate) final_renders: u64,
 }
 
 impl Offscreen {
@@ -219,6 +228,9 @@ impl Offscreen {
             uploads: 0,
             generation: 1,
             info,
+            lit_pipelines: None,
+            lit_state: Default::default(),
+            final_renders: 0,
         }
     }
 
@@ -269,9 +281,21 @@ impl Offscreen {
         }
     }
 
-    /// How many shadow maps [`Offscreen::build_shadow`] has built.
+    /// How many shadow maps this renderer has built: sun maps ([`Offscreen::build_shadow`]) plus
+    /// fixture lights whose maps were rendered (a point light's cube counts once).
     pub fn shadow_maps_built(&self) -> u64 {
         self.shadows_built
+    }
+
+    /// Finalize Renders this renderer has completed.
+    pub fn final_renders(&self) -> u64 {
+        self.final_renders
+    }
+
+    /// Make sure the scene is uploaded (see [`Offscreen::encode`]) and return its GPU meshes.
+    pub(crate) fn uploaded(&mut self, scene: &Scene3d, scene_key: u64, ground: bool) -> Option<&GpuMeshes> {
+        self.ensure_meshes(scene, scene_key, ground);
+        self.meshes.as_ref().map(|(_, m)| m)
     }
 
     /// Build the sun shadow map of `scene` for `light` (see [`crate::shadow::build`]); `None` when
@@ -304,7 +328,11 @@ impl Offscreen {
         opts: &RenderOptions,
     ) {
         self.ensure_meshes(scene, scene_key, opts.ground);
-        if opts.shadow.is_some() && self.shadowed.is_none() {
+        if opts.lit.is_some() && self.lit_pipelines.is_none() {
+            self.lit_pipelines = crate::lit::LitPipelines::new(&self.device, &self.gpu);
+        }
+        let lit = opts.lit.zip(self.lit_pipelines.as_ref());
+        if lit.is_none() && opts.shadow.is_some() && self.shadowed.is_none() {
             self.shadowed = ShadowPipelines::new(&self.device, &self.gpu);
         }
         let Some((_, meshes)) = self.meshes.as_ref() else { return };
@@ -362,7 +390,10 @@ impl Offscreen {
                         draw.alpha = 0.35;
                     }
                 }
-                let p = PbrUniform::new(&l, 1.0, &draw, opts.style.code(), eye);
+                let p = match lit {
+                    Some((frame, _)) => PbrUniform::new(&Light { ambient: frame.ambient, ..l }, frame.sun_intensity, &draw, opts.style.code(), eye),
+                    None => PbrUniform::new(&l, 1.0, &draw, opts.style.code(), eye),
+                };
                 let at = i * self.stride as usize;
                 pbr_bytes[at..at + PBR_SIZE as usize].copy_from_slice(bytemuck::bytes_of(&p));
             }
@@ -399,7 +430,7 @@ impl Offscreen {
         }
         pass.set_vertex_buffer(0, meshes.vertex_buffer.slice(..));
         pass.set_index_buffer(meshes.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        let shadow = opts.shadow.zip(self.shadowed.as_ref());
+        let shadow = if lit.is_some() { None } else { opts.shadow.zip(self.shadowed.as_ref()) };
         let draw_indices: Vec<usize> = if style_is_glass_house {
             let mut draw_index_by_scene_mesh = Vec::new();
             let mut draw_index = 0usize;
@@ -433,11 +464,13 @@ impl Offscreen {
         } else {
             (0..meshes.draws.len()).collect()
         };
-        let draw_pipeline = |is_ground: bool| match (shadow, is_ground) {
-            (Some((_, sp)), false) => &sp.glass,
-            (Some((_, sp)), true) => &sp.opaque,
-            (None, false) => &self.gpu.glass_pipeline,
-            (None, true) => &self.gpu.pipeline,
+        let draw_pipeline = |is_ground: bool| match (lit, shadow, is_ground) {
+            (Some((_, lp)), _, false) => &lp.glass,
+            (Some((_, lp)), _, true) => &lp.opaque,
+            (None, Some((_, sp)), false) => &sp.glass,
+            (None, Some((_, sp)), true) => &sp.opaque,
+            (None, None, false) => &self.gpu.glass_pipeline,
+            (None, None, true) => &self.gpu.pipeline,
         };
         if style_is_glass_house {
             let mut scene_draw_count = 0usize;
@@ -458,7 +491,9 @@ impl Offscreen {
             }
             for (pipeline, list) in [(draw_pipeline(true), &opaque as &[usize]), (draw_pipeline(false), &translucent as &[usize])] {
                 pass.set_pipeline(pipeline);
-                if let Some((map, _)) = shadow {
+                if let Some((frame, _)) = lit {
+                    pass.set_bind_group(2, &frame.bind_group, &[]);
+                } else if let Some((map, _)) = shadow {
                     pass.set_bind_group(2, &map.bind_group, &[]);
                 }
                 for &i in list {
@@ -471,14 +506,18 @@ impl Offscreen {
             }
         } else {
             for blended in [false, true] {
-                let pipeline = match (shadow, blended) {
-                    (Some((_, sp)), false) => &sp.opaque,
-                    (Some((_, sp)), true) => &sp.glass,
-                    (None, false) => &self.gpu.pipeline,
-                    (None, true) => &self.gpu.glass_pipeline,
+                let pipeline = match (lit, shadow, blended) {
+                    (Some((_, lp)), _, false) => &lp.opaque,
+                    (Some((_, lp)), _, true) => &lp.glass,
+                    (None, Some((_, sp)), false) => &sp.opaque,
+                    (None, Some((_, sp)), true) => &sp.glass,
+                    (None, None, false) => &self.gpu.pipeline,
+                    (None, None, true) => &self.gpu.glass_pipeline,
                 };
                 pass.set_pipeline(pipeline);
-                if let Some((map, _)) = shadow {
+                if let Some((frame, _)) = lit {
+                    pass.set_bind_group(2, &frame.bind_group, &[]);
+                } else if let Some((map, _)) = shadow {
                     pass.set_bind_group(2, &map.bind_group, &[]);
                 }
                 for (i, d) in meshes.draws.iter().enumerate().filter(|(_, d)| d.is_blended() == blended) {
@@ -612,7 +651,7 @@ pub fn render_png(scene: &Scene3d, camera: &Camera, light: &Light, size: (u32, u
 pub fn render_png_with(scene: &Scene3d, camera: &Camera, light: &Light, size: (u32, u32), opts: &RenderOptions) -> Result<Vec<u8>, Render3dError> {
     let mut offscreen = Offscreen::create(size)?;
     let map = if opts.shadow.is_some() { offscreen.build_shadow(scene, scene.revision, light, opts.ground) } else { None };
-    let own = RenderOptions { shadow: map.as_ref(), style: opts.style, ground: opts.ground };
+    let own = RenderOptions { shadow: map.as_ref(), style: opts.style, ground: opts.ground, lit: None };
     offscreen.render_with(scene, scene.revision, camera, light, &own);
     offscreen.read_png()
 }

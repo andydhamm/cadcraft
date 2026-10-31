@@ -152,6 +152,9 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
             "terrain" => "terrain".to_string(),
             "plant-crown" => format!("plant-pl{}", m.object.0),
             "plant-trunk" => format!("plant-pl{}-trunk", m.object.0),
+            "light-trim" => format!("light-lf{}", m.object.0),
+            mat if mat.starts_with("light-lens") => format!("light-lf{}-lens", m.object.0),
+            mat if mat.starts_with("light-") => format!("light-lf{}-{}", m.object.0, mat.trim_start_matches("light-")),
             mat if mat.starts_with("path-") => {
                 let kind = mat.trim_start_matches("path-").split('-').next().unwrap_or("path");
                 format!("{kind}-tm{}", m.object.0)
@@ -285,6 +288,7 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
     }
 
     let buffers: Vec<Value> = if bin.is_empty() { Vec::new() } else { vec![json!({ "byteLength": bin.len() as u32 })] };
+    let (light_defs, light_nodes) = crate::glb_lights::punctual_lights(scene);
     // Root node carries the Z-up -> Y-up rotation; its children are the per-mesh
     // nodes. An empty scene keeps an empty node list.
     let root = if written_meshes.is_empty() {
@@ -292,16 +296,19 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
     } else {
         // Per-mesh nodes are the children; the root is node 0, so mesh nodes are
         // renumbered 1..=n to sit after it in the node list.
-        let children: Vec<u32> = (1..=written_meshes.len() as u32).collect();
+        let mut children: Vec<u32> = (1..=written_meshes.len() as u32).collect();
+        // Phase 10: light nodes follow the mesh nodes, also under the root.
+        children.extend((0..light_nodes.len() as u32).map(|k| written_meshes.len() as u32 + 1 + k));
         vec![json!({
             "name": "arch3d-root",
             "rotation": [ROOT_ROTATION[0], ROOT_ROTATION[1], ROOT_ROTATION[2], ROOT_ROTATION[3]],
             "children": children,
         })]
     };
-    let all_nodes: Vec<Value> = root.into_iter().chain(nodes).collect();
+    let has_root = !root.is_empty();
+    let all_nodes: Vec<Value> = root.into_iter().chain(nodes).chain(if has_root { light_nodes } else { Vec::new() }).collect();
     let scene_nodes: Vec<Value> = if written_meshes.is_empty() { Vec::new() } else { vec![json!(0)] };
-    let value = json!({
+    let mut value = json!({
         "asset": { "version": "2.0", "generator": "CADCraft arch3d" },
         "scene": 0,
         "scenes": [ { "name": "arch3d", "nodes": scene_nodes } ],
@@ -312,6 +319,10 @@ fn build_bin(scene: &Scene3d) -> (String, Vec<u8>) {
         "bufferViews": buffer_views,
         "accessors": accessors,
     });
+    if has_root && !light_defs.is_empty() {
+        value["extensionsUsed"] = json!(["KHR_lights_punctual"]);
+        value["extensions"] = json!({ "KHR_lights_punctual": { "lights": light_defs } });
+    }
 
     (json_string(value), bin)
 }

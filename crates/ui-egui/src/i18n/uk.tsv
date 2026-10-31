@@ -1467,3 +1467,24 @@
 	Architecture>Plant	Архітектура>Рослина
 	Plant Species	Види рослин
 	cmd.plant.species	Види рослин
+	Light Fixture	Світильник
+	cmd.lightfixture	Світильник
+	Architecture>Light Fixture	Архітектура>Світильник
+	Edit Light Fixture	Змінити світильник
+	cmd.lightfixture.edit	Змінити світильник
+	Architecture>Edit Light Fixture	Архітектура>Змінити світильник
+	Delete Light Fixture	Видалити світильник
+	cmd.lightfixture.delete	Видалити світильник
+	Architecture>Delete Light Fixture	Архітектура>Видалити світильник
+	Light Fixture Types	Типи світильників
+	cmd.lightfixture.types	Типи світильників
+	Architecture>Light Fixture Types	Архітектура>Типи світильників
+	Illuminance	Освітленість
+	cmd.illuminance	Освітленість
+	Architecture>Illuminance	Архітектура>Освітленість
+	Render 3D	Візуалізація 3D
+	cmd.render	Візуалізація 3D
+	Architecture>Render 3D	Архітектура>Візуалізація 3D
+	Sun Study	Дослідження інсоляції
+	cmd.sunstudy	Дослідження інсоляції
+	Architecture>Sun Study	Архітектура>Дослідження інсоляції

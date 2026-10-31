@@ -47,6 +47,8 @@ pub use cadcraft_doc as doc;
 pub use cadcraft_fonts as fonts;
 pub use cadcraft_geom as geom;
 pub use cadcraft_render as render;
+/// The app's 3D renderer behind `render` and `sunstudy` (phase 10): the CLI and the desktop app install it.
+pub use cmd::arch::render::{RenderHooks, RenderRequest, RenderStats, SunChoice, render_hooks, set_render_hooks, stats as render_stats};
 pub use cmd::hatch::{HatchPicks, PatternChoice, PickMode, pattern_choices};
 pub use cmd::{CommandInfo, CommandSpec, command_specs, find_command};
 pub use prompt::{Accept, Drag, Input, Interactive, Picker, Prompt, Step};

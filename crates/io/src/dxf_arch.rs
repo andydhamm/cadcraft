@@ -80,13 +80,13 @@ pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
     if m.is_empty() {
         return None;
     }
-    let json = serde_json::to_string(&Payload { version: 8, model: m.clone() }).ok()?;
+    let json = serde_json::to_string(&Payload { version: 9, model: m.clone() }).ok()?;
     Some(crate::dxf_ext::json_chunks(&json))
 }
 
 /// Parse an architectural XRECORD payload; `None` when it is not a payload we understand.
 ///
-/// Accepts schema versions 1 through 8:
+/// Accepts schema versions 1 through 9:
 /// - v1: no openings (cleared).
 /// - v2: openings present.
 /// - v3: rooms/levels present, no roofs (cleared).
@@ -95,6 +95,7 @@ pub(crate) fn arch_chunks(m: &ArchModel) -> Option<Vec<String>> {
 /// - v6: cameras present; generated views were not yet saved.
 /// - v7: saved generated views present in the model.
 /// - v8: the site, terrain, plants, user plant species and retaining walls (empty when read from v7).
+/// - v9: light fixtures (empty when read from v8).
 ///
 /// All versions are bounded — the wall count against [`MAX_WALLS`], the opening count
 /// against [`MAX_OPENINGS`], the roof count against [`MAX_ROOFS`], the stair count against
@@ -106,7 +107,7 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
         return None;
     }
     let p: Payload = serde_json::from_str(text).ok()?;
-    if !(1..=8).contains(&p.version) {
+    if !(1..=9).contains(&p.version) {
         return None;
     }
     if p.model.walls.len() > cadcraft_doc::MAX_WALLS {
@@ -137,6 +138,13 @@ pub(crate) fn parse_arch(text: &str) -> Option<ArchModel> {
         model.plants.clear();
         model.plant_species.clear();
         model.next_plant_id = 0;
+    }
+    if p.version <= 8 {
+        model.lights.clear();
+        model.next_light_id = 0;
+    }
+    if model.lights.len() > cadcraft_doc::arch::MAX_LIGHT_FIXTURES {
+        return None;
     }
     if model.openings.len() > cadcraft_doc::arch::MAX_OPENINGS {
         return None;
@@ -529,7 +537,8 @@ mod tests {
     #[test]
     fn parse_arch_rejects_unknown_versions() {
         // Versions 1..=8 are understood; 0 and 9+ are unknown.
-        assert!(parse_arch(r#"{"version": 9, "model": { "walls": [] }}"#).is_none());
+        assert!(parse_arch(r#"{"version": 10, "model": { "walls": [] }}"#).is_none());
+        assert!(parse_arch(r#"{"version": 9, "model": { "walls": [] }}"#).is_some());
         assert!(parse_arch(r#"{"version": 0, "model": { "walls": [] }}"#).is_none());
         assert!(parse_arch(r#"{"version": 8, "model": { "walls": [] }}"#).is_some());
     }
@@ -1890,9 +1899,9 @@ mod tests {
         assert_eq!(back.arch.stairs.len(), 1, "stair lost on DXF round trip");
         assert_eq!(back.arch.railings.len(), 1, "railing lost on DXF round trip");
 
-        // The record should carry version 8.
+        // The record should carry version 9.
         let chunks = arch_chunks(&d.arch);
-        assert!(chunks.is_some(), "arch_chunks should produce a v8 record with stairs/railings");
+        assert!(chunks.is_some(), "arch_chunks should produce a v9 record with stairs/railings");
         let obj: serde_json::Value = serde_json::from_str(&chunks.unwrap().join("")).unwrap();
         assert_eq!(obj["version"].as_u64(), Some(8), "written payload version should be 8");
     }

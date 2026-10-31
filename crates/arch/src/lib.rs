@@ -22,6 +22,8 @@ pub mod detect;
 pub mod graph;
 pub mod join;
 pub mod label;
+pub mod light;
+pub mod light_symbol;
 pub mod opening;
 pub mod plant;
 pub mod poly;
