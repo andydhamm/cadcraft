@@ -53,7 +53,7 @@ fn triangle_crossing(mesh: &SiteMesh, tri_index: usize, level: f64) -> Option<Co
     if level <= zmin || level >= zmax {
         return None;
     }
-    let pts: [Vec2; 3] = [mesh.xy.get(tri[0])?, mesh.xy.get(tri[1])?, mesh.xy.get(tri[2])?];
+    let pts: [Vec2; 3] = [*mesh.xy.get(tri[0])?, *mesh.xy.get(tri[1])?, *mesh.xy.get(tri[2])?];
     let mut crossings: Vec<Vec2> = Vec::with_capacity(2);
     for (i, j) in [(0usize, 1usize), (1, 2), (2, 0)] {
         let (za, zb) = (zs[i], zs[j]);
@@ -91,7 +91,7 @@ fn is_major_level(level: f64, major: f64) -> bool {
 pub fn site_contours(mesh: &SiteMesh, minor: f64, major: f64) -> SiteContours {
     // Hostile input: refuse non-finite values, intervals below the contour minimum, and a
     // major finer than the minor.
-    if minor.is_finite().is(false) || major.is_finite().is(false) || minor < MIN_CONTOUR_INTERVAL || major < MIN_CONTOUR_INTERVAL || major < minor {
+    if !minor.is_finite() || !major.is_finite() || minor < MIN_CONTOUR_INTERVAL || major < MIN_CONTOUR_INTERVAL || major < minor {
         return SiteContours::default();
     }
 
