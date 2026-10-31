@@ -320,7 +320,7 @@ fn plan_symbol(species: Option<&PlantSpecies>, pos: Vec2, spread: f64) -> Vec<Ve
 mod tests {
     use super::*;
     use cadcraft_doc::Drawing;
-    use cadcraft_doc::arch::{ArchModel, CrownShape, ModifierKind, PathKind, Plant, PlantForm, PlantSpecies, SiteLocation, Terrain};
+    use cadcraft_doc::arch::{ArchId, ArchModel, CrownShape, ModifierKind, PathKind, Plant, PlantForm, PlantSpecies, SiteLocation, Terrain};
     use cadcraft_geom::Vec2;
 
     fn setup_drawing() -> Drawing {
@@ -341,7 +341,7 @@ mod tests {
         });
         d.arch.terrain = Some(terrain);
 
-        let mut list = DisplayList::new();
+        let mut list = DisplayList::default();
         push_site(&d, &mut list, false);
 
         // Check that some lines were added
@@ -360,7 +360,7 @@ mod tests {
         });
         d.arch.terrain = Some(terrain);
 
-        let mut list = DisplayList::new();
+        let mut list = DisplayList::default();
         push_site(&d, &mut list, false);
 
         // Should have drawn the line and the text strokes
@@ -378,7 +378,7 @@ mod tests {
             reference: None,
             north_arrow_at: Some(Vec2::new(5.0, 5.0)),
         });
-        d.arch.plants.push(Plant { id: 0, species: "TestTree".into(), position: Vec2::new(2.0, 2.0), age: 1.0, planted_height: 1.0 });
+        d.arch.plants.push(Plant { id: ArchId(0), species: "TestTree".into(), position: Vec2::new(2.0, 2.0), age: 1.0, planted_height: Some(1.0) });
         d.arch.plant_species.push(PlantSpecies {
             name: "TestTree".into(),
             form: PlantForm::DeciduousTree,
@@ -386,10 +386,10 @@ mod tests {
             mature_height: 5.0,
             mature_spread: 2.0,
             planted_height: 1.0,
-            years_to_mature: 10,
+            years_to_mature: 10.0,
         });
 
-        let mut list = DisplayList::new();
+        let mut list = DisplayList::default();
         push_site(&d, &mut list, false);
 
         assert!(!list.prims.is_empty());
@@ -409,7 +409,7 @@ mod tests {
         terrain.boundary = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0)];
         d.arch.terrain = Some(terrain);
 
-        let mut list = DisplayList::new();
+        let mut list = DisplayList::default();
         push_site(&d, &mut list, false);
 
         // Boundary should not be drawn, but maybe other things are?
@@ -420,7 +420,7 @@ mod tests {
     #[test]
     fn site_plan_draws_nothing_without_a_site() {
         let d = setup_drawing();
-        let mut list = DisplayList::new();
+        let mut list = DisplayList::default();
         push_site(&d, &mut list, false);
         assert!(list.prims.is_empty());
     }
