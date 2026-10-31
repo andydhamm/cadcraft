@@ -293,4 +293,223 @@ mod tests {
         let d = (circle[0] - center).len();
         assert!((d - 5.0).abs() < 1e-9);
     }
+
+    #[test]
+    fn validate_species_edge_cases() {
+        let valid = PlantSpecies {
+            name: "Test".into(),
+            form: PlantForm::DeciduousTree,
+            crown: cadcraft_doc::arch::CrownShape::Sphere,
+            mature_height: 10.0,
+            mature_spread: 5.0,
+            planted_height: 2.0,
+            years_to_mature: 10.0,
+        };
+        assert!(validate_species(&valid).is_ok());
+
+        // Empty name
+        let mut sp = valid.clone();
+        sp.name = "".into();
+        assert!(validate_species(&sp).is_err());
+
+        // Name too long (> 64 chars)
+        sp.name = "a".repeat(65);
+        assert!(validate_species(&sp).is_err());
+
+        // Name exactly 64 chars is ok
+        sp.name = "a".repeat(64);
+        assert!(validate_species(&sp).is_ok());
+
+        // years_to_mature > 500
+        sp.years_to_mature = 501.0;
+        assert!(validate_species(&sp).is_err());
+
+        // years_to_mature exactly 500 is ok
+        sp.years_to_mature = 500.0;
+        assert!(validate_species(&sp).is_ok());
+
+        // mature_height non-finite (NaN)
+        sp.mature_height = f64::NAN;
+        assert!(validate_species(&sp).is_err());
+
+        // mature_spread non-finite
+        sp.mature_height = 10.0;
+        sp.mature_spread = f64::NAN;
+        assert!(validate_species(&sp).is_err());
+
+        // planted_height non-finite
+        sp.mature_spread = 5.0;
+        sp.planted_height = f64::NAN;
+        assert!(validate_species(&sp).is_err());
+
+        // years_to_mature non-finite
+        sp.planted_height = 2.0;
+        sp.years_to_mature = f64::NAN;
+        assert!(validate_species(&sp).is_err());
+
+        // mature_spread > 100
+        sp.years_to_mature = 10.0;
+        sp.mature_spread = 101.0;
+        assert!(validate_species(&sp).is_err());
+
+        // mature_spread exactly 100 is ok
+        sp.mature_spread = 100.0;
+        assert!(validate_species(&sp).is_ok());
+
+        // mature_height exactly 150 is ok
+        sp.mature_height = 150.0;
+        assert!(validate_species(&sp).is_ok());
+    }
+
+    #[test]
+    fn plant_size_edge_cases() {
+        let sp = PlantSpecies {
+            name: "Test".into(),
+            form: PlantForm::DeciduousTree,
+            crown: cadcraft_doc::arch::CrownShape::Sphere,
+            mature_height: 10.0,
+            mature_spread: 5.0,
+            planted_height: 2.0,
+            years_to_mature: 10.0,
+        };
+
+        // Non-finite age -> treated as 0
+        let p = Plant { id: cadcraft_doc::arch::ArchId(0), species: "Test".into(), position: Vec2::ZERO, age: f64::NAN, planted_height: None };
+        let (h, s) = plant_size(&sp, &p);
+        assert!((h - 2.0).abs() < 1e-9);
+        assert!((s - 1.0).abs() < 1e-9);
+
+        // Age > years_to_mature -> clamped to mature size
+        let p = Plant { id: cadcraft_doc::arch::ArchId(0), species: "Test".into(), position: Vec2::ZERO, age: 999.0, planted_height: None };
+        let (h, s) = plant_size(&sp, &p);
+        assert!((h - 10.0).abs() < 1e-9);
+        assert!((s - 5.0).abs() < 1e-9);
+
+        // Custom planted_height overrides species
+        let p = Plant { id: cadcraft_doc::arch::ArchId(0), species: "Test".into(), position: Vec2::ZERO, age: 0.0, planted_height: Some(5.0) };
+        let (h, s) = plant_size(&sp, &p);
+        assert!((h - 5.0).abs() < 1e-9);
+        assert!((s - 2.5).abs() < 1e-9); // 5 * 5/10
+
+        // Negative age -> clamped to 0
+        let p = Plant { id: cadcraft_doc::arch::ArchId(0), species: "Test".into(), position: Vec2::ZERO, age: -5.0, planted_height: None };
+        let (h, s) = plant_size(&sp, &p);
+        assert!((h - 2.0).abs() < 1e-9);
+        assert!((s - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn plan_symbol_all_forms() {
+        let center = Vec2::new(5.0, 5.0);
+        let spread = 10.0;
+
+        // DeciduousTree: 1 circle + 8 radial lines = 9 polylines
+        let sp_dec = PlantSpecies {
+            name: "Dec".into(),
+            form: PlantForm::DeciduousTree,
+            crown: cadcraft_doc::arch::CrownShape::Sphere,
+            mature_height: 10.0,
+            mature_spread: 10.0,
+            planted_height: 2.0,
+            years_to_mature: 10.0,
+        };
+        let sym = plan_symbol(&sp_dec, center, spread);
+        assert_eq!(sym.len(), 9);
+        for poly in &sym {
+            for pt in poly {
+                assert!(pt.is_finite());
+            }
+        }
+
+        // EvergreenTree: 1 circle + 1 star = 2 polylines
+        let sp_ever = PlantSpecies {
+            name: "Ever".into(),
+            form: PlantForm::EvergreenTree,
+            crown: cadcraft_doc::arch::CrownShape::Cone,
+            mature_height: 15.0,
+            mature_spread: 5.0,
+            planted_height: 1.5,
+            years_to_mature: 30.0,
+        };
+        let sym = plan_symbol(&sp_ever, center, spread);
+        assert_eq!(sym.len(), 2);
+        // Star has 24 points + closure = 25
+        assert_eq!(sym[1].len(), 25);
+        for poly in &sym {
+            for pt in poly {
+                assert!(pt.is_finite());
+            }
+        }
+
+        // Shrub: 1 circle + 10 scallops = 11 polylines
+        let sp_shrub = PlantSpecies {
+            name: "Shrub".into(),
+            form: PlantForm::Shrub,
+            crown: cadcraft_doc::arch::CrownShape::Sphere,
+            mature_height: 3.0,
+            mature_spread: 2.5,
+            planted_height: 0.6,
+            years_to_mature: 8.0,
+        };
+        let sym = plan_symbol(&sp_shrub, center, spread);
+        assert_eq!(sym.len(), 11);
+        for poly in &sym {
+            for pt in poly {
+                assert!(pt.is_finite());
+            }
+        }
+
+        // GroundCover: 1 circle + 7 small circles = 8 polylines
+        let sp_gc = PlantSpecies {
+            name: "GC".into(),
+            form: PlantForm::GroundCover,
+            crown: cadcraft_doc::arch::CrownShape::Ellipsoid,
+            mature_height: 0.3,
+            mature_spread: 2.0,
+            planted_height: 0.1,
+            years_to_mature: 6.0,
+        };
+        let sym = plan_symbol(&sp_gc, center, spread);
+        assert_eq!(sym.len(), 8);
+        for poly in &sym {
+            for pt in poly {
+                assert!(pt.is_finite());
+            }
+        }
+    }
+
+    #[test]
+    fn plan_symbol_degenerate() {
+        let sp = PlantSpecies {
+            name: "Test".into(),
+            form: PlantForm::DeciduousTree,
+            crown: cadcraft_doc::arch::CrownShape::Sphere,
+            mature_height: 10.0,
+            mature_spread: 10.0,
+            planted_height: 2.0,
+            years_to_mature: 10.0,
+        };
+        let center = Vec2::new(5.0, 5.0);
+
+        // spread = 0 -> empty
+        let sym = plan_symbol(&sp, center, 0.0);
+        assert!(sym.is_empty());
+
+        // spread non-finite -> empty
+        let sym = plan_symbol(&sp, center, f64::NAN);
+        assert!(sym.is_empty());
+
+        let sym = plan_symbol(&sp, center, f64::INFINITY);
+        assert!(sym.is_empty());
+
+        // Negative spread -> empty
+        let sym = plan_symbol(&sp, center, -1.0);
+        assert!(sym.is_empty());
+    }
+
+    #[test]
+    fn find_species_unknown_returns_none() {
+        let model = ArchModel::default();
+        assert!(find_species(&model, "Nonexistent Species").is_none());
+    }
 }
