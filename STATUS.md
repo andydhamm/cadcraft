@@ -1,8 +1,8 @@
 # arch3d build status
 
-Updated 2026-10-31 01:30 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
+Updated 2026-10-31 01:45 UTC. This page and the card in the README are regenerated every 15 minutes from the swarm's own dashboard.
 
-**Phase 9 of 13: Terrain and site — 12 of 25 segments merged · 0 of 12 acceptance checks**
+**Phase 9 of 13: Terrain and site — 12 of 26 segments merged · 0 of 12 acceptance checks**
 
 5,438 workspace tests passing at the last merge · 543 segments merged in all · 0 of 13 seats working
 
@@ -19,7 +19,7 @@ Updated 2026-10-31 01:30 UTC. This page and the card in the README are regenerat
 | 6 | The 3D view, properly | done | 9 / 9 | 12.1 h |
 | 7 | Generated elevations and sections | done | 9 / 9 | 8.2 h |
 | 8 | Recognition from plain DXF | done | 10 / 10 | 16.6 h |
-| 9 | Terrain and site | building | 0 / 12 | 5.9 h so far · expected done Oct 31 10:50–Nov 01 00:11 UTC |
+| 9 | Terrain and site | building | 0 / 12 | 6.1 h so far · expected done Oct 31 12:06–Nov 01 02:24 UTC |
 | 10 | Lighting, light fixtures and final renders | planned | — | — |
 | 11 | Ray-traced Finalize Render | planned | — | — |
 | 12 | Exports and interoperability | planned | — | — |
@@ -27,14 +27,15 @@ Updated 2026-10-31 01:30 UTC. This page and the card in the README are regenerat
 
 ## Phase 9 segments
 
-12 merged, 9 queued, 3 working, 1 gate
+12 merged, 9 queued, 3 gate, 1 merging, 1 working
 
 | Segment | What | State | Seat |
 |---|---|---|---|
-| `p9-arch-terrain-surface` | The modified surface as an exact elevation function | gate | claude-sonnet-b |
-| `p9-cmd-terrain` | `terrain` and `terrain.delete` commands | working | mai-flash |
-| `p9-cmd-terrain-modify` | `terrain.modify`: flat regions, hills, valleys, roads, driveways and sidewalks | working | claude-sonnet-d |
-| `p9-cmd-site-inspect` | `arch.inspect` site, terrain and plants | working | claude-sonnet-c |
+| `p9-arch-terrain-surface` | The modified surface as an exact elevation function | merging | claude-sonnet-b |
+| `p9-cmd-terrain` | `terrain` and `terrain.delete` commands | gate | mai-flash |
+| `p9-cmd-terrain-modify` | `terrain.modify`: flat regions, hills, valleys, roads, driveways and sidewalks | gate | claude-sonnet-d |
+| `p9-cmd-site-inspect` | `arch.inspect` site, terrain and plants | gate | claude-sonnet-c |
+| `upstream-sync-ba3196e3f` | merge upstream upstream/main up to ba3196e3f (14 commits) | working | bonsai-b |
 
 ## Recent merges
 
@@ -58,15 +59,15 @@ Updated 2026-10-31 01:30 UTC. This page and the card in the README are regenerat
 | Seat | Model | State | Rounds |
 |---|---|---|---|
 | bonsai-a | bonsai2-27b | idle | 704 |
-| bonsai-b | bonsai2-27b | idle | 663 |
+| bonsai-b | bonsai2-27b | agent | 663 |
 | bonsai-ws2-a | bonsai2-27b | idle | 704 |
-| bonsai-ws2-b | bonsai2-27b | gate | 661 |
+| bonsai-ws2-b | bonsai2-27b | gate | 662 |
 | claude-sonnet-a | sonnet | idle | 55 |
-| claude-sonnet-b | sonnet | gate | 49 |
-| claude-sonnet-c | sonnet | agent | 0 |
-| claude-sonnet-d | sonnet | agent | 0 |
-| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 559 |
+| claude-sonnet-b | sonnet | merging | 50 |
+| claude-sonnet-c | sonnet | gate | 0 |
+| claude-sonnet-d | sonnet | gate | 0 |
+| darwin-ws3 | darwin-r3-exl3-3.05bpw-sc | gate | 560 |
 | kimi-k31 | k3.1-pro-highspeed | idle | 98 |
-| mai-flash | mai-code-1.1-flash | agent | 27 |
-| tturbo-mac | tturbo-ultraheretic | agent | 482 |
+| mai-flash | mai-code-1.1-flash | gate | 27 |
+| tturbo-mac | tturbo-ultraheretic | gate | 482 |
 | tturbo-mac2 | tturbo-ultraheretic | merging | 305 |
