@@ -5,12 +5,16 @@
 //! (MIT OR Apache-2.0, credited in `ATTRIBUTION.md`): `triangulate`, `Tin::elevation_at`,
 //! `Tin::elevation_range` and `contours` are its code (Bowyer-Watson triangulation, per-triangle contour segments). Changes
 //! here: one module instead of a crate, a plain error enum (geom has no `thiserror`), no indexing
-//! with `[]` on input, and a cap on the number of points.
+//! with `[]` on input, a cap on the number of points, a counter-clockwise super-triangle (so the
+//! triangles are counter-clockwise, as documented), and the pockets the super-triangle can leave
+//! along the convex hull filled and flipped to Delaunay.
 //!
 //! Built with the Bowyer-Watson incremental algorithm: a point at a time, remove every triangle
 //! whose circumcircle contains it, and retriangulate the hole that leaves. The triangulation works
 //! in the plane (X, Y); each point's Z rides along for elevation queries and contour extraction,
 //! not for choosing the triangulation itself — the usual convention for a terrain TIN.
+
+use std::collections::{BTreeSet, HashMap};
 
 use crate::{Vec2, Vec3};
 
@@ -29,6 +33,10 @@ pub enum TinError {
     NonFinitePoint { index: usize },
     /// All points collinear or coincident: no triangle could be formed.
     Degenerate,
+    /// A constraint names point `index`, past the end of the points.
+    BadConstraint { index: usize },
+    /// More than `4 * MAX_TIN_POINTS` constraints.
+    TooManyConstraints(usize),
 }
 
 impl std::fmt::Display for TinError {
@@ -38,6 +46,8 @@ impl std::fmt::Display for TinError {
             TinError::TooManyPoints(n) => write!(f, "a triangulation takes at most {MAX_TIN_POINTS} points, got {n}"),
             TinError::NonFinitePoint { index } => write!(f, "point {index} has a non-finite coordinate"),
             TinError::Degenerate => write!(f, "the points are degenerate (collinear, or all coincident): no triangle could be formed"),
+            TinError::BadConstraint { index } => write!(f, "a constraint names point {index}, which does not exist"),
+            TinError::TooManyConstraints(n) => write!(f, "a triangulation takes at most {} constraints, got {n}", MAX_TIN_POINTS * 4),
         }
     }
 }
@@ -148,7 +158,8 @@ pub fn triangulate(points: &[Vec3]) -> Result<Tin, TinError> {
     pts2.push(Vec2::new(cx + 2.0 * margin, cy - margin));
     let (s0, s1, s2) = (n, n + 1, n + 2);
 
-    let mut triangles: Vec<[usize; 3]> = vec![[s0, s1, s2]];
+    // Counter-clockwise (lower left, lower right, top): every triangle made from it keeps that winding.
+    let mut triangles: Vec<[usize; 3]> = vec![[s0, s2, s1]];
 
     for (i, &p) in pts2.iter().enumerate().take(n) {
         let mut bad = Vec::new();
@@ -191,8 +202,94 @@ pub fn triangulate(points: &[Vec3]) -> Result<Tin, TinError> {
     if triangles.is_empty() {
         return Err(TinError::Degenerate);
     }
+    let pts2 = pts2.get(..n).unwrap_or(&[]);
+    let added = fill_to_hull(pts2, &mut triangles);
+    make_delaunay(pts2, &mut triangles, &added);
 
     Ok(Tin { points: points.to_vec(), triangles })
+}
+
+fn orient(a: Vec2, b: Vec2, c: Vec2) -> f64 {
+    (b - a).cross(c - a)
+}
+
+/// A triangle whose circumcircle reached a super-triangle corner is gone with the super-triangle,
+/// which leaves pockets between the triangulation and the convex hull (points a few centimetres
+/// from a long hull edge do it). Fill them by ears: where the counter-clockwise boundary turns
+/// right at `v` (from `u` to `w`) and no boundary point lies in triangle `u`, `w`, `v`, that
+/// triangle is added. Returns the triangles added.
+fn fill_to_hull(xy: &[Vec2], triangles: &mut Vec<[usize; 3]>) -> Vec<[usize; 3]> {
+    let p = |i: usize| xy.get(i).copied().unwrap_or(Vec2::new(f64::NAN, f64::NAN));
+    let directed: BTreeSet<(usize, usize)> = triangles.iter().flat_map(|&[a, b, c]| [(a, b), (b, c), (c, a)]).collect();
+    let mut boundary: BTreeSet<(usize, usize)> = directed.iter().copied().filter(|&(u, v)| !directed.contains(&(v, u))).collect();
+    let mut added = Vec::new();
+    for _ in 0..2 * xy.len() + 8 {
+        let mut outs: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut ins: HashMap<usize, usize> = HashMap::new();
+        for &(u, v) in &boundary {
+            outs.entry(u).or_default().push(v);
+            *ins.entry(v).or_default() += 1;
+        }
+        let ear = boundary.iter().find_map(|&(u, v)| {
+            let [w] = outs.get(&v)?.as_slice() else { return None };
+            let w = *w;
+            if ins.get(&v) != Some(&1) || w == u || !(orient(p(u), p(v), p(w)) < 0.0) {
+                return None;
+            }
+            let blocked = boundary.iter().map(|e| e.0).any(|q| {
+                q != u && q != v && q != w && orient(p(u), p(w), p(q)) >= 0.0 && orient(p(w), p(v), p(q)) >= 0.0 && orient(p(v), p(u), p(q)) >= 0.0
+            });
+            (!blocked).then_some((u, v, w))
+        });
+        let Some((u, v, w)) = ear else { break };
+        boundary.remove(&(u, v));
+        boundary.remove(&(v, w));
+        boundary.insert((u, w));
+        triangles.push([u, w, v]);
+        added.push([u, w, v]);
+    }
+    added
+}
+
+/// Lawson flips from the edges of `added` until every interior edge is locally Delaunay.
+fn make_delaunay(xy: &[Vec2], triangles: &mut [[usize; 3]], added: &[[usize; 3]]) {
+    let p = |i: usize| xy.get(i).copied().unwrap_or(Vec2::new(f64::NAN, f64::NAN));
+    let mut by_edge: HashMap<(usize, usize), usize> = HashMap::new();
+    for (t, &[a, b, c]) in triangles.iter().enumerate() {
+        for e in [(a, b), (b, c), (c, a)] {
+            by_edge.insert(e, t);
+        }
+    }
+    let mut todo: Vec<(usize, usize)> = added.iter().flat_map(|&[a, b, c]| [(a, b), (b, c), (c, a)]).collect();
+    let mut flips = 0usize;
+    while let Some((a, b)) = todo.pop() {
+        let (Some(&t1), Some(&t2)) = (by_edge.get(&(a, b)), by_edge.get(&(b, a))) else { continue };
+        let (Some(&tri1), Some(&tri2)) = (triangles.get(t1), triangles.get(t2)) else { continue };
+        let (Some(c), Some(d)) = (tri1.into_iter().find(|&x| x != a && x != b), tri2.into_iter().find(|&x| x != a && x != b)) else { continue };
+        if !in_circumcircle(p(a), p(b), p(c), p(d)) || !(orient(p(a), p(d), p(c)) > 0.0 && orient(p(d), p(b), p(c)) > 0.0) {
+            continue;
+        }
+        flips += 1;
+        if flips > 64 * xy.len() + 64 {
+            break;
+        }
+        // (a, b, c) and (b, a, d) become (a, d, c) and (d, b, c).
+        if let Some(t) = triangles.get_mut(t1) {
+            *t = [a, d, c];
+        }
+        if let Some(t) = triangles.get_mut(t2) {
+            *t = [d, b, c];
+        }
+        by_edge.remove(&(a, b));
+        by_edge.remove(&(b, a));
+        by_edge.insert((a, d), t1);
+        by_edge.insert((d, c), t1);
+        by_edge.insert((c, a), t1);
+        by_edge.insert((d, b), t2);
+        by_edge.insert((b, c), t2);
+        by_edge.insert((c, d), t2);
+        todo.extend([(a, d), (d, b), (b, c), (c, a)]);
+    }
 }
 
 /// One straight segment of a contour line at a single elevation, crossing one triangle.
@@ -275,6 +372,59 @@ fn triangle_crossing(tin: &Tin, tri: &[usize; 3], level: f64) -> Option<ContourS
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn triangulate_covers_the_convex_hull() {
+        // A dense survey inside a square whose corners are points: points a few centimetres from
+        // an edge put that edge's circumcircle around the super-triangle, which must not leave the
+        // hull uncovered.
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut unit = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut pts = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(200.0, 0.0, 0.0), Vec3::new(200.0, 200.0, 0.0), Vec3::new(0.0, 200.0, 0.0)];
+        pts.extend((0..3000).map(|_| Vec3::new(unit() * 200.0, unit() * 200.0, 0.0)));
+        pts.push(Vec3::new(100.0, 0.001, 0.0));
+        let tin = triangulate(&pts).expect("should triangulate");
+        let area: f64 = tin
+            .triangles
+            .iter()
+            .map(|t| {
+                let p = |k: usize| Vec2::new(tin.points[t[k]].x, tin.points[t[k]].y);
+                (p(1) - p(0)).cross(p(2) - p(0)) * 0.5
+            })
+            .sum();
+        assert!((area - 40_000.0).abs() < 1e-6, "covered area {area}, hull 40000");
+        // And still Delaunay: no triangle's circumcircle holds the far corner of its neighbour.
+        let mut by_edge = HashMap::new();
+        for (i, t) in tin.triangles.iter().enumerate() {
+            for e in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+                assert!(by_edge.insert(e, i).is_none(), "edge {e:?} twice");
+            }
+        }
+        let xy = |k: usize| Vec2::new(tin.points[k].x, tin.points[k].y);
+        for (&(u, v), &i) in &by_edge {
+            let Some(&j) = by_edge.get(&(v, u)) else { continue };
+            let [a, b, c] = tin.triangles[i];
+            let w = tin.triangles[j].into_iter().find(|&x| x != u && x != v).unwrap();
+            assert!(!in_circumcircle(xy(a), xy(b), xy(c), xy(w)), "edge {u}-{v} not Delaunay");
+        }
+    }
+
+    #[test]
+    fn triangulate_returns_counter_clockwise_triangles() {
+        let pts: Vec<Vec3> =
+            (0..30).map(|i| Vec3::new(((i * 7) % 11) as f64 * 1.3, ((i * 5) % 13) as f64 * 0.9 + (i % 3) as f64 * 0.1, 0.0)).collect();
+        let tin = triangulate(&pts).expect("should triangulate");
+        assert!(!tin.triangles.is_empty());
+        for t in &tin.triangles {
+            let p = |k: usize| Vec2::new(tin.points[t[k]].x, tin.points[t[k]].y);
+            assert!((p(1) - p(0)).cross(p(2) - p(0)) > 0.0, "clockwise triangle {t:?}");
+        }
+    }
 
     fn square() -> Vec<Vec3> {
         vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 10.0), Vec3::new(0.0, 10.0, 10.0)]
