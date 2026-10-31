@@ -44,7 +44,7 @@ fn add_and_extents() {
 }
 
 #[test]
-fn frozen_layers_are_left_out_of_extents_and_layers_turned_off_are_not() {
+fn hidden_layers_excluded_from_extents() {
     let mut d = Drawing::new_imperial();
     let c = Common { layer: "Hidden".into(), ..Default::default() };
     d.add(&Space::Model, c, line((100.0, 100.0), (200.0, 200.0))).unwrap();
@@ -478,7 +478,7 @@ fn block_entity_with_invisible_flag_is_ignored_in_insert_extents() {
 }
 
 #[test]
-fn block_entity_on_frozen_layer_is_ignored_and_on_a_layer_turned_off_counts() {
+fn block_entity_on_off_or_frozen_layer_is_ignored() {
     let mut d = drawing_with_block(far_line("Hidden"));
     assert!(d.layer("Hidden").is_none(), "block contents do not create layers");
     let mut layer = Layer::new("Hidden");
